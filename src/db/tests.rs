@@ -2,8 +2,9 @@ use anyhow::{Context, Result};
 use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::clipboard::{build_item, build_representation, build_snapshot};
-use crate::model::{CaptureContext, ClipboardSnapshot};
+use crate::model::{
+    build_item, build_representation, build_snapshot, CaptureContext, ClipboardSnapshot,
+};
 
 use super::{configure_connection, Database, SCHEMA};
 

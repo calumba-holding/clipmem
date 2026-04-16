@@ -3,7 +3,7 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::Result;
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand};
 use serde::Serialize;
 
 use crate::app::{format_watch_capture_line, process_watch_snapshot, WatchState};
@@ -72,8 +72,8 @@ struct SearchArgs {
     query: String,
 
     /// Search mode to execute.
-    #[arg(long, value_enum, default_value_t = SearchModeArg::Auto)]
-    mode: SearchModeArg,
+    #[arg(long, value_enum, default_value_t = SearchMode::Auto)]
+    mode: SearchMode,
 
     /// Maximum number of results.
     #[arg(long, default_value_t = 10, value_parser = parse_bounded_limit)]
@@ -82,23 +82,6 @@ struct SearchArgs {
     /// Emit results as JSON.
     #[arg(long, default_value_t = false)]
     json: bool,
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum SearchModeArg {
-    Auto,
-    Fts,
-    Literal,
-}
-
-impl From<SearchModeArg> for SearchMode {
-    fn from(value: SearchModeArg) -> Self {
-        match value {
-            SearchModeArg::Auto => Self::Auto,
-            SearchModeArg::Fts => Self::Fts,
-            SearchModeArg::Literal => Self::Literal,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -311,7 +294,7 @@ fn print_json<T: Serialize>(value: &T) -> Result<()> {
 }
 
 fn query_search_hits(db: &Database, args: &SearchArgs) -> Result<Vec<SearchHit>> {
-    match SearchMode::from(args.mode) {
+    match args.mode {
         SearchMode::Auto => db.search_auto(&args.query, args.limit),
         SearchMode::Fts => db.search_fts(&args.query, args.limit),
         SearchMode::Literal => db.search_literal(&args.query, args.limit),
@@ -327,11 +310,10 @@ mod tests {
 
     use clap::Parser;
 
-    use crate::db::Database;
-    use crate::model::builders::{build_item, build_representation, build_snapshot};
-    use crate::model::CaptureContext;
+    use crate::db::{Database, SearchMode};
+    use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
 
-    use super::{query_search_hits, Cli, Command, SearchArgs, SearchModeArg};
+    use super::{query_search_hits, Cli, Command, SearchArgs};
 
     fn temp_db_path(test_name: &str) -> PathBuf {
         let timestamp = SystemTime::now()
@@ -389,7 +371,7 @@ mod tests {
 
         match cli.command {
             Command::Search(args) => {
-                assert!(matches!(args.mode, super::SearchModeArg::Literal));
+                assert!(matches!(args.mode, SearchMode::Literal));
                 assert_eq!(args.query, "50%");
             }
             other => panic!("expected search command, got {other:?}"),
@@ -449,7 +431,7 @@ mod tests {
             &db,
             &SearchArgs {
                 query: "50%".to_string(),
-                mode: SearchModeArg::Literal,
+                mode: SearchMode::Literal,
                 limit: 10,
                 json: false,
             },

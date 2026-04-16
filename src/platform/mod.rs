@@ -12,8 +12,7 @@ pub use self::unsupported::capture_snapshot;
 mod tests {
     use anyhow::{anyhow, Result};
 
-    use crate::clipboard::build_snapshot;
-    use crate::model::{CaptureContext, ClipboardSnapshot};
+    use crate::model::{build_snapshot, CaptureContext, ClipboardSnapshot};
 
     fn invoke_capture(
         capture: impl FnOnce() -> Result<ClipboardSnapshot>,

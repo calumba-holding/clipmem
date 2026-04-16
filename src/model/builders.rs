@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashSet};
 
-use crate::model::{
+use super::{
     CaptureContext, ClipboardItem, ClipboardKind, ClipboardRepresentation, ClipboardSnapshot,
     SnapshotKind,
 };
@@ -512,9 +512,8 @@ fn joined_search_text(items: &[ClipboardItem]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::{CaptureContext, SnapshotKind};
-
     use super::{build_snapshot, decode_text_bytes_lossy, html_to_text_lossy, rtf_to_text_lossy};
+    use crate::model::{CaptureContext, SnapshotKind};
 
     #[test]
     fn html_is_stripped_reasonably() {

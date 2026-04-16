@@ -182,10 +182,9 @@ fn push_blank_line(out: &mut String) {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::builders::{build_item, build_representation, build_snapshot};
     use crate::model::{
-        CaptureContext, CaptureEvent, CaptureStoreResult, DoctorReport, SearchHit, SnapshotDetails,
-        SnapshotKind,
+        build_item, build_representation, build_snapshot, CaptureContext, CaptureEvent,
+        CaptureStoreResult, DoctorReport, SearchHit, SnapshotDetails, SnapshotKind,
     };
 
     use super::{

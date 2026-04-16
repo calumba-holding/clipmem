@@ -136,15 +136,14 @@ mod tests {
     use anyhow::Result;
 
     use super::Database;
-    use crate::clipboard::build_snapshot;
-    use crate::model::CaptureContext;
+    use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
 
     fn fake_snapshot(change_count: i64, text: &str) -> crate::model::ClipboardSnapshot {
         build_snapshot(
             CaptureContext::new(change_count).with_frontmost_app_name("Editor"),
-            vec![crate::clipboard::build_item(
+            vec![build_item(
                 0,
-                vec![crate::clipboard::build_representation(
+                vec![build_representation(
                     "public.utf8-plain-text".to_string(),
                     None,
                     text.as_bytes().to_vec(),

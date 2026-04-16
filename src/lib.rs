@@ -1,6 +1,5 @@
 pub(crate) mod app;
 pub(crate) mod cli;
-pub(crate) mod clipboard;
 pub mod db;
 pub mod model;
 pub(crate) mod paths;

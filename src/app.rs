@@ -83,9 +83,10 @@ mod tests {
     use anyhow::Result;
 
     use super::{format_watch_capture_line, process_watch_snapshot, WatchState};
-    use crate::clipboard::{build_item, build_representation, build_snapshot};
     use crate::db::Database;
-    use crate::model::{CaptureContext, CaptureStoreResult};
+    use crate::model::{
+        build_item, build_representation, build_snapshot, CaptureContext, CaptureStoreResult,
+    };
 
     #[test]
     fn skip_initial_marks_first_change_as_seen_without_storing() -> Result<()> {

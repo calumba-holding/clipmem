@@ -473,9 +473,8 @@ fn requires_literal_like_search(query: &str) -> bool {
 mod tests {
     use anyhow::Result;
 
-    use crate::clipboard::{build_item, build_representation, build_snapshot};
     use crate::db::Database;
-    use crate::model::CaptureContext;
+    use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
 
     use super::{invalid_fts_message, requires_literal_like_search};
 

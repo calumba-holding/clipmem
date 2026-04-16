@@ -2,8 +2,10 @@ use anyhow::Result;
 use objc2::rc::autoreleasepool;
 use objc2_app_kit::{NSPasteboard, NSPasteboardItem, NSWorkspace};
 
-use crate::clipboard::{build_item, build_representation, build_snapshot};
-use crate::model::{CaptureContext, ClipboardItem, ClipboardSnapshot};
+use crate::model::{
+    build_item, build_representation, build_snapshot, CaptureContext, ClipboardItem,
+    ClipboardSnapshot,
+};
 
 pub fn capture_snapshot() -> Result<ClipboardSnapshot> {
     autoreleasepool(|_| {

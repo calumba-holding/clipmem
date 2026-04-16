@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use anyhow::Result;
+use clap::ValueEnum;
 use rusqlite::{Connection, OpenFlags, Row};
 
 const SCHEMA: &str = include_str!("db/schema.sql");
@@ -17,7 +18,7 @@ pub struct Database {
     pub(super) path: PathBuf,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum SearchMode {
     Auto,
     Fts,
@@ -147,8 +148,8 @@ fn open_connection(path: &Path, flags: OpenFlags) -> Result<Connection> {
 }
 
 fn bootstrap_connection(conn: &Connection) -> Result<()> {
-    configure_connection(conn)?;
-    conn.execute_batch(SCHEMA)?;
+    anyhow::Context::context(configure_connection(conn), "configure database connection")?;
+    anyhow::Context::context(conn.execute_batch(SCHEMA), "apply database schema")?;
     Ok(())
 }
 
@@ -168,9 +169,16 @@ fn harden_path_permissions(_path: &Path, _mode: u32) -> Result<()> {
 }
 
 fn configure_connection(conn: &Connection) -> Result<()> {
-    conn.pragma_update(None, "journal_mode", "WAL")?;
-    conn.pragma_update(None, "synchronous", "NORMAL")?;
-    conn.pragma_update(None, "foreign_keys", "ON")?;
-    conn.pragma_update(None, "temp_store", "MEMORY")?;
+    configure_pragma(conn, "journal_mode", "WAL")?;
+    configure_pragma(conn, "synchronous", "NORMAL")?;
+    configure_pragma(conn, "foreign_keys", "ON")?;
+    configure_pragma(conn, "temp_store", "MEMORY")?;
+    Ok(())
+}
+
+fn configure_pragma(conn: &Connection, pragma: &str, value: &str) -> Result<()> {
+    anyhow::Context::with_context(conn.pragma_update(None, pragma, value), || {
+        format!("configure {pragma} pragma")
+    })?;
     Ok(())
 }

@@ -6,8 +6,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
 use clipmem::db::Database;
-use clipmem::model::builders::{build_item, build_representation, build_snapshot};
-use clipmem::model::{CaptureContext, ClipboardSnapshot};
+use clipmem::model::{
+    build_item, build_representation, build_snapshot, CaptureContext, ClipboardSnapshot,
+};
 use serde_json::Value;
 
 fn temp_db_path(test_name: &str) -> PathBuf {
