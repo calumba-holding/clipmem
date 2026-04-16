@@ -6,16 +6,16 @@ use super::{ClipboardKind, SnapshotKind};
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize)]
 pub struct ClipboardSnapshot {
-    pub(crate) change_count: i64,
-    pub(crate) frontmost_app_bundle_id: Option<String>,
-    pub(crate) frontmost_app_name: Option<String>,
-    pub(crate) fingerprint: String,
-    pub(crate) snapshot_kind: SnapshotKind,
-    pub(crate) preview_text: String,
-    pub(crate) search_text: String,
-    pub(crate) item_count: usize,
-    pub(crate) total_bytes: usize,
-    pub(crate) items: Vec<ClipboardItem>,
+    change_count: i64,
+    frontmost_app_bundle_id: Option<String>,
+    frontmost_app_name: Option<String>,
+    fingerprint: String,
+    snapshot_kind: SnapshotKind,
+    preview_text: String,
+    search_text: String,
+    item_count: usize,
+    total_bytes: usize,
+    items: Vec<ClipboardItem>,
 }
 
 #[non_exhaustive]
@@ -29,24 +29,24 @@ pub struct CaptureContext {
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize)]
 pub struct ClipboardItem {
-    pub(crate) item_index: usize,
-    pub(crate) primary_kind: ClipboardKind,
-    pub(crate) primary_uti: Option<String>,
-    pub(crate) preview_text: String,
-    pub(crate) search_text: String,
-    pub(crate) total_bytes: usize,
-    pub(crate) representations: Vec<ClipboardRepresentation>,
+    item_index: usize,
+    primary_kind: ClipboardKind,
+    primary_uti: Option<String>,
+    preview_text: String,
+    search_text: String,
+    total_bytes: usize,
+    representations: Vec<ClipboardRepresentation>,
 }
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct ClipboardRepresentation {
-    pub(crate) uti: String,
-    pub(crate) kind: ClipboardKind,
-    pub(crate) byte_len: usize,
-    pub(crate) raw_sha256: String,
-    pub(crate) text_value: Option<String>,
-    pub(crate) raw_bytes: Vec<u8>,
+    uti: String,
+    kind: ClipboardKind,
+    byte_len: usize,
+    raw_sha256: String,
+    text_value: Option<String>,
+    raw_bytes: Vec<u8>,
 }
 
 impl Serialize for ClipboardRepresentation {
@@ -121,6 +121,14 @@ impl ClipboardItem {
     #[must_use]
     pub fn representations(&self) -> &[ClipboardRepresentation] {
         &self.representations
+    }
+
+    pub(crate) fn set_representations(&mut self, representations: Vec<ClipboardRepresentation>) {
+        self.total_bytes = representations
+            .iter()
+            .map(ClipboardRepresentation::byte_len)
+            .sum();
+        self.representations = representations;
     }
 }
 
@@ -203,6 +211,21 @@ impl CaptureContext {
         self
     }
 
+    #[must_use]
+    pub fn change_count(&self) -> i64 {
+        self.change_count
+    }
+
+    #[must_use]
+    pub fn frontmost_app_name(&self) -> Option<&str> {
+        self.frontmost_app_name.as_deref()
+    }
+
+    #[must_use]
+    pub fn frontmost_app_bundle_id(&self) -> Option<&str> {
+        self.frontmost_app_bundle_id.as_deref()
+    }
+
     pub(crate) fn into_parts(self) -> (i64, Option<String>, Option<String>) {
         (
             self.change_count,
@@ -213,6 +236,33 @@ impl CaptureContext {
 }
 
 impl ClipboardSnapshot {
+    #[must_use]
+    pub(crate) fn new_normalized(
+        capture: CaptureContext,
+        fingerprint: String,
+        snapshot_kind: SnapshotKind,
+        preview_text: String,
+        search_text: String,
+        items: Vec<ClipboardItem>,
+    ) -> Self {
+        let (change_count, frontmost_app_bundle_id, frontmost_app_name) = capture.into_parts();
+        let item_count = items.len();
+        let total_bytes = items.iter().map(ClipboardItem::total_bytes).sum();
+
+        Self {
+            change_count,
+            frontmost_app_bundle_id,
+            frontmost_app_name,
+            fingerprint,
+            snapshot_kind,
+            preview_text,
+            search_text,
+            item_count,
+            total_bytes,
+            items,
+        }
+    }
+
     #[must_use]
     pub fn change_count(&self) -> i64 {
         self.change_count
@@ -305,18 +355,16 @@ mod tests {
             "hello".to_string(),
             vec![representation],
         );
-        let snapshot = ClipboardSnapshot {
-            change_count: 1,
-            frontmost_app_name: Some("Editor".to_string()),
-            frontmost_app_bundle_id: Some("com.example.Editor".to_string()),
-            fingerprint: "fingerprint".to_string(),
-            snapshot_kind: SnapshotKind::PlainText,
-            preview_text: "hello".to_string(),
-            search_text: "hello".to_string(),
-            item_count: 1,
-            total_bytes: item.total_bytes,
-            items: vec![item],
-        };
+        let snapshot = ClipboardSnapshot::new_normalized(
+            CaptureContext::new(1)
+                .with_frontmost_app_name("Editor")
+                .with_frontmost_app_bundle_id("com.example.Editor"),
+            "fingerprint".to_string(),
+            SnapshotKind::PlainText,
+            "hello".to_string(),
+            "hello".to_string(),
+            vec![item],
+        );
 
         assert_eq!(snapshot.total_bytes(), 5);
         assert_eq!(snapshot.items()[0].total_bytes(), 5);
@@ -329,10 +377,10 @@ mod tests {
             .with_frontmost_app_name("Editor")
             .with_frontmost_app_bundle_id("com.example.Editor");
 
-        assert_eq!(context.change_count, 7);
-        assert_eq!(context.frontmost_app_name.as_deref(), Some("Editor"));
+        assert_eq!(context.change_count(), 7);
+        assert_eq!(context.frontmost_app_name(), Some("Editor"));
         assert_eq!(
-            context.frontmost_app_bundle_id.as_deref(),
+            context.frontmost_app_bundle_id(),
             Some("com.example.Editor")
         );
     }

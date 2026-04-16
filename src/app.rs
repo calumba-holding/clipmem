@@ -167,11 +167,7 @@ mod tests {
                 )],
             )],
         );
-        let result = CaptureStoreResult {
-            snapshot_id: 42,
-            event_id: 7,
-            inserted_new_snapshot: true,
-        };
+        let result = CaptureStoreResult::new(42, 7, true);
 
         let line = format_watch_capture_line(&snapshot, &result);
 

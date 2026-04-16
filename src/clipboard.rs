@@ -8,22 +8,14 @@ use crate::model::{
 /// Build a normalized snapshot from captured clipboard items and capture metadata.
 #[must_use]
 pub fn build_snapshot(capture: CaptureContext, items: Vec<ClipboardItem>) -> ClipboardSnapshot {
-    let (change_count, frontmost_app_bundle_id, frontmost_app_name) = capture.into_parts();
-    let item_count = items.len();
-    let total_bytes = items.iter().map(|item| item.total_bytes).sum();
-
-    ClipboardSnapshot {
-        change_count,
-        frontmost_app_bundle_id,
-        frontmost_app_name,
-        fingerprint: fingerprint_snapshot(&items),
-        snapshot_kind: snapshot_kind(&items),
-        preview_text: join_item_previews(&items),
-        search_text: joined_search_text(&items),
-        item_count,
-        total_bytes,
+    ClipboardSnapshot::new_normalized(
+        capture,
+        fingerprint_snapshot(&items),
+        snapshot_kind(&items),
+        join_item_previews(&items),
+        joined_search_text(&items),
         items,
-    }
+    )
 }
 
 /// Build a normalized item from its captured representations.
@@ -33,8 +25,8 @@ pub fn build_item(
     representations: Vec<ClipboardRepresentation>,
 ) -> ClipboardItem {
     let primary = pick_primary_representation(&representations);
-    let primary_kind = primary.map_or(ClipboardKind::Empty, |rep| rep.kind);
-    let primary_uti = primary.map(|rep| rep.uti.clone());
+    let primary_kind = primary.map_or(ClipboardKind::Empty, ClipboardRepresentation::kind);
+    let primary_uti = primary.map(|rep| rep.uti().to_string());
 
     let search_text = item_search_text(&representations);
     let preview_text = preview_for_item(&search_text, &representations);
@@ -149,15 +141,15 @@ fn fingerprint_snapshot(items: &[ClipboardItem]) -> String {
     hasher.update(b"clipmem/v1");
 
     for item in items {
-        hasher.update((item.item_index as u64).to_be_bytes());
-        let mut ordered = item.representations.iter().collect::<Vec<_>>();
-        ordered.sort_by(|a, b| a.uti.cmp(&b.uti));
+        hasher.update((item.item_index() as u64).to_be_bytes());
+        let mut ordered = item.representations().iter().collect::<Vec<_>>();
+        ordered.sort_by(|a, b| a.uti().cmp(b.uti()));
 
         for rep in ordered {
-            hasher.update((rep.uti.len() as u64).to_be_bytes());
-            hasher.update(rep.uti.as_bytes());
-            hasher.update((rep.raw_bytes.len() as u64).to_be_bytes());
-            hasher.update(&rep.raw_bytes);
+            hasher.update((rep.uti().len() as u64).to_be_bytes());
+            hasher.update(rep.uti().as_bytes());
+            hasher.update((rep.raw_bytes().len() as u64).to_be_bytes());
+            hasher.update(rep.raw_bytes());
         }
     }
 
@@ -167,7 +159,7 @@ fn fingerprint_snapshot(items: &[ClipboardItem]) -> String {
 fn snapshot_kind(items: &[ClipboardItem]) -> SnapshotKind {
     let kinds = items
         .iter()
-        .map(|item| item.primary_kind)
+        .map(ClipboardItem::primary_kind)
         .collect::<BTreeSet<_>>();
 
     if kinds.is_empty() {
@@ -454,7 +446,7 @@ fn pick_primary_representation(
     reps: &[ClipboardRepresentation],
 ) -> Option<&ClipboardRepresentation> {
     reps.iter()
-        .min_by_key(|rep| (rep.kind.priority(), !rep.is_text(), rep.uti.as_str()))
+        .min_by_key(|rep| (rep.kind().priority(), !rep.is_text(), rep.uti()))
 }
 
 fn item_search_text(representations: &[ClipboardRepresentation]) -> String {
@@ -465,9 +457,9 @@ fn item_search_text(representations: &[ClipboardRepresentation]) -> String {
 }
 
 fn search_fragment_for_representation(rep: &ClipboardRepresentation) -> Option<String> {
-    let text = rep.text_value.as_deref()?;
+    let text = rep.text_value()?;
 
-    match rep.kind {
+    match rep.kind() {
         ClipboardKind::Html => Some(html_to_text_lossy(text)),
         ClipboardKind::Rtf => Some(rtf_to_text_lossy(text)),
         kind if kind.is_textual() => Some(text.to_string()),
@@ -482,7 +474,12 @@ fn preview_for_item(search_text: &str, representations: &[ClipboardRepresentatio
 
     if let Some(rep) = pick_primary_representation(representations) {
         return truncate_chars(
-            &format!("[{} · {} bytes · {}]", rep.kind, rep.byte_len, rep.uti),
+            &format!(
+                "[{} · {} bytes · {}]",
+                rep.kind(),
+                rep.byte_len(),
+                rep.uti()
+            ),
             200,
         );
     }
@@ -493,7 +490,7 @@ fn preview_for_item(search_text: &str, representations: &[ClipboardRepresentatio
 fn join_item_previews(items: &[ClipboardItem]) -> String {
     let parts = items
         .iter()
-        .map(|item| item.preview_text.clone())
+        .map(|item| item.preview_text().to_string())
         .filter(|part| !part.trim().is_empty())
         .collect::<Vec<_>>();
 
@@ -507,7 +504,7 @@ fn join_item_previews(items: &[ClipboardItem]) -> String {
 fn joined_search_text(items: &[ClipboardItem]) -> String {
     items
         .iter()
-        .map(|item| item.search_text.clone())
+        .map(|item| item.search_text().to_string())
         .filter(|text| !text.trim().is_empty())
         .collect::<Vec<_>>()
         .join("\n\n")

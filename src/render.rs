@@ -195,11 +195,7 @@ mod tests {
     #[test]
     fn render_capture_once_text_reports_summary_lines() {
         let text = render_capture_once_text(
-            &CaptureStoreResult {
-                snapshot_id: 9,
-                event_id: 12,
-                inserted_new_snapshot: true,
-            },
+            &CaptureStoreResult::new(9, 12, true),
             &build_snapshot(
                 CaptureContext::new(3)
                     .with_frontmost_app_name("Terminal")
@@ -223,20 +219,20 @@ mod tests {
 
     #[test]
     fn render_hits_text_includes_snippet_and_score() {
-        let text = render_hits_text(&[SearchHit {
-            snapshot_id: 42,
-            sha256: "deadbeef".to_string(),
-            snapshot_kind: SnapshotKind::PlainText,
-            preview_text: "git status".to_string(),
-            snippet: "git ⟦status⟧".to_string(),
-            capture_count: 2,
-            last_observed_at: "2026-04-16 18:00:00".to_string(),
-            last_frontmost_app_name: Some("Terminal".to_string()),
-            last_frontmost_app_bundle_id: Some("com.apple.Terminal".to_string()),
-            total_bytes: 10,
-            item_count: 1,
-            score: Some(0.125),
-        }]);
+        let text = render_hits_text(&[SearchHit::new(
+            42,
+            "deadbeef".to_string(),
+            SnapshotKind::PlainText,
+            "git status".to_string(),
+            "git ⟦status⟧".to_string(),
+            2,
+            "2026-04-16 18:00:00".to_string(),
+            Some("Terminal".to_string()),
+            Some("com.apple.Terminal".to_string()),
+            10,
+            1,
+            Some(0.125),
+        )]);
 
         assert!(text.contains("[42] plain_text"));
         assert!(text.contains("preview: git status"));
@@ -246,28 +242,28 @@ mod tests {
 
     #[test]
     fn render_snapshot_text_lists_items_and_events() {
-        let text = render_snapshot_text(&SnapshotDetails {
-            snapshot_id: 7,
-            sha256: "abc123".to_string(),
-            snapshot_kind: SnapshotKind::PlainText,
-            preview_text: "git clone".to_string(),
-            search_text: "git clone".to_string(),
-            item_count: 1,
-            total_bytes: 9,
-            created_at: "2026-04-16 18:00:00".to_string(),
-            capture_count: 1,
-            first_observed_at: "2026-04-16 18:00:00".to_string(),
-            last_observed_at: "2026-04-16 18:00:00".to_string(),
-            last_frontmost_app_name: Some("Terminal".to_string()),
-            last_frontmost_app_bundle_id: Some("com.apple.Terminal".to_string()),
-            recent_events: vec![CaptureEvent {
-                event_id: 9,
-                observed_at: "2026-04-16 18:00:00".to_string(),
-                change_count: 4,
-                frontmost_app_name: Some("Terminal".to_string()),
-                frontmost_app_bundle_id: Some("com.apple.Terminal".to_string()),
-            }],
-            items: vec![build_item(
+        let text = render_snapshot_text(&SnapshotDetails::new(
+            7,
+            "abc123".to_string(),
+            SnapshotKind::PlainText,
+            "git clone".to_string(),
+            "git clone".to_string(),
+            1,
+            9,
+            "2026-04-16 18:00:00".to_string(),
+            1,
+            "2026-04-16 18:00:00".to_string(),
+            "2026-04-16 18:00:00".to_string(),
+            Some("Terminal".to_string()),
+            Some("com.apple.Terminal".to_string()),
+            vec![CaptureEvent::new(
+                9,
+                "2026-04-16 18:00:00".to_string(),
+                4,
+                Some("Terminal".to_string()),
+                Some("com.apple.Terminal".to_string()),
+            )],
+            vec![build_item(
                 0,
                 vec![build_representation(
                     "public.utf8-plain-text".to_string(),
@@ -275,7 +271,7 @@ mod tests {
                     b"git clone".to_vec(),
                 )],
             )],
-        });
+        ));
 
         assert!(text.contains("snapshot 7 · sha256=abc123 · kind=plain_text · captures=1"));
         assert!(text.contains("item 0 · kind=plain_text"));
@@ -285,14 +281,14 @@ mod tests {
 
     #[test]
     fn render_doctor_text_lists_compile_options_when_present() {
-        let text = render_doctor_text(&DoctorReport {
-            db_path: "/tmp/clipmem.sqlite3".to_string(),
-            sqlite_version: "3.46.0".to_string(),
-            journal_mode: "wal".to_string(),
-            fts5_compile_option_present: true,
-            fts5_create_virtual_table_ok: true,
-            compile_options: vec!["ENABLE_FTS5".to_string()],
-        });
+        let text = render_doctor_text(&DoctorReport::new(
+            "/tmp/clipmem.sqlite3".to_string(),
+            "3.46.0".to_string(),
+            "wal".to_string(),
+            true,
+            true,
+            vec!["ENABLE_FTS5".to_string()],
+        ));
 
         assert!(text.contains("database: /tmp/clipmem.sqlite3"));
         assert!(text.contains("compile options:"));

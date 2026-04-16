@@ -17,3 +17,24 @@ use anyhow::Result;
 pub fn run() -> Result<()> {
     cli::run()
 }
+
+#[cfg(test)]
+mod tests {
+    use anyhow::{anyhow, Result};
+
+    fn invoke(run_cli: impl FnOnce() -> Result<()>) -> Result<()> {
+        run_cli()
+    }
+
+    #[test]
+    fn run_test_helper_returns_success_from_cli_runner() -> Result<()> {
+        invoke(|| Ok(()))
+    }
+
+    #[test]
+    fn run_test_helper_propagates_cli_errors() {
+        let error = invoke(|| Err(anyhow!("boom"))).expect_err("expected runner failure");
+
+        assert!(format!("{error:#}").contains("boom"));
+    }
+}

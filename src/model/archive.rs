@@ -4,70 +4,79 @@ use super::{ClipboardItem, SnapshotKind};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CaptureStoreResult {
-    pub(crate) snapshot_id: i64,
-    pub(crate) event_id: i64,
-    pub(crate) inserted_new_snapshot: bool,
+    snapshot_id: i64,
+    event_id: i64,
+    inserted_new_snapshot: bool,
 }
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize)]
 pub struct SearchHit {
-    pub(crate) snapshot_id: i64,
-    pub(crate) sha256: String,
-    pub(crate) snapshot_kind: SnapshotKind,
-    pub(crate) preview_text: String,
-    pub(crate) snippet: String,
-    pub(crate) capture_count: usize,
-    pub(crate) last_observed_at: String,
-    pub(crate) last_frontmost_app_name: Option<String>,
-    pub(crate) last_frontmost_app_bundle_id: Option<String>,
-    pub(crate) total_bytes: usize,
-    pub(crate) item_count: usize,
-    pub(crate) score: Option<f64>,
+    snapshot_id: i64,
+    sha256: String,
+    snapshot_kind: SnapshotKind,
+    preview_text: String,
+    snippet: String,
+    capture_count: usize,
+    last_observed_at: String,
+    last_frontmost_app_name: Option<String>,
+    last_frontmost_app_bundle_id: Option<String>,
+    total_bytes: usize,
+    item_count: usize,
+    score: Option<f64>,
 }
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize)]
 pub struct CaptureEvent {
-    pub(crate) event_id: i64,
-    pub(crate) observed_at: String,
-    pub(crate) change_count: i64,
-    pub(crate) frontmost_app_name: Option<String>,
-    pub(crate) frontmost_app_bundle_id: Option<String>,
+    event_id: i64,
+    observed_at: String,
+    change_count: i64,
+    frontmost_app_name: Option<String>,
+    frontmost_app_bundle_id: Option<String>,
 }
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize)]
 pub struct SnapshotDetails {
-    pub(crate) snapshot_id: i64,
-    pub(crate) sha256: String,
-    pub(crate) snapshot_kind: SnapshotKind,
-    pub(crate) preview_text: String,
-    pub(crate) search_text: String,
-    pub(crate) item_count: usize,
-    pub(crate) total_bytes: usize,
-    pub(crate) created_at: String,
-    pub(crate) capture_count: usize,
-    pub(crate) first_observed_at: String,
-    pub(crate) last_observed_at: String,
-    pub(crate) last_frontmost_app_name: Option<String>,
-    pub(crate) last_frontmost_app_bundle_id: Option<String>,
-    pub(crate) recent_events: Vec<CaptureEvent>,
-    pub(crate) items: Vec<ClipboardItem>,
+    snapshot_id: i64,
+    sha256: String,
+    snapshot_kind: SnapshotKind,
+    preview_text: String,
+    search_text: String,
+    item_count: usize,
+    total_bytes: usize,
+    created_at: String,
+    capture_count: usize,
+    first_observed_at: String,
+    last_observed_at: String,
+    last_frontmost_app_name: Option<String>,
+    last_frontmost_app_bundle_id: Option<String>,
+    recent_events: Vec<CaptureEvent>,
+    items: Vec<ClipboardItem>,
 }
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize)]
 pub struct DoctorReport {
-    pub(crate) db_path: String,
-    pub(crate) sqlite_version: String,
-    pub(crate) journal_mode: String,
-    pub(crate) fts5_compile_option_present: bool,
-    pub(crate) fts5_create_virtual_table_ok: bool,
-    pub(crate) compile_options: Vec<String>,
+    db_path: String,
+    sqlite_version: String,
+    journal_mode: String,
+    fts5_compile_option_present: bool,
+    fts5_create_virtual_table_ok: bool,
+    compile_options: Vec<String>,
 }
 
 impl CaptureStoreResult {
+    #[must_use]
+    pub(crate) fn new(snapshot_id: i64, event_id: i64, inserted_new_snapshot: bool) -> Self {
+        Self {
+            snapshot_id,
+            event_id,
+            inserted_new_snapshot,
+        }
+    }
+
     #[must_use]
     pub fn snapshot_id(&self) -> i64 {
         self.snapshot_id
@@ -85,6 +94,38 @@ impl CaptureStoreResult {
 }
 
 impl SearchHit {
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub(crate) fn new(
+        snapshot_id: i64,
+        sha256: String,
+        snapshot_kind: SnapshotKind,
+        preview_text: String,
+        snippet: String,
+        capture_count: usize,
+        last_observed_at: String,
+        last_frontmost_app_name: Option<String>,
+        last_frontmost_app_bundle_id: Option<String>,
+        total_bytes: usize,
+        item_count: usize,
+        score: Option<f64>,
+    ) -> Self {
+        Self {
+            snapshot_id,
+            sha256,
+            snapshot_kind,
+            preview_text,
+            snippet,
+            capture_count,
+            last_observed_at,
+            last_frontmost_app_name,
+            last_frontmost_app_bundle_id,
+            total_bytes,
+            item_count,
+            score,
+        }
+    }
+
     #[must_use]
     pub fn snapshot_id(&self) -> i64 {
         self.snapshot_id
@@ -148,6 +189,23 @@ impl SearchHit {
 
 impl CaptureEvent {
     #[must_use]
+    pub(crate) fn new(
+        event_id: i64,
+        observed_at: String,
+        change_count: i64,
+        frontmost_app_name: Option<String>,
+        frontmost_app_bundle_id: Option<String>,
+    ) -> Self {
+        Self {
+            event_id,
+            observed_at,
+            change_count,
+            frontmost_app_name,
+            frontmost_app_bundle_id,
+        }
+    }
+
+    #[must_use]
     pub fn event_id(&self) -> i64 {
         self.event_id
     }
@@ -174,6 +232,44 @@ impl CaptureEvent {
 }
 
 impl SnapshotDetails {
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub(crate) fn new(
+        snapshot_id: i64,
+        sha256: String,
+        snapshot_kind: SnapshotKind,
+        preview_text: String,
+        search_text: String,
+        item_count: usize,
+        total_bytes: usize,
+        created_at: String,
+        capture_count: usize,
+        first_observed_at: String,
+        last_observed_at: String,
+        last_frontmost_app_name: Option<String>,
+        last_frontmost_app_bundle_id: Option<String>,
+        recent_events: Vec<CaptureEvent>,
+        items: Vec<ClipboardItem>,
+    ) -> Self {
+        Self {
+            snapshot_id,
+            sha256,
+            snapshot_kind,
+            preview_text,
+            search_text,
+            item_count,
+            total_bytes,
+            created_at,
+            capture_count,
+            first_observed_at,
+            last_observed_at,
+            last_frontmost_app_name,
+            last_frontmost_app_bundle_id,
+            recent_events,
+            items,
+        }
+    }
+
     #[must_use]
     pub fn snapshot_id(&self) -> i64 {
         self.snapshot_id
@@ -248,9 +344,36 @@ impl SnapshotDetails {
     pub fn items(&self) -> &[ClipboardItem] {
         &self.items
     }
+
+    pub(crate) fn set_recent_events(&mut self, recent_events: Vec<CaptureEvent>) {
+        self.recent_events = recent_events;
+    }
+
+    pub(crate) fn set_items(&mut self, items: Vec<ClipboardItem>) {
+        self.items = items;
+    }
 }
 
 impl DoctorReport {
+    #[must_use]
+    pub(crate) fn new(
+        db_path: String,
+        sqlite_version: String,
+        journal_mode: String,
+        fts5_compile_option_present: bool,
+        fts5_create_virtual_table_ok: bool,
+        compile_options: Vec<String>,
+    ) -> Self {
+        Self {
+            db_path,
+            sqlite_version,
+            journal_mode,
+            fts5_compile_option_present,
+            fts5_create_virtual_table_ok,
+            compile_options,
+        }
+    }
+
     #[must_use]
     pub fn db_path(&self) -> &str {
         &self.db_path

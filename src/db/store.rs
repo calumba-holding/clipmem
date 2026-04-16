@@ -17,7 +17,7 @@ impl Database {
 
         let existing_id: Option<i64> = rusqlite::OptionalExtension::optional(tx.query_row(
             "SELECT id FROM snapshots WHERE sha256 = ?1",
-            [snapshot.fingerprint.as_str()],
+            [snapshot.fingerprint()],
             |row| row.get(0),
         ))?;
 
@@ -34,17 +34,17 @@ impl Database {
                     total_bytes
                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
-                    snapshot.fingerprint,
-                    snapshot.snapshot_kind.as_str(),
-                    snapshot.preview_text,
-                    snapshot.search_text,
-                    usize_to_i64(snapshot.item_count)?,
-                    usize_to_i64(snapshot.total_bytes)?,
+                    snapshot.fingerprint(),
+                    snapshot.snapshot_kind().as_str(),
+                    snapshot.preview_text(),
+                    snapshot.search_text(),
+                    usize_to_i64(snapshot.item_count())?,
+                    usize_to_i64(snapshot.total_bytes())?,
                 ],
             )?;
             let inserted_snapshot_id = tx.last_insert_rowid();
 
-            for item in &snapshot.items {
+            for item in snapshot.items() {
                 insert_item(&tx, inserted_snapshot_id, item)?;
             }
 
@@ -60,20 +60,20 @@ impl Database {
             ) VALUES (?1, ?2, ?3, ?4)",
             params![
                 snapshot_id,
-                snapshot.change_count,
-                snapshot.frontmost_app_bundle_id.as_deref(),
-                snapshot.frontmost_app_name.as_deref(),
+                snapshot.change_count(),
+                snapshot.frontmost_app_bundle_id(),
+                snapshot.frontmost_app_name(),
             ],
         )?;
         let event_id = tx.last_insert_rowid();
 
         tx.commit()?;
 
-        Ok(CaptureStoreResult {
+        Ok(CaptureStoreResult::new(
             snapshot_id,
             event_id,
-            inserted_new_snapshot: existing_id.is_none(),
-        })
+            existing_id.is_none(),
+        ))
     }
 }
 
@@ -94,16 +94,16 @@ fn insert_item(
         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
             snapshot_id,
-            usize_to_i64(item.item_index)?,
-            item.primary_kind.as_str(),
-            item.primary_uti.as_deref(),
-            item.preview_text,
-            item.search_text,
-            usize_to_i64(item.total_bytes)?,
+            usize_to_i64(item.item_index())?,
+            item.primary_kind().as_str(),
+            item.primary_uti(),
+            item.preview_text(),
+            item.search_text(),
+            usize_to_i64(item.total_bytes())?,
         ],
     )?;
 
-    for rep in &item.representations {
+    for rep in item.representations() {
         tx.execute(
             "INSERT INTO item_representations (
                 snapshot_id,
@@ -117,13 +117,13 @@ fn insert_item(
             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 snapshot_id,
-                usize_to_i64(item.item_index)?,
-                rep.uti,
-                rep.kind.as_str(),
-                usize_to_i64(rep.byte_len)?,
-                rep.raw_sha256,
-                rep.text_value.as_deref(),
-                rep.raw_bytes,
+                usize_to_i64(item.item_index())?,
+                rep.uti(),
+                rep.kind().as_str(),
+                usize_to_i64(rep.byte_len())?,
+                rep.raw_sha256(),
+                rep.text_value(),
+                rep.raw_bytes(),
             ],
         )?;
     }
@@ -138,6 +138,20 @@ mod tests {
     use super::Database;
     use crate::clipboard::build_snapshot;
     use crate::model::CaptureContext;
+
+    fn fake_snapshot(change_count: i64, text: &str) -> crate::model::ClipboardSnapshot {
+        build_snapshot(
+            CaptureContext::new(change_count).with_frontmost_app_name("Editor"),
+            vec![crate::clipboard::build_item(
+                0,
+                vec![crate::clipboard::build_representation(
+                    "public.utf8-plain-text".to_string(),
+                    None,
+                    text.as_bytes().to_vec(),
+                )],
+            )],
+        )
+    }
 
     #[test]
     fn empty_snapshots_store_without_placeholder_rows() -> Result<()> {
@@ -158,6 +172,27 @@ mod tests {
 
         assert_eq!(stored_item_count, 0);
         assert_eq!(stored_row_count, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn duplicate_snapshots_reuse_content_row_and_append_events() -> Result<()> {
+        let mut db = Database::open_in_memory()?;
+        let first = fake_snapshot(1, "git status");
+        let second = fake_snapshot(2, "git status");
+
+        let first_store = db.store_capture(&first)?;
+        let second_store = db.store_capture(&second)?;
+        let event_count: i64 = db.conn.query_row(
+            "SELECT COUNT(*) FROM capture_events WHERE snapshot_id = ?1",
+            [first_store.snapshot_id()],
+            |row| row.get(0),
+        )?;
+
+        assert!(first_store.inserted_new_snapshot());
+        assert!(!second_store.inserted_new_snapshot());
+        assert_eq!(first_store.snapshot_id(), second_store.snapshot_id());
+        assert_eq!(event_count, 2);
         Ok(())
     }
 }

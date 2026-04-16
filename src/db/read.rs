@@ -134,9 +134,9 @@ impl Database {
             return Ok(None);
         };
 
-        details.recent_events =
-            self.load_recent_events(snapshot_id, sanitise_limit(event_limit))?;
-        details.items = self.load_snapshot_items(snapshot_id)?;
+        details
+            .set_recent_events(self.load_recent_events(snapshot_id, sanitise_limit(event_limit))?);
+        details.set_items(self.load_snapshot_items(snapshot_id)?);
 
         Ok(Some(details))
     }
@@ -178,14 +178,14 @@ impl Database {
             )
             .is_ok();
 
-        Ok(DoctorReport {
-            db_path: self.path.display().to_string(),
+        Ok(DoctorReport::new(
+            self.path.display().to_string(),
             sqlite_version,
             journal_mode,
             fts5_compile_option_present,
             fts5_create_virtual_table_ok,
             compile_options,
-        })
+        ))
     }
 
     /// Search stored snapshots with explicit FTS5 semantics.
@@ -286,23 +286,23 @@ impl Database {
             summary_sql,
             [snapshot_id],
             |row| {
-                Ok(SnapshotDetails {
-                    snapshot_id: row.get(0)?,
-                    sha256: row.get(1)?,
-                    snapshot_kind: row_enum(row, 2)?,
-                    preview_text: row.get(3)?,
-                    search_text: row.get(4)?,
-                    item_count: row_usize(row, 5)?,
-                    total_bytes: row_usize(row, 6)?,
-                    created_at: row.get(7)?,
-                    capture_count: row_usize(row, 8)?,
-                    first_observed_at: row.get(9)?,
-                    last_observed_at: row.get(10)?,
-                    last_frontmost_app_name: row.get(11)?,
-                    last_frontmost_app_bundle_id: row.get(12)?,
-                    recent_events: Vec::new(),
-                    items: Vec::new(),
-                })
+                Ok(SnapshotDetails::new(
+                    row.get(0)?,
+                    row.get(1)?,
+                    row_enum(row, 2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row_usize(row, 5)?,
+                    row_usize(row, 6)?,
+                    row.get(7)?,
+                    row_usize(row, 8)?,
+                    row.get(9)?,
+                    row.get(10)?,
+                    row.get(11)?,
+                    row.get(12)?,
+                    Vec::new(),
+                    Vec::new(),
+                ))
             },
         ))
         .context("load snapshot summary")
@@ -328,13 +328,13 @@ impl Database {
             .context("prepare snapshot events query")?;
         let event_rows = event_stmt
             .query_map(params![snapshot_id, limit], |row| {
-                Ok(CaptureEvent {
-                    event_id: row.get(0)?,
-                    observed_at: row.get(1)?,
-                    change_count: row.get(2)?,
-                    frontmost_app_name: row.get(3)?,
-                    frontmost_app_bundle_id: row.get(4)?,
-                })
+                Ok(CaptureEvent::new(
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
             })
             .context("execute snapshot events query")?;
 
@@ -356,15 +356,14 @@ impl Database {
 
         let item_rows = item_stmt
             .query_map([snapshot_id], |row| {
-                Ok(ClipboardItem {
-                    item_index: row_usize(row, 0)?,
-                    primary_kind: row_enum(row, 1)?,
-                    primary_uti: row.get(2)?,
-                    preview_text: row.get(3)?,
-                    search_text: row.get(4)?,
-                    total_bytes: row_usize(row, 5)?,
-                    representations: Vec::new(),
-                })
+                Ok(ClipboardItem::new(
+                    row_usize(row, 0)?,
+                    row_enum(row, 1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    Vec::new(),
+                ))
             })
             .context("execute snapshot items query")?;
         let mut items = collect_rows(item_rows).context("collect snapshot items")?;
@@ -389,7 +388,7 @@ impl Database {
         for item in &mut items {
             let rep_rows = rep_stmt
                 .query_map(
-                    params![snapshot_id, usize_to_i64(item.item_index)?],
+                    params![snapshot_id, usize_to_i64(item.item_index())?],
                     |row| {
                         Ok(ClipboardRepresentation::new(
                             row.get(0)?,
@@ -401,10 +400,14 @@ impl Database {
                     },
                 )
                 .with_context(|| {
-                    format!("execute representation query for item {}", item.item_index)
+                    format!(
+                        "execute representation query for item {}",
+                        item.item_index()
+                    )
                 })?;
-            item.representations = collect_rows(rep_rows)
-                .with_context(|| format!("collect representations for item {}", item.item_index))?;
+            item.set_representations(collect_rows(rep_rows).with_context(|| {
+                format!("collect representations for item {}", item.item_index())
+            })?);
         }
 
         Ok(items)
@@ -422,20 +425,20 @@ fn search_hit_query(snippet_expr: &str, score_expr: Option<&str>, body: &str) ->
 }
 
 fn map_search_hit_row(row: &Row<'_>, has_score: bool) -> rusqlite::Result<SearchHit> {
-    Ok(SearchHit {
-        snapshot_id: row.get(0)?,
-        sha256: row.get(1)?,
-        snapshot_kind: row_enum(row, 2)?,
-        preview_text: row.get(3)?,
-        snippet: row.get(4)?,
-        capture_count: row_usize(row, 5)?,
-        last_observed_at: row.get(6)?,
-        last_frontmost_app_name: row.get(7)?,
-        last_frontmost_app_bundle_id: row.get(8)?,
-        total_bytes: row_usize(row, 9)?,
-        item_count: row_usize(row, 10)?,
-        score: if has_score { row.get(11)? } else { None },
-    })
+    Ok(SearchHit::new(
+        row.get(0)?,
+        row.get(1)?,
+        row_enum(row, 2)?,
+        row.get(3)?,
+        row.get(4)?,
+        row_usize(row, 5)?,
+        row.get(6)?,
+        row.get(7)?,
+        row.get(8)?,
+        row_usize(row, 9)?,
+        row_usize(row, 10)?,
+        if has_score { row.get(11)? } else { None },
+    ))
 }
 
 fn is_invalid_fts_query(error: &SqlError) -> bool {
@@ -468,7 +471,29 @@ fn requires_literal_like_search(query: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use anyhow::Result;
+
+    use crate::clipboard::{build_item, build_representation, build_snapshot};
+    use crate::db::Database;
+    use crate::model::CaptureContext;
+
     use super::{invalid_fts_message, requires_literal_like_search};
+
+    fn fake_snapshot(change_count: i64, text: &str) -> crate::model::ClipboardSnapshot {
+        build_snapshot(
+            CaptureContext::new(change_count)
+                .with_frontmost_app_name("Terminal")
+                .with_frontmost_app_bundle_id("com.apple.Terminal"),
+            vec![build_item(
+                0,
+                vec![build_representation(
+                    "public.utf8-plain-text".to_string(),
+                    None,
+                    text.as_bytes().to_vec(),
+                )],
+            )],
+        )
+    }
 
     #[test]
     fn like_special_characters_skip_fts_mode() {
@@ -483,5 +508,43 @@ mod tests {
         assert!(invalid_fts_message("fts5: syntax error near \"%\""));
         assert!(invalid_fts_message("malformed MATCH expression"));
         assert!(!invalid_fts_message("database disk image is malformed"));
+    }
+
+    #[test]
+    fn search_auto_uses_literal_matching_for_wildcard_queries() -> Result<()> {
+        let mut db = Database::open_in_memory()?;
+
+        db.store_capture(&fake_snapshot(1, "Discount: 50 percent off"))?;
+        db.store_capture(&fake_snapshot(2, "Discount: 50%"))?;
+
+        let hits = db.search_auto("50%", 10)?;
+
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].preview_text(), "Discount: 50%");
+        Ok(())
+    }
+
+    #[test]
+    fn find_snapshot_hydrates_nested_items_and_recent_events() -> Result<()> {
+        let mut db = Database::open_in_memory()?;
+        let first = fake_snapshot(1, "git clone");
+        let second = fake_snapshot(2, "git clone");
+
+        let store = db.store_capture(&first)?;
+        db.store_capture(&second)?;
+
+        let details = db
+            .find_snapshot(store.snapshot_id(), 10)?
+            .expect("expected stored snapshot details");
+
+        assert_eq!(details.capture_count(), 2);
+        assert_eq!(details.items().len(), 1);
+        assert_eq!(details.items()[0].representations().len(), 1);
+        assert_eq!(
+            details.items()[0].representations()[0].text_value(),
+            Some("git clone")
+        );
+        assert_eq!(details.recent_events().len(), 2);
+        Ok(())
     }
 }
