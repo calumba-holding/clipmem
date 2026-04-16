@@ -170,13 +170,13 @@ impl Database {
             .iter()
             .any(|opt| opt == "ENABLE_FTS5" || opt == "SQLITE_ENABLE_FTS5");
 
-        let fts5_create_virtual_table_ok = self
-            .conn
+        self.conn
             .execute_batch(
                 "CREATE VIRTUAL TABLE temp.__clipmem_fts_check USING fts5(x);
                  DROP TABLE temp.__clipmem_fts_check;",
             )
-            .is_ok();
+            .context("probe FTS5 temp virtual table creation")?;
+        let fts5_create_virtual_table_ok = true;
 
         Ok(DoctorReport::new(
             self.path.display().to_string(),

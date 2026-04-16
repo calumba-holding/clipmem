@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use rusqlite::params;
 
 use crate::model::{CaptureStoreResult, ClipboardItem, ClipboardSnapshot};
@@ -13,13 +13,17 @@ impl Database {
     /// Returns an error if any transaction step fails, including snapshot, item,
     /// representation, or capture-event inserts, or the final commit.
     pub fn store_capture(&mut self, snapshot: &ClipboardSnapshot) -> Result<CaptureStoreResult> {
-        let tx = self.conn.transaction()?;
+        let tx = self
+            .conn
+            .transaction()
+            .context("begin capture transaction")?;
 
         let existing_id: Option<i64> = rusqlite::OptionalExtension::optional(tx.query_row(
             "SELECT id FROM snapshots WHERE sha256 = ?1",
             [snapshot.fingerprint()],
             |row| row.get(0),
-        ))?;
+        ))
+        .context("lookup existing snapshot by fingerprint")?;
 
         let snapshot_id = if let Some(id) = existing_id {
             id
@@ -41,11 +45,13 @@ impl Database {
                     usize_to_i64(snapshot.item_count())?,
                     usize_to_i64(snapshot.total_bytes())?,
                 ],
-            )?;
+            )
+            .context("insert snapshot row")?;
             let inserted_snapshot_id = tx.last_insert_rowid();
 
             for item in snapshot.items() {
-                insert_item(&tx, inserted_snapshot_id, item)?;
+                insert_item(&tx, inserted_snapshot_id, item)
+                    .with_context(|| format!("insert snapshot item {}", item.item_index()))?;
             }
 
             inserted_snapshot_id
@@ -64,10 +70,11 @@ impl Database {
                 snapshot.frontmost_app_bundle_id(),
                 snapshot.frontmost_app_name(),
             ],
-        )?;
+        )
+        .context("insert capture event row")?;
         let event_id = tx.last_insert_rowid();
 
-        tx.commit()?;
+        tx.commit().context("commit capture transaction")?;
 
         Ok(CaptureStoreResult::new(
             snapshot_id,
@@ -101,7 +108,8 @@ fn insert_item(
             item.search_text(),
             usize_to_i64(item.total_bytes())?,
         ],
-    )?;
+    )
+    .with_context(|| format!("insert snapshot_items row for item {}", item.item_index()))?;
 
     for rep in item.representations() {
         tx.execute(
@@ -125,7 +133,14 @@ fn insert_item(
                 rep.text_value(),
                 rep.raw_bytes(),
             ],
-        )?;
+        )
+        .with_context(|| {
+            format!(
+                "insert item_representations row for item {} and uti {}",
+                item.item_index(),
+                rep.uti()
+            )
+        })?;
     }
 
     Ok(())
