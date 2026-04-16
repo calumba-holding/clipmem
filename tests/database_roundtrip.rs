@@ -4,11 +4,9 @@ use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
+use clipmem::clipboard::{build_item, build_representation, build_snapshot};
 use clipmem::db::Database;
-use clipmem::model::{
-    ClipboardItem, ClipboardKind, ClipboardRepresentation, ClipboardSnapshot, SnapshotKind,
-};
-use sha2::{Digest, Sha256};
+use clipmem::model::{CaptureContext, ClipboardKind, ClipboardSnapshot, SnapshotKind};
 
 fn temp_db_path(test_name: &str) -> PathBuf {
     let timestamp = SystemTime::now()
@@ -36,38 +34,19 @@ fn cleanup_db(path: &Path) {
     }
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
-}
-
 fn text_snapshot(change_count: i64, text: &str) -> ClipboardSnapshot {
-    let raw_bytes = text.as_bytes().to_vec();
-    let raw_sha256 = sha256_hex(&raw_bytes);
+    let raw_bytes = text
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>();
+    let representation =
+        build_representation("public.utf8-plain-text".to_string(), None, raw_bytes);
+    let item = build_item(0, vec![representation]);
 
-    let representation = ClipboardRepresentation::new(
-        "public.utf8-plain-text".to_string(),
-        ClipboardKind::PlainText,
-        raw_sha256.clone(),
-        Some(text.to_string()),
-        raw_bytes,
-    );
-    let item = ClipboardItem::new(
-        0,
-        ClipboardKind::PlainText,
-        Some("public.utf8-plain-text".to_string()),
-        text.to_string(),
-        text.to_string(),
-        vec![representation],
-    );
-
-    ClipboardSnapshot::new(
-        change_count,
-        Some("Editor".to_string()),
-        Some("com.example.Editor".to_string()),
-        raw_sha256,
-        SnapshotKind::PlainText,
-        text.to_string(),
-        text.to_string(),
+    build_snapshot(
+        CaptureContext::new(change_count)
+            .with_frontmost_app_name("Editor")
+            .with_frontmost_app_bundle_id("com.example.Editor"),
         vec![item],
     )
 }
@@ -90,7 +69,8 @@ fn public_database_api_round_trips_a_stored_snapshot() -> Result<()> {
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].snapshot_id, stored.snapshot_id);
     assert_eq!(details.capture_count, 1);
-    assert_eq!(details.preview_text, snapshot.preview_text);
+    assert_eq!(details.preview_text, snapshot.preview_text());
+    assert_eq!(details.snapshot_kind, SnapshotKind::PlainText);
     assert_eq!(details.items.len(), 1);
     assert_eq!(details.items[0].primary_kind, ClipboardKind::PlainText);
     assert_eq!(
@@ -101,6 +81,8 @@ fn public_database_api_round_trips_a_stored_snapshot() -> Result<()> {
         details.items[0].representations[0].text_value.as_deref(),
         Some("git clone https://example.com/repo")
     );
+    assert_eq!(details.total_bytes, snapshot.total_bytes());
+    assert_eq!(details.item_count, snapshot.item_count());
 
     cleanup_db(&path);
     Ok(())

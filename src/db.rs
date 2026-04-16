@@ -1,5 +1,4 @@
 mod read;
-mod schema;
 mod store;
 
 #[cfg(test)]
@@ -8,10 +7,10 @@ mod tests;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use anyhow::{Context, Result};
-use rusqlite::{types::Type, Connection, OpenFlags, Row};
+use anyhow::Result;
+use rusqlite::{Connection, OpenFlags, Row};
 
-use self::schema::{configure_connection, SCHEMA};
+const SCHEMA: &str = include_str!("db/schema.sql");
 
 pub struct Database {
     pub(super) conn: Connection,
@@ -34,8 +33,10 @@ impl Database {
     /// or the connection cannot be configured and bootstrapped.
     pub fn open_or_init(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create {}", parent.display()))?;
+            anyhow::Context::with_context(std::fs::create_dir_all(parent), || {
+                format!("failed to create {}", parent.display())
+            })?;
+            harden_path_permissions(parent, 0o700)?;
         }
 
         let conn = open_connection(
@@ -46,6 +47,9 @@ impl Database {
                 | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
         bootstrap_connection(&conn)?;
+        if path.exists() {
+            harden_path_permissions(path, 0o600)?;
+        }
 
         Ok(Self {
             conn,
@@ -67,6 +71,12 @@ impl Database {
                 | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
         configure_connection(&conn)?;
+        if let Some(parent) = path.parent() {
+            harden_path_permissions(parent, 0o700)?;
+        }
+        if path.exists() {
+            harden_path_permissions(path, 0o600)?;
+        }
 
         Ok(Self {
             conn,
@@ -101,13 +111,17 @@ where
 }
 
 pub(super) fn usize_to_i64(value: usize) -> Result<i64> {
-    i64::try_from(value).context("value exceeds SQLite INTEGER range")
+    anyhow::Context::context(i64::try_from(value), "value exceeds SQLite INTEGER range")
 }
 
 pub(super) fn row_usize(row: &Row<'_>, index: usize) -> rusqlite::Result<usize> {
     let value = row.get::<_, i64>(index)?;
     usize::try_from(value).map_err(|source| {
-        rusqlite::Error::FromSqlConversionFailure(index, Type::Integer, Box::new(source))
+        rusqlite::Error::FromSqlConversionFailure(
+            index,
+            rusqlite::types::Type::Integer,
+            Box::new(source),
+        )
     })
 }
 
@@ -118,17 +132,45 @@ where
 {
     let value = row.get::<_, String>(index)?;
     value.parse().map_err(|source| {
-        rusqlite::Error::FromSqlConversionFailure(index, Type::Text, Box::new(source))
+        rusqlite::Error::FromSqlConversionFailure(
+            index,
+            rusqlite::types::Type::Text,
+            Box::new(source),
+        )
     })
 }
 
 fn open_connection(path: &Path, flags: OpenFlags) -> Result<Connection> {
-    Connection::open_with_flags(path, flags)
-        .with_context(|| format!("failed to open {}", path.display()))
+    anyhow::Context::with_context(Connection::open_with_flags(path, flags), || {
+        format!("failed to open {}", path.display())
+    })
 }
 
 fn bootstrap_connection(conn: &Connection) -> Result<()> {
     configure_connection(conn)?;
     conn.execute_batch(SCHEMA)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn harden_path_permissions(path: &Path, mode: u32) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    anyhow::Context::with_context(
+        std::fs::set_permissions(path, PermissionsExt::from_mode(mode)),
+        || format!("failed to set permissions on {}", path.display()),
+    )
+}
+
+#[cfg(not(unix))]
+fn harden_path_permissions(_path: &Path, _mode: u32) -> Result<()> {
+    Ok(())
+}
+
+fn configure_connection(conn: &Connection) -> Result<()> {
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "synchronous", "NORMAL")?;
+    conn.pragma_update(None, "foreign_keys", "ON")?;
+    conn.pragma_update(None, "temp_store", "MEMORY")?;
     Ok(())
 }

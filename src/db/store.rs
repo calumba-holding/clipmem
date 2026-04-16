@@ -1,5 +1,5 @@
 use anyhow::Result;
-use rusqlite::{params, OptionalExtension};
+use rusqlite::params;
 
 use crate::model::{CaptureStoreResult, ClipboardItem, ClipboardSnapshot};
 
@@ -14,13 +14,11 @@ impl Database {
     pub fn store_capture(&mut self, snapshot: &ClipboardSnapshot) -> Result<CaptureStoreResult> {
         let tx = self.conn.transaction()?;
 
-        let existing_id: Option<i64> = tx
-            .query_row(
-                "SELECT id FROM snapshots WHERE sha256 = ?1",
-                [snapshot.fingerprint.as_str()],
-                |row| row.get(0),
-            )
-            .optional()?;
+        let existing_id: Option<i64> = rusqlite::OptionalExtension::optional(tx.query_row(
+            "SELECT id FROM snapshots WHERE sha256 = ?1",
+            [snapshot.fingerprint.as_str()],
+            |row| row.get(0),
+        ))?;
 
         let snapshot_id = if let Some(id) = existing_id {
             id
@@ -110,19 +108,17 @@ fn insert_item(
                 snapshot_id,
                 item_index,
                 uti,
-                classification,
-                is_text,
+                kind,
                 byte_len,
                 raw_sha256,
                 text_value,
                 blob_value
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 snapshot_id,
                 usize_to_i64(item.item_index)?,
                 rep.uti,
                 rep.kind.as_str(),
-                i64::from(rep.is_text()),
                 usize_to_i64(rep.byte_len)?,
                 rep.raw_sha256,
                 rep.text_value.as_deref(),
@@ -140,11 +136,12 @@ mod tests {
 
     use super::Database;
     use crate::clipboard::build_snapshot;
+    use crate::model::CaptureContext;
 
     #[test]
     fn empty_snapshots_store_without_placeholder_rows() -> Result<()> {
         let mut db = Database::open_in_memory()?;
-        let snapshot = build_snapshot(9, None, None, Vec::new());
+        let snapshot = build_snapshot(CaptureContext::new(9), Vec::new());
 
         let store = db.store_capture(&snapshot)?;
         let stored_item_count: i64 = db.conn.query_row(

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use rusqlite::{params, Error as SqlError, ErrorCode, OptionalExtension, Row};
+use rusqlite::{params, Error as SqlError, ErrorCode, Row};
 
 use crate::model::{
     CaptureEvent, ClipboardItem, ClipboardRepresentation, DoctorReport, SearchHit, SnapshotDetails,
@@ -263,18 +263,20 @@ impl Database {
             GROUP BY s.id
         ";
 
-        self.conn
-            .query_row(summary_sql, [snapshot_id], |row| {
+        rusqlite::OptionalExtension::optional(self.conn.query_row(
+            summary_sql,
+            [snapshot_id],
+            |row| {
                 Ok(SnapshotDetails {
                     snapshot_id: row.get(0)?,
                     sha256: row.get(1)?,
                     snapshot_kind: row_enum(row, 2)?,
                     preview_text: row.get(3)?,
                     search_text: row.get(4)?,
-                    item_count: row.get(5)?,
-                    total_bytes: row.get(6)?,
+                    item_count: row_usize(row, 5)?,
+                    total_bytes: row_usize(row, 6)?,
                     created_at: row.get(7)?,
-                    capture_count: row.get(8)?,
+                    capture_count: row_usize(row, 8)?,
                     first_observed_at: row.get(9)?,
                     last_observed_at: row.get(10)?,
                     last_frontmost_app_name: row.get(11)?,
@@ -282,9 +284,9 @@ impl Database {
                     recent_events: Vec::new(),
                     items: Vec::new(),
                 })
-            })
-            .optional()
-            .map_err(Into::into)
+            },
+        ))
+        .map_err(Into::into)
     }
 
     fn load_recent_events(
@@ -342,7 +344,7 @@ impl Database {
             r"
                 SELECT
                     uti,
-                    classification,
+                    kind,
                     raw_sha256,
                     text_value,
                     blob_value
@@ -389,12 +391,12 @@ fn map_search_hit_row(row: &Row<'_>, has_score: bool) -> rusqlite::Result<Search
         snapshot_kind: row_enum(row, 2)?,
         preview_text: row.get(3)?,
         snippet: row.get(4)?,
-        capture_count: row.get(5)?,
+        capture_count: row_usize(row, 5)?,
         last_observed_at: row.get(6)?,
         last_frontmost_app_name: row.get(7)?,
         last_frontmost_app_bundle_id: row.get(8)?,
-        total_bytes: row.get(9)?,
-        item_count: row.get(10)?,
+        total_bytes: row_usize(row, 9)?,
+        item_count: row_usize(row, 10)?,
         score: if has_score { row.get(11)? } else { None },
     })
 }

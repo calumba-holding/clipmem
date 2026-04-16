@@ -204,23 +204,31 @@ impl fmt::Display for ParseDomainValueError {
 
 impl Error for ParseDomainValueError {}
 
-#[derive(Debug, Clone, Serialize)]
 #[non_exhaustive]
+#[derive(Debug, Clone, Serialize)]
 pub struct ClipboardSnapshot {
-    pub change_count: i64,
-    pub frontmost_app_bundle_id: Option<String>,
-    pub frontmost_app_name: Option<String>,
-    pub fingerprint: String,
-    pub snapshot_kind: SnapshotKind,
-    pub preview_text: String,
-    pub search_text: String,
-    pub item_count: usize,
-    pub total_bytes: usize,
-    pub items: Vec<ClipboardItem>,
+    pub(crate) change_count: i64,
+    pub(crate) frontmost_app_bundle_id: Option<String>,
+    pub(crate) frontmost_app_name: Option<String>,
+    pub(crate) fingerprint: String,
+    pub(crate) snapshot_kind: SnapshotKind,
+    pub(crate) preview_text: String,
+    pub(crate) search_text: String,
+    pub(crate) item_count: usize,
+    pub(crate) total_bytes: usize,
+    pub(crate) items: Vec<ClipboardItem>,
 }
 
-#[derive(Debug, Clone, Serialize)]
 #[non_exhaustive]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct CaptureContext {
+    change_count: i64,
+    frontmost_app_bundle_id: Option<String>,
+    frontmost_app_name: Option<String>,
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, Serialize)]
 pub struct ClipboardItem {
     pub item_index: usize,
     pub primary_kind: ClipboardKind,
@@ -231,8 +239,8 @@ pub struct ClipboardItem {
     pub representations: Vec<ClipboardRepresentation>,
 }
 
-#[derive(Debug, Clone)]
 #[non_exhaustive]
+#[derive(Debug, Clone)]
 pub struct ClipboardRepresentation {
     pub uti: String,
     pub kind: ClipboardKind,
@@ -265,25 +273,25 @@ pub struct CaptureStoreResult {
     pub inserted_new_snapshot: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
 #[non_exhaustive]
+#[derive(Debug, Clone, Serialize)]
 pub struct SearchHit {
     pub snapshot_id: i64,
     pub sha256: String,
     pub snapshot_kind: SnapshotKind,
     pub preview_text: String,
     pub snippet: String,
-    pub capture_count: i64,
+    pub capture_count: usize,
     pub last_observed_at: String,
     pub last_frontmost_app_name: Option<String>,
     pub last_frontmost_app_bundle_id: Option<String>,
-    pub total_bytes: i64,
-    pub item_count: i64,
+    pub total_bytes: usize,
+    pub item_count: usize,
     pub score: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize)]
 #[non_exhaustive]
+#[derive(Debug, Clone, Serialize)]
 pub struct CaptureEvent {
     pub event_id: i64,
     pub observed_at: String,
@@ -292,18 +300,18 @@ pub struct CaptureEvent {
     pub frontmost_app_bundle_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
 #[non_exhaustive]
+#[derive(Debug, Clone, Serialize)]
 pub struct SnapshotDetails {
     pub snapshot_id: i64,
     pub sha256: String,
     pub snapshot_kind: SnapshotKind,
     pub preview_text: String,
     pub search_text: String,
-    pub item_count: i64,
-    pub total_bytes: i64,
+    pub item_count: usize,
+    pub total_bytes: usize,
     pub created_at: String,
-    pub capture_count: i64,
+    pub capture_count: usize,
     pub first_observed_at: String,
     pub last_observed_at: String,
     pub last_frontmost_app_name: Option<String>,
@@ -312,8 +320,8 @@ pub struct SnapshotDetails {
     pub items: Vec<ClipboardItem>,
 }
 
-#[derive(Debug, Clone, Serialize)]
 #[non_exhaustive]
+#[derive(Debug, Clone, Serialize)]
 pub struct DoctorReport {
     pub db_path: String,
     pub sqlite_version: String,
@@ -321,37 +329,6 @@ pub struct DoctorReport {
     pub fts5_compile_option_present: bool,
     pub fts5_create_virtual_table_ok: bool,
     pub compile_options: Vec<String>,
-}
-
-impl ClipboardSnapshot {
-    #[must_use]
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        change_count: i64,
-        frontmost_app_name: Option<String>,
-        frontmost_app_bundle_id: Option<String>,
-        fingerprint: String,
-        snapshot_kind: SnapshotKind,
-        preview_text: String,
-        search_text: String,
-        items: Vec<ClipboardItem>,
-    ) -> Self {
-        let item_count = items.len();
-        let total_bytes = items.iter().map(|item| item.total_bytes).sum();
-
-        Self {
-            change_count,
-            frontmost_app_bundle_id,
-            frontmost_app_name,
-            fingerprint,
-            snapshot_kind,
-            preview_text,
-            search_text,
-            item_count,
-            total_bytes,
-            items,
-        }
-    }
 }
 
 impl ClipboardItem {
@@ -405,10 +382,94 @@ impl ClipboardRepresentation {
     }
 }
 
+impl CaptureContext {
+    #[must_use]
+    pub fn new(change_count: i64) -> Self {
+        Self {
+            change_count,
+            frontmost_app_bundle_id: None,
+            frontmost_app_name: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_frontmost_app_name(mut self, name: impl Into<String>) -> Self {
+        self.frontmost_app_name = Some(name.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_frontmost_app_bundle_id(mut self, bundle_id: impl Into<String>) -> Self {
+        self.frontmost_app_bundle_id = Some(bundle_id.into());
+        self
+    }
+
+    pub(crate) fn into_parts(self) -> (i64, Option<String>, Option<String>) {
+        (
+            self.change_count,
+            self.frontmost_app_bundle_id,
+            self.frontmost_app_name,
+        )
+    }
+}
+
+impl ClipboardSnapshot {
+    #[must_use]
+    pub fn change_count(&self) -> i64 {
+        self.change_count
+    }
+
+    #[must_use]
+    pub fn frontmost_app_bundle_id(&self) -> Option<&str> {
+        self.frontmost_app_bundle_id.as_deref()
+    }
+
+    #[must_use]
+    pub fn frontmost_app_name(&self) -> Option<&str> {
+        self.frontmost_app_name.as_deref()
+    }
+
+    #[must_use]
+    pub fn fingerprint(&self) -> &str {
+        &self.fingerprint
+    }
+
+    #[must_use]
+    pub fn snapshot_kind(&self) -> SnapshotKind {
+        self.snapshot_kind
+    }
+
+    #[must_use]
+    pub fn preview_text(&self) -> &str {
+        &self.preview_text
+    }
+
+    #[must_use]
+    pub fn search_text(&self) -> &str {
+        &self.search_text
+    }
+
+    #[must_use]
+    pub fn item_count(&self) -> usize {
+        self.item_count
+    }
+
+    #[must_use]
+    pub fn total_bytes(&self) -> usize {
+        self.total_bytes
+    }
+
+    #[must_use]
+    pub fn items(&self) -> &[ClipboardItem] {
+        &self.items
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        ClipboardItem, ClipboardKind, ClipboardRepresentation, ClipboardSnapshot, SnapshotKind,
+        CaptureContext, ClipboardItem, ClipboardKind, ClipboardRepresentation, ClipboardSnapshot,
+        SnapshotKind,
     };
 
     #[test]
@@ -445,20 +506,35 @@ mod tests {
             "hello".to_string(),
             vec![representation],
         );
-        let snapshot = ClipboardSnapshot::new(
-            1,
-            Some("Editor".to_string()),
-            Some("com.example.Editor".to_string()),
-            "fingerprint".to_string(),
-            SnapshotKind::PlainText,
-            "hello".to_string(),
-            "hello".to_string(),
-            vec![item],
-        );
+        let snapshot = ClipboardSnapshot {
+            change_count: 1,
+            frontmost_app_name: Some("Editor".to_string()),
+            frontmost_app_bundle_id: Some("com.example.Editor".to_string()),
+            fingerprint: "fingerprint".to_string(),
+            snapshot_kind: SnapshotKind::PlainText,
+            preview_text: "hello".to_string(),
+            search_text: "hello".to_string(),
+            item_count: 1,
+            total_bytes: item.total_bytes,
+            items: vec![item],
+        };
 
-        assert_eq!(snapshot.item_count, 1);
         assert_eq!(snapshot.total_bytes, 5);
         assert_eq!(snapshot.items[0].total_bytes, 5);
         assert!(snapshot.items[0].representations[0].is_text());
+    }
+
+    #[test]
+    fn capture_context_builder_records_frontmost_app_metadata() {
+        let context = CaptureContext::new(7)
+            .with_frontmost_app_name("Editor")
+            .with_frontmost_app_bundle_id("com.example.Editor");
+
+        assert_eq!(context.change_count, 7);
+        assert_eq!(context.frontmost_app_name.as_deref(), Some("Editor"));
+        assert_eq!(
+            context.frontmost_app_bundle_id.as_deref(),
+            Some("com.example.Editor")
+        );
     }
 }

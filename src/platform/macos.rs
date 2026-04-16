@@ -2,10 +2,8 @@ use anyhow::Result;
 use objc2::rc::autoreleasepool;
 use objc2_app_kit::{NSPasteboard, NSPasteboardItem, NSWorkspace};
 
-use crate::clipboard::{
-    build_item, build_snapshot, classify_uti, decode_text_bytes_lossy, hash_bytes,
-};
-use crate::model::{ClipboardItem, ClipboardRepresentation, ClipboardSnapshot};
+use crate::clipboard::{build_item, build_representation, build_snapshot};
+use crate::model::{CaptureContext, ClipboardItem, ClipboardSnapshot};
 
 pub fn capture_snapshot() -> Result<ClipboardSnapshot> {
     autoreleasepool(|_| {
@@ -21,12 +19,15 @@ pub fn capture_snapshot() -> Result<ClipboardSnapshot> {
             }
         }
 
-        Ok(build_snapshot(
-            change_count,
-            frontmost_app_name,
-            frontmost_app_bundle_id,
-            items,
-        ))
+        let mut capture = CaptureContext::new(change_count);
+        if let Some(name) = frontmost_app_name {
+            capture = capture.with_frontmost_app_name(name);
+        }
+        if let Some(bundle_id) = frontmost_app_bundle_id {
+            capture = capture.with_frontmost_app_bundle_id(bundle_id);
+        }
+
+        Ok(build_snapshot(capture, items))
     })
 }
 
@@ -66,23 +67,6 @@ fn representation_bytes(raw_data: Option<Vec<u8>>, string_value: Option<&str>) -
         (None, Some(text)) => text.as_bytes().to_vec(),
         (None, None) => Vec::new(),
     }
-}
-
-fn build_representation(
-    uti: String,
-    string_value: Option<String>,
-    raw_bytes: Vec<u8>,
-) -> ClipboardRepresentation {
-    let kind = classify_uti(&uti, string_value.is_some());
-    let decoded_text = if let Some(text) = string_value {
-        Some(text)
-    } else if kind.is_textual() {
-        decode_text_bytes_lossy(&raw_bytes)
-    } else {
-        None
-    };
-
-    ClipboardRepresentation::new(uti, kind, hash_bytes(&raw_bytes), decoded_text, raw_bytes)
 }
 
 #[cfg(test)]

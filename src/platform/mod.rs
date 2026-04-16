@@ -1,31 +1,17 @@
-use anyhow::Result;
-
-use crate::model::ClipboardSnapshot;
-
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(not(target_os = "macos"))]
 mod unsupported;
 
+/// Capture the current clipboard into the internal snapshot model.
+///
+/// # Errors
+///
+/// Returns an error when clipboard capture is unsupported or the platform API fails.
 #[cfg(target_os = "macos")]
-/// Capture the current clipboard into the internal snapshot model.
-///
-/// # Errors
-///
-/// Returns an error if platform clipboard access fails.
-pub fn capture_snapshot() -> Result<ClipboardSnapshot> {
-    macos::capture_snapshot()
-}
-
+pub use self::macos::capture_snapshot;
 #[cfg(not(target_os = "macos"))]
-/// Capture the current clipboard into the internal snapshot model.
-///
-/// # Errors
-///
-/// Always returns an error on unsupported platforms.
-pub fn capture_snapshot() -> Result<ClipboardSnapshot> {
-    unsupported::capture_snapshot()
-}
+pub use self::unsupported::capture_snapshot;
 
 #[cfg(test)]
 mod tests {

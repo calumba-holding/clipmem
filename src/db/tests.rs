@@ -2,10 +2,10 @@ use anyhow::{Context, Result};
 use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::clipboard::{build_item, build_snapshot, hash_bytes};
-use crate::model::{ClipboardKind, ClipboardRepresentation, ClipboardSnapshot};
+use crate::clipboard::{build_item, build_representation, build_snapshot};
+use crate::model::{CaptureContext, ClipboardSnapshot};
 
-use super::Database;
+use super::{configure_connection, Database, SCHEMA};
 
 fn temp_db_path(test_name: &str) -> std::path::PathBuf {
     let timestamp = SystemTime::now()
@@ -19,19 +19,17 @@ fn temp_db_path(test_name: &str) -> std::path::PathBuf {
 }
 
 fn fake_snapshot(change_count: i64, text: &str) -> ClipboardSnapshot {
-    let representation = ClipboardRepresentation::new(
+    let representation = build_representation(
         "public.utf8-plain-text".to_string(),
-        ClipboardKind::PlainText,
-        hash_bytes(text.as_bytes()),
-        Some(text.to_string()),
+        None,
         text.as_bytes().to_vec(),
     );
 
     let item = build_item(0, vec![representation]);
     build_snapshot(
-        change_count,
-        Some("Test App".to_string()),
-        Some("com.example.test".to_string()),
+        CaptureContext::new(change_count)
+            .with_frontmost_app_name("Test App")
+            .with_frontmost_app_bundle_id("com.example.test"),
         vec![item],
     )
 }
@@ -153,5 +151,23 @@ fn search_propagates_non_syntax_fts_failures() -> Result<()> {
     db.conn.execute_batch("DROP TABLE snapshots_fts;")?;
 
     assert!(db.search_auto("git", 10).is_err());
+    Ok(())
+}
+
+#[test]
+fn schema_keeps_fts_index_and_triggers() {
+    assert!(SCHEMA.contains("CREATE VIRTUAL TABLE IF NOT EXISTS snapshots_fts"));
+    assert!(SCHEMA.contains("CREATE TRIGGER IF NOT EXISTS snapshots_ai"));
+    assert!(SCHEMA.contains("CREATE TRIGGER IF NOT EXISTS snapshots_ad"));
+    assert!(SCHEMA.contains("CREATE TRIGGER IF NOT EXISTS snapshots_au"));
+}
+
+#[test]
+fn configure_connection_enables_foreign_keys() -> Result<()> {
+    let conn = rusqlite::Connection::open_in_memory()?;
+    configure_connection(&conn)?;
+
+    let foreign_keys_enabled: i64 = conn.query_row("PRAGMA foreign_keys", [], |row| row.get(0))?;
+    assert_eq!(foreign_keys_enabled, 1);
     Ok(())
 }

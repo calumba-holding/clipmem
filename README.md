@@ -1,6 +1,6 @@
 # clipmem
 
-`clipmem` is a small Rust CLI for macOS that archives clipboard changes into SQLite, indexes the searchable text with FTS5, and gives you a local command that OpenClaw can call whenever it needs to recall something you copied.
+`clipmem` is a small Rust CLI for macOS that archives clipboard changes into SQLite, builds a searchable local clipboard history, and gives you a command that OpenClaw can call whenever it needs to recall something you copied.
 
 It captures the current `NSPasteboard` contents, stores every representation it can read for every pasteboard item, deduplicates identical clipboard snapshots by SHA-256 fingerprint, and records each observation as its own event.
 
@@ -13,16 +13,18 @@ For each clipboard change, `clipmem` stores:
 - every representation type exposed by that item
 - raw bytes for every representation
 - decoded text when the representation is text-like
-- a searchable text projection for FTS5
+- a searchable text projection that powers automatic FTS-or-literal lookup
 - the frontmost application at capture time as a best-effort source hint
 
 The database schema separates deduplicated `snapshots` from per-observation `capture_events`, so the same content copied ten times does not create ten full blob copies.
+
+The local archive is treated as sensitive state: the tool and installer tighten archive, log, and LaunchAgent file permissions to the current user on platforms that support POSIX modes.
 
 ## Current behaviour
 
 - Text, HTML, URLs, file URLs, RTF, JSON and XML are indexed when a reasonable text form is available.
 - Images, PDFs and opaque binary types are fully stored as blobs but are not OCR’d.
-- Search is lexical, backed by SQLite FTS5.
+- Default search is automatic: it uses SQLite FTS5 when that fits the query and falls back to literal substring matching for wildcard-like input, invalid FTS syntax, or zero FTS hits.
 - The watcher polls `NSPasteboard.changeCount` on a short interval.
 - The frontmost app is recorded as a practical hint, not a guaranteed pasteboard owner.
 
@@ -74,6 +76,8 @@ Search the archive:
 ```bash
 clipmem search "launchctl bootstrap" --limit 5
 clipmem search "that shell one-liner with rsync" --json
+clipmem search --mode literal "50%"
+clipmem search --mode fts "\"launchctl\" AND bootstrap"
 ```
 
 Show recent unique clipboard states from the last 24 hours:
@@ -162,7 +166,7 @@ The key tables are:
 
 - Binary payloads are stored exactly, but only text-like payloads are indexed.
 - RTF and HTML text extraction is intentionally lightweight.
-- Search is great for commands, code, URLs, notes, logs and copied prose. It is not semantic search.
+- Search is great for commands, code, URLs, notes, logs and copied prose. Use `--mode auto` for the default FTS-or-literal behavior, `--mode fts` for strict FTS5 queries, or `--mode literal` for exact substring matching. It is not semantic search.
 - This project is written to be easy to extend: adding export commands, embeddings, OCR, source-app heuristics or richer HTML parsing is straightforward.
 
 ## Example OpenClaw prompts once installed

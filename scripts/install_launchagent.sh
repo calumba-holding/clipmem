@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
@@ -15,12 +16,14 @@ LOG_DIR="${APP_SUPPORT_DIR}/logs"
 PLIST_PATH="$HOME/Library/LaunchAgents/io.openclaw.clipmem.watch.plist"
 TEMPLATE_PATH="${PROJECT_DIR}/extras/launchd/io.openclaw.clipmem.watch.plist.template"
 
-mkdir -p "$BIN_DIR" "$APP_SUPPORT_DIR" "$LOG_DIR" "$HOME/Library/LaunchAgents"
+install -d -m 700 "$BIN_DIR" "$APP_SUPPORT_DIR" "$LOG_DIR" "$HOME/Library/LaunchAgents"
 
 cargo install --path "$PROJECT_DIR" --root "$INSTALL_ROOT"
 
 STDOUT_PATH="${LOG_DIR}/clipmem.stdout.log"
 STDERR_PATH="${LOG_DIR}/clipmem.stderr.log"
+touch "$STDOUT_PATH" "$STDERR_PATH"
+chmod 600 "$STDOUT_PATH" "$STDERR_PATH"
 
 python3 - "$TEMPLATE_PATH" "$PLIST_PATH" "$BIN_PATH" "$DB_PATH" "$INTERVAL_MS" "$PROJECT_DIR" "$STDOUT_PATH" "$STDERR_PATH" <<'PY'
 import pathlib
@@ -44,6 +47,8 @@ for key, value in replacements.items():
 
 out_path.write_text(text)
 PY
+
+chmod 600 "$PLIST_PATH"
 
 LABEL="io.openclaw.clipmem.watch"
 

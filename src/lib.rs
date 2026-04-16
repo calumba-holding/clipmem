@@ -1,6 +1,7 @@
-pub mod app;
+pub(crate) mod app;
+pub mod cli;
 pub mod clipboard;
 pub mod db;
 pub mod model;
-pub mod paths;
-pub mod platform;
+pub(crate) mod paths;
+pub(crate) mod platform;

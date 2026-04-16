@@ -81,18 +81,21 @@ pub fn format_watch_capture_line(
 
 #[cfg(test)]
 mod tests {
-    use anyhow::{Context, Result};
+    use anyhow::Result;
 
     use super::{format_watch_capture_line, process_watch_snapshot, WatchState};
-    use crate::clipboard::build_snapshot;
+    use crate::clipboard::{build_item, build_representation, build_snapshot};
     use crate::db::Database;
-    use crate::model::{CaptureStoreResult, ClipboardSnapshot, SnapshotKind};
+    use crate::model::{CaptureContext, CaptureStoreResult};
 
     #[test]
     fn skip_initial_marks_first_change_as_seen_without_storing() -> Result<()> {
         let mut db = Database::open_in_memory()?;
         let mut state = WatchState::new();
-        let snapshot = build_snapshot(7, Some("Editor".to_string()), None, Vec::new());
+        let snapshot = build_snapshot(
+            CaptureContext::new(7).with_frontmost_app_name("Editor"),
+            Vec::new(),
+        );
 
         let result = process_watch_snapshot(&mut db, &snapshot, true, &mut state)?;
 
@@ -105,7 +108,10 @@ mod tests {
     fn repeated_change_counts_are_ignored_after_the_first_store() -> Result<()> {
         let mut db = Database::open_in_memory()?;
         let mut state = WatchState::new();
-        let snapshot = build_snapshot(7, Some("Editor".to_string()), None, Vec::new());
+        let snapshot = build_snapshot(
+            CaptureContext::new(7).with_frontmost_app_name("Editor"),
+            Vec::new(),
+        );
 
         let first = process_watch_snapshot(&mut db, &snapshot, false, &mut state)?;
         let second = process_watch_snapshot(&mut db, &snapshot, false, &mut state)?;
@@ -120,16 +126,26 @@ mod tests {
     fn changed_change_counts_store_new_events_for_existing_content() -> Result<()> {
         let mut db = Database::open_in_memory()?;
         let mut state = WatchState::new();
-        let first = build_snapshot(7, Some("Editor".to_string()), None, Vec::new());
-        let second = build_snapshot(8, Some("Editor".to_string()), None, Vec::new());
+        let first = build_snapshot(
+            CaptureContext::new(7).with_frontmost_app_name("Editor"),
+            Vec::new(),
+        );
+        let second = build_snapshot(
+            CaptureContext::new(8).with_frontmost_app_name("Editor"),
+            Vec::new(),
+        );
 
-        let first_store = process_watch_snapshot(&mut db, &first, false, &mut state)?
-            .context("expected first watch snapshot to store")?;
-        let second_store = process_watch_snapshot(&mut db, &second, false, &mut state)?
-            .context("expected second watch snapshot to store")?;
+        let first_store = anyhow::Context::context(
+            process_watch_snapshot(&mut db, &first, false, &mut state)?,
+            "expected first watch snapshot to store",
+        )?;
+        let second_store = anyhow::Context::context(
+            process_watch_snapshot(&mut db, &second, false, &mut state)?,
+            "expected second watch snapshot to store",
+        )?;
         let details = db
             .find_snapshot(first_store.snapshot_id, 10)?
-            .context("expected stored snapshot details")?;
+            .ok_or_else(|| anyhow::anyhow!("expected stored snapshot details"))?;
 
         assert_eq!(first_store.snapshot_id, second_store.snapshot_id);
         assert!(!second_store.inserted_new_snapshot);
@@ -139,18 +155,19 @@ mod tests {
 
     #[test]
     fn watch_log_line_includes_capture_context() {
-        let snapshot = ClipboardSnapshot {
-            change_count: 3,
-            frontmost_app_bundle_id: Some("com.example.Editor".to_string()),
-            frontmost_app_name: Some("Editor".to_string()),
-            fingerprint: "abc".to_string(),
-            snapshot_kind: SnapshotKind::PlainText,
-            preview_text: "hello world".to_string(),
-            search_text: "hello world".to_string(),
-            item_count: 1,
-            total_bytes: 11,
-            items: Vec::new(),
-        };
+        let snapshot = build_snapshot(
+            CaptureContext::new(3)
+                .with_frontmost_app_name("Editor")
+                .with_frontmost_app_bundle_id("com.example.Editor"),
+            vec![build_item(
+                0,
+                vec![build_representation(
+                    "public.utf8-plain-text".to_string(),
+                    None,
+                    b"hello world".to_vec(),
+                )],
+            )],
+        );
         let result = CaptureStoreResult {
             snapshot_id: 42,
             event_id: 7,

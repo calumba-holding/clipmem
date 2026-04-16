@@ -1,28 +1,34 @@
 use std::collections::{BTreeSet, HashSet};
 
 use crate::model::{
-    ClipboardItem, ClipboardKind, ClipboardRepresentation, ClipboardSnapshot, SnapshotKind,
+    CaptureContext, ClipboardItem, ClipboardKind, ClipboardRepresentation, ClipboardSnapshot,
+    SnapshotKind,
 };
 
-pub(crate) fn build_snapshot(
-    change_count: i64,
-    frontmost_app_name: Option<String>,
-    frontmost_app_bundle_id: Option<String>,
-    items: Vec<ClipboardItem>,
-) -> ClipboardSnapshot {
-    ClipboardSnapshot::new(
+/// Build a normalized snapshot from captured clipboard items and capture metadata.
+#[must_use]
+pub fn build_snapshot(capture: CaptureContext, items: Vec<ClipboardItem>) -> ClipboardSnapshot {
+    let (change_count, frontmost_app_bundle_id, frontmost_app_name) = capture.into_parts();
+    let item_count = items.len();
+    let total_bytes = items.iter().map(|item| item.total_bytes).sum();
+
+    ClipboardSnapshot {
         change_count,
-        frontmost_app_name,
         frontmost_app_bundle_id,
-        fingerprint_snapshot(&items),
-        snapshot_kind(&items),
-        join_item_previews(&items),
-        joined_search_text(&items),
+        frontmost_app_name,
+        fingerprint: fingerprint_snapshot(&items),
+        snapshot_kind: snapshot_kind(&items),
+        preview_text: join_item_previews(&items),
+        search_text: joined_search_text(&items),
+        item_count,
+        total_bytes,
         items,
-    )
+    }
 }
 
-pub(crate) fn build_item(
+/// Build a normalized item from its captured representations.
+#[must_use]
+pub fn build_item(
     item_index: usize,
     representations: Vec<ClipboardRepresentation>,
 ) -> ClipboardItem {
@@ -31,16 +37,34 @@ pub(crate) fn build_item(
     let primary_uti = primary.map(|rep| rep.uti.clone());
 
     let search_text = item_search_text(&representations);
-    let mut item = ClipboardItem::new(
+    let preview_text = preview_for_item(&search_text, &representations);
+    ClipboardItem::new(
         item_index,
         primary_kind,
         primary_uti,
-        String::new(),
+        preview_text,
         search_text,
         representations,
-    );
-    item.preview_text = preview_for_item(&item);
-    item
+    )
+}
+
+/// Build a normalized representation from the raw clipboard payload captured for a single UTI.
+#[must_use]
+pub fn build_representation(
+    uti: String,
+    string_value: Option<String>,
+    raw_bytes: Vec<u8>,
+) -> ClipboardRepresentation {
+    let kind = classify_uti(&uti, string_value.is_some());
+    let decoded_text = if let Some(text) = string_value {
+        Some(text)
+    } else if kind.is_textual() {
+        decode_text_bytes_lossy(&raw_bytes)
+    } else {
+        None
+    };
+
+    ClipboardRepresentation::new(uti, kind, hash_bytes(&raw_bytes), decoded_text, raw_bytes)
 }
 
 pub(crate) fn hash_bytes(bytes: &[u8]) -> String {
@@ -451,12 +475,12 @@ fn search_fragment_for_representation(rep: &ClipboardRepresentation) -> Option<S
     }
 }
 
-fn preview_for_item(item: &ClipboardItem) -> String {
-    if !item.search_text.is_empty() {
-        return truncate_chars(&item.search_text.replace('\n', " "), 200);
+fn preview_for_item(search_text: &str, representations: &[ClipboardRepresentation]) -> String {
+    if !search_text.is_empty() {
+        return truncate_chars(&search_text.replace('\n', " "), 200);
     }
 
-    if let Some(rep) = pick_primary_representation(&item.representations) {
+    if let Some(rep) = pick_primary_representation(representations) {
         return truncate_chars(
             &format!("[{} · {} bytes · {}]", rep.kind, rep.byte_len, rep.uti),
             200,
@@ -491,7 +515,7 @@ fn joined_search_text(items: &[ClipboardItem]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::SnapshotKind;
+    use crate::model::{CaptureContext, SnapshotKind};
 
     use super::{build_snapshot, decode_text_bytes_lossy, html_to_text_lossy, rtf_to_text_lossy};
 
@@ -534,7 +558,7 @@ mod tests {
 
     #[test]
     fn empty_snapshots_stay_structurally_empty() {
-        let snapshot = build_snapshot(7, None, None, Vec::new());
+        let snapshot = build_snapshot(CaptureContext::new(7), Vec::new());
 
         assert_eq!(snapshot.snapshot_kind, SnapshotKind::Empty);
         assert_eq!(snapshot.item_count, 0);

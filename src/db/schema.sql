@@ -1,7 +1,3 @@
-use anyhow::Result;
-use rusqlite::Connection;
-
-pub(super) const SCHEMA: &str = r"
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS snapshots (
@@ -10,29 +6,28 @@ CREATE TABLE IF NOT EXISTS snapshots (
     snapshot_kind TEXT NOT NULL,
     preview_text  TEXT NOT NULL,
     search_text   TEXT NOT NULL,
-    item_count    INTEGER NOT NULL,
-    total_bytes   INTEGER NOT NULL,
+    item_count    INTEGER NOT NULL CHECK (item_count >= 0),
+    total_bytes   INTEGER NOT NULL CHECK (total_bytes >= 0),
     created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS snapshot_items (
     snapshot_id   INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
-    item_index    INTEGER NOT NULL,
+    item_index    INTEGER NOT NULL CHECK (item_index >= 0),
     primary_kind  TEXT NOT NULL,
     primary_uti   TEXT,
     preview_text  TEXT NOT NULL,
     search_text   TEXT NOT NULL,
-    total_bytes   INTEGER NOT NULL,
+    total_bytes   INTEGER NOT NULL CHECK (total_bytes >= 0),
     PRIMARY KEY (snapshot_id, item_index)
 );
 
 CREATE TABLE IF NOT EXISTS item_representations (
     snapshot_id    INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
-    item_index     INTEGER NOT NULL,
+    item_index     INTEGER NOT NULL CHECK (item_index >= 0),
     uti            TEXT NOT NULL,
-    classification TEXT NOT NULL,
-    is_text        INTEGER NOT NULL CHECK (is_text IN (0, 1)),
-    byte_len       INTEGER NOT NULL,
+    kind           TEXT NOT NULL,
+    byte_len       INTEGER NOT NULL CHECK (byte_len >= 0),
     raw_sha256     TEXT NOT NULL,
     text_value     TEXT,
     blob_value     BLOB NOT NULL,
@@ -43,7 +38,7 @@ CREATE TABLE IF NOT EXISTS capture_events (
     id                     INTEGER PRIMARY KEY,
     snapshot_id            INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
     observed_at            TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    change_count           INTEGER NOT NULL,
+    change_count           INTEGER NOT NULL CHECK (change_count >= 0),
     frontmost_app_bundle_id TEXT,
     frontmost_app_name     TEXT
 );
@@ -81,39 +76,3 @@ CREATE TRIGGER IF NOT EXISTS snapshots_au AFTER UPDATE ON snapshots BEGIN
     INSERT INTO snapshots_fts(rowid, search_text, preview_text)
     VALUES (new.id, new.search_text, new.preview_text);
 END;
-";
-
-pub(super) fn configure_connection(conn: &Connection) -> Result<()> {
-    conn.pragma_update(None, "journal_mode", "WAL")?;
-    conn.pragma_update(None, "synchronous", "NORMAL")?;
-    conn.pragma_update(None, "foreign_keys", "ON")?;
-    conn.pragma_update(None, "temp_store", "MEMORY")?;
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use anyhow::Result;
-    use rusqlite::Connection;
-
-    use super::{configure_connection, SCHEMA};
-
-    #[test]
-    fn schema_keeps_fts_index_and_triggers() {
-        assert!(SCHEMA.contains("CREATE VIRTUAL TABLE IF NOT EXISTS snapshots_fts"));
-        assert!(SCHEMA.contains("CREATE TRIGGER IF NOT EXISTS snapshots_ai"));
-        assert!(SCHEMA.contains("CREATE TRIGGER IF NOT EXISTS snapshots_ad"));
-        assert!(SCHEMA.contains("CREATE TRIGGER IF NOT EXISTS snapshots_au"));
-    }
-
-    #[test]
-    fn configure_connection_enables_foreign_keys() -> Result<()> {
-        let conn = Connection::open_in_memory()?;
-        configure_connection(&conn)?;
-
-        let foreign_keys_enabled: i64 =
-            conn.query_row("PRAGMA foreign_keys", [], |row| row.get(0))?;
-        assert_eq!(foreign_keys_enabled, 1);
-        Ok(())
-    }
-}
