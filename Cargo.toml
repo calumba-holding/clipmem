@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 description = "macOS clipboard memory backed by SQLite and searchable from OpenClaw"
 license = "MIT"
+categories = ["command-line-utilities", "database"]
+keywords = ["clipboard", "sqlite", "macos", "cli", "search"]
 
 [dependencies]
 anyhow = "1.0"

@@ -1,27 +1,24 @@
-mod db;
-mod model;
-mod platform;
-mod util;
-
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
-use clap::{Args, Parser, Subcommand};
+use anyhow::{Context, Result};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use clipmem::app::{format_watch_capture_line, process_watch_snapshot, WatchState};
+use clipmem::db::{Database, SearchMode};
+use clipmem::model::{
+    CaptureStoreResult, ClipboardSnapshot, DoctorReport, SearchHit, SnapshotDetails,
+};
+use clipmem::paths::default_db_path;
+use clipmem::platform::capture_snapshot;
 use serde::Serialize;
-
-use crate::db::Database;
-use crate::model::{CaptureStoreResult, ClipboardSnapshot, DoctorReport, SearchHit, SnapshotDetails};
-use crate::platform::capture_snapshot;
-use crate::util::default_db_path;
 
 #[derive(Debug, Parser)]
 #[command(name = "clipmem")]
 #[command(version)]
 #[command(about = "macOS clipboard memory backed by SQLite")]
 struct Cli {
-    /// Path to the SQLite database.
+    /// Path to the `SQLite` database.
     #[arg(long, global = true)]
     db: Option<PathBuf>,
 
@@ -41,7 +38,7 @@ enum Command {
     Recent(RecentArgs),
     /// Show a stored snapshot in detail.
     Get(GetArgs),
-    /// Print SQLite and FTS5 diagnostics.
+    /// Print `SQLite` and FTS5 diagnostics.
     Doctor(DoctorArgs),
 }
 
@@ -69,8 +66,12 @@ struct CaptureOnceArgs {
 
 #[derive(Debug, Args)]
 struct SearchArgs {
-    /// SQLite FTS5 query string.
+    /// Query string for the selected search mode.
     query: String,
+
+    /// Search mode to execute.
+    #[arg(long, value_enum, default_value_t = SearchModeArg::Auto)]
+    mode: SearchModeArg,
 
     /// Maximum number of results.
     #[arg(long, default_value_t = 10)]
@@ -79,6 +80,23 @@ struct SearchArgs {
     /// Emit results as JSON.
     #[arg(long, default_value_t = false)]
     json: bool,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum SearchModeArg {
+    Auto,
+    Fts,
+    Literal,
+}
+
+impl From<SearchModeArg> for SearchMode {
+    fn from(value: SearchModeArg) -> Self {
+        match value {
+            SearchModeArg::Auto => Self::Auto,
+            SearchModeArg::Fts => Self::Fts,
+            SearchModeArg::Literal => Self::Literal,
+        }
+    }
 }
 
 #[derive(Debug, Args)]
@@ -128,82 +146,46 @@ fn main() -> Result<()> {
     let db_path = cli.db.unwrap_or_else(default_db_path);
 
     match cli.command {
-        Command::Watch(args) => watch(db_path, args),
-        Command::CaptureOnce(args) => capture_once(db_path, args),
-        Command::Search(args) => search(db_path, args),
-        Command::Recent(args) => recent(db_path, args),
-        Command::Get(args) => get_snapshot(db_path, args),
-        Command::Doctor(args) => doctor(db_path, args),
+        Command::Watch(args) => watch(&db_path, &args),
+        Command::CaptureOnce(args) => capture_once(&db_path, &args),
+        Command::Search(args) => search(&db_path, &args),
+        Command::Recent(args) => recent(&db_path, &args),
+        Command::Get(args) => show_snapshot(&db_path, &args),
+        Command::Doctor(args) => doctor(&db_path, &args),
     }
 }
 
-fn watch(db_path: PathBuf, args: WatchArgs) -> Result<()> {
-    let mut db = Database::open(&db_path)
+fn watch(db_path: &Path, args: &WatchArgs) -> Result<()> {
+    let mut db = Database::open_or_init(db_path)
         .with_context(|| format!("failed to open database at {}", db_path.display()))?;
-
     let interval_ms = args.interval_ms.max(50);
-    let mut last_handled_change_count: Option<i64> = None;
-    let mut first_loop = true;
+    let mut state = WatchState::new();
 
     loop {
-        let snapshot = match capture_snapshot() {
-            Ok(snapshot) => snapshot,
-            Err(err) => {
-                eprintln!("capture failed: {err:#}");
-                thread::sleep(Duration::from_millis(interval_ms));
-                continue;
-            }
-        };
-
-        if first_loop && args.skip_initial {
-            last_handled_change_count = Some(snapshot.change_count);
-            first_loop = false;
-            thread::sleep(Duration::from_millis(interval_ms));
-            continue;
-        }
-        first_loop = false;
-
-        if last_handled_change_count == Some(snapshot.change_count) {
-            thread::sleep(Duration::from_millis(interval_ms));
-            continue;
-        }
-
-        let result = match db.store_capture(&snapshot) {
-            Ok(result) => result,
-            Err(err) => {
-                eprintln!("database write failed: {err:#}");
-                thread::sleep(Duration::from_millis(interval_ms));
-                continue;
-            }
-        };
-
-        last_handled_change_count = Some(snapshot.change_count);
-
-        if !args.quiet {
-            let source = snapshot
-                .frontmost_app_name
-                .as_deref()
-                .or(snapshot.frontmost_app_bundle_id.as_deref())
-                .unwrap_or("unknown app");
-
-            println!(
-                "event={} snapshot={} {} kind={} bytes={} source={} preview={}",
-                result.event_id,
-                result.snapshot_id,
-                if result.inserted_new_snapshot { "new" } else { "seen" },
-                snapshot.snapshot_kind,
-                snapshot.total_bytes,
-                source,
-                snapshot.preview_text
-            );
+        if let Err(err) = run_watch_iteration(&mut db, args, &mut state) {
+            eprintln!("{err:#}");
         }
 
         thread::sleep(Duration::from_millis(interval_ms));
     }
 }
 
-fn capture_once(db_path: PathBuf, args: CaptureOnceArgs) -> Result<()> {
-    let mut db = Database::open(&db_path)
+fn run_watch_iteration(db: &mut Database, args: &WatchArgs, state: &mut WatchState) -> Result<()> {
+    let snapshot = capture_snapshot().context("capture failed")?;
+    let result = process_watch_snapshot(db, &snapshot, args.skip_initial, state)
+        .context("database write failed")?;
+
+    if !args.quiet {
+        if let Some(result) = result {
+            println!("{}", format_watch_capture_line(&snapshot, &result));
+        }
+    }
+
+    Ok(())
+}
+
+fn capture_once(db_path: &Path, args: &CaptureOnceArgs) -> Result<()> {
+    let mut db = Database::open_or_init(db_path)
         .with_context(|| format!("failed to open database at {}", db_path.display()))?;
     let snapshot = capture_snapshot()?;
     let store = db.store_capture(&snapshot)?;
@@ -235,10 +217,14 @@ fn capture_once(db_path: PathBuf, args: CaptureOnceArgs) -> Result<()> {
     Ok(())
 }
 
-fn search(db_path: PathBuf, args: SearchArgs) -> Result<()> {
-    let db = Database::open(&db_path)
+fn search(db_path: &Path, args: &SearchArgs) -> Result<()> {
+    let db = Database::open_existing(db_path)
         .with_context(|| format!("failed to open database at {}", db_path.display()))?;
-    let hits = db.search(&args.query, args.limit)?;
+    let hits = match SearchMode::from(args.mode) {
+        SearchMode::Auto => db.search_auto(&args.query, args.limit)?,
+        SearchMode::Fts => db.search_fts(&args.query, args.limit)?,
+        SearchMode::Literal => db.search_literal(&args.query, args.limit)?,
+    };
 
     if args.json {
         print_json(&hits)?;
@@ -249,8 +235,8 @@ fn search(db_path: PathBuf, args: SearchArgs) -> Result<()> {
     Ok(())
 }
 
-fn recent(db_path: PathBuf, args: RecentArgs) -> Result<()> {
-    let db = Database::open(&db_path)
+fn recent(db_path: &Path, args: &RecentArgs) -> Result<()> {
+    let db = Database::open_existing(db_path)
         .with_context(|| format!("failed to open database at {}", db_path.display()))?;
     let hits = db.recent(args.limit, args.hours)?;
 
@@ -263,11 +249,11 @@ fn recent(db_path: PathBuf, args: RecentArgs) -> Result<()> {
     Ok(())
 }
 
-fn get_snapshot(db_path: PathBuf, args: GetArgs) -> Result<()> {
-    let db = Database::open(&db_path)
+fn show_snapshot(db_path: &Path, args: &GetArgs) -> Result<()> {
+    let db = Database::open_existing(db_path)
         .with_context(|| format!("failed to open database at {}", db_path.display()))?;
     let snapshot = db
-        .get_snapshot(args.snapshot_id, args.events)?
+        .find_snapshot(args.snapshot_id, args.events)?
         .with_context(|| format!("snapshot {} was not found", args.snapshot_id))?;
 
     if args.json {
@@ -279,8 +265,8 @@ fn get_snapshot(db_path: PathBuf, args: GetArgs) -> Result<()> {
     Ok(())
 }
 
-fn doctor(db_path: PathBuf, args: DoctorArgs) -> Result<()> {
-    let db = Database::open(&db_path)
+fn doctor(db_path: &Path, args: &DoctorArgs) -> Result<()> {
+    let db = Database::open_existing(db_path)
         .with_context(|| format!("failed to open database at {}", db_path.display()))?;
     let report = db.doctor()?;
 
@@ -373,10 +359,10 @@ fn print_snapshot(snapshot: &SnapshotDetails) {
         for rep in &item.representations {
             println!(
                 "  - {} · kind={} · {} bytes · sha256={}",
-                rep.uti, rep.classification, rep.byte_len, rep.raw_sha256
+                rep.uti, rep.kind, rep.byte_len, rep.raw_sha256
             );
             if let Some(text) = rep.text_value.as_deref() {
-                println!("    text: {}", text);
+                println!("    text: {text}");
             }
         }
         println!();
@@ -402,14 +388,66 @@ fn print_doctor(report: &DoctorReport) {
     println!("database: {}", report.db_path);
     println!("sqlite version: {}", report.sqlite_version);
     println!("journal mode: {}", report.journal_mode);
-    println!("fts5 compile option present: {}", report.fts5_compile_option_present);
-    println!("fts5 temp table creation works: {}", report.fts5_create_virtual_table_ok);
+    println!(
+        "fts5 compile option present: {}",
+        report.fts5_compile_option_present
+    );
+    println!(
+        "fts5 temp table creation works: {}",
+        report.fts5_create_virtual_table_ok
+    );
 
     if !report.compile_options.is_empty() {
         println!();
         println!("compile options:");
         for opt in &report.compile_options {
             println!("  {opt}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use clap::Parser;
+
+    use super::{Cli, Command};
+
+    #[test]
+    fn watch_command_parses_global_db_and_runtime_flags() {
+        let cli = Cli::parse_from([
+            "clipmem",
+            "--db",
+            "/tmp/clipmem.sqlite3",
+            "watch",
+            "--interval-ms",
+            "250",
+            "--quiet",
+            "--skip-initial",
+        ]);
+
+        assert_eq!(cli.db, Some(PathBuf::from("/tmp/clipmem.sqlite3")));
+        match cli.command {
+            Command::Watch(args) => {
+                assert_eq!(args.interval_ms, 250);
+                assert!(args.quiet);
+                assert!(args.skip_initial);
+            }
+            other => panic!("expected watch command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn search_command_parses_explicit_mode() {
+        let cli = Cli::parse_from(["clipmem", "search", "--mode", "literal", "50%"]);
+
+        match cli.command {
+            Command::Search(args) => {
+                assert!(matches!(args.mode, super::SearchModeArg::Literal));
+                assert_eq!(args.query, "50%");
+            }
+            other => panic!("expected search command, got {other:?}"),
         }
     }
 }
