@@ -180,6 +180,12 @@ pub fn decode_textish_bytes(bytes: &[u8]) -> Option<String> {
         return Some(String::new());
     }
 
+    if let Some(little_endian) = detect_utf16_endianness(bytes) {
+        if let Some(text) = decode_utf16_with_endian(bytes, little_endian) {
+            return Some(text);
+        }
+    }
+
     if let Ok(text) = std::str::from_utf8(bytes) {
         return Some(text.to_string());
     }
@@ -193,6 +199,42 @@ pub fn decode_textish_bytes(bytes: &[u8]) -> Option<String> {
     }
 
     None
+}
+
+fn detect_utf16_endianness(bytes: &[u8]) -> Option<bool> {
+    if bytes.len() < 2 || bytes.len() % 2 != 0 {
+        return None;
+    }
+
+    if bytes.starts_with(&[0xff, 0xfe]) {
+        return Some(true);
+    }
+    if bytes.starts_with(&[0xfe, 0xff]) {
+        return Some(false);
+    }
+
+    let lane_len = bytes.len() / 2;
+    let even_nul_ratio = nul_ratio_for_lane(bytes, 0, lane_len);
+    let odd_nul_ratio = nul_ratio_for_lane(bytes, 1, lane_len);
+
+    if even_nul_ratio >= 0.6 && odd_nul_ratio <= 0.2 {
+        Some(false)
+    } else if odd_nul_ratio >= 0.6 && even_nul_ratio <= 0.2 {
+        Some(true)
+    } else {
+        None
+    }
+}
+
+fn nul_ratio_for_lane(bytes: &[u8], lane: usize, lane_len: usize) -> f32 {
+    let nul_count = bytes
+        .iter()
+        .skip(lane)
+        .step_by(2)
+        .filter(|&&byte| byte == 0)
+        .count();
+
+    nul_count as f32 / lane_len as f32
 }
 
 fn decode_utf16(bytes: &[u8]) -> Option<String> {
@@ -446,6 +488,22 @@ mod tests {
         let bytes = "hello"
             .encode_utf16()
             .flat_map(|w| w.to_le_bytes())
+            .collect::<Vec<_>>();
+        assert_eq!(decode_textish_bytes(&bytes).as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn utf16le_bom_decoding_works() {
+        let mut bytes = vec![0xff, 0xfe];
+        bytes.extend("hello".encode_utf16().flat_map(|w| w.to_le_bytes()));
+        assert_eq!(decode_textish_bytes(&bytes).as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn utf16be_decoding_works() {
+        let bytes = "hello"
+            .encode_utf16()
+            .flat_map(|w| w.to_be_bytes())
             .collect::<Vec<_>>();
         assert_eq!(decode_textish_bytes(&bytes).as_deref(), Some("hello"));
     }

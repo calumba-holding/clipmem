@@ -194,7 +194,10 @@ impl Database {
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>> {
         let limit = sanitise_limit(limit);
 
-        let hits = self.search_fts(query, limit).or_else(|_| self.search_like(query, limit))?;
+        // Invalid FTS syntax falls back to literal substring matching.
+        let hits = self
+            .search_fts(query, limit)
+            .or_else(|_| self.search_like(query, limit))?;
         if hits.is_empty() {
             self.search_like(query, limit)
         } else {
@@ -496,7 +499,7 @@ impl Database {
     }
 
     fn search_like(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>> {
-        let like = format!("%{}%", query);
+        let like = format!("%{}%", escape_like_pattern(query));
         let sql = r#"
             SELECT
                 s.id,
@@ -524,7 +527,7 @@ impl Database {
                 s.item_count
             FROM snapshots s
             LEFT JOIN capture_events e ON e.snapshot_id = s.id
-            WHERE s.search_text LIKE ?1 OR s.preview_text LIKE ?1
+            WHERE s.search_text LIKE ?1 ESCAPE '\' OR s.preview_text LIKE ?1 ESCAPE '\'
             GROUP BY s.id
             ORDER BY last_observed_at DESC, s.id DESC
             LIMIT ?2
@@ -558,6 +561,13 @@ fn configure_connection(conn: &Connection) -> Result<()> {
     conn.pragma_update(None, "foreign_keys", "ON")?;
     conn.pragma_update(None, "temp_store", "MEMORY")?;
     Ok(())
+}
+
+fn escape_like_pattern(query: &str) -> String {
+    query
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_")
 }
 
 fn insert_item(tx: &rusqlite::Transaction<'_>, snapshot_id: i64, item: &ClipboardItem) -> Result<()> {
@@ -691,6 +701,78 @@ mod tests {
         assert_eq!(details.capture_count, 2);
         assert_eq!(details.items.len(), 1);
 
+        Ok(())
+    }
+
+    #[test]
+    fn search_like_treats_percent_as_literal() -> Result<()> {
+        let mut db = Database::open_in_memory()?;
+
+        db.store_capture(&fake_snapshot(1, "Discount: 50 percent off"))?;
+        db.store_capture(&fake_snapshot(2, "Discount: 50%"))?;
+
+        let hits = db.search_like("50%", 10)?;
+        let previews: Vec<_> = hits.iter().map(|hit| hit.preview_text.as_str()).collect();
+
+        assert_eq!(previews, vec!["Discount: 50%"]);
+        Ok(())
+    }
+
+    #[test]
+    fn search_like_treats_underscore_as_literal() -> Result<()> {
+        let mut db = Database::open_in_memory()?;
+
+        db.store_capture(&fake_snapshot(1, "configXtest"))?;
+        db.store_capture(&fake_snapshot(2, "config test"))?;
+        db.store_capture(&fake_snapshot(3, "config_test"))?;
+
+        let hits = db.search_like("config_test", 10)?;
+        let previews: Vec<_> = hits.iter().map(|hit| hit.preview_text.as_str()).collect();
+
+        assert_eq!(previews, vec!["config_test"]);
+        Ok(())
+    }
+
+    #[test]
+    fn search_like_treats_escape_character_as_literal() -> Result<()> {
+        let mut db = Database::open_in_memory()?;
+
+        db.store_capture(&fake_snapshot(1, r"logs\2024\archive"))?;
+        db.store_capture(&fake_snapshot(2, "logs/2024/archive"))?;
+
+        let hits = db.search_like(r"logs\2024", 10)?;
+        let previews: Vec<_> = hits.iter().map(|hit| hit.preview_text.as_str()).collect();
+
+        assert_eq!(previews, vec![r"logs\2024\archive"]);
+        Ok(())
+    }
+
+    #[test]
+    fn search_percent_literal_returns_only_exact_matches() -> Result<()> {
+        let mut db = Database::open_in_memory()?;
+
+        db.store_capture(&fake_snapshot(1, "Discount: 50 percent off"))?;
+        db.store_capture(&fake_snapshot(2, "Discount: 50%"))?;
+
+        let hits = db.search("50%", 10)?;
+        let previews: Vec<_> = hits.iter().map(|hit| hit.preview_text.as_str()).collect();
+
+        assert_eq!(previews, vec!["Discount: 50%"]);
+        Ok(())
+    }
+
+    #[test]
+    fn search_underscore_literal_returns_only_exact_matches() -> Result<()> {
+        let mut db = Database::open_in_memory()?;
+
+        db.store_capture(&fake_snapshot(1, "configXtest"))?;
+        db.store_capture(&fake_snapshot(2, "config test"))?;
+        db.store_capture(&fake_snapshot(3, "config_test"))?;
+
+        let hits = db.search("config_test", 10)?;
+        let previews: Vec<_> = hits.iter().map(|hit| hit.preview_text.as_str()).collect();
+
+        assert_eq!(previews, vec!["config_test"]);
         Ok(())
     }
 }
