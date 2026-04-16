@@ -37,18 +37,18 @@ pub fn process_watch_snapshot(
     state: &mut WatchState,
 ) -> Result<Option<CaptureStoreResult>> {
     if state.first_loop && skip_initial {
-        state.last_handled_change_count = Some(snapshot.change_count);
+        state.last_handled_change_count = Some(snapshot.change_count());
         state.first_loop = false;
         return Ok(None);
     }
     state.first_loop = false;
 
-    if state.last_handled_change_count == Some(snapshot.change_count) {
+    if state.last_handled_change_count == Some(snapshot.change_count()) {
         return Ok(None);
     }
 
     let result = db.store_capture(snapshot)?;
-    state.last_handled_change_count = Some(snapshot.change_count);
+    state.last_handled_change_count = Some(snapshot.change_count());
     Ok(Some(result))
 }
 
@@ -58,24 +58,23 @@ pub fn format_watch_capture_line(
     result: &CaptureStoreResult,
 ) -> String {
     let source = snapshot
-        .frontmost_app_name
-        .as_deref()
-        .or(snapshot.frontmost_app_bundle_id.as_deref())
+        .frontmost_app_name()
+        .or(snapshot.frontmost_app_bundle_id())
         .unwrap_or("unknown app");
 
     format!(
         "event={} snapshot={} {} kind={} bytes={} source={} preview={}",
-        result.event_id,
-        result.snapshot_id,
-        if result.inserted_new_snapshot {
+        result.event_id(),
+        result.snapshot_id(),
+        if result.inserted_new_snapshot() {
             "new"
         } else {
             "seen"
         },
-        snapshot.snapshot_kind,
-        snapshot.total_bytes,
+        snapshot.snapshot_kind(),
+        snapshot.total_bytes(),
         source,
-        snapshot.preview_text
+        snapshot.preview_text()
     )
 }
 
@@ -144,12 +143,12 @@ mod tests {
             "expected second watch snapshot to store",
         )?;
         let details = db
-            .find_snapshot(first_store.snapshot_id, 10)?
+            .find_snapshot(first_store.snapshot_id(), 10)?
             .ok_or_else(|| anyhow::anyhow!("expected stored snapshot details"))?;
 
-        assert_eq!(first_store.snapshot_id, second_store.snapshot_id);
-        assert!(!second_store.inserted_new_snapshot);
-        assert_eq!(details.capture_count, 2);
+        assert_eq!(first_store.snapshot_id(), second_store.snapshot_id());
+        assert!(!second_store.inserted_new_snapshot());
+        assert_eq!(details.capture_count(), 2);
         Ok(())
     }
 

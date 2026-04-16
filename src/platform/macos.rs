@@ -91,8 +91,8 @@ mod tests {
         let representation =
             build_representation("public.utf8-plain-text".to_string(), None, bytes);
 
-        assert_eq!(representation.kind, ClipboardKind::PlainText);
-        assert_eq!(representation.text_value.as_deref(), Some("hello"));
+        assert_eq!(representation.kind(), ClipboardKind::PlainText);
+        assert_eq!(representation.text_value(), Some("hello"));
         assert!(representation.is_text());
     }
 
@@ -101,8 +101,8 @@ mod tests {
         let representation =
             build_representation("public.png".to_string(), None, vec![0x89, b'P', b'N', b'G']);
 
-        assert_eq!(representation.kind, ClipboardKind::Image);
-        assert_eq!(representation.text_value, None);
+        assert_eq!(representation.kind(), ClipboardKind::Image);
+        assert_eq!(representation.text_value(), None);
         assert!(!representation.is_text());
     }
 }

@@ -560,9 +560,9 @@ mod tests {
     fn empty_snapshots_stay_structurally_empty() {
         let snapshot = build_snapshot(CaptureContext::new(7), Vec::new());
 
-        assert_eq!(snapshot.snapshot_kind, SnapshotKind::Empty);
-        assert_eq!(snapshot.item_count, 0);
-        assert!(snapshot.items.is_empty());
-        assert_eq!(snapshot.preview_text, "[empty clipboard]");
+        assert_eq!(snapshot.snapshot_kind(), SnapshotKind::Empty);
+        assert_eq!(snapshot.item_count(), 0);
+        assert!(snapshot.items().is_empty());
+        assert_eq!(snapshot.preview_text(), "[empty clipboard]");
     }
 }

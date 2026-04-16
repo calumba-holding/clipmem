@@ -4,9 +4,9 @@ use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use clipmem::clipboard::{build_item, build_representation, build_snapshot};
 use clipmem::db::Database;
-use clipmem::model::{CaptureContext, ClipboardKind, ClipboardSnapshot, SnapshotKind};
+use clipmem::model::{ClipboardKind, ClipboardSnapshot, SnapshotKind};
+use clipmem::testing::{build_item, build_representation, build_snapshot, CaptureContext};
 
 fn temp_db_path(test_name: &str) -> PathBuf {
     let timestamp = SystemTime::now()
@@ -63,26 +63,26 @@ fn public_database_api_round_trips_a_stored_snapshot() -> Result<()> {
     let db = Database::open_existing(&path)?;
     let hits = db.search_auto("git", 10)?;
     let details = db
-        .find_snapshot(stored.snapshot_id, 10)?
+        .find_snapshot(stored.snapshot_id(), 10)?
         .context("expected stored snapshot details")?;
 
     assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0].snapshot_id, stored.snapshot_id);
-    assert_eq!(details.capture_count, 1);
-    assert_eq!(details.preview_text, snapshot.preview_text());
-    assert_eq!(details.snapshot_kind, SnapshotKind::PlainText);
-    assert_eq!(details.items.len(), 1);
-    assert_eq!(details.items[0].primary_kind, ClipboardKind::PlainText);
+    assert_eq!(hits[0].snapshot_id(), stored.snapshot_id());
+    assert_eq!(details.capture_count(), 1);
+    assert_eq!(details.preview_text(), snapshot.preview_text());
+    assert_eq!(details.snapshot_kind(), SnapshotKind::PlainText);
+    assert_eq!(details.items().len(), 1);
+    assert_eq!(details.items()[0].primary_kind(), ClipboardKind::PlainText);
     assert_eq!(
-        details.items[0].representations[0].kind,
+        details.items()[0].representations()[0].kind(),
         ClipboardKind::PlainText
     );
     assert_eq!(
-        details.items[0].representations[0].text_value.as_deref(),
+        details.items()[0].representations()[0].text_value(),
         Some("git clone https://example.com/repo")
     );
-    assert_eq!(details.total_bytes, snapshot.total_bytes());
-    assert_eq!(details.item_count, snapshot.item_count());
+    assert_eq!(details.total_bytes(), snapshot.total_bytes());
+    assert_eq!(details.item_count(), snapshot.item_count());
 
     cleanup_db(&path);
     Ok(())

@@ -185,7 +185,7 @@ impl Database {
     ///
     /// Returns an error if the FTS query cannot be prepared or executed.
     pub fn search_fts(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>> {
-        let limit = usize_to_i64(limit)?;
+        let limit = usize_to_i64(sanitise_limit(limit))?;
         let sql = search_hit_query(
             "COALESCE(snippet(snapshots_fts, 0, '⟦', '⟧', ' … ', 24), s.preview_text)",
             Some("bm25(snapshots_fts)"),
@@ -210,7 +210,7 @@ impl Database {
     ///
     /// Returns an error if the literal query cannot be prepared or executed.
     pub fn search_literal(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>> {
-        let limit = usize_to_i64(limit)?;
+        let limit = usize_to_i64(sanitise_limit(limit))?;
         let like = format!("%{}%", escape_like_pattern(query));
         let sql = search_hit_query(
             "s.preview_text",

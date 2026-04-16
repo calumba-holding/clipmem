@@ -230,24 +230,24 @@ pub struct CaptureContext {
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize)]
 pub struct ClipboardItem {
-    pub item_index: usize,
-    pub primary_kind: ClipboardKind,
-    pub primary_uti: Option<String>,
-    pub preview_text: String,
-    pub search_text: String,
-    pub total_bytes: usize,
-    pub representations: Vec<ClipboardRepresentation>,
+    pub(crate) item_index: usize,
+    pub(crate) primary_kind: ClipboardKind,
+    pub(crate) primary_uti: Option<String>,
+    pub(crate) preview_text: String,
+    pub(crate) search_text: String,
+    pub(crate) total_bytes: usize,
+    pub(crate) representations: Vec<ClipboardRepresentation>,
 }
 
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct ClipboardRepresentation {
-    pub uti: String,
-    pub kind: ClipboardKind,
-    pub byte_len: usize,
-    pub raw_sha256: String,
-    pub text_value: Option<String>,
-    pub raw_bytes: Vec<u8>,
+    pub(crate) uti: String,
+    pub(crate) kind: ClipboardKind,
+    pub(crate) byte_len: usize,
+    pub(crate) raw_sha256: String,
+    pub(crate) text_value: Option<String>,
+    pub(crate) raw_bytes: Vec<u8>,
 }
 
 impl Serialize for ClipboardRepresentation {
@@ -268,72 +268,72 @@ impl Serialize for ClipboardRepresentation {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CaptureStoreResult {
-    pub snapshot_id: i64,
-    pub event_id: i64,
-    pub inserted_new_snapshot: bool,
+    pub(crate) snapshot_id: i64,
+    pub(crate) event_id: i64,
+    pub(crate) inserted_new_snapshot: bool,
 }
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize)]
 pub struct SearchHit {
-    pub snapshot_id: i64,
-    pub sha256: String,
-    pub snapshot_kind: SnapshotKind,
-    pub preview_text: String,
-    pub snippet: String,
-    pub capture_count: usize,
-    pub last_observed_at: String,
-    pub last_frontmost_app_name: Option<String>,
-    pub last_frontmost_app_bundle_id: Option<String>,
-    pub total_bytes: usize,
-    pub item_count: usize,
-    pub score: Option<f64>,
+    pub(crate) snapshot_id: i64,
+    pub(crate) sha256: String,
+    pub(crate) snapshot_kind: SnapshotKind,
+    pub(crate) preview_text: String,
+    pub(crate) snippet: String,
+    pub(crate) capture_count: usize,
+    pub(crate) last_observed_at: String,
+    pub(crate) last_frontmost_app_name: Option<String>,
+    pub(crate) last_frontmost_app_bundle_id: Option<String>,
+    pub(crate) total_bytes: usize,
+    pub(crate) item_count: usize,
+    pub(crate) score: Option<f64>,
 }
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize)]
 pub struct CaptureEvent {
-    pub event_id: i64,
-    pub observed_at: String,
-    pub change_count: i64,
-    pub frontmost_app_name: Option<String>,
-    pub frontmost_app_bundle_id: Option<String>,
+    pub(crate) event_id: i64,
+    pub(crate) observed_at: String,
+    pub(crate) change_count: i64,
+    pub(crate) frontmost_app_name: Option<String>,
+    pub(crate) frontmost_app_bundle_id: Option<String>,
 }
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize)]
 pub struct SnapshotDetails {
-    pub snapshot_id: i64,
-    pub sha256: String,
-    pub snapshot_kind: SnapshotKind,
-    pub preview_text: String,
-    pub search_text: String,
-    pub item_count: usize,
-    pub total_bytes: usize,
-    pub created_at: String,
-    pub capture_count: usize,
-    pub first_observed_at: String,
-    pub last_observed_at: String,
-    pub last_frontmost_app_name: Option<String>,
-    pub last_frontmost_app_bundle_id: Option<String>,
-    pub recent_events: Vec<CaptureEvent>,
-    pub items: Vec<ClipboardItem>,
+    pub(crate) snapshot_id: i64,
+    pub(crate) sha256: String,
+    pub(crate) snapshot_kind: SnapshotKind,
+    pub(crate) preview_text: String,
+    pub(crate) search_text: String,
+    pub(crate) item_count: usize,
+    pub(crate) total_bytes: usize,
+    pub(crate) created_at: String,
+    pub(crate) capture_count: usize,
+    pub(crate) first_observed_at: String,
+    pub(crate) last_observed_at: String,
+    pub(crate) last_frontmost_app_name: Option<String>,
+    pub(crate) last_frontmost_app_bundle_id: Option<String>,
+    pub(crate) recent_events: Vec<CaptureEvent>,
+    pub(crate) items: Vec<ClipboardItem>,
 }
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize)]
 pub struct DoctorReport {
-    pub db_path: String,
-    pub sqlite_version: String,
-    pub journal_mode: String,
-    pub fts5_compile_option_present: bool,
-    pub fts5_create_virtual_table_ok: bool,
-    pub compile_options: Vec<String>,
+    pub(crate) db_path: String,
+    pub(crate) sqlite_version: String,
+    pub(crate) journal_mode: String,
+    pub(crate) fts5_compile_option_present: bool,
+    pub(crate) fts5_create_virtual_table_ok: bool,
+    pub(crate) compile_options: Vec<String>,
 }
 
 impl ClipboardItem {
     #[must_use]
-    pub fn new(
+    pub(crate) fn new(
         item_index: usize,
         primary_kind: ClipboardKind,
         primary_uti: Option<String>,
@@ -353,11 +353,46 @@ impl ClipboardItem {
             representations,
         }
     }
+
+    #[must_use]
+    pub fn item_index(&self) -> usize {
+        self.item_index
+    }
+
+    #[must_use]
+    pub fn primary_kind(&self) -> ClipboardKind {
+        self.primary_kind
+    }
+
+    #[must_use]
+    pub fn primary_uti(&self) -> Option<&str> {
+        self.primary_uti.as_deref()
+    }
+
+    #[must_use]
+    pub fn preview_text(&self) -> &str {
+        &self.preview_text
+    }
+
+    #[must_use]
+    pub fn search_text(&self) -> &str {
+        &self.search_text
+    }
+
+    #[must_use]
+    pub fn total_bytes(&self) -> usize {
+        self.total_bytes
+    }
+
+    #[must_use]
+    pub fn representations(&self) -> &[ClipboardRepresentation] {
+        &self.representations
+    }
 }
 
 impl ClipboardRepresentation {
     #[must_use]
-    pub fn new(
+    pub(crate) fn new(
         uti: String,
         kind: ClipboardKind,
         raw_sha256: String,
@@ -379,6 +414,36 @@ impl ClipboardRepresentation {
     #[must_use]
     pub fn is_text(&self) -> bool {
         self.text_value.is_some()
+    }
+
+    #[must_use]
+    pub fn uti(&self) -> &str {
+        &self.uti
+    }
+
+    #[must_use]
+    pub fn kind(&self) -> ClipboardKind {
+        self.kind
+    }
+
+    #[must_use]
+    pub fn byte_len(&self) -> usize {
+        self.byte_len
+    }
+
+    #[must_use]
+    pub fn raw_sha256(&self) -> &str {
+        &self.raw_sha256
+    }
+
+    #[must_use]
+    pub fn text_value(&self) -> Option<&str> {
+        self.text_value.as_deref()
+    }
+
+    #[must_use]
+    pub fn raw_bytes(&self) -> &[u8] {
+        &self.raw_bytes
     }
 }
 
@@ -465,6 +530,221 @@ impl ClipboardSnapshot {
     }
 }
 
+impl CaptureStoreResult {
+    #[must_use]
+    pub fn snapshot_id(&self) -> i64 {
+        self.snapshot_id
+    }
+
+    #[must_use]
+    pub fn event_id(&self) -> i64 {
+        self.event_id
+    }
+
+    #[must_use]
+    pub fn inserted_new_snapshot(&self) -> bool {
+        self.inserted_new_snapshot
+    }
+}
+
+impl SearchHit {
+    #[must_use]
+    pub fn snapshot_id(&self) -> i64 {
+        self.snapshot_id
+    }
+
+    #[must_use]
+    pub fn sha256(&self) -> &str {
+        &self.sha256
+    }
+
+    #[must_use]
+    pub fn snapshot_kind(&self) -> SnapshotKind {
+        self.snapshot_kind
+    }
+
+    #[must_use]
+    pub fn preview_text(&self) -> &str {
+        &self.preview_text
+    }
+
+    #[must_use]
+    pub fn snippet(&self) -> &str {
+        &self.snippet
+    }
+
+    #[must_use]
+    pub fn capture_count(&self) -> usize {
+        self.capture_count
+    }
+
+    #[must_use]
+    pub fn last_observed_at(&self) -> &str {
+        &self.last_observed_at
+    }
+
+    #[must_use]
+    pub fn last_frontmost_app_name(&self) -> Option<&str> {
+        self.last_frontmost_app_name.as_deref()
+    }
+
+    #[must_use]
+    pub fn last_frontmost_app_bundle_id(&self) -> Option<&str> {
+        self.last_frontmost_app_bundle_id.as_deref()
+    }
+
+    #[must_use]
+    pub fn total_bytes(&self) -> usize {
+        self.total_bytes
+    }
+
+    #[must_use]
+    pub fn item_count(&self) -> usize {
+        self.item_count
+    }
+
+    #[must_use]
+    pub fn score(&self) -> Option<f64> {
+        self.score
+    }
+}
+
+impl CaptureEvent {
+    #[must_use]
+    pub fn event_id(&self) -> i64 {
+        self.event_id
+    }
+
+    #[must_use]
+    pub fn observed_at(&self) -> &str {
+        &self.observed_at
+    }
+
+    #[must_use]
+    pub fn change_count(&self) -> i64 {
+        self.change_count
+    }
+
+    #[must_use]
+    pub fn frontmost_app_name(&self) -> Option<&str> {
+        self.frontmost_app_name.as_deref()
+    }
+
+    #[must_use]
+    pub fn frontmost_app_bundle_id(&self) -> Option<&str> {
+        self.frontmost_app_bundle_id.as_deref()
+    }
+}
+
+impl SnapshotDetails {
+    #[must_use]
+    pub fn snapshot_id(&self) -> i64 {
+        self.snapshot_id
+    }
+
+    #[must_use]
+    pub fn sha256(&self) -> &str {
+        &self.sha256
+    }
+
+    #[must_use]
+    pub fn snapshot_kind(&self) -> SnapshotKind {
+        self.snapshot_kind
+    }
+
+    #[must_use]
+    pub fn preview_text(&self) -> &str {
+        &self.preview_text
+    }
+
+    #[must_use]
+    pub fn search_text(&self) -> &str {
+        &self.search_text
+    }
+
+    #[must_use]
+    pub fn item_count(&self) -> usize {
+        self.item_count
+    }
+
+    #[must_use]
+    pub fn total_bytes(&self) -> usize {
+        self.total_bytes
+    }
+
+    #[must_use]
+    pub fn created_at(&self) -> &str {
+        &self.created_at
+    }
+
+    #[must_use]
+    pub fn capture_count(&self) -> usize {
+        self.capture_count
+    }
+
+    #[must_use]
+    pub fn first_observed_at(&self) -> &str {
+        &self.first_observed_at
+    }
+
+    #[must_use]
+    pub fn last_observed_at(&self) -> &str {
+        &self.last_observed_at
+    }
+
+    #[must_use]
+    pub fn last_frontmost_app_name(&self) -> Option<&str> {
+        self.last_frontmost_app_name.as_deref()
+    }
+
+    #[must_use]
+    pub fn last_frontmost_app_bundle_id(&self) -> Option<&str> {
+        self.last_frontmost_app_bundle_id.as_deref()
+    }
+
+    #[must_use]
+    pub fn recent_events(&self) -> &[CaptureEvent] {
+        &self.recent_events
+    }
+
+    #[must_use]
+    pub fn items(&self) -> &[ClipboardItem] {
+        &self.items
+    }
+}
+
+impl DoctorReport {
+    #[must_use]
+    pub fn db_path(&self) -> &str {
+        &self.db_path
+    }
+
+    #[must_use]
+    pub fn sqlite_version(&self) -> &str {
+        &self.sqlite_version
+    }
+
+    #[must_use]
+    pub fn journal_mode(&self) -> &str {
+        &self.journal_mode
+    }
+
+    #[must_use]
+    pub fn fts5_compile_option_present(&self) -> bool {
+        self.fts5_compile_option_present
+    }
+
+    #[must_use]
+    pub fn fts5_create_virtual_table_ok(&self) -> bool {
+        self.fts5_create_virtual_table_ok
+    }
+
+    #[must_use]
+    pub fn compile_options(&self) -> &[String] {
+        &self.compile_options
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -519,9 +799,9 @@ mod tests {
             items: vec![item],
         };
 
-        assert_eq!(snapshot.total_bytes, 5);
-        assert_eq!(snapshot.items[0].total_bytes, 5);
-        assert!(snapshot.items[0].representations[0].is_text());
+        assert_eq!(snapshot.total_bytes(), 5);
+        assert_eq!(snapshot.items()[0].total_bytes(), 5);
+        assert!(snapshot.items()[0].representations()[0].is_text());
     }
 
     #[test]

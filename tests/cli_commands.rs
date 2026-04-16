@@ -5,9 +5,9 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
-use clipmem::clipboard::{build_item, build_representation, build_snapshot};
 use clipmem::db::Database;
-use clipmem::model::{CaptureContext, ClipboardSnapshot};
+use clipmem::model::ClipboardSnapshot;
+use clipmem::testing::{build_item, build_representation, build_snapshot, CaptureContext};
 use serde_json::Value;
 
 fn temp_db_path(test_name: &str) -> PathBuf {
@@ -60,7 +60,7 @@ fn seed_database(path: &Path, snapshots: &[ClipboardSnapshot]) -> Result<Vec<i64
 
     for snapshot in snapshots {
         let stored = db.store_capture(snapshot)?;
-        ids.push(stored.snapshot_id);
+        ids.push(stored.snapshot_id());
     }
 
     Ok(ids)
@@ -151,10 +151,8 @@ fn get_command_prints_snapshot_details() -> Result<()> {
 }
 
 #[test]
-fn doctor_command_reports_database_capabilities() -> Result<()> {
+fn doctor_command_reports_database_capabilities() {
     let path = temp_db_path("doctor-text");
-    let _db = Database::open_or_init(&path)?;
-
     let output = run_cli(&[
         "--db",
         path.to_str().expect("db path should be UTF-8"),
@@ -168,5 +166,22 @@ fn doctor_command_reports_database_capabilities() -> Result<()> {
     assert!(stdout.contains("fts5 temp table creation works:"));
 
     cleanup_db(&path);
-    Ok(())
+}
+
+#[test]
+fn recent_command_rejects_zero_limit() {
+    let path = temp_db_path("recent-zero-limit");
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "recent",
+        "--limit",
+        "0",
+    ]);
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+
+    assert!(!output.status.success());
+    assert!(stderr.contains('0'));
+
+    cleanup_db(&path);
 }

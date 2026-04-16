@@ -44,19 +44,19 @@ fn duplicate_snapshots_share_content_row() -> Result<()> {
     let first_store = db.store_capture(&first)?;
     let second_store = db.store_capture(&second)?;
 
-    assert!(first_store.inserted_new_snapshot);
-    assert!(!second_store.inserted_new_snapshot);
-    assert_eq!(first_store.snapshot_id, second_store.snapshot_id);
+    assert!(first_store.inserted_new_snapshot());
+    assert!(!second_store.inserted_new_snapshot());
+    assert_eq!(first_store.snapshot_id(), second_store.snapshot_id());
 
     let hits = db.search_auto("git", 10)?;
     assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0].capture_count, 2);
+    assert_eq!(hits[0].capture_count(), 2);
 
     let details = db
-        .find_snapshot(first_store.snapshot_id, 10)?
+        .find_snapshot(first_store.snapshot_id(), 10)?
         .context("expected stored snapshot details")?;
-    assert_eq!(details.capture_count, 2);
-    assert_eq!(details.items.len(), 1);
+    assert_eq!(details.capture_count(), 2);
+    assert_eq!(details.items().len(), 1);
 
     Ok(())
 }
@@ -80,7 +80,10 @@ fn search_like_treats_percent_as_literal() -> Result<()> {
     db.store_capture(&fake_snapshot(2, "Discount: 50%"))?;
 
     let hits = db.search_literal("50%", 10)?;
-    let previews: Vec<_> = hits.iter().map(|hit| hit.preview_text.as_str()).collect();
+    let previews: Vec<_> = hits
+        .iter()
+        .map(crate::model::SearchHit::preview_text)
+        .collect();
 
     assert_eq!(previews, vec!["Discount: 50%"]);
     Ok(())
@@ -95,7 +98,10 @@ fn search_like_treats_underscore_as_literal() -> Result<()> {
     db.store_capture(&fake_snapshot(3, "config_test"))?;
 
     let hits = db.search_literal("config_test", 10)?;
-    let previews: Vec<_> = hits.iter().map(|hit| hit.preview_text.as_str()).collect();
+    let previews: Vec<_> = hits
+        .iter()
+        .map(crate::model::SearchHit::preview_text)
+        .collect();
 
     assert_eq!(previews, vec!["config_test"]);
     Ok(())
@@ -109,7 +115,10 @@ fn search_like_treats_escape_character_as_literal() -> Result<()> {
     db.store_capture(&fake_snapshot(2, "logs/2024/archive"))?;
 
     let hits = db.search_literal(r"logs\2024", 10)?;
-    let previews: Vec<_> = hits.iter().map(|hit| hit.preview_text.as_str()).collect();
+    let previews: Vec<_> = hits
+        .iter()
+        .map(crate::model::SearchHit::preview_text)
+        .collect();
 
     assert_eq!(previews, vec![r"logs\2024\archive"]);
     Ok(())
@@ -123,7 +132,10 @@ fn search_percent_literal_returns_only_exact_matches() -> Result<()> {
     db.store_capture(&fake_snapshot(2, "Discount: 50%"))?;
 
     let hits = db.search_auto("50%", 10)?;
-    let previews: Vec<_> = hits.iter().map(|hit| hit.preview_text.as_str()).collect();
+    let previews: Vec<_> = hits
+        .iter()
+        .map(crate::model::SearchHit::preview_text)
+        .collect();
 
     assert_eq!(previews, vec!["Discount: 50%"]);
     Ok(())
@@ -138,7 +150,10 @@ fn search_underscore_literal_returns_only_exact_matches() -> Result<()> {
     db.store_capture(&fake_snapshot(3, "config_test"))?;
 
     let hits = db.search_auto("config_test", 10)?;
-    let previews: Vec<_> = hits.iter().map(|hit| hit.preview_text.as_str()).collect();
+    let previews: Vec<_> = hits
+        .iter()
+        .map(crate::model::SearchHit::preview_text)
+        .collect();
 
     assert_eq!(previews, vec!["config_test"]);
     Ok(())
