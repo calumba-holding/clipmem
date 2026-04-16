@@ -7,12 +7,13 @@ use clap::{Args, Parser, Subcommand};
 use serde::Serialize;
 
 use crate::app::{format_watch_capture_line, process_watch_snapshot, WatchState};
-use crate::db::{Database, SearchMode};
-use crate::model::{CaptureStoreResult, ClipboardSnapshot, SearchHit};
+use crate::db::{Database, SearchMode, SearchResults};
+use crate::model::{CaptureStoreResult, ClipboardSnapshot};
 use crate::paths::default_db_path;
 use crate::platform::capture_snapshot;
 use crate::render::{
-    render_capture_once_text, render_doctor_text, render_hits_text, render_snapshot_text,
+    render_capture_once_text, render_doctor_text, render_hits_text, render_search_results_text,
+    render_snapshot_text,
 };
 
 #[derive(Debug, Parser)]
@@ -222,10 +223,10 @@ fn capture_once(db_path: &Path, args: &CaptureOnceArgs) -> Result<()> {
 
 fn search(db_path: &Path, args: &SearchArgs) -> Result<()> {
     let db = open_existing_db(db_path)?;
-    let hits = anyhow::Context::with_context(query_search_hits(&db, args), || {
+    let results = anyhow::Context::with_context(query_search_results(&db, args), || {
         format!("search failed for query '{}'", args.query)
     })?;
-    emit_json_or_text(args.json, &hits, |value| render_hits_text(value))?;
+    emit_json_or_text(args.json, &results, render_search_results_text)?;
 
     Ok(())
 }
@@ -293,11 +294,15 @@ fn print_json<T: Serialize>(value: &T) -> Result<()> {
     Ok(())
 }
 
-fn query_search_hits(db: &Database, args: &SearchArgs) -> Result<Vec<SearchHit>> {
+fn query_search_results(db: &Database, args: &SearchArgs) -> Result<SearchResults> {
     match args.mode {
         SearchMode::Auto => db.search_auto(&args.query, args.limit),
-        SearchMode::Fts => db.search_fts(&args.query, args.limit),
-        SearchMode::Literal => db.search_literal(&args.query, args.limit),
+        SearchMode::Fts => db
+            .search_fts(&args.query, args.limit)
+            .map(|hits| SearchResults::new(SearchMode::Fts, hits)),
+        SearchMode::Literal => db
+            .search_literal(&args.query, args.limit)
+            .map(|hits| SearchResults::new(SearchMode::Literal, hits)),
     }
 }
 
@@ -313,7 +318,7 @@ mod tests {
     use crate::db::{Database, SearchMode};
     use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
 
-    use super::{query_search_hits, Cli, Command, SearchArgs};
+    use super::{query_search_results, Cli, Command, SearchArgs};
 
     fn temp_db_path(test_name: &str) -> PathBuf {
         let timestamp = SystemTime::now()
@@ -427,7 +432,7 @@ mod tests {
         db.store_capture(&second)
             .expect("second search fixture should store");
 
-        let hits = query_search_hits(
+        let results = query_search_results(
             &db,
             &SearchArgs {
                 query: "50%".to_string(),
@@ -438,8 +443,9 @@ mod tests {
         )
         .expect("search should succeed");
 
-        assert_eq!(hits.len(), 1);
-        assert_eq!(hits[0].preview_text(), "Discount: 50%");
+        assert_eq!(results.mode_used(), SearchMode::Literal);
+        assert_eq!(results.hits().len(), 1);
+        assert_eq!(results.hits()[0].preview_text(), "Discount: 50%");
 
         cleanup_db(&path);
     }

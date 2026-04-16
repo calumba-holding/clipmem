@@ -6,7 +6,7 @@ use crate::model::{
     build_item, build_representation, build_snapshot, CaptureContext, ClipboardSnapshot,
 };
 
-use super::{configure_connection, Database, SCHEMA};
+use super::{configure_connection, Database, SearchMode, SCHEMA};
 
 fn temp_db_path(test_name: &str) -> std::path::PathBuf {
     let timestamp = SystemTime::now()
@@ -49,9 +49,10 @@ fn duplicate_snapshots_share_content_row() -> Result<()> {
     assert!(!second_store.inserted_new_snapshot());
     assert_eq!(first_store.snapshot_id(), second_store.snapshot_id());
 
-    let hits = db.search_auto("git", 10)?;
-    assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0].capture_count(), 2);
+    let results = db.search_auto("git", 10)?;
+    assert_eq!(results.mode_used(), SearchMode::Fts);
+    assert_eq!(results.hits().len(), 1);
+    assert_eq!(results.hits()[0].capture_count(), 2);
 
     let details = db
         .find_snapshot(first_store.snapshot_id(), 10)?
@@ -132,12 +133,14 @@ fn search_percent_literal_returns_only_exact_matches() -> Result<()> {
     db.store_capture(&fake_snapshot(1, "Discount: 50 percent off"))?;
     db.store_capture(&fake_snapshot(2, "Discount: 50%"))?;
 
-    let hits = db.search_auto("50%", 10)?;
-    let previews: Vec<_> = hits
+    let results = db.search_auto("50%", 10)?;
+    let previews: Vec<_> = results
+        .hits()
         .iter()
         .map(crate::model::SearchHit::preview_text)
         .collect();
 
+    assert_eq!(results.mode_used(), SearchMode::Literal);
     assert_eq!(previews, vec!["Discount: 50%"]);
     Ok(())
 }
@@ -150,12 +153,14 @@ fn search_underscore_literal_returns_only_exact_matches() -> Result<()> {
     db.store_capture(&fake_snapshot(2, "config test"))?;
     db.store_capture(&fake_snapshot(3, "config_test"))?;
 
-    let hits = db.search_auto("config_test", 10)?;
-    let previews: Vec<_> = hits
+    let results = db.search_auto("config_test", 10)?;
+    let previews: Vec<_> = results
+        .hits()
         .iter()
         .map(crate::model::SearchHit::preview_text)
         .collect();
 
+    assert_eq!(results.mode_used(), SearchMode::Literal);
     assert_eq!(previews, vec!["config_test"]);
     Ok(())
 }

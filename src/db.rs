@@ -10,6 +10,9 @@ use std::str::FromStr;
 use anyhow::Result;
 use clap::ValueEnum;
 use rusqlite::{Connection, OpenFlags, Row};
+use serde::Serialize;
+
+use crate::model::SearchHit;
 
 const SCHEMA: &str = include_str!("db/schema.sql");
 
@@ -18,11 +21,45 @@ pub struct Database {
     pub(super) path: PathBuf,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ValueEnum)]
 pub enum SearchMode {
     Auto,
     Fts,
     Literal,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SearchResults {
+    mode_used: SearchMode,
+    hits: Vec<SearchHit>,
+}
+
+impl SearchResults {
+    #[must_use]
+    pub(crate) fn new(mode_used: SearchMode, hits: Vec<SearchHit>) -> Self {
+        Self { mode_used, hits }
+    }
+
+    #[must_use]
+    pub fn mode_used(&self) -> SearchMode {
+        self.mode_used
+    }
+
+    #[must_use]
+    pub fn hits(&self) -> &[SearchHit] {
+        &self.hits
+    }
+}
+
+impl SearchMode {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Fts => "fts",
+            Self::Literal => "literal",
+        }
+    }
 }
 
 impl Database {

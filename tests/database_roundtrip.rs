@@ -4,7 +4,7 @@ use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use clipmem::db::Database;
+use clipmem::db::{Database, SearchMode};
 use clipmem::model::{
     build_item, build_representation, build_snapshot, CaptureContext, ClipboardKind,
     ClipboardSnapshot, SnapshotKind,
@@ -63,13 +63,14 @@ fn public_database_api_round_trips_a_stored_snapshot() -> Result<()> {
     drop(db);
 
     let db = Database::open_existing(&path)?;
-    let hits = db.search_auto("git", 10)?;
+    let results = db.search_auto("git", 10)?;
     let details = db
         .find_snapshot(stored.snapshot_id(), 10)?
         .context("expected stored snapshot details")?;
 
-    assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0].snapshot_id(), stored.snapshot_id());
+    assert_eq!(results.mode_used(), SearchMode::Fts);
+    assert_eq!(results.hits().len(), 1);
+    assert_eq!(results.hits()[0].snapshot_id(), stored.snapshot_id());
     assert_eq!(details.capture_count(), 1);
     assert_eq!(details.preview_text(), snapshot.preview_text());
     assert_eq!(details.snapshot_kind(), SnapshotKind::PlainText);

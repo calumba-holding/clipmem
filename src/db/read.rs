@@ -5,7 +5,10 @@ use crate::model::{
     CaptureEvent, ClipboardItem, ClipboardRepresentation, DoctorReport, SearchHit, SnapshotDetails,
 };
 
-use super::{collect_rows, row_enum, row_usize, sanitise_limit, usize_to_i64, Database};
+use super::{
+    collect_rows, row_enum, row_usize, sanitise_limit, usize_to_i64, Database, SearchMode,
+    SearchResults,
+};
 
 const SEARCH_HIT_SELECT_PREFIX: &str = r"
     SELECT
@@ -54,19 +57,21 @@ impl Database {
     ///
     /// Returns an error if the query cannot be prepared or executed, or when `SQLite` returns a
     /// non-syntax FTS error.
-    pub fn search_auto(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>> {
+    pub fn search_auto(&self, query: &str, limit: usize) -> Result<SearchResults> {
         let limit = sanitise_limit(limit);
 
         if requires_literal_like_search(query) {
-            return self.search_literal(query, limit);
+            return self
+                .search_literal(query, limit)
+                .map(|hits| SearchResults::new(SearchMode::Literal, hits));
         }
 
         let hits = match self.search_fts(query, limit) {
-            Ok(hits) => hits,
+            Ok(hits) => (SearchMode::Fts, hits),
             Err(error) => {
                 if let Some(sqlite_error) = error.downcast_ref::<SqlError>() {
                     if is_invalid_fts_query(sqlite_error) {
-                        self.search_literal(query, limit)?
+                        (SearchMode::Literal, self.search_literal(query, limit)?)
                     } else {
                         return Err(error);
                     }
@@ -76,10 +81,13 @@ impl Database {
             }
         };
 
+        let (mode_used, hits) = hits;
+
         if hits.is_empty() {
             self.search_literal(query, limit)
+                .map(|hits| SearchResults::new(SearchMode::Literal, hits))
         } else {
-            Ok(hits)
+            Ok(SearchResults::new(mode_used, hits))
         }
     }
 
@@ -473,7 +481,7 @@ fn requires_literal_like_search(query: &str) -> bool {
 mod tests {
     use anyhow::Result;
 
-    use crate::db::Database;
+    use crate::db::{Database, SearchMode};
     use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
 
     use super::{invalid_fts_message, requires_literal_like_search};
@@ -516,8 +524,10 @@ mod tests {
         db.store_capture(&fake_snapshot(1, "Discount: 50 percent off"))?;
         db.store_capture(&fake_snapshot(2, "Discount: 50%"))?;
 
-        let hits = db.search_auto("50%", 10)?;
+        let results = db.search_auto("50%", 10)?;
+        let hits = results.hits();
 
+        assert_eq!(results.mode_used(), SearchMode::Literal);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].preview_text(), "Discount: 50%");
         Ok(())

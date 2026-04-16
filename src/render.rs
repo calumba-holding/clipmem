@@ -1,5 +1,6 @@
 use std::fmt::Write;
 
+use crate::db::SearchResults;
 use crate::model::{
     CaptureStoreResult, ClipboardSnapshot, DoctorReport, SearchHit, SnapshotDetails,
 };
@@ -62,6 +63,16 @@ pub(crate) fn render_hits_text(hits: &[SearchHit]) -> String {
         }
         push_blank_line(&mut out);
     }
+    out
+}
+
+pub(crate) fn render_search_results_text(results: &SearchResults) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "search mode: {}", results.mode_used().as_str());
+    if !results.hits().is_empty() {
+        out.push('\n');
+    }
+    out.push_str(&render_hits_text(results.hits()));
     out
 }
 
@@ -182,13 +193,15 @@ fn push_blank_line(out: &mut String) {
 
 #[cfg(test)]
 mod tests {
+    use crate::db::{SearchMode, SearchResults};
     use crate::model::{
         build_item, build_representation, build_snapshot, CaptureContext, CaptureEvent,
         CaptureStoreResult, DoctorReport, SearchHit, SnapshotDetails, SnapshotKind,
     };
 
     use super::{
-        render_capture_once_text, render_doctor_text, render_hits_text, render_snapshot_text,
+        render_capture_once_text, render_doctor_text, render_hits_text, render_search_results_text,
+        render_snapshot_text,
     };
 
     #[test]
@@ -276,6 +289,30 @@ mod tests {
         assert!(text.contains("item 0 · kind=plain_text"));
         assert!(text.contains("text: git clone"));
         assert!(text.contains("event 9 · 2026-04-16 18:00:00 · change_count=4 · Terminal"));
+    }
+
+    #[test]
+    fn render_search_results_text_reports_effective_mode() {
+        let text = render_search_results_text(&SearchResults::new(
+            SearchMode::Literal,
+            vec![SearchHit::new(
+                42,
+                "deadbeef".to_string(),
+                SnapshotKind::PlainText,
+                "git status".to_string(),
+                "git status".to_string(),
+                2,
+                "2026-04-16 18:00:00".to_string(),
+                Some("Terminal".to_string()),
+                Some("com.apple.Terminal".to_string()),
+                10,
+                1,
+                None,
+            )],
+        ));
+
+        assert!(text.contains("search mode: literal"));
+        assert!(text.contains("[42] plain_text"));
     }
 
     #[test]
