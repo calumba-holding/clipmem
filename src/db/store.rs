@@ -10,7 +10,8 @@ impl Database {
     ///
     /// # Errors
     ///
-    /// Returns an error if the transaction or any snapshot row insert fails.
+    /// Returns an error if any transaction step fails, including snapshot, item,
+    /// representation, or capture-event inserts, or the final commit.
     pub fn store_capture(&mut self, snapshot: &ClipboardSnapshot) -> Result<CaptureStoreResult> {
         let tx = self.conn.transaction()?;
 
@@ -146,12 +147,12 @@ mod tests {
         let store = db.store_capture(&snapshot)?;
         let stored_item_count: i64 = db.conn.query_row(
             "SELECT item_count FROM snapshots WHERE id = ?1",
-            [store.snapshot_id],
+            [store.snapshot_id()],
             |row| row.get(0),
         )?;
         let stored_row_count: i64 = db.conn.query_row(
             "SELECT COUNT(*) FROM snapshot_items WHERE snapshot_id = ?1",
-            [store.snapshot_id],
+            [store.snapshot_id()],
             |row| row.get(0),
         )?;
 

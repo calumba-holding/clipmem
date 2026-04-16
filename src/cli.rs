@@ -273,7 +273,7 @@ fn show_snapshot(db_path: &Path, args: &GetArgs) -> Result<()> {
 }
 
 fn doctor(db_path: &Path, args: &DoctorArgs) -> Result<()> {
-    let db = open_or_init_db(db_path)?;
+    let db = open_existing_db(db_path)?;
     let report = anyhow::Context::context(db.doctor(), "doctor diagnostics failed")?;
     emit_json_or_text(args.json, &report, render_doctor_text)?;
 
@@ -328,8 +328,8 @@ mod tests {
     use clap::Parser;
 
     use crate::db::Database;
+    use crate::model::builders::{build_item, build_representation, build_snapshot};
     use crate::model::CaptureContext;
-    use crate::testing::{build_item, build_representation, build_snapshot};
 
     use super::{query_search_hits, Cli, Command, SearchArgs, SearchModeArg};
 

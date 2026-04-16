@@ -6,8 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
 use clipmem::db::Database;
-use clipmem::model::ClipboardSnapshot;
-use clipmem::testing::{build_item, build_representation, build_snapshot, CaptureContext};
+use clipmem::model::builders::{build_item, build_representation, build_snapshot};
+use clipmem::model::{CaptureContext, ClipboardSnapshot};
 use serde_json::Value;
 
 fn temp_db_path(test_name: &str) -> PathBuf {
@@ -153,6 +153,8 @@ fn get_command_prints_snapshot_details() -> Result<()> {
 #[test]
 fn doctor_command_reports_database_capabilities() {
     let path = temp_db_path("doctor-text");
+    let db = Database::open_or_init(&path).expect("test database should open");
+    drop(db);
     let output = run_cli(&[
         "--db",
         path.to_str().expect("db path should be UTF-8"),

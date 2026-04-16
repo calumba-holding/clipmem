@@ -5,8 +5,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use clipmem::db::Database;
-use clipmem::model::{ClipboardKind, ClipboardSnapshot, SnapshotKind};
-use clipmem::testing::{build_item, build_representation, build_snapshot, CaptureContext};
+use clipmem::model::builders::{build_item, build_representation, build_snapshot};
+use clipmem::model::{CaptureContext, ClipboardKind, ClipboardSnapshot, SnapshotKind};
 
 fn temp_db_path(test_name: &str) -> PathBuf {
     let timestamp = SystemTime::now()

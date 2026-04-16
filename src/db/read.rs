@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use rusqlite::{params, Error as SqlError, ErrorCode, Row};
 
 use crate::model::{
@@ -110,12 +110,14 @@ impl Database {
         ",
         );
 
-        let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(params![modifier.as_deref(), limit], |row| {
-            map_search_hit_row(row, false)
-        })?;
+        let mut stmt = self.conn.prepare(&sql).context("prepare recent query")?;
+        let rows = stmt
+            .query_map(params![modifier.as_deref(), limit], |row| {
+                map_search_hit_row(row, false)
+            })
+            .context("execute recent query")?;
 
-        collect_rows(rows)
+        collect_rows(rows).context("collect recent query rows")
     }
 
     /// Load one snapshot with its recent events and stored item representations.
@@ -147,15 +149,22 @@ impl Database {
     pub fn doctor(&self) -> Result<DoctorReport> {
         let sqlite_version: String = self
             .conn
-            .query_row("SELECT sqlite_version()", [], |row| row.get(0))?;
+            .query_row("SELECT sqlite_version()", [], |row| row.get(0))
+            .context("read SQLite version")?;
 
         let journal_mode: String = self
             .conn
-            .query_row("PRAGMA journal_mode", [], |row| row.get(0))?;
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .context("read journal mode")?;
 
-        let mut compile_stmt = self.conn.prepare("PRAGMA compile_options")?;
-        let compile_rows = compile_stmt.query_map([], |row| row.get::<_, String>(0))?;
-        let compile_options = collect_rows(compile_rows)?;
+        let mut compile_stmt = self
+            .conn
+            .prepare("PRAGMA compile_options")
+            .context("prepare compile options query")?;
+        let compile_rows = compile_stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .context("execute compile options query")?;
+        let compile_options = collect_rows(compile_rows).context("collect compile options")?;
 
         let fts5_compile_option_present = compile_options
             .iter()
@@ -198,10 +207,15 @@ impl Database {
         ",
         );
 
-        let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(params![query, limit], |row| map_search_hit_row(row, true))?;
+        let mut stmt = self
+            .conn
+            .prepare(&sql)
+            .context("prepare FTS search query")?;
+        let rows = stmt
+            .query_map(params![query, limit], |row| map_search_hit_row(row, true))
+            .context("execute FTS search query")?;
 
-        collect_rows(rows)
+        collect_rows(rows).context("collect FTS search rows")
     }
 
     /// Search stored snapshots with literal `LIKE` matching semantics.
@@ -223,10 +237,15 @@ impl Database {
         ",
         );
 
-        let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(params![like, limit], |row| map_search_hit_row(row, false))?;
+        let mut stmt = self
+            .conn
+            .prepare(&sql)
+            .context("prepare literal search query")?;
+        let rows = stmt
+            .query_map(params![like, limit], |row| map_search_hit_row(row, false))
+            .context("execute literal search query")?;
 
-        collect_rows(rows)
+        collect_rows(rows).context("collect literal search rows")
     }
 
     fn load_snapshot_summary(&self, snapshot_id: i64) -> Result<Option<SnapshotDetails>> {
@@ -286,7 +305,7 @@ impl Database {
                 })
             },
         ))
-        .map_err(Into::into)
+        .context("load snapshot summary")
     }
 
     fn load_recent_events(
@@ -295,53 +314,65 @@ impl Database {
         event_limit: usize,
     ) -> Result<Vec<CaptureEvent>> {
         let limit = usize_to_i64(event_limit)?;
-        let mut event_stmt = self.conn.prepare(
-            r"
+        let mut event_stmt = self
+            .conn
+            .prepare(
+                r"
                 SELECT id, observed_at, change_count, frontmost_app_name, frontmost_app_bundle_id
                 FROM capture_events
                 WHERE snapshot_id = ?1
                 ORDER BY observed_at DESC, id DESC
                 LIMIT ?2
             ",
-        )?;
-        let event_rows = event_stmt.query_map(params![snapshot_id, limit], |row| {
-            Ok(CaptureEvent {
-                event_id: row.get(0)?,
-                observed_at: row.get(1)?,
-                change_count: row.get(2)?,
-                frontmost_app_name: row.get(3)?,
-                frontmost_app_bundle_id: row.get(4)?,
+            )
+            .context("prepare snapshot events query")?;
+        let event_rows = event_stmt
+            .query_map(params![snapshot_id, limit], |row| {
+                Ok(CaptureEvent {
+                    event_id: row.get(0)?,
+                    observed_at: row.get(1)?,
+                    change_count: row.get(2)?,
+                    frontmost_app_name: row.get(3)?,
+                    frontmost_app_bundle_id: row.get(4)?,
+                })
             })
-        })?;
+            .context("execute snapshot events query")?;
 
-        collect_rows(event_rows)
+        collect_rows(event_rows).context("collect snapshot events")
     }
 
     fn load_snapshot_items(&self, snapshot_id: i64) -> Result<Vec<ClipboardItem>> {
-        let mut item_stmt = self.conn.prepare(
-            r"
+        let mut item_stmt = self
+            .conn
+            .prepare(
+                r"
                 SELECT item_index, primary_kind, primary_uti, preview_text, search_text, total_bytes
                 FROM snapshot_items
                 WHERE snapshot_id = ?1
                 ORDER BY item_index ASC
             ",
-        )?;
+            )
+            .context("prepare snapshot items query")?;
 
-        let item_rows = item_stmt.query_map([snapshot_id], |row| {
-            Ok(ClipboardItem {
-                item_index: row_usize(row, 0)?,
-                primary_kind: row_enum(row, 1)?,
-                primary_uti: row.get(2)?,
-                preview_text: row.get(3)?,
-                search_text: row.get(4)?,
-                total_bytes: row_usize(row, 5)?,
-                representations: Vec::new(),
+        let item_rows = item_stmt
+            .query_map([snapshot_id], |row| {
+                Ok(ClipboardItem {
+                    item_index: row_usize(row, 0)?,
+                    primary_kind: row_enum(row, 1)?,
+                    primary_uti: row.get(2)?,
+                    preview_text: row.get(3)?,
+                    search_text: row.get(4)?,
+                    total_bytes: row_usize(row, 5)?,
+                    representations: Vec::new(),
+                })
             })
-        })?;
-        let mut items = collect_rows(item_rows)?;
+            .context("execute snapshot items query")?;
+        let mut items = collect_rows(item_rows).context("collect snapshot items")?;
 
-        let mut rep_stmt = self.conn.prepare(
-            r"
+        let mut rep_stmt = self
+            .conn
+            .prepare(
+                r"
                 SELECT
                     uti,
                     kind,
@@ -352,22 +383,28 @@ impl Database {
                 WHERE snapshot_id = ?1 AND item_index = ?2
                 ORDER BY uti ASC
             ",
-        )?;
+            )
+            .context("prepare representation query")?;
 
         for item in &mut items {
-            let rep_rows = rep_stmt.query_map(
-                params![snapshot_id, usize_to_i64(item.item_index)?],
-                |row| {
-                    Ok(ClipboardRepresentation::new(
-                        row.get(0)?,
-                        row_enum(row, 1)?,
-                        row.get(2)?,
-                        row.get(3)?,
-                        row.get(4)?,
-                    ))
-                },
-            )?;
-            item.representations = collect_rows(rep_rows)?;
+            let rep_rows = rep_stmt
+                .query_map(
+                    params![snapshot_id, usize_to_i64(item.item_index)?],
+                    |row| {
+                        Ok(ClipboardRepresentation::new(
+                            row.get(0)?,
+                            row_enum(row, 1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                        ))
+                    },
+                )
+                .with_context(|| {
+                    format!("execute representation query for item {}", item.item_index)
+                })?;
+            item.representations = collect_rows(rep_rows)
+                .with_context(|| format!("collect representations for item {}", item.item_index))?;
         }
 
         Ok(items)
