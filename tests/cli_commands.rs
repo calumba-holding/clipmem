@@ -38,6 +38,15 @@ fn cleanup_db(path: &Path) {
 }
 
 fn text_snapshot(change_count: i64, text: &str) -> ClipboardSnapshot {
+    app_text_snapshot(change_count, "Terminal", "com.apple.Terminal", text)
+}
+
+fn app_text_snapshot(
+    change_count: i64,
+    app_name: &str,
+    app_bundle_id: &str,
+    text: &str,
+) -> ClipboardSnapshot {
     let item = build_item(
         0,
         vec![build_representation(
@@ -49,8 +58,8 @@ fn text_snapshot(change_count: i64, text: &str) -> ClipboardSnapshot {
 
     build_snapshot(
         CaptureContext::new(change_count)
-            .with_frontmost_app_name("Terminal")
-            .with_frontmost_app_bundle_id("com.apple.Terminal"),
+            .with_frontmost_app_name(app_name)
+            .with_frontmost_app_bundle_id(app_bundle_id),
         vec![item],
     )
 }
@@ -343,6 +352,200 @@ fn get_rejects_toon_output() -> Result<()> {
 
     assert!(!output.status.success());
     assert!(stderr.contains("TOON is only available for flattened list output"));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn recall_json_prefers_a_strong_query_match() -> Result<()> {
+    let path = temp_db_path("recall-strong-query");
+    let ids = seed_database(
+        &path,
+        &[
+            text_snapshot(1, "git status"),
+            text_snapshot(2, "cargo test"),
+            text_snapshot(3, "git commit"),
+        ],
+    )?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "recall",
+        "git status",
+        "--format",
+        "json",
+    ]);
+    let payload: Value =
+        serde_json::from_slice(&output.stdout).expect("recall JSON output should parse");
+
+    assert!(output.status.success());
+    assert_eq!(payload["command"].as_str(), Some("recall"));
+    assert_eq!(payload["query"].as_str(), Some("git status"));
+    assert_eq!(payload["best_candidate"]["snapshot_id"].as_i64(), Some(ids[0]));
+    assert_eq!(
+        payload["best_match_confidence"].as_str(),
+        Some("high")
+    );
+    assert!(payload["why_selected"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("strongest search match"));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn recall_json_falls_back_to_recent_when_search_is_weak() -> Result<()> {
+    let path = temp_db_path("recall-weak-search");
+    let ids = seed_database(
+        &path,
+        &[
+            text_snapshot(1, "git status"),
+            app_text_snapshot(2, "Preview", "com.apple.Preview", "Meeting notes from today"),
+        ],
+    )?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "recall",
+        "git",
+        "--mode",
+        "literal",
+        "--format",
+        "json",
+        "--min-score",
+        "0.95",
+        "--prefer-recent",
+    ]);
+    let payload: Value =
+        serde_json::from_slice(&output.stdout).expect("recall fallback JSON should parse");
+
+    assert!(output.status.success());
+    assert_eq!(payload["best_candidate"]["snapshot_id"].as_i64(), Some(ids[1]));
+    assert!(payload["why_selected"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Fell back to recent clipboard items"));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn recall_without_query_returns_recent_candidates() -> Result<()> {
+    let path = temp_db_path("recall-no-query");
+    let ids = seed_database(
+        &path,
+        &[
+            text_snapshot(1, "older text"),
+            text_snapshot(2, "newest text"),
+        ],
+    )?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "recall",
+        "--format",
+        "json",
+    ]);
+    let payload: Value =
+        serde_json::from_slice(&output.stdout).expect("recall no-query JSON should parse");
+
+    assert!(output.status.success());
+    assert!(payload["query"].is_null());
+    assert_eq!(payload["best_candidate"]["snapshot_id"].as_i64(), Some(ids[1]));
+    assert!(payload["why_selected"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("most likely useful recent clipboard item"));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn recall_prefer_app_boosts_matching_candidates() -> Result<()> {
+    let path = temp_db_path("recall-prefer-app");
+    let ids = seed_database(
+        &path,
+        &[
+            app_text_snapshot(1, "Terminal", "com.apple.Terminal", "deploy checklist"),
+            app_text_snapshot(2, "Preview", "com.apple.Preview", "invoice draft"),
+        ],
+    )?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "recall",
+        "--format",
+        "json",
+        "--prefer-app",
+        "terminal",
+    ]);
+    let payload: Value =
+        serde_json::from_slice(&output.stdout).expect("recall prefer-app JSON should parse");
+
+    assert!(output.status.success());
+    assert_eq!(payload["best_candidate"]["snapshot_id"].as_i64(), Some(ids[0]));
+    assert!(payload["why_selected"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("preferred app"));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn recall_markdown_quotes_and_expands_best_text() -> Result<()> {
+    let path = temp_db_path("recall-md-quote");
+    let long_text = "git status --short && git log --oneline && cargo test --package clipmem";
+    seed_database(&path, &[text_snapshot(1, long_text)])?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "recall",
+        "git status",
+        "--full",
+        "--quote",
+    ]);
+    let stdout = stdout_text(&output);
+
+    assert!(output.status.success());
+    assert!(stdout.contains("# Best Match"));
+    assert!(stdout.contains("> git status"));
+    assert!(stdout.contains("Why This Match"));
+    assert!(stdout.contains("Alternatives") || !stdout.contains("## Alternatives"));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn recall_toon_output_is_flattened() -> Result<()> {
+    let path = temp_db_path("recall-toon");
+    seed_database(&path, &[text_snapshot(1, "git status")])?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "recall",
+        "git status",
+        "--format",
+        "toon",
+    ]);
+    let stdout = stdout_text(&output);
+
+    assert!(output.status.success());
+    assert!(stdout.contains("best_candidate[#1"));
+    assert!(stdout.contains("alternatives[#0"));
 
     cleanup_db(&path);
     Ok(())

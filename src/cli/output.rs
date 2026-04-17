@@ -34,6 +34,42 @@ pub(super) struct GetEnvelope {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum RecallMatchConfidence {
+    High,
+    Medium,
+    Low,
+}
+
+impl RecallMatchConfidence {
+    #[must_use]
+    pub(super) fn from_normalized_score(score: f64) -> Self {
+        if score >= 0.8 {
+            Self::High
+        } else if score >= 0.6 {
+            Self::Medium
+        } else {
+            Self::Low
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct RecallEnvelope {
+    pub(super) schema_version: u32,
+    pub(super) command: &'static str,
+    pub(super) generated_at: String,
+    pub(super) applied_filters: Value,
+    pub(super) query: Option<String>,
+    pub(super) best_candidate: RecallOutputRow,
+    pub(super) alternatives: Vec<RecallOutputRow>,
+    pub(super) best_match_confidence: RecallMatchConfidence,
+    pub(super) best_match_score: Option<f64>,
+    pub(super) why_selected: String,
+    pub(super) quoted_text: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub(super) struct ListRow {
     pub(super) snapshot_id: i64,
     pub(super) event_id: i64,
@@ -53,6 +89,29 @@ pub(super) struct ListRow {
     pub(super) capture_count: usize,
     pub(super) score: Option<f64>,
     pub(super) why_matched: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct RecallOutputRow {
+    pub(super) snapshot_id: i64,
+    pub(super) event_id: i64,
+    pub(super) sha256: String,
+    pub(super) kind: String,
+    pub(super) observed_at: String,
+    pub(super) first_seen_at: String,
+    pub(super) last_seen_at: String,
+    pub(super) app_name: Option<String>,
+    pub(super) app_bundle_id: Option<String>,
+    pub(super) best_text: String,
+    pub(super) preview_text: String,
+    pub(super) urls: Vec<String>,
+    pub(super) file_paths: Vec<String>,
+    pub(super) item_count: usize,
+    pub(super) total_bytes: usize,
+    pub(super) capture_count: usize,
+    pub(super) score: Option<f64>,
+    pub(super) why_matched: Option<String>,
+    pub(super) snippet: String,
 }
 
 impl ListRow {
@@ -87,6 +146,42 @@ impl ListRow {
             capture_count: hit.capture_count(),
             score: hit.score(),
             why_matched,
+        }
+    }
+}
+
+impl RecallOutputRow {
+    #[must_use]
+    pub(super) fn from_hit(hit: &SearchHit, full: bool) -> Self {
+        let why_matched = hit.why_matched().map(ToOwned::to_owned);
+        let source_text = best_text_from_hit(hit);
+        let best_text = if full {
+            source_text.clone()
+        } else {
+            truncate_for_markdown(&source_text, 320)
+        };
+        let snippet = truncate_for_markdown(&source_text, 140);
+
+        Self {
+            snapshot_id: hit.snapshot_id(),
+            event_id: hit.event_id(),
+            sha256: hit.sha256().to_string(),
+            kind: hit.snapshot_kind().as_str().to_string(),
+            observed_at: hit.last_observed_at().to_string(),
+            first_seen_at: hit.first_observed_at().to_string(),
+            last_seen_at: hit.last_observed_at().to_string(),
+            app_name: hit.last_frontmost_app_name().map(ToOwned::to_owned),
+            app_bundle_id: hit.last_frontmost_app_bundle_id().map(ToOwned::to_owned),
+            best_text,
+            preview_text: hit.preview_text().to_string(),
+            urls: hit.urls().to_vec(),
+            file_paths: hit.file_paths().to_vec(),
+            item_count: hit.item_count(),
+            total_bytes: hit.total_bytes(),
+            capture_count: hit.capture_count(),
+            score: hit.score(),
+            why_matched,
+            snippet,
         }
     }
 }
@@ -144,6 +239,23 @@ pub(super) fn emit_get_output(format: OutputFormat, envelope: &GetEnvelope) -> R
         OutputFormat::Toon => Err(anyhow!(
             "`clipmem get --format toon` is not supported because TOON is only available for flattened list output"
         )),
+    }
+}
+
+pub(super) fn emit_recall_output(
+    format: super::RecallOutputFormat,
+    envelope: &RecallEnvelope,
+) -> Result<()> {
+    match format {
+        super::RecallOutputFormat::Json => print_json(envelope),
+        super::RecallOutputFormat::Md => {
+            print!("{}", render_recall_markdown(envelope));
+            Ok(())
+        }
+        super::RecallOutputFormat::Toon => {
+            print!("{}", render_recall_toon(envelope));
+            Ok(())
+        }
     }
 }
 
@@ -477,6 +589,71 @@ fn render_get_markdown(envelope: &GetEnvelope) -> String {
     out
 }
 
+fn render_recall_markdown(envelope: &RecallEnvelope) -> String {
+    let best = &envelope.best_candidate;
+    let mut out = String::new();
+    let _ = writeln!(out, "# Best Match");
+    let _ = writeln!(out);
+
+    if let Some(quoted_text) = &envelope.quoted_text {
+        for line in quoted_text.lines() {
+            let _ = writeln!(out, "> {line}");
+        }
+    } else if !best.best_text.is_empty() {
+        let _ = writeln!(out, "{}", best.best_text);
+    } else {
+        let _ = writeln!(out, "No direct text was recovered for this clipboard item.");
+    }
+
+    let _ = writeln!(out);
+    let _ = writeln!(out, "**Why This Match**");
+    let _ = writeln!(out, "{}", envelope.why_selected);
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "Provenance: snapshot {} · observed {} · {} · confidence {}{}",
+        best.snapshot_id,
+        best.observed_at,
+        best.app_name
+            .as_deref()
+            .or(best.app_bundle_id.as_deref())
+            .unwrap_or("unknown app"),
+        render_confidence_label(&envelope.best_match_confidence),
+        envelope
+            .best_match_score
+            .map(|score| format!(" · score {:.3}", score))
+            .unwrap_or_default()
+    );
+    if !best.urls.is_empty() {
+        let _ = writeln!(out, "URLs: {}", best.urls.join(", "));
+    }
+    if !best.file_paths.is_empty() {
+        let _ = writeln!(out, "Files: {}", best.file_paths.join(", "));
+    }
+
+    if !envelope.alternatives.is_empty() {
+        let _ = writeln!(out);
+        let _ = writeln!(out, "## Alternatives");
+        for alternative in envelope.alternatives.iter().take(5) {
+            let app = alternative
+                .app_name
+                .as_deref()
+                .or(alternative.app_bundle_id.as_deref())
+                .unwrap_or("unknown app");
+            let _ = writeln!(
+                out,
+                "- snapshot {} · {} · {} · {}",
+                alternative.snapshot_id,
+                alternative.observed_at,
+                app,
+                escape_markdown_cell(&alternative.snippet)
+            );
+        }
+    }
+
+    out
+}
+
 fn render_list_toon(envelope: &ListEnvelope) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "schema_version: {}", envelope.schema_version);
@@ -575,6 +752,124 @@ fn render_list_toon(envelope: &ListEnvelope) -> String {
     out
 }
 
+fn render_recall_toon(envelope: &RecallEnvelope) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "schema_version: {}", envelope.schema_version);
+    let _ = writeln!(out, "command: recall");
+    let _ = writeln!(
+        out,
+        "generated_at: {}",
+        encode_toon_scalar(&Value::String(envelope.generated_at.clone()))
+    );
+    let _ = writeln!(
+        out,
+        "query: {}",
+        encode_toon_scalar(
+            &envelope
+                .query
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+        )
+    );
+    let _ = writeln!(
+        out,
+        "best_match_confidence: {}",
+        encode_toon_scalar(&serde_json::to_value(&envelope.best_match_confidence).unwrap_or(Value::Null))
+    );
+    let _ = writeln!(
+        out,
+        "best_match_score: {}",
+        encode_toon_scalar(
+            &envelope
+                .best_match_score
+                .map(Value::from)
+                .unwrap_or(Value::Null),
+        )
+    );
+    let _ = writeln!(
+        out,
+        "why_selected: {}",
+        encode_toon_scalar(&Value::String(envelope.why_selected.clone()))
+    );
+    if let Some(quoted_text) = &envelope.quoted_text {
+        let _ = writeln!(
+            out,
+            "quoted_text: {}",
+            encode_toon_scalar(&Value::String(quoted_text.clone()))
+        );
+    }
+    let _ = writeln!(out, "applied_filters:");
+    render_toon_object(&mut out, &envelope.applied_filters, 2);
+
+    render_recall_rows_toon(&mut out, "best_candidate", std::slice::from_ref(&envelope.best_candidate));
+    render_recall_rows_toon(&mut out, "alternatives", &envelope.alternatives);
+
+    out
+}
+
+fn render_recall_rows_toon(out: &mut String, key: &str, rows: &[RecallOutputRow]) {
+    let fields = [
+        "snapshot_id",
+        "event_id",
+        "sha256",
+        "kind",
+        "observed_at",
+        "first_seen_at",
+        "last_seen_at",
+        "app_name",
+        "app_bundle_id",
+        "best_text",
+        "preview_text",
+        "urls",
+        "file_paths",
+        "item_count",
+        "total_bytes",
+        "capture_count",
+        "score",
+        "why_matched",
+        "snippet",
+    ];
+    let _ = writeln!(out, "{key}[#{}\t]{{{}}}:", rows.len(), fields.join("\t"));
+    for row in rows {
+        let values = vec![
+            Value::from(row.snapshot_id),
+            Value::from(row.event_id),
+            Value::String(row.sha256.clone()),
+            Value::String(row.kind.clone()),
+            Value::String(row.observed_at.clone()),
+            Value::String(row.first_seen_at.clone()),
+            Value::String(row.last_seen_at.clone()),
+            row.app_name.clone().map(Value::String).unwrap_or(Value::Null),
+            row.app_bundle_id
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+            Value::String(row.best_text.clone()),
+            Value::String(row.preview_text.clone()),
+            Value::String(serde_json::to_string(&row.urls).unwrap_or_else(|_| "[]".to_string())),
+            Value::String(
+                serde_json::to_string(&row.file_paths).unwrap_or_else(|_| "[]".to_string()),
+            ),
+            Value::from(row.item_count as u64),
+            Value::from(row.total_bytes as u64),
+            Value::from(row.capture_count as u64),
+            row.score.map(Value::from).unwrap_or(Value::Null),
+            row.why_matched
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+            Value::String(row.snippet.clone()),
+        ];
+        let encoded = values
+            .iter()
+            .map(encode_toon_scalar)
+            .collect::<Vec<_>>()
+            .join("\t");
+        let _ = writeln!(out, "  {encoded}");
+    }
+}
+
 fn render_toon_object(out: &mut String, value: &Value, indent: usize) {
     let Some(object) = value.as_object() else {
         return;
@@ -648,6 +943,27 @@ fn render_filter_pairs(filters: &Value) -> String {
         .join(", ")
 }
 
+fn render_confidence_label(confidence: &RecallMatchConfidence) -> &'static str {
+    match confidence {
+        RecallMatchConfidence::High => "high",
+        RecallMatchConfidence::Medium => "medium",
+        RecallMatchConfidence::Low => "low",
+    }
+}
+
+fn best_text_from_hit(hit: &SearchHit) -> String {
+    hit.preview_text()
+        .trim()
+        .is_empty()
+        .then(|| {
+            hit.why_matched()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or(hit.preview_text())
+        })
+        .unwrap_or(hit.preview_text())
+        .to_string()
+}
+
 fn escape_markdown_cell(value: &str) -> String {
     value.replace('|', "\\|")
 }
@@ -688,8 +1004,9 @@ mod tests {
 
     use super::{
         render_capture_once_text, render_doctor_text, render_get_markdown, render_hits_text,
-        render_list_markdown, render_list_toon, render_search_results_text, render_snapshot_text,
-        GetEnvelope, ListEnvelope, ListRow, OUTPUT_SCHEMA_VERSION,
+        render_list_markdown, render_list_toon, render_recall_markdown, render_recall_toon,
+        render_search_results_text, render_snapshot_text, GetEnvelope, ListEnvelope, ListRow,
+        RecallEnvelope, RecallMatchConfidence, RecallOutputRow, OUTPUT_SCHEMA_VERSION,
     };
 
     #[test]
@@ -912,5 +1229,74 @@ mod tests {
         assert!(markdown.contains("## Items"));
         assert!(markdown.contains("## Recent Events"));
         assert!(markdown.contains("Snapshot: 7"));
+    }
+
+    #[test]
+    fn recall_markdown_and_toon_render_best_match_and_alternatives() {
+        let envelope = RecallEnvelope {
+            schema_version: OUTPUT_SCHEMA_VERSION,
+            command: "recall",
+            generated_at: "2026-04-17T10:00:00Z".to_string(),
+            applied_filters: json!({
+                "limit": 5,
+                "prefer_recent": true,
+            }),
+            query: Some("git".to_string()),
+            best_candidate: RecallOutputRow {
+                snapshot_id: 1,
+                event_id: 2,
+                sha256: "abc".to_string(),
+                kind: "plain_text".to_string(),
+                observed_at: "2026-04-17T10:00:00Z".to_string(),
+                first_seen_at: "2026-04-17T09:00:00Z".to_string(),
+                last_seen_at: "2026-04-17T10:00:00Z".to_string(),
+                app_name: Some("Terminal".to_string()),
+                app_bundle_id: Some("com.apple.Terminal".to_string()),
+                best_text: "git status".to_string(),
+                preview_text: "git status".to_string(),
+                urls: vec!["https://example.com".to_string()],
+                file_paths: vec!["/tmp/file.txt".to_string()],
+                item_count: 1,
+                total_bytes: 10,
+                capture_count: 1,
+                score: Some(0.1),
+                why_matched: Some("git status".to_string()),
+                snippet: "git status".to_string(),
+            },
+            alternatives: vec![RecallOutputRow {
+                snapshot_id: 3,
+                event_id: 4,
+                sha256: "def".to_string(),
+                kind: "plain_text".to_string(),
+                observed_at: "2026-04-17T09:00:00Z".to_string(),
+                first_seen_at: "2026-04-17T08:00:00Z".to_string(),
+                last_seen_at: "2026-04-17T09:00:00Z".to_string(),
+                app_name: Some("Editor".to_string()),
+                app_bundle_id: Some("com.example.Editor".to_string()),
+                best_text: "git commit".to_string(),
+                preview_text: "git commit".to_string(),
+                urls: Vec::new(),
+                file_paths: Vec::new(),
+                item_count: 1,
+                total_bytes: 10,
+                capture_count: 1,
+                score: None,
+                why_matched: None,
+                snippet: "git commit".to_string(),
+            }],
+            best_match_confidence: RecallMatchConfidence::High,
+            best_match_score: Some(0.91),
+            why_selected: "Selected the strongest search match".to_string(),
+            quoted_text: Some("git status".to_string()),
+        };
+
+        let markdown = render_recall_markdown(&envelope);
+        let toon = render_recall_toon(&envelope);
+
+        assert!(markdown.contains("# Best Match"));
+        assert!(markdown.contains("## Alternatives"));
+        assert!(markdown.contains("> git status"));
+        assert!(toon.contains("best_candidate[#1"));
+        assert!(toon.contains("alternatives[#1"));
     }
 }

@@ -103,6 +103,9 @@ clipmem watch --interval-ms 350 --skip-initial
 Search the archive:
 
 ```bash
+clipmem recall "launchctl bootstrap"
+clipmem recall "that shell one-liner with rsync" --format json
+clipmem recall --prefer-recent
 clipmem search "launchctl bootstrap" --limit 5
 clipmem search "that shell one-liner with rsync" --format json
 clipmem search "launchctl bootstrap" --format md
@@ -140,7 +143,7 @@ clipmem doctor
 
 ## Output formats
 
-Agent-facing retrieval commands (`search`, `recent`, `get`) share a common `--format` flag:
+Agent-facing retrieval commands (`search`, `recent`, `get`) share a common `--format` flag, and `recall` exposes `--format md|json|toon`:
 
 - `text` – default human-oriented terminal output
 - `json` – canonical machine-readable format with `schema_version`
@@ -166,6 +169,27 @@ Pagination uses `--limit` plus the opaque `next_cursor` returned by a prior resp
 clipmem search "git status" --format json --limit 10
 clipmem search "git status" --format json --limit 10 --cursor "<next_cursor>"
 ```
+
+`clipmem recall` is the primary agent-facing retrieval command. It accepts an optional query and returns one best candidate plus alternatives:
+
+```bash
+clipmem recall "git status"
+clipmem recall "git status" --format json
+clipmem recall --prefer-recent --hours 24
+clipmem recall "Terminal" --prefer-app terminal --format toon
+```
+
+`recall` defaults to compact Markdown and supports:
+
+- `--format md|json|toon`
+- `--limit`
+- `--full`
+- `--quote`
+- `--min-score`
+- `--prefer-recent`
+- `--prefer-app <name>`
+- `--mode <auto|fts|literal>` when a query is present
+- `--hours <N>` for recent fallback candidates
 
 ## LaunchAgent install
 
@@ -217,9 +241,9 @@ into:
 
 The skill tells OpenClaw to use:
 
-- `clipmem search "<query>" --format json`
-- `clipmem recent --hours 24 --format json`
-- `clipmem get <snapshot-id> --format json`
+- `clipmem recall "<query>" --format json`
+- `clipmem recall --prefer-recent --hours 24 --format json`
+- `clipmem get <snapshot-id> --format json` when deeper nested detail is needed
 
 OpenClaw must be able to run `clipmem` from its own environment, not just from your interactive shell. If you installed `clipmem` into `~/.local/bin`, make sure that directory is on the PATH seen by OpenClaw.
 
@@ -239,6 +263,7 @@ The key tables are:
 
 - Binary payloads are stored exactly, but only recognized text-like payloads are indexed.
 - `clipmem get --format json` intentionally omits raw blob bytes. Use `clipmem export` to recover stored binary payloads.
+- `clipmem recall` exposes flat `best_text`, `urls`, `file_paths`, and a short snippet so agents do not need to walk nested representation arrays by default.
 - RTF and HTML text extraction is intentionally lightweight and best-effort.
 - Search is great for commands, code, URLs, notes, logs and copied prose. Use `--mode auto` for the default FTS-or-literal behavior, `--mode fts` for strict FTS5 queries, or `--mode literal` for exact substring matching. It is not semantic search.
 - Explicit `--mode fts` keeps SQLite FTS5 semantics. In automatic mode, punctuation-heavy inputs may fall back to literal search.

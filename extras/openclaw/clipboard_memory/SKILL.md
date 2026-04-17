@@ -8,15 +8,16 @@ Use this skill when the user asks you to remember, find, search, or recover some
 
 Preferred flow:
 
-1. Run `clipmem search "<query>" --format json --limit 8`.
-2. If the result set is empty or vague, run `clipmem recent --hours 24 --format json --limit 12`.
-3. When a promising `snapshot_id` appears, run `clipmem get <snapshot_id> --format json`.
-4. Quote or summarise the stored clipboard text directly from the JSON output.
-5. If a snapshot contains multiple items or multiple representations, prefer the plain-text representation first, then URL, then HTML-derived text.
+1. Run `clipmem recall "<query>" --format json --limit 5`.
+2. If there is no query, or the request is more about “what did I copy recently?”, run `clipmem recall --prefer-recent --hours 24 --format json --limit 5`.
+3. Use `best_candidate.best_text`, `best_candidate.urls`, `best_candidate.file_paths`, and `why_selected` from the recall output first.
+4. When a `snapshot_id` needs deeper nested detail, run `clipmem get <snapshot_id> --format json`.
+5. Quote or summarise the surfaced recall text directly from the JSON output before falling back to nested representations.
 
 Notes:
 
-- `clipmem search` is lexical and works well for copied commands, code, URLs, errors, paths, notes, and prose.
-- `clipmem recent` returns recent unique clipboard states, grouped by content rather than by raw event count.
+- `clipmem recall` is the primary retrieval command. It chooses one best candidate, ranks alternatives, and falls back to recent clipboard items when query matches are weak.
+- `clipmem search` is still available for direct lexical lookup when you want raw ranked matches.
+- `clipmem recent` is still available for direct recent-history inspection.
 - `clipmem get` includes stored text payloads recovered for recognized text-like representations at capture time.
 - If a hit is image-, PDF-, or binary-only and has no `text_value`, report the metadata and explain that raw-byte recovery currently requires `clipmem export`.
