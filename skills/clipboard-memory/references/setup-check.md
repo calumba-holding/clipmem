@@ -20,29 +20,23 @@ clipmem doctor --json
 
 Expect exit 0 and `"fts5_create_virtual_table_ok": true` in the JSON payload. Non-zero exit means the SQLite archive is corrupt or inaccessible (failure is signalled via exit code, not a JSON `errors` field). `fts5_create_virtual_table_ok: false` means FTS queries will fail — either use `--mode literal` or rebuild the database.
 
-## 3. Watcher freshness
+## 3. Service and watcher freshness
 
 ```bash
-clipmem timeline --hours 1 --format json --limit 1
+clipmem service status --json
 ```
 
-Expect `results` to contain at least one row if the user has copied anything in the last hour. Zero rows is a warning, not a failure — it may simply mean the user hasn't copied recently.
+Expect `stale: false`. The report also tells you whether the Homebrew service (`homebrew.mxcl.clipmem`) or the direct LaunchAgent (`io.openclaw.clipmem.watch`) is loaded and running.
 
-## 4. LaunchAgent loaded (macOS)
-
-```bash
-launchctl list | grep io.openclaw.clipmem.watch
-```
-
-Expect one line with a PID column > 0. If missing or PID is `-`, the watcher is not running:
+If the report says no background service is loaded, start one of these:
 
 ```bash
-./scripts/install_launchagent.sh   # from the clipmem repo
+clipmem setup
 # or
-clipmem watch --skip-initial &     # foreground fallback
+brew services start clipmem
 ```
 
-## 5. OpenClaw integration (optional)
+## 4. OpenClaw integration (optional)
 
 If the agent is OpenClaw, also check:
 
@@ -58,7 +52,7 @@ Expect every check to report `[OK]`. `[FAIL]` lines include remediation steps.
 |---|---|
 | `clipmem` not found | binary not installed or not on PATH |
 | `doctor` exits non-zero | database lock, corruption, or permission issue |
-| `timeline --hours 1` empty + no LaunchAgent | watcher not running |
+| `service status --json` reports `stale: true` | no recent captures and no background watcher running |
 | FTS query errors | `fts5_create_virtual_table_ok: false` — switch to `--mode literal` |
 | Sandboxed agent can't see the archive | PATH or file-access scope; rerun `openclaw sandbox explain` |
 

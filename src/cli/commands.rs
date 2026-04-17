@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::cmp::Ordering;
@@ -25,10 +25,12 @@ use super::output::{
     render_snapshot_text, render_timeline_text, GetEnvelope, ListEnvelope, ListRow, RecallEnvelope,
     RecallMatchConfidence, RecallOutputRow, OUTPUT_SCHEMA_VERSION,
 };
+use super::service::{render_service_action_text, render_service_status_text, render_setup_text};
 use super::{
     AgentsArgs, CaptureOnceArgs, Command, DoctorArgs, ExportArgs, GetArgs, OpenClawArgs,
     OpenClawDoctorArgs, OpenClawInstallSkillArgs, OpenClawUninstallSkillArgs, OutputFormat,
-    RecallArgs, RecentArgs, SearchArgs, TimelineArgs, WatchArgs,
+    RecallArgs, RecentArgs, SearchArgs, ServiceArgs, ServiceCommand, ServiceStatusArgs, SetupArgs,
+    TimelineArgs, WatchArgs,
 };
 
 #[derive(Debug, Serialize)]
@@ -152,6 +154,8 @@ enum OpenClawDoctorStatus {
 pub(super) fn run_command(command: Command, db_path: &Path) -> Result<()> {
     match command {
         Command::Agents(args) => agents(&args),
+        Command::Setup(args) => setup(db_path, &args),
+        Command::Service(args) => service(db_path, &args),
         Command::Watch(args) => watch(db_path, &args),
         Command::CaptureOnce(args) => capture_once(db_path, &args),
         Command::Search(args) => search(db_path, &args),
@@ -162,6 +166,43 @@ pub(super) fn run_command(command: Command, db_path: &Path) -> Result<()> {
         Command::Export(args) => export_snapshot_bytes(db_path, &args),
         Command::Doctor(args) => doctor(db_path, &args),
     }
+}
+
+fn setup(db_path: &Path, _args: &SetupArgs) -> Result<()> {
+    let report = super::service::setup(db_path)?;
+    print!("{}", render_setup_text(&report));
+    Ok(())
+}
+
+fn service(db_path: &Path, args: &ServiceArgs) -> Result<()> {
+    match &args.command {
+        ServiceCommand::Start => {
+            let report = super::service::start(db_path)?;
+            print!("{}", render_service_action_text(&report));
+            Ok(())
+        }
+        ServiceCommand::Stop => {
+            let report = super::service::stop(db_path)?;
+            print!("{}", render_service_action_text(&report));
+            Ok(())
+        }
+        ServiceCommand::Status(status_args) => service_status(db_path, status_args),
+        ServiceCommand::Uninstall => {
+            let report = super::service::uninstall(db_path)?;
+            print!("{}", render_service_action_text(&report));
+            Ok(())
+        }
+    }
+}
+
+fn service_status(db_path: &Path, args: &ServiceStatusArgs) -> Result<()> {
+    let report = super::service::status_report(db_path)?;
+    if args.json {
+        emit_json_or_text(true, &report, render_service_status_text)?;
+    } else {
+        print!("{}", render_service_status_text(&report));
+    }
+    Ok(())
 }
 
 fn agents(args: &AgentsArgs) -> Result<()> {
@@ -445,8 +486,10 @@ fn recall(db_path: &Path, args: &RecallArgs) -> Result<()> {
     let format = args.output.resolved();
     let filters = normalize_retrieval_filters(&args.filters)?;
     let db = open_existing_db(db_path)?;
-    let recall =
-        anyhow::Context::context(compute_recall(&db, args, &filters), "recall query failed")?;
+    let recall = anyhow::Context::context(
+        compute_recall(&db, args, &filters),
+        "recall failed; if this is unexpected, run `clipmem service status` and `clipmem doctor`",
+    )?;
     let generated_at = generated_at_now()?;
     let projections = load_snapshot_projections(
         &db,
@@ -651,9 +694,31 @@ fn doctor(db_path: &Path, args: &DoctorArgs) -> Result<()> {
 }
 
 fn open_existing_db(path: &Path) -> Result<Database> {
-    anyhow::Context::with_context(Database::open_existing(path), || {
-        format!("failed to open database at {}", path.display())
-    })
+    if !path.is_file() {
+        bail!(
+            "database does not exist at {}. Run `clipmem setup` to initialize capture.",
+            path.display()
+        );
+    }
+    match Database::open_existing(path) {
+        Ok(db) => {
+            db.ensure_supported_schema_shape()?;
+            Ok(db)
+        }
+        Err(error) => {
+            if error
+                .chain()
+                .any(|cause| cause.to_string().contains("incompatible prerelease schema"))
+            {
+                Err(anyhow!(
+                    "incompatible prerelease schema detected at {}. Move the database aside and run `clipmem setup`.",
+                    path.display()
+                ))
+            } else {
+                Err(error).with_context(|| format!("failed to open database at {}", path.display()))
+            }
+        }
+    }
 }
 
 fn open_or_init_db(path: &Path) -> Result<Database> {
@@ -797,6 +862,7 @@ fn build_openclaw_doctor_report(args: &OpenClawDoctorArgs) -> Result<OpenClawDoc
         &[
             "Install clipmem with `brew install tristanmanchester/tap/clipmem`.",
             "Or install it with `cargo install clipmem`.",
+            "Then run `clipmem setup` to initialize the database and start background capture.",
         ],
     ));
 
@@ -1260,7 +1326,11 @@ fn compute_recall(
     let best = ranked
         .first()
         .cloned()
-        .ok_or_else(|| anyhow!("no clipboard candidates matched the recall request"))?;
+        .ok_or_else(|| {
+            anyhow!(
+                "no clipboard candidates matched the recall request; if this is unexpected, run `clipmem service status` to confirm the watcher is running"
+            )
+        })?;
     let alternatives = ranked
         .into_iter()
         .skip(1)

@@ -29,18 +29,16 @@ clipmem search "<query>" --mode literal --format json
 Symptom: `clipmem timeline --hours 1` returns zero rows despite the user having copied recently.
 
 ```bash
-launchctl list | grep io.openclaw.clipmem.watch
+clipmem service status --json
 ```
 
-No line, or PID column shows `-`:
+If `stale: true` or neither the Homebrew service nor the direct LaunchAgent is running:
 
 ```bash
-./scripts/install_launchagent.sh        # from the clipmem repo
-# or, as an ad-hoc fallback:
-clipmem watch --skip-initial &
+clipmem setup
+# or, for Homebrew-native management:
+brew services start clipmem
 ```
-
-On a fresh install, the LaunchAgent is not started by `brew install`; it is created by `scripts/install_launchagent.sh`.
 
 ---
 
@@ -93,6 +91,7 @@ clipmem doctor --json
 ```
 
 - `database is locked` — another writer is holding the lock. Usually the watcher under heavy load; try again in a few seconds.
+- `incompatible prerelease schema` — an older archive format is being mistaken for the current DB. Move the file aside, then run `clipmem setup`.
 - `malformed` or `corrupt` — SQLite detected structural damage. Back up `~/Library/Application Support/clipmem/clipmem.sqlite3`, then delete and let `clipmem capture-once` rebuild. You will lose history.
 - `permission denied` — the database file is not writable by the current user. Check `0600` on the file and `0700` on the containing directory (`~/Library/Application Support/clipmem/`).
 

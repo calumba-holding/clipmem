@@ -29,6 +29,9 @@ Pick the narrowest command that answers the question. Always pass `--format json
 | `export <SNAPSHOT_ID>` | — (raw bytes) | — | Write one representation to disk |
 | `capture-once` | — | — | Single clipboard capture (setup / ad-hoc) |
 | `watch` | — | — | Background daemon; usually a LaunchAgent |
+| `setup` | — | — | Seed one capture and start background capture |
+| `service status` | text (or `--json`) | — | Background provider state + capture freshness |
+| `service start` / `stop` / `uninstall` | — | — | Manage the background watcher service |
 | `doctor` | text (or `--json`) | — | SQLite / FTS5 diagnostics |
 | `agents openclaw doctor` | text | — | Integration health: PATH, workspace, sandbox |
 | `agents openclaw install-skill` | — | — | Write packaged skill files to disk |

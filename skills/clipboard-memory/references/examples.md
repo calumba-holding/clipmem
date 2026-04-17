@@ -160,10 +160,9 @@ Don't assume the archive is wrong; the watcher may have stopped.
 ./scripts/check-setup.sh
 # or, inline
 clipmem doctor --json
-clipmem timeline --hours 1 --format json --limit 1
-launchctl list | grep io.openclaw.clipmem.watch
+clipmem service status --json
 ```
 
-If `timeline --hours 1` returns zero rows and `launchctl list` has no entry, the watcher is not running. Tell the user to (re)install the LaunchAgent before retrying.
+If `clipmem service status --json` reports `stale: true`, the watcher is not running. Tell the user to run `clipmem setup` or `brew services start clipmem` before retrying.
 
 See [troubleshooting.md](troubleshooting.md) for remediation steps.

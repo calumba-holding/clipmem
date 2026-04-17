@@ -182,6 +182,17 @@ fn run_cli_with_env(args: &[&str], envs: &[(&str, &str)]) -> process::Output {
         .expect("clipmem binary should execute with env")
 }
 
+fn run_cli_with_owned_env(args: &[&str], envs: &[(String, String)]) -> process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_clipmem"));
+    command.args(args);
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+    command
+        .output()
+        .expect("clipmem binary should execute with owned env")
+}
+
 fn run_command_with_env(
     command_path: &Path,
     args: &[&str],
@@ -288,6 +299,70 @@ fn write_openclaw_skill_package(skill_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+fn write_stateful_launchctl_stub(bin_dir: &Path, state_dir: &Path) -> Result<()> {
+    let state_dir = state_dir.display().to_string();
+    let script = format!(
+        "#!/bin/sh
+STATE_DIR='{state_dir}'
+DIRECT_STATE=\"$STATE_DIR/direct.state\"
+HOMEBREW_STATE=\"$STATE_DIR/homebrew.state\"
+mkdir -p \"$STATE_DIR\"
+case \"$1\" in
+  list)
+    [ -f \"$HOMEBREW_STATE\" ] && cat \"$HOMEBREW_STATE\"
+    [ -f \"$DIRECT_STATE\" ] && cat \"$DIRECT_STATE\"
+    ;;
+  bootstrap)
+    printf '123 0 io.openclaw.clipmem.watch\\n' > \"$DIRECT_STATE\"
+    ;;
+  bootout)
+    case \"$2\" in
+      *homebrew.mxcl.clipmem) rm -f \"$HOMEBREW_STATE\" ;;
+      *io.openclaw.clipmem.watch) rm -f \"$DIRECT_STATE\" ;;
+    esac
+    ;;
+  enable|disable|kickstart)
+    ;;
+  *)
+    ;;
+esac
+exit 0
+"
+    );
+    write_executable(&bin_dir.join("launchctl"), &script)
+}
+
+fn write_stateful_brew_stub(
+    bin_dir: &Path,
+    state_dir: &Path,
+    services_available: bool,
+) -> Result<()> {
+    let state_dir = state_dir.display().to_string();
+    let availability = if services_available { 0 } else { 1 };
+    let script = format!(
+        "#!/bin/sh
+STATE_DIR='{state_dir}'
+HOMEBREW_STATE=\"$STATE_DIR/homebrew.state\"
+HOMEBREW_LOG=\"$STATE_DIR/brew.log\"
+mkdir -p \"$STATE_DIR\"
+printf '%s\\n' \"$*\" >> \"$HOMEBREW_LOG\"
+if [ \"$1\" = \"services\" ] && [ \"$2\" = \"list\" ]; then
+  exit {availability}
+fi
+if [ \"$1\" = \"services\" ] && [ \"$2\" = \"start\" ] && [ \"$3\" = \"clipmem\" ]; then
+  printf '456 0 homebrew.mxcl.clipmem\\n' > \"$HOMEBREW_STATE\"
+  exit 0
+fi
+if [ \"$1\" = \"services\" ] && [ \"$2\" = \"stop\" ] && [ \"$3\" = \"clipmem\" ]; then
+  rm -f \"$HOMEBREW_STATE\"
+  exit 0
+fi
+exit 0
+"
+    );
+    write_executable(&bin_dir.join("brew"), &script)
+}
+
 #[cfg(unix)]
 fn run_setup_check_script_with_launchctl(
     script_path: &Path,
@@ -299,15 +374,13 @@ fn run_setup_check_script_with_launchctl(
 
     write_executable(
         &bin_dir.join("clipmem"),
-        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  printf 'clipmem test\\n'\n  exit 0\nfi\nif [ \"$1\" = \"doctor\" ] && [ \"$2\" = \"--json\" ]; then\n  printf '{\"fts5_create_virtual_table_ok\":true}\\n'\n  exit 0\nfi\nif [ \"$1\" = \"timeline\" ]; then\n  printf '{\"command\":\"timeline\",\"results\":[],\"truncated\":false,\"next_cursor\":null}\\n'\n  exit 0\nfi\nif [ \"$1\" = \"agents\" ] && [ \"$2\" = \"openclaw\" ] && [ \"$3\" = \"--help\" ]; then\n  exit 0\nfi\nif [ \"$1\" = \"agents\" ] && [ \"$2\" = \"openclaw\" ] && [ \"$3\" = \"doctor\" ]; then\n  exit 0\nfi\nprintf 'unexpected clipmem args: %s\\n' \"$*\" >&2\nexit 99\n",
+        match launchctl_row {
+            Some("homebrew") => "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  printf 'clipmem test\\n'\n  exit 0\nfi\nif [ \"$1\" = \"doctor\" ] && [ \"$2\" = \"--json\" ]; then\n  printf '{\"fts5_create_virtual_table_ok\":true}\\n'\n  exit 0\nfi\nif [ \"$1\" = \"service\" ] && [ \"$2\" = \"status\" ] && [ \"$3\" = \"--json\" ]; then\n  printf '{\"homebrew\":{\"running\":true,\"loaded\":true},\"launchagent\":{\"running\":false,\"loaded\":false},\"stale\":false,\"recent_capture_within_last_hour\":1,\"conflict\":false}\\n'\n  exit 0\nfi\nif [ \"$1\" = \"agents\" ] && [ \"$2\" = \"openclaw\" ] && [ \"$3\" = \"--help\" ]; then\n  exit 0\nfi\nif [ \"$1\" = \"agents\" ] && [ \"$2\" = \"openclaw\" ] && [ \"$3\" = \"doctor\" ]; then\n  exit 0\nfi\nprintf 'unexpected clipmem args: %s\\n' \"$*\" >&2\nexit 99\n",
+            Some("- 0 io.openclaw.clipmem.watch") => "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  printf 'clipmem test\\n'\n  exit 0\nfi\nif [ \"$1\" = \"doctor\" ] && [ \"$2\" = \"--json\" ]; then\n  printf '{\"fts5_create_virtual_table_ok\":true}\\n'\n  exit 0\nfi\nif [ \"$1\" = \"service\" ] && [ \"$2\" = \"status\" ] && [ \"$3\" = \"--json\" ]; then\n  printf '{\"homebrew\":{\"running\":false,\"loaded\":false},\"launchagent\":{\"running\":false,\"loaded\":true},\"stale\":true,\"recent_capture_within_last_hour\":0,\"conflict\":false}\\n'\n  exit 0\nfi\nif [ \"$1\" = \"agents\" ] && [ \"$2\" = \"openclaw\" ] && [ \"$3\" = \"--help\" ]; then\n  exit 0\nfi\nif [ \"$1\" = \"agents\" ] && [ \"$2\" = \"openclaw\" ] && [ \"$3\" = \"doctor\" ]; then\n  exit 0\nfi\nprintf 'unexpected clipmem args: %s\\n' \"$*\" >&2\nexit 99\n",
+            Some("123 0 io.openclaw.clipmem.watch") => "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  printf 'clipmem test\\n'\n  exit 0\nfi\nif [ \"$1\" = \"doctor\" ] && [ \"$2\" = \"--json\" ]; then\n  printf '{\"fts5_create_virtual_table_ok\":true}\\n'\n  exit 0\nfi\nif [ \"$1\" = \"service\" ] && [ \"$2\" = \"status\" ] && [ \"$3\" = \"--json\" ]; then\n  printf '{\"homebrew\":{\"running\":false,\"loaded\":false},\"launchagent\":{\"running\":true,\"loaded\":true},\"stale\":false,\"recent_capture_within_last_hour\":0,\"conflict\":false}\\n'\n  exit 0\nfi\nif [ \"$1\" = \"agents\" ] && [ \"$2\" = \"openclaw\" ] && [ \"$3\" = \"--help\" ]; then\n  exit 0\nfi\nif [ \"$1\" = \"agents\" ] && [ \"$2\" = \"openclaw\" ] && [ \"$3\" = \"doctor\" ]; then\n  exit 0\nfi\nprintf 'unexpected clipmem args: %s\\n' \"$*\" >&2\nexit 99\n",
+            _ => "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  printf 'clipmem test\\n'\n  exit 0\nfi\nif [ \"$1\" = \"doctor\" ] && [ \"$2\" = \"--json\" ]; then\n  printf '{\"fts5_create_virtual_table_ok\":true}\\n'\n  exit 0\nfi\nif [ \"$1\" = \"service\" ] && [ \"$2\" = \"status\" ] && [ \"$3\" = \"--json\" ]; then\n  printf '{\"homebrew\":{\"running\":false,\"loaded\":false},\"launchagent\":{\"running\":false,\"loaded\":false},\"stale\":true,\"recent_capture_within_last_hour\":0,\"conflict\":false}\\n'\n  exit 0\nfi\nif [ \"$1\" = \"agents\" ] && [ \"$2\" = \"openclaw\" ] && [ \"$3\" = \"--help\" ]; then\n  exit 0\nfi\nif [ \"$1\" = \"agents\" ] && [ \"$2\" = \"openclaw\" ] && [ \"$3\" = \"doctor\" ]; then\n  exit 0\nfi\nprintf 'unexpected clipmem args: %s\\n' \"$*\" >&2\nexit 99\n",
+        },
     )?;
-    write_executable(&bin_dir.join("uname"), "#!/bin/sh\nprintf 'Darwin\\n'\n")?;
-
-    let launchctl_content = match launchctl_row {
-        Some(row) => format!("#!/bin/sh\nprintf '%s\\n' '{}'\n", row),
-        None => "#!/bin/sh\nprintf '%s\\n' '123 0 unrelated.label'\n".to_string(),
-    };
-    write_executable(&bin_dir.join("launchctl"), &launchctl_content)?;
 
     let path_value = format!("{}:/usr/bin:/bin", bin_dir.display());
     let output = run_command_with_env(script_path, &[], &[("PATH", &path_value)]);
@@ -402,7 +475,7 @@ fn setup_check_script_treats_loaded_but_not_running_launchagent_as_stale() -> Re
     assert_eq!(status_code(&output), 1);
     let stdout = stdout_text(&output);
     assert!(stdout.contains("loaded but not running"));
-    assert!(stdout.contains("STALE: no recent captures and the LaunchAgent is not running"));
+    assert!(stdout.contains("STALE: no recent captures and no background watcher is running"));
     Ok(())
 }
 
@@ -416,7 +489,7 @@ fn setup_check_script_treats_running_launchagent_as_soft_warning_only() -> Resul
 
     assert_eq!(status_code(&output), 0);
     let stdout = stdout_text(&output);
-    assert!(stdout.contains("is running (PID 123)"));
+    assert!(stdout.contains("LaunchAgent io.openclaw.clipmem.watch is running"));
     assert!(stdout.contains("All checks passed."));
     Ok(())
 }
@@ -431,8 +504,24 @@ fn setup_check_script_treats_missing_launchagent_as_stale() -> Result<()> {
 
     assert_eq!(status_code(&output), 1);
     let stdout = stdout_text(&output);
-    assert!(stdout.contains("is not loaded"));
-    assert!(stdout.contains("STALE: no recent captures and the LaunchAgent is not running"));
+    assert!(stdout.contains("no clipmem background service is loaded"));
+    assert!(stdout.contains("clipmem setup"));
+    assert!(stdout.contains("STALE: no recent captures and no background watcher is running"));
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn setup_check_script_treats_running_homebrew_service_as_healthy() -> Result<()> {
+    let output = run_setup_check_script_with_launchctl(
+        Path::new("extras/openclaw/clipboard-memory/scripts/check-setup.sh"),
+        Some("homebrew"),
+    )?;
+
+    assert_eq!(status_code(&output), 0);
+    let stdout = stdout_text(&output);
+    assert!(stdout.contains("Homebrew service homebrew.mxcl.clipmem is running"));
+    assert!(stdout.contains("All checks passed."));
     Ok(())
 }
 
@@ -455,11 +544,299 @@ fn openclaw_command_help_includes_examples() {
 }
 
 #[test]
+fn setup_and_service_help_include_examples() {
+    let cases = [
+        vec!["setup", "--help"],
+        vec!["service", "--help"],
+        vec!["service", "status", "--help"],
+    ];
+
+    for args in cases {
+        let output = run_cli(&args);
+        assert_eq!(status_code(&output), 0, "help should succeed for {args:?}");
+        assert!(stdout_text(&output).contains("Examples:"));
+        assert!(stderr_text(&output).is_empty());
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn setup_uses_direct_launchagent_provider_when_homebrew_is_not_detected() -> Result<()> {
+    let test_dir = temp_test_dir("service-setup-direct");
+    let home_dir = test_dir.join("home");
+    let bin_dir = test_dir.join("bin");
+    let state_dir = test_dir.join("state");
+    fs::create_dir_all(&home_dir)?;
+    fs::create_dir_all(&bin_dir)?;
+    fs::create_dir_all(&state_dir)?;
+    write_stateful_launchctl_stub(&bin_dir, &state_dir)?;
+    write_executable(&bin_dir.join("id"), "#!/bin/sh\nprintf '501\\n'\n")?;
+
+    let db_path = home_dir
+        .join("Library/Application Support/clipmem/clipmem.sqlite3")
+        .display()
+        .to_string();
+    let path_value = format!("{}:/usr/bin:/bin", bin_dir.display());
+    let active_binary = home_dir.join(".cargo/bin/clipmem").display().to_string();
+    let envs = vec![
+        ("HOME".to_string(), home_dir.display().to_string()),
+        ("PATH".to_string(), path_value),
+        (
+            "CLIPMEM_TEST_ACTIVE_BINARY".to_string(),
+            active_binary.clone(),
+        ),
+        (
+            "CLIPMEM_TEST_SKIP_SETUP_CAPTURE_ONCE".to_string(),
+            "1".to_string(),
+        ),
+    ];
+
+    let output = run_cli_with_owned_env(&["--db", &db_path, "setup"], &envs);
+    assert!(output.status.success(), "{}", stderr_text(&output));
+    let stdout = stdout_text(&output);
+    assert!(stdout.contains("provider: launchagent"));
+    assert!(stdout.contains("seeded_capture: false"));
+
+    let plist_path = home_dir.join("Library/LaunchAgents/io.openclaw.clipmem.watch.plist");
+    assert!(plist_path.is_file());
+    let plist = fs::read_to_string(&plist_path)?;
+    assert!(plist.contains(&active_binary));
+    assert!(plist.contains(&db_path));
+
+    let status = run_cli_with_owned_env(&["--db", &db_path, "service", "status", "--json"], &envs);
+    assert!(status.status.success(), "{}", stderr_text(&status));
+    let payload: Value = serde_json::from_slice(&status.stdout)?;
+    assert_eq!(payload["preferred_provider"], "launchagent");
+    assert_eq!(payload["launchagent"]["running"], true);
+    assert_eq!(payload["conflict"], false);
+
+    let stop = run_cli_with_owned_env(&["--db", &db_path, "service", "stop"], &envs);
+    assert!(stop.status.success(), "{}", stderr_text(&stop));
+    assert!(plist_path.is_file());
+
+    let uninstall = run_cli_with_owned_env(&["--db", &db_path, "service", "uninstall"], &envs);
+    assert!(uninstall.status.success(), "{}", stderr_text(&uninstall));
+    assert!(!plist_path.exists());
+
+    let _ = fs::remove_dir_all(&test_dir);
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn setup_prefers_homebrew_provider_when_homebrew_binary_and_services_are_available() -> Result<()> {
+    let test_dir = temp_test_dir("service-setup-homebrew");
+    let home_dir = test_dir.join("home");
+    let bin_dir = test_dir.join("bin");
+    let state_dir = test_dir.join("state");
+    fs::create_dir_all(&home_dir)?;
+    fs::create_dir_all(&bin_dir)?;
+    fs::create_dir_all(&state_dir)?;
+    write_stateful_launchctl_stub(&bin_dir, &state_dir)?;
+    write_stateful_brew_stub(&bin_dir, &state_dir, true)?;
+    write_executable(&bin_dir.join("id"), "#!/bin/sh\nprintf '501\\n'\n")?;
+
+    let path_value = format!("{}:/usr/bin:/bin", bin_dir.display());
+    let envs = vec![
+        ("HOME".to_string(), home_dir.display().to_string()),
+        ("PATH".to_string(), path_value),
+        (
+            "CLIPMEM_TEST_ACTIVE_BINARY".to_string(),
+            "/opt/homebrew/bin/clipmem".to_string(),
+        ),
+        (
+            "CLIPMEM_TEST_SKIP_SETUP_CAPTURE_ONCE".to_string(),
+            "1".to_string(),
+        ),
+    ];
+
+    let output = run_cli_with_owned_env(&["setup"], &envs);
+    assert!(output.status.success(), "{}", stderr_text(&output));
+    let stdout = stdout_text(&output);
+    assert!(stdout.contains("provider: homebrew"));
+
+    let brew_log = fs::read_to_string(state_dir.join("brew.log"))?;
+    assert!(brew_log.contains("services start clipmem"));
+
+    let status = run_cli_with_owned_env(&["service", "status", "--json"], &envs);
+    assert!(status.status.success(), "{}", stderr_text(&status));
+    let payload: Value = serde_json::from_slice(&status.stdout)?;
+    assert_eq!(payload["preferred_provider"], "homebrew");
+    assert_eq!(payload["homebrew"]["running"], true);
+
+    let _ = fs::remove_dir_all(&test_dir);
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn service_start_fails_with_clear_guidance_when_both_providers_are_installed() -> Result<()> {
+    let test_dir = temp_test_dir("service-conflict");
+    let home_dir = test_dir.join("home");
+    let bin_dir = test_dir.join("bin");
+    let state_dir = test_dir.join("state");
+    fs::create_dir_all(home_dir.join("Library/LaunchAgents"))?;
+    fs::create_dir_all(&bin_dir)?;
+    fs::create_dir_all(&state_dir)?;
+    write_stateful_launchctl_stub(&bin_dir, &state_dir)?;
+    write_stateful_brew_stub(&bin_dir, &state_dir, true)?;
+    write_executable(&bin_dir.join("id"), "#!/bin/sh\nprintf '501\\n'\n")?;
+    fs::write(
+        state_dir.join("homebrew.state"),
+        "456 0 homebrew.mxcl.clipmem\n",
+    )?;
+    fs::write(
+        state_dir.join("direct.state"),
+        "123 0 io.openclaw.clipmem.watch\n",
+    )?;
+    fs::write(
+        home_dir.join("Library/LaunchAgents/io.openclaw.clipmem.watch.plist"),
+        "<plist/>",
+    )?;
+    fs::write(
+        home_dir.join("Library/LaunchAgents/homebrew.mxcl.clipmem.plist"),
+        "<plist/>",
+    )?;
+
+    let path_value = format!("{}:/usr/bin:/bin", bin_dir.display());
+    let envs = vec![
+        ("HOME".to_string(), home_dir.display().to_string()),
+        ("PATH".to_string(), path_value),
+        (
+            "CLIPMEM_TEST_ACTIVE_BINARY".to_string(),
+            "/opt/homebrew/bin/clipmem".to_string(),
+        ),
+    ];
+
+    let output = run_cli_with_owned_env(&["service", "start"], &envs);
+    assert!(!output.status.success());
+    let stderr = stderr_text(&output);
+    assert!(stderr.contains("Both the Homebrew service and the direct LaunchAgent are installed"));
+    assert!(stderr.contains("brew services stop clipmem"));
+    assert!(stderr.contains("clipmem service uninstall"));
+
+    let _ = fs::remove_dir_all(&test_dir);
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn service_status_reports_stale_when_captures_are_old_and_no_service_is_running() -> Result<()> {
+    let test_dir = temp_test_dir("service-status-stale");
+    let home_dir = test_dir.join("home");
+    let bin_dir = test_dir.join("bin");
+    let state_dir = test_dir.join("state");
+    fs::create_dir_all(&home_dir)?;
+    fs::create_dir_all(&bin_dir)?;
+    fs::create_dir_all(&state_dir)?;
+    write_stateful_launchctl_stub(&bin_dir, &state_dir)?;
+    write_executable(&bin_dir.join("id"), "#!/bin/sh\nprintf '501\\n'\n")?;
+
+    let db_path = home_dir.join("Library/Application Support/clipmem/clipmem.sqlite3");
+    let seeded = seed_events(&db_path, &[text_snapshot(1, "git status")])?;
+    let (_, event_id) = seeded[0];
+    set_event_observed_at(&db_path, event_id, "2026-04-10 10:00:00")?;
+
+    let path_value = format!("{}:/usr/bin:/bin", bin_dir.display());
+    let envs = vec![
+        ("HOME".to_string(), home_dir.display().to_string()),
+        ("PATH".to_string(), path_value),
+        (
+            "CLIPMEM_TEST_ACTIVE_BINARY".to_string(),
+            home_dir.join(".cargo/bin/clipmem").display().to_string(),
+        ),
+    ];
+
+    let output = run_cli_with_owned_env(
+        &[
+            "--db",
+            db_path.to_str().expect("utf-8 db path"),
+            "service",
+            "status",
+            "--json",
+        ],
+        &envs,
+    );
+    assert!(output.status.success(), "{}", stderr_text(&output));
+    let payload: Value = serde_json::from_slice(&output.stdout)?;
+    assert_eq!(payload["stale"], true);
+    assert_eq!(payload["launchagent"]["running"], false);
+    assert_eq!(payload["recent_capture_within_last_hour"], false);
+
+    let _ = fs::remove_dir_all(&test_dir);
+    Ok(())
+}
+
+#[test]
 fn invalid_args_exit_with_code_2_and_write_only_stderr() {
     let output = run_cli(&["recent", "--limit", "0"]);
     assert_eq!(status_code(&output), 2);
     assert!(stdout_text(&output).is_empty());
     assert!(stderr_text(&output).contains("between 1 and 250"));
+}
+
+#[test]
+fn legacy_prerelease_database_schema_points_users_at_setup() -> Result<()> {
+    let path = temp_db_path("legacy-prerelease-schema");
+    let parent = path.parent().expect("temp db path should have a parent");
+    fs::create_dir_all(parent)?;
+
+    let conn = Connection::open(&path)?;
+    conn.execute_batch(
+        r"
+        CREATE TABLE snapshots (
+            id INTEGER PRIMARY KEY,
+            sha256 TEXT NOT NULL UNIQUE,
+            snapshot_kind TEXT NOT NULL,
+            preview_text TEXT NOT NULL,
+            search_text TEXT NOT NULL,
+            item_count INTEGER NOT NULL,
+            total_bytes INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE snapshot_items (
+            snapshot_id INTEGER NOT NULL,
+            item_index INTEGER NOT NULL,
+            preview_text TEXT NOT NULL,
+            PRIMARY KEY (snapshot_id, item_index)
+        );
+        CREATE TABLE item_representations (
+            snapshot_id INTEGER NOT NULL,
+            item_index INTEGER NOT NULL,
+            uti TEXT NOT NULL,
+            classification TEXT NOT NULL,
+            is_text INTEGER NOT NULL CHECK (is_text IN (0, 1)),
+            byte_len INTEGER NOT NULL,
+            raw_sha256 TEXT NOT NULL,
+            text_value TEXT,
+            blob_value BLOB NOT NULL,
+            PRIMARY KEY (snapshot_id, item_index, uti)
+        );
+        CREATE TABLE capture_events (
+            id INTEGER PRIMARY KEY,
+            snapshot_id INTEGER NOT NULL,
+            observed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            change_count INTEGER NOT NULL,
+            frontmost_app_bundle_id TEXT,
+            frontmost_app_name TEXT
+        );
+        PRAGMA user_version = 1;
+    ",
+    )?;
+    drop(conn);
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be utf-8"),
+        "recent",
+    ]);
+    assert!(!output.status.success());
+    let stderr = stderr_text(&output);
+    assert!(stderr.contains("database operation failed"));
+    assert!(stderr.contains("clipmem setup"));
+
+    cleanup_db(&path);
+    Ok(())
 }
 
 #[test]
@@ -524,7 +901,7 @@ fn db_error_exit_with_code_5_and_write_only_stderr() -> Result<()> {
 
     assert_eq!(status_code(&output), 5);
     assert!(stdout_text(&output).is_empty());
-    assert!(stderr_text(&output).contains("failed to open database"));
+    assert!(stderr_text(&output).contains("database does not exist"));
 
     let _ = fs::remove_dir_all(&dir);
     Ok(())

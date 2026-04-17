@@ -76,6 +76,28 @@ const LIST_QUERY_CTES: &str = r"
 ";
 
 impl Database {
+    pub(crate) fn latest_capture_observed_at(&self) -> Result<Option<String>> {
+        let observed_at = self
+            .conn
+            .query_row("SELECT MAX(observed_at) FROM capture_events", [], |row| {
+                row.get::<_, Option<String>>(0)
+            })
+            .context("read latest capture timestamp")?;
+        Ok(observed_at)
+    }
+
+    pub(crate) fn has_capture_within_hours(&self, hours: u32) -> Result<bool> {
+        let sql = "SELECT EXISTS(
+                SELECT 1
+                FROM capture_events
+                WHERE datetime(observed_at) >= datetime('now', printf('-%d hours', ?1))
+            )";
+        self.conn
+            .query_row(sql, params![i64::from(hours)], |row| row.get::<_, i64>(0))
+            .map(|value| value != 0)
+            .context("read capture freshness")
+    }
+
     /// Search stored snapshots in automatic mode.
     ///
     /// Automatic mode prefers FTS5, but falls back to literal `LIKE` matching for wildcard-like

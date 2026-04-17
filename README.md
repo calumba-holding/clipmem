@@ -40,12 +40,15 @@ Homebrew (Apple Silicon):
 
 ```bash
 brew install tristanmanchester/tap/clipmem
+clipmem setup
+# or: brew services start clipmem
 ```
 
 Cargo (Apple Silicon or Intel):
 
 ```bash
 cargo install clipmem
+clipmem setup
 ```
 
 Build from source:
@@ -60,15 +63,16 @@ All three paths produce the same `clipmem` binary.
 
 ## Quick start
 
-Capture the current clipboard once to confirm everything works:
+Initialize the archive and start background capture:
 
 ```bash
-clipmem capture-once
+clipmem setup
 ```
 
-Start the watcher in the foreground (useful for testing — see [Run in the background](#run-in-the-background-launchagent) for the normal setup):
+Check service state or run the watcher in the foreground if you want to debug interactively:
 
 ```bash
+clipmem service status
 clipmem watch --interval-ms 350
 ```
 
@@ -85,41 +89,30 @@ Check SQLite / FTS5 diagnostics if something looks off:
 clipmem doctor
 ```
 
-## Run in the background (LaunchAgent)
+## Run in the background
 
-The normal way to use `clipmem` is as a user LaunchAgent that starts on login. The included script installs the binary, creates the database directory with tight permissions, and loads the agent:
+`clipmem setup` is the canonical onboarding path. It performs one foreground capture to seed the archive, then starts background capture using the most natural provider for the active install:
 
-```bash
-./scripts/install_launchagent.sh
-```
+- Homebrew installs prefer `brew services start clipmem`.
+- Cargo and manual installs use a direct per-user LaunchAgent (`io.openclaw.clipmem.watch`).
 
-By default that will:
-
-- install the Rust binary into `~/.local/bin`
-- create `~/Library/Application Support/clipmem` (mode `0700`)
-- write `~/Library/LaunchAgents/io.openclaw.clipmem.watch.plist`
-- launch the watcher with `--skip-initial` so the pasteboard state present at login isn't re-logged
-- kickstart the agent immediately
-
-Verify it's running:
+Common service commands:
 
 ```bash
-launchctl list | grep clipmem
-# expect: <pid>  0  io.openclaw.clipmem.watch
-tail -f ~/Library/Application\ Support/clipmem/logs/clipmem.stderr.log
+clipmem setup
+clipmem service status
+clipmem service stop
+clipmem service uninstall
 ```
 
-Environment variables the install script honors:
-
-- `CLIPMEM_INSTALL_ROOT` — defaults to `~/.local`
-- `CLIPMEM_DB_PATH` — defaults to `~/Library/Application Support/clipmem/clipmem.sqlite3`
-- `CLIPMEM_INTERVAL_MS` — defaults to `350`
-
-To remove the LaunchAgent and plist (leaves the database intact):
+If you prefer the Homebrew-native flow, this is also supported:
 
 ```bash
-./scripts/uninstall_launchagent.sh
+brew services start clipmem
+brew services stop clipmem
 ```
+
+The compatibility wrappers `./scripts/install_launchagent.sh` and `./scripts/uninstall_launchagent.sh` still exist, but they now delegate to `clipmem setup` and `clipmem service uninstall`.
 
 For a full wipe including the database, see [Uninstall / Full cleanup](#uninstall--full-cleanup).
 
@@ -363,15 +356,15 @@ For compatibility, `./scripts/install_openclaw_skill.sh` still exists as a thin 
 
 - All clipboard data stays on your machine. `clipmem` makes no network calls and sends no telemetry.
 - The database lives at `~/Library/Application Support/clipmem/clipmem.sqlite3`. Logs are in the same directory under `logs/`.
-- Permissions: directory `0700`, database and logs `0600` — enforced at runtime in `src/db.rs::harden_path_permissions` and by the install script's `umask 077`.
+- Permissions: directory `0700`, database and logs `0600` — enforced at runtime in `src/db.rs::harden_path_permissions` and by the managed service setup flow.
 - **The database is not encrypted.** Rely on FileVault (or similar disk encryption) for at-rest protection.
 - There is **no automatic retention or pruning**. The archive grows until you delete it. See [Uninstall / Full cleanup](#uninstall--full-cleanup) to wipe.
 
 ## Uninstall / Full cleanup
 
 ```bash
-# stop and remove the LaunchAgent
-./scripts/uninstall_launchagent.sh
+# stop and remove the managed background service
+clipmem service uninstall
 
 # remove the OpenClaw skill (if installed)
 clipmem agents openclaw uninstall-skill
@@ -429,7 +422,7 @@ Project layout:
 - `skills/clipboard-memory/` — canonical public skill content for repo-based installers.
 - `extras/openclaw/clipboard-memory/` — packaged OpenClaw-native skill content.
 - `extras/agent-skills/clipboard-memory/` — portable skill package mirror for non-OpenClaw runtimes.
-- `scripts/install_launchagent.sh` / `scripts/uninstall_launchagent.sh` — install and remove the LaunchAgent.
+- `scripts/install_launchagent.sh` / `scripts/uninstall_launchagent.sh` — compatibility wrappers around `clipmem setup` and `clipmem service uninstall`.
 - `scripts/install_openclaw_skill.sh` — compatibility wrapper around `clipmem agents openclaw install-skill`.
 
 Build and test (Rust 1.87+):

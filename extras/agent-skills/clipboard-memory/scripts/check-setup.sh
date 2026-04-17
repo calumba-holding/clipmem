@@ -8,7 +8,7 @@
 # Exit codes:
 #   0  all checks passed (green) or watcher freshness is the only soft warning
 #   1  watcher stale: clipmem is installed and healthy but nothing captured
-#      recently and no LaunchAgent is running
+#      recently and no background service is running
 #   2  binary missing: clipmem is not on PATH
 #   3  doctor failed: clipmem doctor reported a hard error
 #
@@ -56,40 +56,59 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 3. Watcher freshness: anything captured in the last hour?
+# 3. clipmem service status
 # ---------------------------------------------------------------------------
-TIMELINE_OUT=$(clipmem timeline --hours 1 --format json --limit 1 2>&1 || true)
-if printf '%s' "$TIMELINE_OUT" | grep -q '"snapshot_id"'; then
+STATUS_OUT=$(clipmem service status --json 2>&1)
+STATUS_CODE=$?
+if [ "$STATUS_CODE" -ne 0 ]; then
+    red "FAIL: clipmem service status exited ${STATUS_CODE}"
+    printf '%s\n' "$STATUS_OUT" >&2
+    exit 3
+fi
+
+STATUS_VARS=$(
+    printf '%s' "$STATUS_OUT" | python3 -c "import json,sys; data=json.load(sys.stdin); print('homebrew_running=%d' % (1 if data['homebrew']['running'] else 0)); print('homebrew_loaded=%d' % (1 if data['homebrew']['loaded'] else 0)); print('launchagent_running=%d' % (1 if data['launchagent']['running'] else 0)); print('launchagent_loaded=%d' % (1 if data['launchagent']['loaded'] else 0)); print('stale=%d' % (1 if data['stale'] else 0)); fresh=data.get('recent_capture_within_last_hour'); print('recent_capture_within_last_hour=%s' % ('-1' if fresh is None else ('1' if fresh else '0'))); print('conflict=%d' % (1 if data.get('conflict') else 0))"
+) || {
+    red "FAIL: could not parse clipmem service status JSON"
+    printf '%s\n' "$STATUS_OUT" >&2
+    exit 3
+}
+
+eval "$STATUS_VARS"
+
+if [ "${homebrew_running}" -eq 1 ]; then
+    green "OK: Homebrew service homebrew.mxcl.clipmem is running"
+elif [ "${homebrew_loaded}" -eq 1 ]; then
+    yellow "WARN: Homebrew service homebrew.mxcl.clipmem is loaded but not running"
+fi
+
+if [ "${launchagent_running}" -eq 1 ]; then
+    green "OK: LaunchAgent io.openclaw.clipmem.watch is running"
+elif [ "${launchagent_loaded}" -eq 1 ]; then
+    yellow "WARN: LaunchAgent io.openclaw.clipmem.watch is loaded but not running"
+fi
+
+if [ "${homebrew_running}" -eq 0 ] && [ "${homebrew_loaded}" -eq 0 ] \
+    && [ "${launchagent_running}" -eq 0 ] && [ "${launchagent_loaded}" -eq 0 ]; then
+    yellow "WARN: no clipmem background service is loaded"
+    yellow "      Run: clipmem setup"
+    yellow "      Or:  brew services start clipmem"
+fi
+
+if [ "${recent_capture_within_last_hour}" -eq 1 ]; then
     green "OK: clipboard capture observed in the last hour"
-    FRESH=1
-else
+elif [ "${recent_capture_within_last_hour}" -eq 0 ]; then
     yellow "WARN: no clipboard captures in the last hour"
-    FRESH=0
+fi
+
+if [ "${conflict}" -eq 1 ]; then
+    yellow "WARN: both Homebrew and direct LaunchAgent services are installed"
+    yellow "      Remove one with: brew services stop clipmem"
+    yellow "      Or:              clipmem service uninstall"
 fi
 
 # ---------------------------------------------------------------------------
-# 4. LaunchAgent (macOS only)
-# ---------------------------------------------------------------------------
-LAUNCHAGENT_RUNNING=0
-if [ "$(uname -s)" = "Darwin" ]; then
-    LAUNCHCTL_ROW=$(launchctl list 2>/dev/null | awk '$3 == "io.openclaw.clipmem.watch" { print; exit }')
-    if [ -n "$LAUNCHCTL_ROW" ]; then
-        LAUNCHAGENT_PID=$(printf '%s\n' "$LAUNCHCTL_ROW" | awk '{ print $1 }')
-        if [ "$LAUNCHAGENT_PID" = "-" ]; then
-            yellow "WARN: LaunchAgent io.openclaw.clipmem.watch is loaded but not running"
-            yellow "      Install with: ./scripts/install_launchagent.sh (from the clipmem repo)"
-        else
-            green "OK: LaunchAgent io.openclaw.clipmem.watch is running (PID $LAUNCHAGENT_PID)"
-            LAUNCHAGENT_RUNNING=1
-        fi
-    else
-        yellow "WARN: LaunchAgent io.openclaw.clipmem.watch is not loaded"
-        yellow "      Install with: ./scripts/install_launchagent.sh (from the clipmem repo)"
-    fi
-fi
-
-# ---------------------------------------------------------------------------
-# 5. OpenClaw integration (optional, best-effort)
+# 4. OpenClaw integration (optional, best-effort)
 # ---------------------------------------------------------------------------
 if clipmem agents openclaw --help >/dev/null 2>&1; then
     if clipmem agents openclaw doctor >/dev/null 2>&1; then
@@ -102,9 +121,8 @@ fi
 # ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
-if [ "$FRESH" -eq 0 ] && [ "$LAUNCHAGENT_RUNNING" -eq 0 ]; then
-    # Watcher is almost certainly stale.
-    red "STALE: no recent captures and the LaunchAgent is not running. Start the watcher and retry."
+if [ "${stale}" -eq 1 ]; then
+    red "STALE: no recent captures and no background watcher is running. Run 'clipmem setup' or 'brew services start clipmem' and retry."
     exit 1
 fi
 

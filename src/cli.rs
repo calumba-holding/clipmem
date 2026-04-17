@@ -10,9 +10,12 @@ use crate::db::{RetrievalFilters, RetrievalKind, SearchMode, TimelineSort};
 mod commands;
 mod db_path;
 mod output;
+mod service;
 
 const ROOT_AFTER_HELP: &str = "\
 Examples:
+  clipmem setup
+  clipmem service status
   clipmem recall \"what was that shell command?\"
   clipmem recent --hours 24
   clipmem timeline --hours 24 --format json
@@ -114,6 +117,36 @@ Examples:
 Notes:
   - Doctor output is requested human or structured output and always goes to stdout.
   - A nonzero exit code means required checks or diagnostics failed.";
+
+const SETUP_AFTER_HELP: &str = "\
+Examples:
+  clipmem setup
+  clipmem setup --db /tmp/clipmem.sqlite3
+
+Notes:
+  - `setup` performs one foreground capture, then starts background capture using Homebrew services or a direct LaunchAgent.
+  - Re-running `setup` is safe and updates the managed service definition as needed.";
+
+const SERVICE_AFTER_HELP: &str = "\
+Examples:
+  clipmem service start
+  clipmem service status
+  clipmem service status --json
+  clipmem service stop
+  clipmem service uninstall
+
+Notes:
+  - Homebrew installs prefer `brew services`; Cargo and manual installs use a direct LaunchAgent.
+  - `status` is informational and reports freshness, provider state, and any setup conflicts.";
+
+const SERVICE_STATUS_AFTER_HELP: &str = "\
+Examples:
+  clipmem service status
+  clipmem service status --json
+
+Notes:
+  - Text output is intended for humans.
+  - `--json` is the stable machine-readable form used by packaged skill health checks.";
 
 const OPENCLAW_INSTALL_AFTER_HELP: &str = "\
 Examples:
@@ -294,6 +327,10 @@ struct Cli {
 enum Command {
     /// Manage agent-harness integrations.
     Agents(AgentsArgs),
+    /// Initialize the database, seed one capture, and start background capture.
+    Setup(SetupArgs),
+    /// Manage the background clipmem watcher service.
+    Service(ServiceArgs),
     /// Continuously poll the clipboard and archive observed changes.
     Watch(WatchArgs),
     /// Capture the current clipboard state once.
@@ -328,6 +365,37 @@ struct WatchArgs {
     /// Skip capturing the clipboard state that already exists when the watcher starts.
     #[arg(long, default_value_t = false)]
     skip_initial: bool,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = SETUP_AFTER_HELP)]
+struct SetupArgs {}
+
+#[derive(Debug, Args)]
+#[command(after_help = SERVICE_AFTER_HELP)]
+struct ServiceArgs {
+    #[command(subcommand)]
+    command: ServiceCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum ServiceCommand {
+    /// Start background capture using the preferred service provider.
+    Start,
+    /// Stop background capture without uninstalling the service definition when possible.
+    Stop,
+    /// Report provider state, freshness, and service wiring.
+    Status(ServiceStatusArgs),
+    /// Remove the managed service definition.
+    Uninstall,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = SERVICE_STATUS_AFTER_HELP)]
+struct ServiceStatusArgs {
+    /// Emit service status as JSON.
+    #[arg(long, default_value_t = false)]
+    json: bool,
 }
 
 #[derive(Debug, Args)]
@@ -764,6 +832,8 @@ where
 fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
     match &cli.command {
         Command::Agents(_args) => {}
+        Command::Setup(_) => {}
+        Command::Service(_) => {}
         Command::Search(args) => {
             args.output.resolved()?;
             args.filters.normalized()?;
@@ -876,18 +946,26 @@ fn classify_command_error(error: anyhow::Error) -> CliError {
 }
 
 fn sanitize_error_message(error: &anyhow::Error) -> String {
-    let mut chain = error.chain();
-    let message = chain
-        .next()
+    let chain_messages = error
+        .chain()
         .map(std::string::ToString::to_string)
+        .collect::<Vec<_>>();
+    let message = chain_messages
+        .first()
+        .cloned()
         .unwrap_or_else(|| "command failed".to_string());
-    let lower = message.to_ascii_lowercase();
+    let lower_chain = chain_messages.join(" | ").to_ascii_lowercase();
 
-    if lower.contains("no such column:")
-        || lower.contains("sql logic error")
-        || lower.contains("sqlite")
+    if lower_chain.contains("no such column: kind")
+        || lower_chain.contains("no such column: ir.kind")
+        || lower_chain.contains("no such column: item_representations.kind")
     {
-        "database operation failed".to_string()
+        "database uses an incompatible prerelease schema; move it aside and run `clipmem setup`"
+            .to_string()
+    } else if lower_chain.contains("no such column:") || lower_chain.contains("sql logic error") {
+        "database operation failed; this may be an incompatible prerelease schema. Move the database aside and run `clipmem setup`.".to_string()
+    } else if lower_chain.contains("sqlite") {
+        "database operation failed; run `clipmem doctor`, and if this is an older prerelease archive, move it aside and run `clipmem setup`.".to_string()
     } else {
         message
     }
@@ -925,6 +1003,7 @@ fn is_unsupported_format_error(_error: &anyhow::Error, message: &str) -> bool {
 
 fn is_platform_error(error: &anyhow::Error, message: &str) -> bool {
     message.contains("clipboard capture is only supported on macOS")
+        || message.contains("setup and service commands are only supported on macOS")
         || message.contains("capture failed")
         || message.contains("capture-once clipboard read failed")
         || message.contains("read clipboard change count failed")

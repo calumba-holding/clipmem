@@ -17,6 +17,7 @@ use crate::model::SearchHit;
 
 const SCHEMA: &str = include_str!("db/schema.sql");
 const CURRENT_SCHEMA_VERSION: i64 = 1;
+const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
 
 pub struct Database {
     pub(super) conn: Connection,
@@ -424,6 +425,20 @@ impl Database {
         })
     }
 
+    pub(crate) fn ensure_supported_schema_shape(&self) -> Result<()> {
+        if legacy_prerelease_schema_detected(&self.conn)?
+            || self
+                .conn
+                .prepare("SELECT kind FROM item_representations LIMIT 0")
+                .is_err_and(|error| error.to_string().contains("no such column: kind"))
+        {
+            bail!(
+                "database uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
+            );
+        }
+        Ok(())
+    }
+
     #[cfg(test)]
     pub(crate) fn open_in_memory() -> Result<Self> {
         let mut conn = Connection::open_in_memory()?;
@@ -545,7 +560,13 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
-        CURRENT_SCHEMA_VERSION => {}
+        CURRENT_SCHEMA_VERSION => {
+            if legacy_prerelease_schema_detected(&tx)? {
+                bail!(
+                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
+                );
+            }
+        }
         version if version > CURRENT_SCHEMA_VERSION => {
             bail!(
                 "database schema version {version} is newer than supported version {}",
@@ -559,6 +580,25 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
 
     tx.commit().context("commit schema transaction")?;
     Ok(())
+}
+
+fn legacy_prerelease_schema_detected(conn: &Connection) -> Result<bool> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(item_representations)")
+        .context("prepare PRAGMA table_info(item_representations)")?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .context("read item_representations columns")?;
+    let columns = collect_rows(rows).context("collect item_representations columns")?;
+    if columns.is_empty() {
+        return Ok(false);
+    }
+
+    let has_kind = columns.iter().any(|column| column == "kind");
+    let has_legacy_marker = LEGACY_PRERELEASE_COLUMNS
+        .iter()
+        .any(|legacy| columns.iter().any(|column| column == legacy));
+    Ok(!has_kind || has_legacy_marker)
 }
 
 #[cfg(test)]
