@@ -185,6 +185,11 @@ For `search`, `recent`, and `timeline`, JSON output now uses a stable top-level 
 - `rtf_text`
 - `text_summary`
 
+`search` and `recall` structured output also explain why a result matched via:
+
+- `why_matched`
+- `matched_fields`
+
 The nested `items[].representations[]` structure is still present on `get` for full-fidelity inspection and export workflows.
 
 Pagination uses `--limit` plus the opaque `next_cursor` returned by a prior response:
@@ -194,6 +199,23 @@ clipmem search "git status" --format json --limit 10
 clipmem search "git status" --format json --limit 10 --cursor "<next_cursor>"
 clipmem timeline --hours 24 --format json --limit 25 --cursor "<next_cursor>"
 ```
+
+CLI behavior is intentionally script-friendly:
+
+- stdout contains only the requested command output
+- stderr contains diagnostics only
+- there are no interactive prompts
+- list commands use bounded defaults and opaque cursor pagination
+
+Exit codes:
+
+- `0` success
+- `2` invalid args
+- `3` not found
+- `4` unsupported format
+- `5` database error
+- `6` platform error
+- `1` uncategorized runtime failure
 
 ## Shared Retrieval Filters
 
@@ -269,6 +291,30 @@ clipmem recall "Terminal" --prefer-app terminal --format toon
 - `--prefer-app <name>`
 - `--mode <auto|fts|literal>` when a query is present
 - `--hours <N>` for recent fallback candidates
+
+Auto search is intentionally more robust for punctuation-heavy clipboard data. Queries such as URLs, paths, bundle IDs, dotted identifiers, exact phrases, and shell fragments now prefer literal-style matching when that is more reliable, while plain text queries can still use FTS first.
+
+## Agent Recipes
+
+Start with the command that returns the least structure needed for the job:
+
+```bash
+# Best-first answer for “what did I copy?”
+clipmem recall "what was that command I copied?"
+
+# Recent unique items from one app and time window
+clipmem recent --hours 24 --app safari --format md
+
+# Chronological event history, paginated
+clipmem timeline --hours 24 --limit 25 --format json
+clipmem timeline --hours 24 --limit 25 --cursor "<next_cursor>" --format json
+
+# Exact nested snapshot detail once you know the id
+clipmem get 42 --format json
+
+# Raw bytes when flattened text is not enough
+clipmem export 42 --item 0 --uti public.png --out ./clipboard.png
+```
 
 ## LaunchAgent install
 

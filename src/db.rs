@@ -568,7 +568,9 @@ pub(crate) fn explain_query_plan(
     params: &[&dyn rusqlite::ToSql],
 ) -> Result<Vec<String>> {
     let explain = format!("EXPLAIN QUERY PLAN {sql}");
-    let mut stmt = conn.prepare(&explain).context("prepare EXPLAIN QUERY PLAN")?;
+    let mut stmt = conn
+        .prepare(&explain)
+        .context("prepare EXPLAIN QUERY PLAN")?;
     let rows = stmt
         .query_map(params, |row| row.get::<_, String>(3))
         .context("execute EXPLAIN QUERY PLAN")?;

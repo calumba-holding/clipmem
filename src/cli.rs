@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::{error::ErrorKind, Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use std::ffi::OsString;
 use std::path::PathBuf;
+use std::process::ExitCode;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::db::{RetrievalFilters, RetrievalKind, SearchMode, TimelineSort};
@@ -9,6 +10,199 @@ use crate::db::{RetrievalFilters, RetrievalKind, SearchMode, TimelineSort};
 mod commands;
 mod db_path;
 mod output;
+
+const ROOT_AFTER_HELP: &str = "\
+Examples:
+  clipmem recall \"what was that shell command?\"
+  clipmem recent --hours 24
+  clipmem timeline --hours 24 --format json
+  clipmem get 42 --format json
+
+Agent-first flow:
+  1. Use `clipmem recall` for the best answer plus alternatives.
+  2. Use `clipmem timeline` for chronological event history.
+  3. Use `clipmem search` for direct lexical matching.
+  4. Use `clipmem get` for nested snapshot detail.";
+
+const WATCH_AFTER_HELP: &str = "\
+Examples:
+  clipmem watch
+  clipmem watch --interval-ms 350
+  clipmem watch --skip-initial
+
+Notes:
+  - Default interval is 400 ms.
+  - Intervals below 50 ms are clamped to 50 ms at runtime.
+  - Status lines stream on stdout; runtime diagnostics go to stderr.";
+
+const CAPTURE_ONCE_AFTER_HELP: &str = "\
+Examples:
+  clipmem capture-once
+  clipmem capture-once --json";
+
+const SEARCH_AFTER_HELP: &str = "\
+Examples:
+  clipmem search \"git commit -m\"
+  clipmem search \"https://example.com/repo\" --format json
+  clipmem search \"launchctl bootstrap\" --limit 25 --cursor \"<next_cursor>\" --format json
+  clipmem search --mode literal \"foo:bar\"
+
+Notes:
+  - `--limit` is the page size. Defaults to 10 and is bounded 1-250.
+  - `--cursor` resumes from a prior `next_cursor`. Cursors are opaque and tied to the active query, mode, and filters.
+  - Auto mode prefers literal matching for URLs, paths, bundle ids, dotted identifiers, and shell-like fragments when that is more reliable.";
+
+const RECENT_AFTER_HELP: &str = "\
+Examples:
+  clipmem recent
+  clipmem recent --hours 24 --app safari
+  clipmem recent --format json --limit 25 --cursor \"<next_cursor>\"
+
+Notes:
+  - `recent` is snapshot-centric and deduplicated by snapshot id.
+  - `--limit` is the page size. Defaults to 10 and is bounded 1-250.
+  - `--cursor` resumes from a prior `next_cursor`. Cursors are opaque and tied to the active filters.";
+
+const TIMELINE_AFTER_HELP: &str = "\
+Examples:
+  clipmem timeline --hours 24
+  clipmem timeline --since 2026-04-16T09:00:00Z --until 2026-04-16T18:00:00Z --sort asc --format json
+  clipmem timeline --app safari --has-url --limit 25 --cursor \"<next_cursor>\" --format json
+
+Notes:
+  - `timeline` is event-centric and returns one row per real capture event.
+  - `--limit` is the page size. Defaults to 10 and is bounded 1-250.
+  - `--cursor` resumes from a prior `next_cursor`. Cursors are opaque and tied to the active filters and sort order.";
+
+const RECALL_AFTER_HELP: &str = "\
+Examples:
+  clipmem recall \"what was that command I copied?\"
+  clipmem recall \"find the URL I copied yesterday\" --format json
+  clipmem recall --prefer-recent --hours 24
+  clipmem recall \"give me the exact text\" --quote --full
+
+Notes:
+  - `recall` is the primary best-first retrieval command for agents.
+  - `--limit` controls ranked candidates considered. Defaults to 5 and is bounded 1-250.
+  - Use `--quote` or `--full` when the exact surfaced text matters more than the compact answer.";
+
+const GET_AFTER_HELP: &str = "\
+Examples:
+  clipmem get 42
+  clipmem get 42 --format json
+  clipmem get 42 --events 25 --format md
+
+Notes:
+  - `get` is for detailed nested snapshot inspection after you already know the snapshot id.
+  - `--events` defaults to 10 and is bounded 1-250.
+  - `--format toon` is not supported because `get` returns nested snapshot detail.";
+
+const EXPORT_AFTER_HELP: &str = "\
+Examples:
+  clipmem export 42 --item 0 --uti public.png --out ./clipboard.png
+  clipmem export 42 --item 0 --uti public.utf8-plain-text --out ./clipboard.txt --app terminal
+
+Notes:
+  - `export` writes raw representation bytes to `--out`.
+  - Success output is written to stdout; failures are written to stderr only.";
+
+const DOCTOR_AFTER_HELP: &str = "\
+Examples:
+  clipmem doctor
+  clipmem doctor --json
+
+Notes:
+  - Doctor output is requested human or structured output and always goes to stdout.
+  - A nonzero exit code means required checks or diagnostics failed.";
+
+const OPENCLAW_INSTALL_AFTER_HELP: &str = "\
+Examples:
+  clipmem agents openclaw install-skill
+  clipmem agents openclaw install-skill --shared
+  clipmem agents openclaw install-skill --dest /tmp/clipboard_memory --force
+
+Notes:
+  - Default install target is the current OpenClaw workspace skills directory.
+  - `--shared` installs into ~/.openclaw/skills/clipboard_memory instead.";
+
+const OPENCLAW_UNINSTALL_AFTER_HELP: &str = "\
+Examples:
+  clipmem agents openclaw uninstall-skill
+  clipmem agents openclaw uninstall-skill --shared
+  clipmem agents openclaw uninstall-skill --dest /tmp/clipboard_memory";
+
+const OPENCLAW_PRINT_AFTER_HELP: &str = "\
+Examples:
+  clipmem agents openclaw print-skill
+
+Notes:
+  - Prints the packaged OpenClaw SKILL.md to stdout for inspection or templating.";
+
+const OPENCLAW_DOCTOR_AFTER_HELP: &str = "\
+Examples:
+  clipmem agents openclaw doctor
+  clipmem agents openclaw doctor --shared
+  clipmem agents openclaw doctor --dest /tmp/clipboard_memory
+
+Notes:
+  - Reports are written to stdout.
+  - A nonzero exit code means required OpenClaw integration checks failed.";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CliExitCode {
+    Ok = 0,
+    Internal = 1,
+    InvalidArgs = 2,
+    NotFound = 3,
+    UnsupportedFormat = 4,
+    DbError = 5,
+    PlatformError = 6,
+}
+
+impl CliExitCode {
+    #[must_use]
+    pub const fn as_u8(self) -> u8 {
+        self as u8
+    }
+
+    #[must_use]
+    pub fn as_exit_code(self) -> ExitCode {
+        ExitCode::from(self.as_u8())
+    }
+}
+
+#[derive(Debug)]
+pub struct CliError {
+    exit_code: CliExitCode,
+    message: String,
+}
+
+impl CliError {
+    #[must_use]
+    pub fn exit_code(&self) -> CliExitCode {
+        self.exit_code
+    }
+
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    fn new(exit_code: CliExitCode, message: impl Into<String>) -> Self {
+        Self {
+            exit_code,
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for CliError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for CliError {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(super) enum OutputFormat {
@@ -85,6 +279,8 @@ impl RecallOutputArgs {
 #[command(name = "clipmem")]
 #[command(version)]
 #[command(about = "macOS clipboard memory backed by SQLite")]
+#[command(after_help = ROOT_AFTER_HELP)]
+#[command(next_line_help = true)]
 struct Cli {
     /// Path to the `SQLite` database.
     #[arg(long, global = true)]
@@ -119,6 +315,7 @@ enum Command {
 }
 
 #[derive(Debug, Args)]
+#[command(after_help = WATCH_AFTER_HELP)]
 struct WatchArgs {
     /// Poll interval in milliseconds.
     #[arg(long, default_value_t = 400)]
@@ -134,6 +331,7 @@ struct WatchArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(after_help = CAPTURE_ONCE_AFTER_HELP)]
 struct CaptureOnceArgs {
     /// Emit the captured snapshot as JSON.
     #[arg(long, default_value_t = false)]
@@ -141,8 +339,9 @@ struct CaptureOnceArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(after_help = SEARCH_AFTER_HELP)]
 struct SearchArgs {
-    /// Query string for the selected search mode.
+    /// Query string for the selected search mode. Auto mode handles URLs, paths, bundle ids, exact phrases, and shell fragments more robustly.
     query: String,
 
     /// Search mode to execute.
@@ -282,7 +481,11 @@ impl RetrievalFilterArgs {
         let app = normalize_nonempty_filter_value(self.app.as_deref(), "--app")?;
         let bundle_id = normalize_nonempty_filter_value(self.bundle_id.as_deref(), "--bundle-id")?;
         let since = self.since.clone();
-        let hours = if self.since.is_some() { None } else { self.hours };
+        let hours = if self.since.is_some() {
+            None
+        } else {
+            self.hours
+        };
 
         Ok(RetrievalFilters::new(
             since,
@@ -303,6 +506,7 @@ impl RetrievalFilterArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(after_help = RECENT_AFTER_HELP)]
 struct RecentArgs {
     /// Maximum number of results.
     #[arg(long, default_value_t = 10, value_parser = parse_bounded_limit)]
@@ -320,6 +524,7 @@ struct RecentArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(after_help = TIMELINE_AFTER_HELP)]
 struct TimelineArgs {
     /// Maximum number of results.
     #[arg(long, default_value_t = 10, value_parser = parse_bounded_limit)]
@@ -341,6 +546,7 @@ struct TimelineArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(after_help = RECALL_AFTER_HELP)]
 struct RecallArgs {
     /// Optional query describing the clipboard item to recall.
     query: Option<String>,
@@ -381,6 +587,7 @@ struct RecallArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(after_help = GET_AFTER_HELP)]
 struct GetArgs {
     /// Snapshot identifier.
     snapshot_id: i64,
@@ -397,6 +604,7 @@ struct GetArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(after_help = EXPORT_AFTER_HELP)]
 struct ExportArgs {
     /// Snapshot identifier.
     snapshot_id: i64,
@@ -418,6 +626,7 @@ struct ExportArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(after_help = DOCTOR_AFTER_HELP)]
 struct DoctorArgs {
     /// Emit diagnostics as JSON.
     #[arg(long, default_value_t = false)]
@@ -449,12 +658,14 @@ enum OpenClawCommand {
     /// Remove an installed OpenClaw clipboard-memory skill.
     UninstallSkill(OpenClawUninstallSkillArgs),
     /// Print the packaged OpenClaw skill content.
+    #[command(after_help = OPENCLAW_PRINT_AFTER_HELP)]
     PrintSkill,
     /// Check host PATH, installed skill state, metadata, and sandbox guidance.
     Doctor(OpenClawDoctorArgs),
 }
 
 #[derive(Debug, Args)]
+#[command(after_help = OPENCLAW_INSTALL_AFTER_HELP)]
 struct OpenClawInstallSkillArgs {
     /// Install into the shared OpenClaw skill directory instead of the active workspace.
     #[arg(long, default_value_t = false)]
@@ -470,6 +681,7 @@ struct OpenClawInstallSkillArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(after_help = OPENCLAW_UNINSTALL_AFTER_HELP)]
 struct OpenClawUninstallSkillArgs {
     /// Remove from the shared OpenClaw skill directory instead of the active workspace.
     #[arg(long, default_value_t = false)]
@@ -481,6 +693,7 @@ struct OpenClawUninstallSkillArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(after_help = OPENCLAW_DOCTOR_AFTER_HELP)]
 struct OpenClawDoctorArgs {
     /// Check the shared OpenClaw skill directory instead of the active workspace.
     #[arg(long, default_value_t = false)]
@@ -496,7 +709,7 @@ struct OpenClawDoctorArgs {
 /// # Errors
 ///
 /// Returns an error if command execution fails.
-pub fn run() -> Result<()> {
+pub fn run() -> std::result::Result<(), CliError> {
     run_from(std::env::args_os())
 }
 
@@ -505,7 +718,32 @@ pub fn run() -> Result<()> {
 /// # Errors
 ///
 /// Returns an error if argument parsing or command execution fails.
-pub fn run_from<I, T>(args: I) -> Result<()>
+pub fn run_from<I, T>(args: I) -> std::result::Result<(), CliError>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString> + Clone,
+{
+    let cli = Cli::try_parse_from(args).map_err(classify_clap_error)?;
+    validate_cli(&cli).map_err(classify_clap_error)?;
+    let db_path = cli.db.unwrap_or_else(db_path::default_db_path);
+    commands::run_command(cli.command, &db_path).map_err(classify_command_error)
+}
+
+pub fn run_cli() -> ExitCode {
+    match try_run_cli(std::env::args_os()) {
+        Ok(code) => code.as_exit_code(),
+        Err(error) => {
+            if error.use_stderr() {
+                eprint!("{error}");
+            } else {
+                print!("{error}");
+            }
+            classify_clap_exit_code(error.kind()).as_exit_code()
+        }
+    }
+}
+
+fn try_run_cli<I, T>(args: I) -> std::result::Result<CliExitCode, clap::Error>
 where
     I: IntoIterator<Item = T>,
     T: Into<OsString> + Clone,
@@ -513,7 +751,14 @@ where
     let cli = Cli::try_parse_from(args)?;
     validate_cli(&cli)?;
     let db_path = cli.db.unwrap_or_else(db_path::default_db_path);
-    commands::run_command(cli.command, &db_path)
+    match commands::run_command(cli.command, &db_path) {
+        Ok(()) => Ok(CliExitCode::Ok),
+        Err(error) => {
+            let classified = classify_command_error(error);
+            eprintln!("{}", classified.message());
+            Ok(classified.exit_code())
+        }
+    }
 }
 
 fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
@@ -541,9 +786,7 @@ fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
         Command::Export(args) => {
             args.filters.normalized()?;
         }
-        Command::Watch(_)
-        | Command::CaptureOnce(_)
-        | Command::Doctor(_) => {}
+        Command::Watch(_) | Command::CaptureOnce(_) | Command::Doctor(_) => {}
     }
 
     Ok(())
@@ -594,13 +837,113 @@ fn normalize_nonempty_filter_value(
     flag: &str,
 ) -> std::result::Result<Option<String>, clap::Error> {
     match value.map(str::trim) {
-        Some("") => Err(Cli::command().error(
-            ErrorKind::InvalidValue,
-            format!("{flag} cannot be empty"),
-        )),
+        Some("") => {
+            Err(Cli::command().error(ErrorKind::InvalidValue, format!("{flag} cannot be empty")))
+        }
         Some(trimmed) => Ok(Some(trimmed.to_string())),
         None => Ok(None),
     }
+}
+
+fn classify_clap_error(error: clap::Error) -> CliError {
+    CliError::new(classify_clap_exit_code(error.kind()), error.to_string())
+}
+
+fn classify_clap_exit_code(kind: ErrorKind) -> CliExitCode {
+    match kind {
+        ErrorKind::DisplayHelp | ErrorKind::DisplayVersion => CliExitCode::Ok,
+        _ => CliExitCode::InvalidArgs,
+    }
+}
+
+fn classify_command_error(error: anyhow::Error) -> CliError {
+    let message = sanitize_error_message(&error);
+    let exit_code = if is_unsupported_format_error(&error, &message) {
+        CliExitCode::UnsupportedFormat
+    } else if is_not_found_error(&error, &message) {
+        CliExitCode::NotFound
+    } else if is_platform_error(&error, &message) {
+        CliExitCode::PlatformError
+    } else if is_invalid_argument_error(&error, &message) {
+        CliExitCode::InvalidArgs
+    } else if is_db_error(&error, &message) {
+        CliExitCode::DbError
+    } else {
+        CliExitCode::Internal
+    };
+
+    CliError::new(exit_code, message)
+}
+
+fn sanitize_error_message(error: &anyhow::Error) -> String {
+    let mut chain = error.chain();
+    let message = chain
+        .next()
+        .map(std::string::ToString::to_string)
+        .unwrap_or_else(|| "command failed".to_string());
+    let lower = message.to_ascii_lowercase();
+
+    if lower.contains("no such column:")
+        || lower.contains("sql logic error")
+        || lower.contains("sqlite")
+    {
+        "database operation failed".to_string()
+    } else {
+        message
+    }
+}
+
+fn is_invalid_argument_error(error: &anyhow::Error, message: &str) -> bool {
+    error.downcast_ref::<clap::Error>().is_some()
+        || message.contains("cursor does not match")
+        || message.contains("cursor is for command")
+        || message.contains("cursor mode")
+        || message.contains("invalid cursor")
+}
+
+fn is_not_found_error(error: &anyhow::Error, message: &str) -> bool {
+    if error
+        .chain()
+        .any(|cause| cause.downcast_ref::<rusqlite::Error>().is_some())
+    {
+        return false;
+    }
+
+    message.contains(" was not found")
+        || message.contains("representation not found")
+        || message.starts_with("get failed for snapshot ")
+        || message.contains("Missing /")
+        || message.starts_with("Missing ")
+}
+
+fn is_unsupported_format_error(_error: &anyhow::Error, message: &str) -> bool {
+    _error
+        .downcast_ref::<output::UnsupportedFormatError>()
+        .is_some()
+        || message.contains("unsupported format")
+}
+
+fn is_platform_error(error: &anyhow::Error, message: &str) -> bool {
+    message.contains("clipboard capture is only supported on macOS")
+        || message.contains("capture failed")
+        || message.contains("capture-once clipboard read failed")
+        || message.contains("read clipboard change count failed")
+        || error.chain().any(|cause| {
+            let cause = cause.to_string();
+            cause.contains("clipboard capture is only supported on macOS")
+        })
+}
+
+fn is_db_error(error: &anyhow::Error, message: &str) -> bool {
+    error.downcast_ref::<rusqlite::Error>().is_some()
+        || error
+            .chain()
+            .any(|cause| cause.downcast_ref::<rusqlite::Error>().is_some())
+        || message.contains("database")
+        || message.contains("SQLite")
+        || message.contains("failed to open database")
+        || message.contains("failed to write")
+        || message.contains("query failed")
 }
 
 #[cfg(test)]
@@ -611,7 +954,9 @@ mod tests {
 
     use crate::db::{SearchMode, TimelineSort};
 
-    use super::{Cli, Command, OutputFormat, RecallOutputFormat};
+    use super::{
+        classify_command_error, Cli, CliExitCode, Command, OutputFormat, RecallOutputFormat,
+    };
 
     #[test]
     fn watch_command_parses_global_db_and_runtime_flags() {
@@ -703,14 +1048,7 @@ mod tests {
     #[test]
     fn list_commands_parse_output_format_and_cursor() {
         let cli = Cli::parse_from([
-            "clipmem",
-            "recent",
-            "--limit",
-            "5",
-            "--cursor",
-            "abcd",
-            "--format",
-            "jsonl",
+            "clipmem", "recent", "--limit", "5", "--cursor", "abcd", "--format", "jsonl",
         ]);
 
         match cli.command {
@@ -889,7 +1227,10 @@ mod tests {
                     args.filters.bundle_id.as_deref(),
                     Some("com.apple.Terminal")
                 );
-                assert!(matches!(args.filters.kind, Some(crate::db::RetrievalKind::Url)));
+                assert!(matches!(
+                    args.filters.kind,
+                    Some(crate::db::RetrievalKind::Url)
+                ));
                 assert!(args.filters.has_url);
                 assert_eq!(args.filters.min_bytes, Some(20));
                 assert_eq!(args.filters.max_bytes, Some(200));
@@ -931,7 +1272,10 @@ mod tests {
                 assert_eq!(args.filters.since.as_deref(), Some("2026-04-16T09:00:00Z"));
                 assert_eq!(args.filters.hours, Some(24));
                 assert_eq!(args.filters.app.as_deref(), Some("safari"));
-                assert!(matches!(args.filters.kind, Some(crate::db::RetrievalKind::File)));
+                assert!(matches!(
+                    args.filters.kind,
+                    Some(crate::db::RetrievalKind::File)
+                ));
                 assert!(args.filters.has_file_url);
             }
             other => panic!("expected export command, got {other:?}"),
@@ -1028,5 +1372,15 @@ mod tests {
         let result = Cli::try_parse_from(["clipmem", "get", "42", "--events", "0"]);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn command_error_classifier_marks_platform_failures() {
+        let error = classify_command_error(anyhow::anyhow!(
+            "clipboard capture is only supported on macOS"
+        ));
+
+        assert_eq!(error.exit_code(), CliExitCode::PlatformError);
+        assert!(error.to_string().contains("only supported on macOS"));
     }
 }

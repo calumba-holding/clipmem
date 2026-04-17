@@ -37,12 +37,11 @@ fn cleanup_db(path: &Path) {
 }
 
 fn text_snapshot(change_count: i64, text: &str) -> ClipboardSnapshot {
-    let representation =
-        build_representation(
-            "public.utf8-plain-text".to_string(),
-            Some(text.to_string()),
-            text.as_bytes().to_vec(),
-        );
+    let representation = build_representation(
+        "public.utf8-plain-text".to_string(),
+        Some(text.to_string()),
+        text.as_bytes().to_vec(),
+    );
     let item = build_item(0, vec![representation]);
 
     build_snapshot(

@@ -22,8 +22,8 @@ use crate::platform::{capture_snapshot, current_change_count};
 use super::output::{
     emit_get_output, emit_json_or_text, emit_list_output, emit_recall_output, generated_at_now,
     render_capture_once_text, render_doctor_text, render_hits_text, render_search_results_text,
-    render_snapshot_text, render_timeline_text, GetEnvelope, ListEnvelope, ListRow,
-    RecallEnvelope, RecallMatchConfidence, RecallOutputRow, OUTPUT_SCHEMA_VERSION,
+    render_snapshot_text, render_timeline_text, GetEnvelope, ListEnvelope, ListRow, RecallEnvelope,
+    RecallMatchConfidence, RecallOutputRow, OUTPUT_SCHEMA_VERSION,
 };
 use super::{
     AgentsArgs, CaptureOnceArgs, Command, DoctorArgs, ExportArgs, GetArgs, OpenClawArgs,
@@ -201,16 +201,20 @@ where
     CountFn: FnOnce() -> Result<i64>,
     CaptureFn: FnOnce() -> Result<ClipboardSnapshot>,
 {
-    let change_count =
-        anyhow::Context::context(current_change_count_fn(), "read clipboard change count failed")?;
+    let change_count = anyhow::Context::context(
+        current_change_count_fn(),
+        "read clipboard change count failed",
+    )?;
 
     if !crate::app::should_capture_change(change_count, args.skip_initial, state) {
         return Ok(());
     }
 
     let snapshot = anyhow::Context::context(capture_snapshot_fn(), "capture failed")?;
-    let result =
-        anyhow::Context::context(process_watch_snapshot(db, &snapshot, state), "database write failed")?;
+    let result = anyhow::Context::context(
+        process_watch_snapshot(db, &snapshot, state),
+        "database write failed",
+    )?;
 
     if !args.quiet {
         if let Some(result) = result {
@@ -256,17 +260,17 @@ fn search(db_path: &Path, args: &SearchArgs) -> Result<()> {
         return Ok(());
     }
 
-    let projections = load_snapshot_projections(
-        &db,
-        results.hits().iter().map(SearchHit::snapshot_id),
-    )?;
+    let projections =
+        load_snapshot_projections(&db, results.hits().iter().map(SearchHit::snapshot_id))?;
 
     let generated_at = generated_at_now()?;
     let next_cursor = if results.has_more() {
         results
             .hits()
             .last()
-            .map(|hit| encode_search_cursor(&args.query, args.mode, &filters, results.mode_used(), hit))
+            .map(|hit| {
+                encode_search_cursor(&args.query, args.mode, &filters, results.mode_used(), hit)
+            })
             .transpose()?
     } else {
         None
@@ -275,13 +279,16 @@ fn search(db_path: &Path, args: &SearchArgs) -> Result<()> {
         schema_version: OUTPUT_SCHEMA_VERSION,
         command: "search",
         generated_at,
-        applied_filters: merge_applied_filters(&filters, json!({
-            "query": args.query,
-            "requested_mode": args.mode.as_str(),
-            "mode_used": results.mode_used().as_str(),
-            "limit": args.limit,
-            "cursor": args.cursor,
-        })),
+        applied_filters: merge_applied_filters(
+            &filters,
+            json!({
+                "query": args.query,
+                "requested_mode": args.mode.as_str(),
+                "mode_used": results.mode_used().as_str(),
+                "limit": args.limit,
+                "cursor": args.cursor,
+            }),
+        ),
         truncated: results.has_more(),
         next_cursor,
         results: results
@@ -318,10 +325,8 @@ fn recent(db_path: &Path, args: &RecentArgs) -> Result<()> {
         return Ok(());
     }
 
-    let projections = load_snapshot_projections(
-        &db,
-        hits.items().iter().map(SearchHit::snapshot_id),
-    )?;
+    let projections =
+        load_snapshot_projections(&db, hits.items().iter().map(SearchHit::snapshot_id))?;
 
     let generated_at = generated_at_now()?;
     let next_cursor = if hits.has_more() {
@@ -336,10 +341,13 @@ fn recent(db_path: &Path, args: &RecentArgs) -> Result<()> {
         schema_version: OUTPUT_SCHEMA_VERSION,
         command: "recent",
         generated_at,
-        applied_filters: merge_applied_filters(&filters, json!({
-            "limit": args.limit,
-            "cursor": args.cursor,
-        })),
+        applied_filters: merge_applied_filters(
+            &filters,
+            json!({
+                "limit": args.limit,
+                "cursor": args.cursor,
+            }),
+        ),
         truncated: hits.has_more(),
         next_cursor,
         results: hits
@@ -376,10 +384,8 @@ fn timeline(db_path: &Path, args: &TimelineArgs) -> Result<()> {
         return Ok(());
     }
 
-    let projections = load_snapshot_projections(
-        &db,
-        events.items().iter().map(TimelineEvent::snapshot_id),
-    )?;
+    let projections =
+        load_snapshot_projections(&db, events.items().iter().map(TimelineEvent::snapshot_id))?;
 
     let next_cursor = if events.has_more() {
         events
@@ -394,11 +400,14 @@ fn timeline(db_path: &Path, args: &TimelineArgs) -> Result<()> {
         schema_version: OUTPUT_SCHEMA_VERSION,
         command: "timeline",
         generated_at: generated_at_now()?,
-        applied_filters: merge_applied_filters(&filters, json!({
-            "limit": args.limit,
-            "sort": args.sort.as_str(),
-            "cursor": args.cursor,
-        })),
+        applied_filters: merge_applied_filters(
+            &filters,
+            json!({
+                "limit": args.limit,
+                "sort": args.sort.as_str(),
+                "cursor": args.cursor,
+            }),
+        ),
         truncated: events.has_more(),
         next_cursor,
         results: events
@@ -420,7 +429,8 @@ fn recall(db_path: &Path, args: &RecallArgs) -> Result<()> {
     let format = args.output.resolved();
     let filters = normalize_retrieval_filters(&args.filters)?;
     let db = open_existing_db(db_path)?;
-    let recall = anyhow::Context::context(compute_recall(&db, args, &filters), "recall query failed")?;
+    let recall =
+        anyhow::Context::context(compute_recall(&db, args, &filters), "recall query failed")?;
     let generated_at = generated_at_now()?;
     let projections = load_snapshot_projections(
         &db,
@@ -446,17 +456,20 @@ fn recall(db_path: &Path, args: &RecallArgs) -> Result<()> {
         schema_version: OUTPUT_SCHEMA_VERSION,
         command: "recall",
         generated_at,
-        applied_filters: merge_applied_filters(&filters, json!({
-            "limit": args.limit,
-            "query_present": args.query.is_some(),
-            "requested_mode": args.query.as_ref().map(|_| args.mode.as_str()),
-            "mode_used": recall.search_mode_used.map(SearchMode::as_str),
-            "full": args.full,
-            "quote": args.quote,
-            "min_score": args.min_score,
-            "prefer_recent": args.prefer_recent,
-            "prefer_app": args.prefer_app,
-        })),
+        applied_filters: merge_applied_filters(
+            &filters,
+            json!({
+                "limit": args.limit,
+                "query_present": args.query.is_some(),
+                "requested_mode": args.query.as_ref().map(|_| args.mode.as_str()),
+                "mode_used": recall.search_mode_used.map(SearchMode::as_str),
+                "full": args.full,
+                "quote": args.quote,
+                "min_score": args.min_score,
+                "prefer_recent": args.prefer_recent,
+                "prefer_app": args.prefer_app,
+            }),
+        ),
         query: args.query.clone(),
         best_candidate,
         alternatives: recall
@@ -482,17 +495,17 @@ fn show_snapshot(db_path: &Path, args: &GetArgs) -> Result<()> {
     let format = args.output.resolved()?;
     let filters = normalize_retrieval_filters(&args.filters)?;
     let db = open_existing_db(db_path)?;
+    let snapshot =
+        anyhow::Context::with_context(db.find_snapshot(args.snapshot_id, args.events), || {
+            format!("get failed for snapshot {}", args.snapshot_id)
+        })?
+        .ok_or_else(|| anyhow!("snapshot {} was not found", args.snapshot_id))?;
     if !db.snapshot_matches_filters(args.snapshot_id, &filters)? {
         return Err(anyhow!(
             "snapshot {} does not satisfy the active filters",
             args.snapshot_id
         ));
     }
-    let snapshot =
-        anyhow::Context::with_context(db.find_snapshot(args.snapshot_id, args.events), || {
-            format!("get failed for snapshot {}", args.snapshot_id)
-        })?
-        .ok_or_else(|| anyhow!("snapshot {} was not found", args.snapshot_id))?;
 
     if matches!(format, OutputFormat::Text) {
         print!("{}", render_snapshot_text(&snapshot));
@@ -512,6 +525,10 @@ fn show_snapshot(db_path: &Path, args: &GetArgs) -> Result<()> {
 fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -> Result<()> {
     let filters = normalize_retrieval_filters(&args.filters)?;
     let db = open_existing_db(db_path)?;
+    anyhow::Context::with_context(db.find_snapshot(args.snapshot_id, 1), || {
+        format!("export failed for snapshot {}", args.snapshot_id)
+    })?
+    .ok_or_else(|| anyhow!("snapshot {} was not found", args.snapshot_id))?;
     if !db.snapshot_matches_filters(args.snapshot_id, &filters)? {
         return Err(anyhow!(
             "snapshot {} does not satisfy the active filters",
@@ -535,9 +552,10 @@ fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -> Result<()> {
         })?;
     }
 
-    anyhow::Context::with_context(std::fs::write(&args.out, representation.raw_bytes()), || {
-        format!("failed to write {}", args.out.display())
-    })?;
+    anyhow::Context::with_context(
+        std::fs::write(&args.out, representation.raw_bytes()),
+        || format!("failed to write {}", args.out.display()),
+    )?;
 
     println!(
         "exported snapshot={} item={} uti={} bytes={} sha256={} out={}",
@@ -557,7 +575,10 @@ fn openclaw_install_skill(args: &OpenClawInstallSkillArgs) -> Result<()> {
     if target_dir.exists() {
         if args.force {
             std::fs::remove_dir_all(&target_dir).with_context(|| {
-                format!("failed to remove existing skill at {}", target_dir.display())
+                format!(
+                    "failed to remove existing skill at {}",
+                    target_dir.display()
+                )
             })?;
         } else {
             return Err(anyhow!(
@@ -571,7 +592,9 @@ fn openclaw_install_skill(args: &OpenClawInstallSkillArgs) -> Result<()> {
 
     println!("Installed OpenClaw skill into {}", target_dir.display());
     println!("Skill file: {}", target_dir.join("SKILL.md").display());
-    println!("Reload OpenClaw skills or restart OpenClaw if the skill does not appear immediately.");
+    println!(
+        "Reload OpenClaw skills or restart OpenClaw if the skill does not appear immediately."
+    );
     Ok(())
 }
 
@@ -753,7 +776,8 @@ fn build_openclaw_doctor_report(args: &OpenClawDoctorArgs) -> Result<OpenClawDoc
             detail: format!("Missing {}", target_dir.display()),
             next_steps: vec![
                 "Install the skill with `clipmem agents openclaw install-skill`.".to_string(),
-                "Use `--shared` if you intended a shared install under ~/.openclaw/skills.".to_string(),
+                "Use `--shared` if you intended a shared install under ~/.openclaw/skills."
+                    .to_string(),
             ],
         });
     }
@@ -787,7 +811,8 @@ fn build_openclaw_doctor_report(args: &OpenClawDoctorArgs) -> Result<OpenClawDoc
             label: "SKILL.md file".to_string(),
             detail: format!("Missing {}", skill_path.display()),
             next_steps: vec![
-                "Install the packaged skill with `clipmem agents openclaw install-skill`.".to_string(),
+                "Install the packaged skill with `clipmem agents openclaw install-skill`."
+                    .to_string(),
             ],
         });
     }
@@ -820,7 +845,9 @@ fn openclaw_sandbox_check(openclaw_path: Option<&PathBuf>) -> OpenClawDoctorChec
             status: OpenClawDoctorStatus::Warn,
             label: "Sandbox visibility".to_string(),
             detail: "Skipped sandbox checks because `openclaw` is not available.".to_string(),
-            next_steps: vec!["Install OpenClaw first if you want sandbox-specific guidance.".to_string()],
+            next_steps: vec![
+                "Install OpenClaw first if you want sandbox-specific guidance.".to_string(),
+            ],
         };
     };
 
@@ -933,15 +960,17 @@ fn validate_openclaw_skill_content(content: &str) -> Result<()> {
         .find_map(|line| line.strip_prefix("description:").map(str::trim))
         .filter(|value| !value.is_empty());
     if description.is_none() {
-        return Err(anyhow!("skill frontmatter must include a non-empty `description`"));
+        return Err(anyhow!(
+            "skill frontmatter must include a non-empty `description`"
+        ));
     }
 
     let metadata_line = frontmatter_lines
         .iter()
         .find_map(|line| line.strip_prefix("metadata:").map(str::trim))
         .ok_or_else(|| anyhow!("skill frontmatter must include `metadata`"))?;
-    let metadata: serde_json::Value =
-        serde_json::from_str(metadata_line).map_err(|error| anyhow!("invalid metadata JSON: {error}"))?;
+    let metadata: serde_json::Value = serde_json::from_str(metadata_line)
+        .map_err(|error| anyhow!("invalid metadata JSON: {error}"))?;
     let openclaw = metadata
         .get("openclaw")
         .ok_or_else(|| anyhow!("metadata must include `openclaw`"))?;
@@ -1008,7 +1037,9 @@ fn referenced_markdown_files(content: &str) -> Vec<PathBuf> {
 
 fn validate_openclaw_install_entries(entries: &[serde_json::Value]) -> Result<()> {
     if entries.is_empty() {
-        return Err(anyhow!("metadata.openclaw.install must contain at least one entry"));
+        return Err(anyhow!(
+            "metadata.openclaw.install must contain at least one entry"
+        ));
     }
 
     for entry in entries {
@@ -1017,7 +1048,9 @@ fn validate_openclaw_install_entries(entries: &[serde_json::Value]) -> Result<()
             .ok_or_else(|| anyhow!("metadata.openclaw.install entries must be objects"))?;
         for key in ["id", "kind", "label", "bins"] {
             if !object.contains_key(key) {
-                return Err(anyhow!("metadata.openclaw.install entry is missing `{key}`"));
+                return Err(anyhow!(
+                    "metadata.openclaw.install entry is missing `{key}`"
+                ));
             }
         }
         let bins = object
@@ -1081,7 +1114,11 @@ fn compute_recall(
     args: &RecallArgs,
     filters: &RetrievalFilters,
 ) -> Result<RecallComputation> {
-    let query = args.query.as_deref().map(str::trim).filter(|query| !query.is_empty());
+    let query = args
+        .query
+        .as_deref()
+        .map(str::trim)
+        .filter(|query| !query.is_empty());
     let mut merged = HashMap::<i64, RecallCandidate>::new();
     let mut search_mode_used = None;
     let mut search_was_weak = false;
@@ -1114,7 +1151,7 @@ fn compute_recall(
 
         for mut candidate in search_candidates {
             if search_was_weak {
-                candidate.sort_score *= 0.72;
+                candidate.sort_score *= 0.45;
             }
             upsert_recall_candidate(&mut merged, candidate);
         }
@@ -1136,12 +1173,7 @@ fn compute_recall(
         for (index, hit) in db.recent(args.limit, filters)?.into_iter().enumerate() {
             upsert_recall_candidate(
                 &mut merged,
-                build_recent_candidate(
-                    hit,
-                    index,
-                    args.prefer_app.as_deref(),
-                    args.prefer_recent,
-                ),
+                build_recent_candidate(hit, index, args.prefer_app.as_deref(), args.prefer_recent),
             );
         }
     }
@@ -1153,7 +1185,11 @@ fn compute_recall(
         .first()
         .cloned()
         .ok_or_else(|| anyhow!("no clipboard candidates matched the recall request"))?;
-    let alternatives = ranked.into_iter().skip(1).take(args.limit).collect::<Vec<_>>();
+    let alternatives = ranked
+        .into_iter()
+        .skip(1)
+        .take(args.limit)
+        .collect::<Vec<_>>();
     let why_selected = build_recall_why_selected(
         &best,
         query,
@@ -1199,6 +1235,7 @@ fn build_search_candidate(
     let app_preferred = matches_preferred_app(hit, prefer_app);
     let mut sort_score = normalized_score;
     sort_score += app_preference_boost(app_preferred);
+    sort_score += search_match_field_bonus(hit);
     if prefer_recent {
         sort_score += recent_index_boost(index) * 0.6;
     }
@@ -1220,7 +1257,11 @@ fn build_recent_candidate(
     prefer_recent: bool,
 ) -> RecallCandidate {
     let app_preferred = matches_preferred_app(&hit, prefer_app);
-    let text_bonus = if !hit.preview_text().trim().is_empty() { 0.08 } else { 0.0 };
+    let text_bonus = if !hit.preview_text().trim().is_empty() {
+        0.08
+    } else {
+        0.0
+    };
     let mut normalized_score = 0.55 + recent_index_boost(index) + text_bonus;
     if prefer_recent {
         normalized_score += 0.08;
@@ -1256,7 +1297,12 @@ fn compare_recall_candidates(left: &RecallCandidate, right: &RecallCandidate) ->
         .sort_score
         .partial_cmp(&left.sort_score)
         .unwrap_or(Ordering::Equal)
-        .then_with(|| right.hit.last_observed_at().cmp(left.hit.last_observed_at()))
+        .then_with(|| {
+            right
+                .hit
+                .last_observed_at()
+                .cmp(left.hit.last_observed_at())
+        })
         .then_with(|| right.hit.snapshot_id().cmp(&left.hit.snapshot_id()))
         .then_with(|| match (left.source, right.source) {
             (RecallCandidateSource::Search, RecallCandidateSource::Recent) => Ordering::Less,
@@ -1331,6 +1377,28 @@ fn literal_match_score(hit: &SearchHit, query: &str) -> f64 {
     (0.55 + best_overlap * 0.25).clamp(0.0, 0.82)
 }
 
+fn search_match_field_bonus(hit: &SearchHit) -> f64 {
+    let mut bonus = 0.0;
+    if hit.matched_fields().iter().any(|field| field == "urls") {
+        bonus += 0.06;
+    }
+    if hit
+        .matched_fields()
+        .iter()
+        .any(|field| field == "file_paths" || field == "app_bundle_id")
+    {
+        bonus += 0.05;
+    }
+    if hit
+        .matched_fields()
+        .iter()
+        .any(|field| field == "best_text")
+    {
+        bonus += 0.03;
+    }
+    bonus
+}
+
 fn matches_preferred_app(hit: &SearchHit, prefer_app: Option<&str>) -> bool {
     let Some(prefer_app) = prefer_app.map(str::trim).filter(|value| !value.is_empty()) else {
         return false;
@@ -1383,7 +1451,9 @@ fn build_recall_why_selected(
 
     match (query, best.source, search_was_weak) {
         (Some(query), RecallCandidateSource::Search, false) => {
-            parts.push(format!("Selected the strongest search match for \"{query}\""));
+            parts.push(format!(
+                "Selected the strongest search match for \"{query}\""
+            ));
         }
         (Some(query), RecallCandidateSource::Search, true) => {
             parts.push(format!(
@@ -1391,7 +1461,9 @@ fn build_recall_why_selected(
             ));
         }
         (Some(_query), RecallCandidateSource::Recent, true) => {
-            parts.push("Fell back to recent clipboard items because query matches were weak".to_string());
+            parts.push(
+                "Fell back to recent clipboard items because query matches were weak".to_string(),
+            );
         }
         (None, RecallCandidateSource::Recent, _) => {
             parts.push("Selected the most likely useful recent clipboard item".to_string());
@@ -1432,9 +1504,7 @@ fn parse_search_cursor(
         ));
     }
     if token.filters != *filters {
-        return Err(anyhow!(
-            "cursor does not match the active search filters"
-        ));
+        return Err(anyhow!("cursor does not match the active search filters"));
     }
     if requested_mode != SearchMode::Auto && token.mode_used != requested_mode {
         return Err(anyhow!(
@@ -1461,12 +1531,13 @@ fn parse_recent_cursor(encoded: &str, filters: &RetrievalFilters) -> Result<Rece
         ));
     }
     if token.filters != *filters {
-        return Err(anyhow!(
-            "cursor does not match the active recent filters"
-        ));
+        return Err(anyhow!("cursor does not match the active recent filters"));
     }
 
-    Ok(RecentCursorState::new(token.last_seen_at, token.snapshot_id))
+    Ok(RecentCursorState::new(
+        token.last_seen_at,
+        token.snapshot_id,
+    ))
 }
 
 fn parse_timeline_cursor(
@@ -1509,7 +1580,10 @@ fn encode_search_cursor(
     })
 }
 
-fn encode_recent_cursor(filters: &RetrievalFilters, hit: &crate::model::SearchHit) -> Result<String> {
+fn encode_recent_cursor(
+    filters: &RetrievalFilters,
+    hit: &crate::model::SearchHit,
+) -> Result<String> {
     encode_cursor(&RecentCursorToken {
         command: "recent".to_string(),
         filters: filters.clone(),
@@ -1538,13 +1612,12 @@ fn encode_cursor<T: Serialize>(token: &T) -> Result<String> {
 }
 
 fn decode_cursor<T: for<'de> Deserialize<'de>>(encoded: &str) -> Result<T> {
-    let bytes = hex::decode(encoded).map_err(|error| anyhow!("invalid cursor encoding: {error}"))?;
+    let bytes =
+        hex::decode(encoded).map_err(|error| anyhow!("invalid cursor encoding: {error}"))?;
     serde_json::from_slice(&bytes).map_err(|error| anyhow!("invalid cursor payload: {error}"))
 }
 
-fn normalize_retrieval_filters(
-    args: &super::RetrievalFilterArgs,
-) -> Result<RetrievalFilters> {
+fn normalize_retrieval_filters(args: &super::RetrievalFilterArgs) -> Result<RetrievalFilters> {
     args.normalized()
         .map_err(|error| anyhow!(error.to_string()))
 }
@@ -1574,7 +1647,10 @@ where
     Ok(projections)
 }
 
-fn merge_applied_filters(filters: &RetrievalFilters, command_specific: serde_json::Value) -> serde_json::Value {
+fn merge_applied_filters(
+    filters: &RetrievalFilters,
+    command_specific: serde_json::Value,
+) -> serde_json::Value {
     let mut value = serde_json::to_value(filters).unwrap_or_else(|_| json!({}));
     if let (Some(base), Some(extra)) = (value.as_object_mut(), command_specific.as_object()) {
         for (key, value) in extra {
@@ -1593,10 +1669,11 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{
-        encode_recent_cursor, encode_search_cursor, parse_recent_cursor, parse_search_cursor,
-        packaged_openclaw_files, packaged_openclaw_skill, query_search_results,
-        referenced_markdown_files, run_watch_iteration_with_capture, validate_openclaw_skill_content,
-        SearchArgs, SearchMode, SearchResults, WatchArgs, WatchState,
+        encode_recent_cursor, encode_search_cursor, packaged_openclaw_files,
+        packaged_openclaw_skill, parse_recent_cursor, parse_search_cursor, query_search_results,
+        referenced_markdown_files, run_watch_iteration_with_capture,
+        validate_openclaw_skill_content, SearchArgs, SearchMode, SearchResults, WatchArgs,
+        WatchState,
     };
     use crate::db::{Database, RetrievalFilters};
     use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
@@ -1712,7 +1789,9 @@ mod tests {
             "abc".to_string(),
             crate::model::SnapshotKind::PlainText,
             "git status".to_string(),
+            "git status".to_string(),
             Some("git status".to_string()),
+            vec!["best_text".to_string(), "search_text".to_string()],
             1,
             "2026-04-16T09:00:00Z".to_string(),
             "2026-04-16T10:00:00Z".to_string(),
@@ -1741,7 +1820,9 @@ mod tests {
             "abc".to_string(),
             crate::model::SnapshotKind::PlainText,
             "git status".to_string(),
+            "git status".to_string(),
             None,
+            Vec::new(),
             1,
             "2026-04-16T09:00:00Z".to_string(),
             "2026-04-16T10:00:00Z".to_string(),
@@ -1772,21 +1853,24 @@ mod tests {
         let cursor = parse_recent_cursor(&encoded, &filters).unwrap();
 
         assert_eq!(cursor.snapshot_id(), 9);
-        assert!(parse_recent_cursor(&encoded, &RetrievalFilters::new(
-            None,
-            None,
-            Some(12),
-            None,
-            None,
-            None,
-            false,
-            false,
-            false,
-            false,
-            false,
-            None,
-            None,
-        ))
+        assert!(parse_recent_cursor(
+            &encoded,
+            &RetrievalFilters::new(
+                None,
+                None,
+                Some(12),
+                None,
+                None,
+                None,
+                false,
+                false,
+                false,
+                false,
+                false,
+                None,
+                None,
+            )
+        )
         .is_err());
     }
 
@@ -1904,7 +1988,9 @@ mod tests {
     #[test]
     fn packaged_openclaw_skill_references_relative_markdown_files() {
         let references = referenced_markdown_files(&packaged_openclaw_skill());
-        assert!(references.iter().any(|path| path == &PathBuf::from("references/commands.md")));
+        assert!(references
+            .iter()
+            .any(|path| path == &PathBuf::from("references/commands.md")));
         assert!(references
             .iter()
             .any(|path| path == &PathBuf::from("references/troubleshooting.md")));

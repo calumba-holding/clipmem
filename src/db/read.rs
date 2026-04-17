@@ -13,6 +13,16 @@ use super::{
 };
 
 const LIST_VALUE_SEPARATOR: char = '\u{1f}';
+const MATCHED_FIELDS_SEPARATOR: char = '\u{1e}';
+
+#[derive(Debug, Clone)]
+struct QueryAnalysis {
+    trimmed: String,
+    lower: String,
+    exact_phrase: Option<String>,
+    literal_preferred: bool,
+    path_tail: Option<String>,
+}
 const LIST_QUERY_CTES: &str = r"
     WITH event_summary AS (
         SELECT
@@ -92,15 +102,18 @@ impl Database {
         cursor: Option<&SearchCursorState>,
     ) -> Result<SearchResults> {
         let limit = sanitise_limit(limit);
+        let analysis = analyze_query(query);
 
-        if requires_literal_like_search(query) {
+        if analysis.literal_preferred {
             return self.search_literal_page(query, limit, filters, cursor);
         }
 
         if let Some(cursor) = cursor {
             return match cursor.mode_used() {
                 SearchMode::Fts => self.search_fts_page(query, limit, filters, Some(cursor)),
-                SearchMode::Literal => self.search_literal_page(query, limit, filters, Some(cursor)),
+                SearchMode::Literal => {
+                    self.search_literal_page(query, limit, filters, Some(cursor))
+                }
                 SearchMode::Auto => self.search_literal_page(query, limit, filters, Some(cursor)),
             };
         }
@@ -383,6 +396,7 @@ impl Database {
     ) -> Result<SearchResults> {
         let limit = sanitise_limit(limit);
         let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
+        let analysis = analyze_query(query);
         let sql = fts_query();
         let app_like = app_like_pattern(filters);
         let bundle_id = filters.bundle_id().map(|value| value.to_ascii_lowercase());
@@ -397,6 +411,8 @@ impl Database {
             .query_map(
                 named_params! {
                     ":query" : query,
+                    ":query_lower" : analysis.lower.as_str(),
+                    ":exact_phrase_lower" : analysis.exact_phrase.as_deref(),
                     ":since" : since.as_deref(),
                     ":until" : filters.until(),
                     ":app_like" : app_like.as_deref(),
@@ -450,7 +466,8 @@ impl Database {
     ) -> Result<SearchResults> {
         let limit = sanitise_limit(limit);
         let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
-        let like = format!("%{}%", escape_like_pattern(query));
+        let analysis = analyze_query(query);
+        let like = format!("%{}%", escape_like_pattern(&analysis.trimmed));
         let sql = literal_query();
         let app_like = app_like_pattern(filters);
         let bundle_id = filters.bundle_id().map(|value| value.to_ascii_lowercase());
@@ -464,7 +481,14 @@ impl Database {
         let rows = stmt
             .query_map(
                 named_params! {
+                    ":query_lower" : analysis.lower.as_str(),
                     ":like" : like,
+                    ":prefix_like" : format!("{}%", escape_like_pattern(&analysis.lower)),
+                    ":path_tail_like" : analysis
+                        .path_tail
+                        .as_ref()
+                        .map(|value| format!("%{}%", escape_like_pattern(value))),
+                    ":exact_phrase_lower" : analysis.exact_phrase.as_deref(),
                     ":since" : since.as_deref(),
                     ":until" : filters.until(),
                     ":app_like" : app_like.as_deref(),
@@ -477,11 +501,12 @@ impl Database {
                     ":has_pdf" : filters.has_pdf(),
                     ":min_bytes" : filters.min_bytes().map(usize_to_i64).transpose()?,
                     ":max_bytes" : filters.max_bytes().map(usize_to_i64).transpose()?,
+                    ":cursor_score" : cursor.and_then(SearchCursorState::score),
                     ":cursor_last_seen_at" : cursor.map(SearchCursorState::last_seen_at),
                     ":cursor_snapshot_id" : cursor.map(SearchCursorState::snapshot_id),
                     ":limit" : fetch_limit,
                 },
-                |row| map_search_hit_row(row, false),
+                |row| map_search_hit_row(row, true),
             )
             .context("execute literal search query")?;
 
@@ -707,7 +732,9 @@ fn recent_query() -> String {
              base.sha256,
              base.snapshot_kind,
              base.preview_text,
+             base.search_text,
              base.why_matched,
+             base.matched_fields,
              base.capture_count,
              base.first_observed_at,
              base.last_observed_at,
@@ -716,7 +743,8 @@ fn recent_query() -> String {
              base.urls,
              base.file_urls,
              base.total_bytes,
-             base.item_count
+             base.item_count,
+             base.score
          FROM (
              SELECT
                  s.id AS snapshot_id,
@@ -724,7 +752,9 @@ fn recent_query() -> String {
                  s.sha256 AS sha256,
                  s.snapshot_kind AS snapshot_kind,
                  s.preview_text AS preview_text,
+                 s.search_text AS search_text,
                  NULL AS why_matched,
+                 '' AS matched_fields,
                  es.capture_count AS capture_count,
                  es.first_observed_at AS first_observed_at,
                  es.last_observed_at AS last_observed_at,
@@ -733,7 +763,8 @@ fn recent_query() -> String {
                  COALESCE(uv.urls, '') AS urls,
                  COALESCE(fv.file_urls, '') AS file_urls,
                  s.total_bytes AS total_bytes,
-                 s.item_count AS item_count
+                 s.item_count AS item_count,
+                 NULL AS score
              FROM snapshots s
              JOIN event_summary es ON es.snapshot_id = s.id
              JOIN latest_event le ON le.snapshot_id = s.id
@@ -843,7 +874,9 @@ fn literal_query() -> String {
              base.sha256,
              base.snapshot_kind,
              base.preview_text,
+             base.search_text,
              base.why_matched,
+             base.matched_fields,
              base.capture_count,
              base.first_observed_at,
              base.last_observed_at,
@@ -852,7 +885,8 @@ fn literal_query() -> String {
              base.urls,
              base.file_urls,
              base.total_bytes,
-             base.item_count
+             base.item_count,
+             base.score
          FROM (
              SELECT
                  s.id AS snapshot_id,
@@ -860,7 +894,29 @@ fn literal_query() -> String {
                  s.sha256 AS sha256,
                  s.snapshot_kind AS snapshot_kind,
                  s.preview_text AS preview_text,
-                 s.preview_text AS why_matched,
+                 s.search_text AS search_text,
+                 CASE
+                     WHEN lower(COALESCE(uv.urls, '')) = :query_lower THEN 'Exact URL match'
+                     WHEN :path_tail_like IS NOT NULL AND lower(COALESCE(fv.file_urls, '')) LIKE :path_tail_like ESCAPE '\\' THEN 'Path fragment match in file paths'
+                     WHEN lower(COALESCE(le.frontmost_app_bundle_id, '')) = :query_lower THEN 'Bundle ID match'
+                     WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\\' THEN 'Exact phrase match in best text'
+                     WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) = :query_lower THEN 'Exact text match in best text'
+                     WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :prefix_like ESCAPE '\\' THEN 'Prefix match in best text'
+                     WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :like ESCAPE '\\' THEN 'Literal text match in best text'
+                     WHEN lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\\' THEN 'Literal search-text match'
+                     WHEN lower(COALESCE(le.frontmost_app_name, '')) LIKE :like ESCAPE '\\' THEN 'App name match'
+                     ELSE 'Literal field match'
+                 END AS why_matched,
+                 TRIM(
+                     CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), '')) LIKE :like ESCAPE '\\' THEN 'best_text' || char(30) ELSE '' END ||
+                     CASE WHEN lower(COALESCE(s.preview_text, '')) LIKE :like ESCAPE '\\' THEN 'preview_text' || char(30) ELSE '' END ||
+                     CASE WHEN lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\\' THEN 'search_text' || char(30) ELSE '' END ||
+                     CASE WHEN lower(COALESCE(uv.urls, '')) LIKE :like ESCAPE '\\' OR lower(COALESCE(uv.urls, '')) = :query_lower THEN 'urls' || char(30) ELSE '' END ||
+                     CASE WHEN :path_tail_like IS NOT NULL AND lower(COALESCE(fv.file_urls, '')) LIKE :path_tail_like ESCAPE '\\' THEN 'file_paths' || char(30) ELSE '' END ||
+                     CASE WHEN lower(COALESCE(le.frontmost_app_name, '')) LIKE :like ESCAPE '\\' THEN 'app_name' || char(30) ELSE '' END ||
+                     CASE WHEN lower(COALESCE(le.frontmost_app_bundle_id, '')) LIKE :like ESCAPE '\\' OR lower(COALESCE(le.frontmost_app_bundle_id, '')) = :query_lower THEN 'app_bundle_id' || char(30) ELSE '' END,
+                     char(30)
+                 ) AS matched_fields,
                  es.capture_count AS capture_count,
                  es.first_observed_at AS first_observed_at,
                  es.last_observed_at AS last_observed_at,
@@ -869,23 +925,53 @@ fn literal_query() -> String {
                  COALESCE(uv.urls, '') AS urls,
                  COALESCE(fv.file_urls, '') AS file_urls,
                  s.total_bytes AS total_bytes,
-                 s.item_count AS item_count
+                 s.item_count AS item_count,
+                 (
+                     CASE WHEN lower(COALESCE(uv.urls, '')) = :query_lower THEN 1.16 ELSE 0 END +
+                     CASE WHEN :path_tail_like IS NOT NULL AND lower(COALESCE(fv.file_urls, '')) LIKE :path_tail_like ESCAPE '\\' THEN 1.12 ELSE 0 END +
+                     CASE WHEN lower(COALESCE(le.frontmost_app_bundle_id, '')) = :query_lower THEN 1.08 ELSE 0 END +
+                     CASE WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\\' THEN 0.98 ELSE 0 END +
+                     CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) = :query_lower THEN 0.96 ELSE 0 END +
+                     CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :prefix_like ESCAPE '\\' THEN 0.88 ELSE 0 END +
+                     CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :like ESCAPE '\\' THEN 0.78 ELSE 0 END +
+                     CASE WHEN lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\\' THEN 0.72 ELSE 0 END +
+                     CASE WHEN lower(COALESCE(uv.urls, '')) LIKE :like ESCAPE '\\' THEN 0.9 ELSE 0 END +
+                     CASE WHEN lower(COALESCE(le.frontmost_app_bundle_id, '')) LIKE :like ESCAPE '\\' THEN 0.84 ELSE 0 END +
+                     CASE WHEN lower(COALESCE(le.frontmost_app_name, '')) LIKE :like ESCAPE '\\' THEN 0.7 ELSE 0 END +
+                     CASE
+                         WHEN datetime(es.last_observed_at) >= datetime('now', '-24 hours') THEN 0.05
+                         WHEN datetime(es.last_observed_at) >= datetime('now', '-7 days') THEN 0.02
+                         ELSE 0
+                     END
+                 ) AS score
              FROM snapshots s
              JOIN event_summary es ON es.snapshot_id = s.id
              JOIN latest_event le ON le.snapshot_id = s.id
              JOIN matching_events me ON me.snapshot_id = s.id
              LEFT JOIN url_values uv ON uv.snapshot_id = s.id
              LEFT JOIN file_url_values fv ON fv.snapshot_id = s.id
-             WHERE (s.search_text LIKE :like ESCAPE '\\'
-                OR s.preview_text LIKE :like ESCAPE '\\')
+             WHERE (
+                    lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\\'
+                 OR lower(COALESCE(s.preview_text, '')) LIKE :like ESCAPE '\\'
+                 OR lower(COALESCE(uv.urls, '')) LIKE :like ESCAPE '\\'
+                 OR lower(COALESCE(le.frontmost_app_name, '')) LIKE :like ESCAPE '\\'
+                 OR lower(COALESCE(le.frontmost_app_bundle_id, '')) LIKE :like ESCAPE '\\'
+                 OR (:path_tail_like IS NOT NULL AND lower(COALESCE(fv.file_urls, '')) LIKE :path_tail_like ESCAPE '\\')
+               )
                AND {snapshot_filter_clause}
          ) base
          WHERE (
-             :cursor_last_seen_at IS NULL
-             OR base.last_observed_at < :cursor_last_seen_at
-             OR (base.last_observed_at = :cursor_last_seen_at AND base.snapshot_id < :cursor_snapshot_id)
+             :cursor_score IS NULL
+             OR base.score < :cursor_score
+             OR (
+                 base.score = :cursor_score
+                 AND (
+                     base.last_observed_at < :cursor_last_seen_at
+                     OR (base.last_observed_at = :cursor_last_seen_at AND base.snapshot_id < :cursor_snapshot_id)
+                 )
+             )
          )
-         ORDER BY base.last_observed_at DESC, base.snapshot_id DESC
+         ORDER BY base.score DESC, base.last_observed_at DESC, base.snapshot_id DESC
          LIMIT :limit",
         event_filter_clause = event_filter_clause("ce"),
         snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
@@ -907,7 +993,23 @@ fn fts_query() -> String {
                  s.sha256 AS sha256,
                  s.snapshot_kind AS snapshot_kind,
                  s.preview_text AS preview_text,
-                 COALESCE(snippet(snapshots_fts, 0, '⟦', '⟧', ' … ', 24), s.preview_text) AS why_matched,
+                 s.search_text AS search_text,
+                 CASE
+                     WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\\'
+                         THEN 'Exact phrase match in best text'
+                     WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) = :query_lower
+                         THEN 'Exact text match in best text'
+                     WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :query_lower || '%') ESCAPE '\\'
+                         THEN 'Phrase match in best text'
+                     ELSE COALESCE(snippet(snapshots_fts, 0, '⟦', '⟧', ' … ', 24), s.preview_text)
+                 END AS why_matched,
+                 CASE
+                     WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\\'
+                         THEN 'best_text' || char(30) || 'search_text'
+                     WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :query_lower || '%') ESCAPE '\\'
+                         THEN 'best_text' || char(30) || 'search_text'
+                     ELSE 'search_text'
+                 END AS matched_fields,
                  es.capture_count AS capture_count,
                  es.first_observed_at AS first_observed_at,
                  es.last_observed_at AS last_observed_at,
@@ -917,7 +1019,14 @@ fn fts_query() -> String {
                  COALESCE(fv.file_urls, '') AS file_urls,
                  s.total_bytes AS total_bytes,
                  s.item_count AS item_count,
-                 bm25(snapshots_fts) AS score
+                 (
+                     bm25(snapshots_fts)
+                     - CASE
+                         WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\\' THEN 0.2
+                         WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :query_lower || '%') ESCAPE '\\' THEN 0.08
+                         ELSE 0
+                     END
+                 ) AS score
              FROM snapshots_fts
              JOIN snapshots s ON s.id = snapshots_fts.rowid
              JOIN event_summary es ON es.snapshot_id = s.id
@@ -934,7 +1043,9 @@ fn fts_query() -> String {
              search_rows.sha256,
              search_rows.snapshot_kind,
              search_rows.preview_text,
+             search_rows.search_text,
              search_rows.why_matched,
+             search_rows.matched_fields,
              search_rows.capture_count,
              search_rows.first_observed_at,
              search_rows.last_observed_at,
@@ -1077,11 +1188,12 @@ fn effective_since_param(filters: &RetrievalFilters) -> Result<Option<String>> {
 }
 
 fn map_search_hit_row(row: &Row<'_>, has_score: bool) -> rusqlite::Result<SearchHit> {
-    let urls = split_aggregated_values(&row.get::<_, String>(11)?);
-    let file_paths = split_aggregated_values(&row.get::<_, String>(12)?)
+    let urls = split_aggregated_values(&row.get::<_, String>(13)?);
+    let file_paths = split_aggregated_values(&row.get::<_, String>(14)?)
         .into_iter()
         .map(|value| normalise_file_path(&value))
         .collect::<Vec<_>>();
+    let matched_fields = split_match_fields(&row.get::<_, String>(7)?);
 
     Ok(SearchHit::new(
         row.get(0)?,
@@ -1090,16 +1202,18 @@ fn map_search_hit_row(row: &Row<'_>, has_score: bool) -> rusqlite::Result<Search
         row_enum(row, 3)?,
         row.get(4)?,
         row.get(5)?,
-        row_usize(row, 6)?,
-        row.get(7)?,
-        row.get(8)?,
+        row.get(6)?,
+        matched_fields,
+        row_usize(row, 8)?,
         row.get(9)?,
         row.get(10)?,
+        row.get(11)?,
+        row.get(12)?,
         urls,
         file_paths,
-        row_usize(row, 13)?,
-        row_usize(row, 14)?,
-        if has_score { row.get(15)? } else { None },
+        row_usize(row, 15)?,
+        row_usize(row, 16)?,
+        if has_score { row.get(17)? } else { None },
     ))
 }
 
@@ -1158,6 +1272,18 @@ fn split_aggregated_values(value: &str) -> Vec<String> {
     }
 }
 
+fn split_match_fields(value: &str) -> Vec<String> {
+    if value.is_empty() {
+        Vec::new()
+    } else {
+        value
+            .split(MATCHED_FIELDS_SEPARATOR)
+            .filter(|entry| !entry.is_empty())
+            .map(ToOwned::to_owned)
+            .collect()
+    }
+}
+
 fn normalise_file_path(value: &str) -> String {
     decode_file_url_path(value).unwrap_or_else(|| value.to_string())
 }
@@ -1206,6 +1332,55 @@ fn hex_value(byte: u8) -> Option<u8> {
     }
 }
 
+fn analyze_query(query: &str) -> QueryAnalysis {
+    let trimmed = query.trim().to_string();
+    let lower = trimmed.to_ascii_lowercase();
+    let exact_phrase = trimmed
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+
+    let is_url_like = lower.starts_with("http://")
+        || lower.starts_with("https://")
+        || lower.starts_with("file://");
+    let is_path_like = trimmed.starts_with("~/")
+        || trimmed.starts_with('/')
+        || trimmed.starts_with("./")
+        || trimmed.starts_with("../")
+        || trimmed.contains('\\');
+    let is_bundle_id_like = lower.contains('.') && !lower.contains(' ') && !is_url_like;
+    let punctuation_heavy =
+        trimmed.contains(':') || trimmed.contains('/') || trimmed.contains('\\');
+    let shell_fragment = trimmed.contains(" -")
+        || trimmed.contains(" --")
+        || trimmed.contains(" | ")
+        || trimmed.contains(" && ")
+        || trimmed.contains('=')
+        || trimmed.contains('$');
+    let literal_preferred = trimmed.contains('%')
+        || trimmed.contains('_')
+        || trimmed.contains('\\')
+        || is_url_like
+        || is_path_like
+        || is_bundle_id_like
+        || punctuation_heavy
+        || shell_fragment;
+    let path_tail = trimmed
+        .strip_prefix("~/")
+        .map(|value| value.trim_start_matches('/').to_ascii_lowercase())
+        .filter(|value| !value.is_empty());
+
+    QueryAnalysis {
+        trimmed,
+        lower,
+        exact_phrase,
+        literal_preferred,
+        path_tail,
+    }
+}
+
 fn is_invalid_fts_query(error: &SqlError) -> bool {
     let sqlite_unknown_error = matches!(error.sqlite_error_code(), Some(ErrorCode::Unknown));
 
@@ -1231,10 +1406,6 @@ fn escape_like_pattern(query: &str) -> String {
         .replace('_', "\\_")
 }
 
-fn requires_literal_like_search(query: &str) -> bool {
-    query.contains('%') || query.contains('_') || query.contains('\\')
-}
-
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
@@ -1242,7 +1413,7 @@ mod tests {
     use crate::db::{Database, RetrievalFilters, SearchMode, SearchResults};
     use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
 
-    use super::{invalid_fts_message, normalise_file_path, requires_literal_like_search};
+    use super::{analyze_query, invalid_fts_message, normalise_file_path};
 
     fn fake_snapshot(change_count: i64, text: &str) -> crate::model::ClipboardSnapshot {
         build_snapshot(
@@ -1266,10 +1437,25 @@ mod tests {
 
     #[test]
     fn like_special_characters_skip_fts_mode() {
-        assert!(requires_literal_like_search("50%"));
-        assert!(requires_literal_like_search("config_test"));
-        assert!(requires_literal_like_search(r"logs\2024"));
-        assert!(!requires_literal_like_search("git clone"));
+        assert!(analyze_query("50%").literal_preferred);
+        assert!(analyze_query("config_test").literal_preferred);
+        assert!(analyze_query(r"logs\2024").literal_preferred);
+        assert!(analyze_query("https://example.com").literal_preferred);
+        assert!(analyze_query("com.apple.Terminal").literal_preferred);
+        assert!(analyze_query("~/path/with/slashes").literal_preferred);
+        assert!(analyze_query("foo:bar").literal_preferred);
+        assert!(analyze_query("git commit -m").literal_preferred);
+        assert!(!analyze_query("git clone").literal_preferred);
+    }
+
+    #[test]
+    fn query_analysis_preserves_exact_phrase_without_forcing_literal() {
+        let analysis = analyze_query("\"launchctl bootstrap\"");
+        assert_eq!(
+            analysis.exact_phrase.as_deref(),
+            Some("launchctl bootstrap")
+        );
+        assert!(!analysis.literal_preferred);
     }
 
     #[test]
@@ -1325,7 +1511,9 @@ mod tests {
         let stored = db.store_capture(&snapshot)?;
         db.store_capture(&snapshot)?;
 
-        let details = db.find_snapshot(stored.snapshot_id(), 10)?.expect("snapshot exists");
+        let details = db
+            .find_snapshot(stored.snapshot_id(), 10)?
+            .expect("snapshot exists");
         assert_eq!(details.items().len(), 1);
         assert_eq!(details.recent_events().len(), 2);
         Ok(())
@@ -1336,7 +1524,8 @@ mod tests {
         let mut db = Database::open_in_memory()?;
         db.store_capture(&fake_snapshot(1, "https://example.com/repo"))?;
 
-        let results: SearchResults = db.search_auto("https://example.com/repo", 10, &unfiltered())?;
+        let results: SearchResults =
+            db.search_auto("https://example.com/repo", 10, &unfiltered())?;
         assert_eq!(results.mode_used(), SearchMode::Literal);
         assert_eq!(results.hits().len(), 1);
         Ok(())

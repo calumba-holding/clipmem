@@ -17,7 +17,9 @@ pub struct SearchHit {
     sha256: String,
     snapshot_kind: SnapshotKind,
     preview_text: String,
+    search_text: String,
     why_matched: Option<String>,
+    matched_fields: Vec<String>,
     capture_count: usize,
     first_observed_at: String,
     last_observed_at: String,
@@ -133,7 +135,9 @@ impl SearchHit {
         sha256: String,
         snapshot_kind: SnapshotKind,
         preview_text: String,
+        search_text: String,
         why_matched: Option<String>,
+        matched_fields: Vec<String>,
         capture_count: usize,
         first_observed_at: String,
         last_observed_at: String,
@@ -151,7 +155,9 @@ impl SearchHit {
             sha256,
             snapshot_kind,
             preview_text,
+            search_text,
             why_matched,
+            matched_fields,
             capture_count,
             first_observed_at,
             last_observed_at,
@@ -191,8 +197,18 @@ impl SearchHit {
     }
 
     #[must_use]
+    pub fn search_text(&self) -> &str {
+        &self.search_text
+    }
+
+    #[must_use]
     pub fn why_matched(&self) -> Option<&str> {
         self.why_matched.as_deref()
+    }
+
+    #[must_use]
+    pub fn matched_fields(&self) -> &[String] {
+        &self.matched_fields
     }
 
     #[must_use]

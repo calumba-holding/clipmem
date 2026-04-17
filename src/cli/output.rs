@@ -15,6 +15,27 @@ use super::OutputFormat;
 
 pub(super) const OUTPUT_SCHEMA_VERSION: u32 = 1;
 
+#[derive(Debug)]
+pub(super) struct UnsupportedFormatError {
+    message: String,
+}
+
+impl UnsupportedFormatError {
+    pub(super) fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for UnsupportedFormatError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for UnsupportedFormatError {}
+
 #[derive(Debug, Clone, Serialize)]
 pub(super) struct ListEnvelope {
     pub(super) schema_version: u32,
@@ -96,6 +117,7 @@ pub(super) struct SnapshotListRow {
     pub(super) capture_count: usize,
     pub(super) score: Option<f64>,
     pub(super) why_matched: Option<String>,
+    pub(super) matched_fields: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -153,6 +175,7 @@ pub(super) struct RecallOutputRow {
     pub(super) capture_count: usize,
     pub(super) score: Option<f64>,
     pub(super) why_matched: Option<String>,
+    pub(super) matched_fields: Vec<String>,
     pub(super) snippet: String,
 }
 
@@ -163,11 +186,8 @@ impl SnapshotListRow {
         include_why_matched: bool,
         projection: &FlattenedTextProjection,
     ) -> Self {
-        let why_matched = include_why_matched.then(|| {
-            hit.why_matched()
-                .unwrap_or(hit.preview_text())
-                .to_string()
-        });
+        let why_matched = include_why_matched
+            .then(|| hit.why_matched().unwrap_or(hit.preview_text()).to_string());
 
         Self {
             snapshot_id: hit.snapshot_id(),
@@ -193,6 +213,7 @@ impl SnapshotListRow {
             capture_count: hit.capture_count(),
             score: hit.score(),
             why_matched,
+            matched_fields: hit.matched_fields().to_vec(),
         }
     }
 }
@@ -315,6 +336,7 @@ impl RecallOutputRow {
             capture_count: hit.capture_count(),
             score: hit.score(),
             why_matched,
+            matched_fields: hit.matched_fields().to_vec(),
             snippet,
         }
     }
@@ -370,9 +392,10 @@ pub(super) fn emit_get_output(format: OutputFormat, envelope: &GetEnvelope) -> R
             print!("{}", render_get_markdown(envelope));
             Ok(())
         }
-        OutputFormat::Toon => Err(anyhow!(
-            "`clipmem get --format toon` is not supported because TOON is only available for flattened list output"
-        )),
+        OutputFormat::Toon => Err(UnsupportedFormatError::new(
+            "format toon is only supported for flattened list outputs; `clipmem get` returns nested snapshot detail",
+        )
+        .into()),
     }
 }
 
@@ -443,7 +466,10 @@ pub(super) fn render_hits_text(hits: &[SearchHit]) -> String {
         if !hit.preview_text().is_empty() {
             let _ = writeln!(out, "  preview: {}", hit.preview_text());
         }
-        if let Some(why_matched) = hit.why_matched().filter(|value| *value != hit.preview_text()) {
+        if let Some(why_matched) = hit
+            .why_matched()
+            .filter(|value| *value != hit.preview_text())
+        {
             let _ = writeln!(out, "  match:   {why_matched}");
         }
         if !hit.urls().is_empty() {
@@ -661,7 +687,11 @@ fn render_list_markdown(envelope: &ListEnvelope) -> String {
     let _ = writeln!(out, "# clipmem {}", envelope.command);
     let _ = writeln!(out);
     let _ = writeln!(out, "- Generated at: {}", envelope.generated_at);
-    let _ = writeln!(out, "- Filters: {}", render_filter_pairs(&envelope.applied_filters));
+    let _ = writeln!(
+        out,
+        "- Filters: {}",
+        render_filter_pairs(&envelope.applied_filters)
+    );
     let _ = writeln!(out, "- Truncated: {}", envelope.truncated);
     let _ = writeln!(
         out,
@@ -734,7 +764,11 @@ fn render_get_markdown(envelope: &GetEnvelope) -> String {
     let _ = writeln!(out, "# clipmem get");
     let _ = writeln!(out);
     let _ = writeln!(out, "- Generated at: {}", envelope.generated_at);
-    let _ = writeln!(out, "- Filters: {}", render_filter_pairs(&envelope.applied_filters));
+    let _ = writeln!(
+        out,
+        "- Filters: {}",
+        render_filter_pairs(&envelope.applied_filters)
+    );
     let _ = writeln!(out, "- Snapshot: {}", snapshot.snapshot_id());
     let _ = writeln!(out, "- Kind: {}", snapshot.snapshot_kind());
     let _ = writeln!(out, "- First seen: {}", snapshot.first_observed_at());
@@ -750,7 +784,11 @@ fn render_get_markdown(envelope: &GetEnvelope) -> String {
         );
     }
     if let Some(best_text_uti) = snapshot.best_text_uti() {
-        let _ = writeln!(out, "- Best text UTI: {}", escape_markdown_cell(best_text_uti));
+        let _ = writeln!(
+            out,
+            "- Best text UTI: {}",
+            escape_markdown_cell(best_text_uti)
+        );
     }
     if !snapshot.text_summary().is_empty() {
         let _ = writeln!(
@@ -770,7 +808,10 @@ fn render_get_markdown(envelope: &GetEnvelope) -> String {
         let _ = writeln!(
             out,
             "- File paths: {}",
-            escape_markdown_cell(&truncate_for_markdown(&snapshot.file_paths().join(", "), 240))
+            escape_markdown_cell(&truncate_for_markdown(
+                &snapshot.file_paths().join(", "),
+                240
+            ))
         );
     }
     if !snapshot.preview_text().is_empty() {
@@ -890,7 +931,11 @@ fn render_recall_markdown(envelope: &RecallEnvelope) -> String {
 fn render_list_toon(envelope: &ListEnvelope) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "schema_version: {}", envelope.schema_version);
-    let _ = writeln!(out, "command: {}", encode_toon_scalar(&Value::String(envelope.command.to_string())));
+    let _ = writeln!(
+        out,
+        "command: {}",
+        encode_toon_scalar(&Value::String(envelope.command.to_string()))
+    );
     let _ = writeln!(
         out,
         "generated_at: {}",
@@ -962,6 +1007,7 @@ fn render_list_toon(envelope: &ListEnvelope) -> String {
             "capture_count",
             "score",
             "why_matched",
+            "matched_fields",
         ]
     };
     let _ = writeln!(
@@ -981,7 +1027,10 @@ fn render_list_toon(envelope: &ListEnvelope) -> String {
                 Value::String(row.observed_at.clone()),
                 Value::String(row.first_seen_at.clone()),
                 Value::String(row.last_seen_at.clone()),
-                row.app_name.clone().map(Value::String).unwrap_or(Value::Null),
+                row.app_name
+                    .clone()
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
                 row.app_bundle_id
                     .clone()
                     .map(Value::String)
@@ -992,12 +1041,20 @@ fn render_list_toon(envelope: &ListEnvelope) -> String {
                     .map(Value::String)
                     .unwrap_or(Value::Null),
                 serde_json::to_value(&row.text_fragments).unwrap_or(Value::Null),
-                Value::String(serde_json::to_string(&row.urls).unwrap_or_else(|_| "[]".to_string())),
+                Value::String(
+                    serde_json::to_string(&row.urls).unwrap_or_else(|_| "[]".to_string()),
+                ),
                 Value::String(
                     serde_json::to_string(&row.file_paths).unwrap_or_else(|_| "[]".to_string()),
                 ),
-                row.html_text.clone().map(Value::String).unwrap_or(Value::Null),
-                row.rtf_text.clone().map(Value::String).unwrap_or(Value::Null),
+                row.html_text
+                    .clone()
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
+                row.rtf_text
+                    .clone()
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
                 Value::String(row.text_summary.clone()),
                 Value::String(row.preview_text.clone()),
                 Value::from(row.item_count as u64),
@@ -1008,6 +1065,9 @@ fn render_list_toon(envelope: &ListEnvelope) -> String {
                     .clone()
                     .map(Value::String)
                     .unwrap_or(Value::Null),
+                Value::String(
+                    serde_json::to_string(&row.matched_fields).unwrap_or_else(|_| "[]".to_string()),
+                ),
             ],
             ListRow::Timeline(row) => vec![
                 Value::from(row.event_id),
@@ -1015,7 +1075,10 @@ fn render_list_toon(envelope: &ListEnvelope) -> String {
                 Value::String(row.observed_at.clone()),
                 Value::from(row.change_count),
                 Value::String(row.kind.clone()),
-                row.app_name.clone().map(Value::String).unwrap_or(Value::Null),
+                row.app_name
+                    .clone()
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
                 row.app_bundle_id
                     .clone()
                     .map(Value::String)
@@ -1026,12 +1089,20 @@ fn render_list_toon(envelope: &ListEnvelope) -> String {
                     .map(Value::String)
                     .unwrap_or(Value::Null),
                 serde_json::to_value(&row.text_fragments).unwrap_or(Value::Null),
-                Value::String(serde_json::to_string(&row.urls).unwrap_or_else(|_| "[]".to_string())),
+                Value::String(
+                    serde_json::to_string(&row.urls).unwrap_or_else(|_| "[]".to_string()),
+                ),
                 Value::String(
                     serde_json::to_string(&row.file_paths).unwrap_or_else(|_| "[]".to_string()),
                 ),
-                row.html_text.clone().map(Value::String).unwrap_or(Value::Null),
-                row.rtf_text.clone().map(Value::String).unwrap_or(Value::Null),
+                row.html_text
+                    .clone()
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
+                row.rtf_text
+                    .clone()
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
                 Value::String(row.text_summary.clone()),
                 Value::String(row.preview_text.clone()),
                 Value::from(row.total_bytes as u64),
@@ -1073,7 +1144,9 @@ fn render_recall_toon(envelope: &RecallEnvelope) -> String {
     let _ = writeln!(
         out,
         "best_match_confidence: {}",
-        encode_toon_scalar(&serde_json::to_value(&envelope.best_match_confidence).unwrap_or(Value::Null))
+        encode_toon_scalar(
+            &serde_json::to_value(&envelope.best_match_confidence).unwrap_or(Value::Null)
+        )
     );
     let _ = writeln!(
         out,
@@ -1100,7 +1173,11 @@ fn render_recall_toon(envelope: &RecallEnvelope) -> String {
     let _ = writeln!(out, "applied_filters:");
     render_toon_object(&mut out, &envelope.applied_filters, 2);
 
-    render_recall_rows_toon(&mut out, "best_candidate", std::slice::from_ref(&envelope.best_candidate));
+    render_recall_rows_toon(
+        &mut out,
+        "best_candidate",
+        std::slice::from_ref(&envelope.best_candidate),
+    );
     render_recall_rows_toon(&mut out, "alternatives", &envelope.alternatives);
 
     out
@@ -1131,6 +1208,7 @@ fn render_recall_rows_toon(out: &mut String, key: &str, rows: &[RecallOutputRow]
         "capture_count",
         "score",
         "why_matched",
+        "matched_fields",
         "snippet",
     ];
     let _ = writeln!(out, "{key}[#{}\t]{{{}}}:", rows.len(), fields.join("\t"));
@@ -1143,7 +1221,10 @@ fn render_recall_rows_toon(out: &mut String, key: &str, rows: &[RecallOutputRow]
             Value::String(row.observed_at.clone()),
             Value::String(row.first_seen_at.clone()),
             Value::String(row.last_seen_at.clone()),
-            row.app_name.clone().map(Value::String).unwrap_or(Value::Null),
+            row.app_name
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
             row.app_bundle_id
                 .clone()
                 .map(Value::String)
@@ -1158,8 +1239,14 @@ fn render_recall_rows_toon(out: &mut String, key: &str, rows: &[RecallOutputRow]
             Value::String(
                 serde_json::to_string(&row.file_paths).unwrap_or_else(|_| "[]".to_string()),
             ),
-            row.html_text.clone().map(Value::String).unwrap_or(Value::Null),
-            row.rtf_text.clone().map(Value::String).unwrap_or(Value::Null),
+            row.html_text
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+            row.rtf_text
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
             Value::String(row.text_summary.clone()),
             Value::String(row.preview_text.clone()),
             Value::from(row.item_count as u64),
@@ -1170,6 +1257,9 @@ fn render_recall_rows_toon(out: &mut String, key: &str, rows: &[RecallOutputRow]
                 .clone()
                 .map(Value::String)
                 .unwrap_or(Value::Null),
+            Value::String(
+                serde_json::to_string(&row.matched_fields).unwrap_or_else(|_| "[]".to_string()),
+            ),
             Value::String(row.snippet.clone()),
         ];
         let encoded = values
@@ -1206,9 +1296,9 @@ fn encode_toon_scalar(value: &Value) -> String {
         Value::Bool(flag) => flag.to_string(),
         Value::Number(number) => number.to_string(),
         Value::String(text) => encode_toon_string(text),
-        Value::Array(_) | Value::Object(_) => encode_toon_string(
-            &serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
-        ),
+        Value::Array(_) | Value::Object(_) => {
+            encode_toon_string(&serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()))
+        }
     }
 }
 
@@ -1283,7 +1373,11 @@ fn truncate_for_markdown(value: &str, limit: usize) -> String {
     if value.chars().count() <= limit {
         value.to_string()
     } else {
-        value.chars().take(limit.saturating_sub(1)).collect::<String>() + "…"
+        value
+            .chars()
+            .take(limit.saturating_sub(1))
+            .collect::<String>()
+            + "…"
     }
 }
 
@@ -1353,7 +1447,9 @@ mod tests {
             "abc123".to_string(),
             SnapshotKind::PlainText,
             "git clone".to_string(),
+            "git clone".to_string(),
             Some("⟦git⟧ clone".to_string()),
+            vec!["best_text".to_string(), "search_text".to_string()],
             3,
             "2026-04-16 10:00:00".to_string(),
             "2026-04-16 11:00:00".to_string(),
@@ -1437,7 +1533,9 @@ mod tests {
                 "abc123".to_string(),
                 SnapshotKind::PlainText,
                 "git push".to_string(),
+                "git push".to_string(),
                 Some("git push".to_string()),
+                vec!["best_text".to_string(), "search_text".to_string()],
                 2,
                 "2026-04-16 10:00:00".to_string(),
                 "2026-04-16 11:00:00".to_string(),
@@ -1505,6 +1603,7 @@ mod tests {
             capture_count: 1,
             score: Some(0.3),
             why_matched: Some("git status".to_string()),
+            matched_fields: vec!["best_text".to_string(), "search_text".to_string()],
         });
         let envelope = ListEnvelope {
             schema_version: OUTPUT_SCHEMA_VERSION,
@@ -1608,6 +1707,7 @@ mod tests {
                 capture_count: 1,
                 score: Some(0.1),
                 why_matched: Some("git status".to_string()),
+                matched_fields: vec!["best_text".to_string(), "search_text".to_string()],
                 snippet: "git status".to_string(),
             },
             alternatives: vec![RecallOutputRow {
@@ -1634,6 +1734,7 @@ mod tests {
                 capture_count: 1,
                 score: None,
                 why_matched: None,
+                matched_fields: Vec::new(),
                 snippet: "git commit".to_string(),
             }],
             best_match_confidence: RecallMatchConfidence::High,

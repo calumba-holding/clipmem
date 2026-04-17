@@ -2,7 +2,9 @@ use std::collections::HashSet;
 
 use serde::Serialize;
 
-use super::builders::{html_to_text_lossy, normalise_whitespace, rtf_to_text_lossy, truncate_chars};
+use super::builders::{
+    html_to_text_lossy, normalise_whitespace, rtf_to_text_lossy, truncate_chars,
+};
 use super::{ClipboardItem, ClipboardKind};
 
 const TEXT_SUMMARY_LIMIT: usize = 320;
@@ -78,7 +80,8 @@ impl FlattenedTextProjection {
         let mut best_candidate: Option<BestTextCandidate> = None;
 
         for item in items {
-            for (representation_index, representation) in item.representations().iter().enumerate() {
+            for (representation_index, representation) in item.representations().iter().enumerate()
+            {
                 let Some(text_value) = representation.text_value() else {
                     continue;
                 };
@@ -86,14 +89,13 @@ impl FlattenedTextProjection {
                 let Some(normalized_text) = normalize_nonempty_text(text_value) else {
                     continue;
                 };
-                let projected_text = projected_fragment_text(representation.kind(), &normalized_text);
+                let projected_text =
+                    projected_fragment_text(representation.kind(), &normalized_text);
                 let Some(fragment_text) = normalize_nonempty_text(&projected_text) else {
                     continue;
                 };
 
-                if let Some(priority) =
-                    best_text_priority(representation.kind(), &fragment_text)
-                {
+                if let Some(priority) = best_text_priority(representation.kind(), &fragment_text) {
                     consider_best_candidate(
                         &mut best_candidate,
                         BestTextCandidate {
@@ -116,11 +118,9 @@ impl FlattenedTextProjection {
                 }
 
                 match representation.kind() {
-                    ClipboardKind::Url => push_distinct(
-                        &mut urls,
-                        &mut url_keys,
-                        normalized_text.clone(),
-                    ),
+                    ClipboardKind::Url => {
+                        push_distinct(&mut urls, &mut url_keys, normalized_text.clone())
+                    }
                     ClipboardKind::FileUrl => {
                         let decoded_path = decode_file_url_path(&normalized_text);
                         push_distinct(&mut file_paths, &mut file_path_keys, decoded_path);
@@ -128,21 +128,13 @@ impl FlattenedTextProjection {
                     ClipboardKind::Html => {
                         let plain = html_to_text_lossy(&normalized_text);
                         if let Some(normalized_plain) = normalize_nonempty_text(&plain) {
-                            push_distinct(
-                                &mut html_fragments,
-                                &mut html_keys,
-                                normalized_plain,
-                            );
+                            push_distinct(&mut html_fragments, &mut html_keys, normalized_plain);
                         }
                     }
                     ClipboardKind::Rtf => {
                         let plain = rtf_to_text_lossy(&normalized_text);
                         if let Some(normalized_plain) = normalize_nonempty_text(&plain) {
-                            push_distinct(
-                                &mut rtf_fragments,
-                                &mut rtf_keys,
-                                normalized_plain,
-                            );
+                            push_distinct(&mut rtf_fragments, &mut rtf_keys, normalized_plain);
                         }
                     }
                     _ => {}
@@ -337,7 +329,10 @@ mod tests {
         assert_eq!(projection.best_text(), "git status");
         assert_eq!(projection.best_text_uti(), Some("public.utf8-plain-text"));
         assert_eq!(projection.urls(), &["https://example.com".to_string()]);
-        assert_eq!(projection.file_paths(), &["/Users/test/Report Q2.txt".to_string()]);
+        assert_eq!(
+            projection.file_paths(),
+            &["/Users/test/Report Q2.txt".to_string()]
+        );
         assert_eq!(projection.text_fragments().len(), 3);
     }
 
@@ -388,7 +383,10 @@ mod tests {
         let projection = FlattenedTextProjection::from_items(&[item]);
 
         assert_eq!(projection.text_fragments().len(), 1);
-        assert_eq!(projection.text_fragments()[0].kind(), ClipboardKind::PlainText);
+        assert_eq!(
+            projection.text_fragments()[0].kind(),
+            ClipboardKind::PlainText
+        );
         assert_eq!(projection.text_fragments()[0].representation_index(), 0);
     }
 }

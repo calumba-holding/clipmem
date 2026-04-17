@@ -1,7 +1,7 @@
-use anyhow::Result;
+use std::process::ExitCode;
 
-fn main() -> Result<()> {
-    clipmem::run()
+fn main() -> ExitCode {
+    clipmem::run_cli()
 }
 
 #[cfg(test)]

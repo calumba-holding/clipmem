@@ -190,6 +190,13 @@ fn stderr_text(output: &process::Output) -> String {
     String::from_utf8(output.stderr.clone()).expect("stderr should be UTF-8")
 }
 
+fn status_code(output: &process::Output) -> i32 {
+    output
+        .status
+        .code()
+        .expect("process should exit with an explicit status code")
+}
+
 fn temp_test_dir(test_name: &str) -> PathBuf {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -226,6 +233,175 @@ fn write_openclaw_skill_package(skill_dir: &Path) -> Result<()> {
         skill_dir.join("references/troubleshooting.md"),
         include_str!("../extras/openclaw/clipboard_memory/references/troubleshooting.md"),
     )?;
+    Ok(())
+}
+
+#[test]
+fn root_help_prints_to_stdout_only_and_exits_successfully() {
+    let output = run_cli(&["--help"]);
+    let stdout = stdout_text(&output);
+    let stderr = stderr_text(&output);
+
+    assert_eq!(status_code(&output), 0);
+    assert!(stdout.contains("Usage: clipmem"));
+    assert!(stdout.contains("Examples:"));
+    assert!(stdout.contains("Agent-first flow:"));
+    assert!(stderr.is_empty());
+}
+
+#[test]
+fn command_help_includes_examples_and_pagination_guidance() {
+    let cases = [
+        (
+            vec!["search", "--help"],
+            vec!["Examples:", "--cursor", "page size", "bounded 1-250"],
+        ),
+        (
+            vec!["recent", "--help"],
+            vec![
+                "Examples:",
+                "deduplicated by snapshot",
+                "--cursor",
+                "bounded 1-250",
+            ],
+        ),
+        (
+            vec!["timeline", "--help"],
+            vec![
+                "Examples:",
+                "one row per real capture event",
+                "--cursor",
+                "bounded 1-250",
+            ],
+        ),
+        (
+            vec!["recall", "--help"],
+            vec![
+                "Examples:",
+                "primary best-first retrieval command",
+                "--quote",
+                "--full",
+            ],
+        ),
+        (
+            vec!["get", "--help"],
+            vec![
+                "Examples:",
+                "nested snapshot inspection",
+                "--events",
+                "toon",
+            ],
+        ),
+    ];
+
+    for (args, needles) in cases {
+        let output = run_cli(&args);
+        let stdout = stdout_text(&output);
+        assert_eq!(status_code(&output), 0, "help should succeed for {args:?}");
+        assert!(
+            stderr_text(&output).is_empty(),
+            "help should stay off stderr for {args:?}"
+        );
+        for needle in needles {
+            assert!(
+                stdout.contains(needle),
+                "expected help for {args:?} to contain {needle:?}\n{stdout}"
+            );
+        }
+    }
+}
+
+#[test]
+fn openclaw_command_help_includes_examples() {
+    let cases = [
+        vec!["agents", "openclaw", "install-skill", "--help"],
+        vec!["agents", "openclaw", "print-skill", "--help"],
+        vec!["agents", "openclaw", "doctor", "--help"],
+        vec!["agents", "openclaw", "uninstall-skill", "--help"],
+    ];
+
+    for args in cases {
+        let output = run_cli(&args);
+        let stdout = stdout_text(&output);
+        assert_eq!(status_code(&output), 0);
+        assert!(stdout.contains("Examples:"));
+        assert!(stderr_text(&output).is_empty());
+    }
+}
+
+#[test]
+fn invalid_args_exit_with_code_2_and_write_only_stderr() {
+    let output = run_cli(&["recent", "--limit", "0"]);
+    assert_eq!(status_code(&output), 2);
+    assert!(stdout_text(&output).is_empty());
+    assert!(stderr_text(&output).contains("between 1 and 250"));
+}
+
+#[test]
+fn not_found_exit_with_code_3_and_write_only_stderr() -> Result<()> {
+    let path = temp_db_path("get-not-found-exit-code");
+    let _db = Database::open_or_init(&path)?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "get",
+        "42",
+    ]);
+
+    assert_eq!(status_code(&output), 3);
+    assert!(stdout_text(&output).is_empty());
+    let stderr = stderr_text(&output);
+    assert!(
+        stderr.contains("snapshot 42 was not found")
+            || stderr.contains("get failed for snapshot 42"),
+        "unexpected stderr: {stderr}"
+    );
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn unsupported_format_exit_with_code_4_and_write_only_stderr() -> Result<()> {
+    let path = temp_db_path("get-unsupported-format");
+    let ids = seed_database(&path, &[text_snapshot(1, "git status")])?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "get",
+        &ids[0].to_string(),
+        "--format",
+        "toon",
+    ]);
+
+    assert_eq!(status_code(&output), 4);
+    assert!(stdout_text(&output).is_empty());
+    assert!(
+        stderr_text(&output).contains("format toon is only supported for flattened list outputs")
+    );
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn db_error_exit_with_code_5_and_write_only_stderr() -> Result<()> {
+    let dir = temp_test_dir("db-error-dir");
+    fs::create_dir_all(&dir)?;
+
+    let output = run_cli(&[
+        "--db",
+        dir.to_str().expect("dir path should be UTF-8"),
+        "recent",
+    ]);
+
+    assert_eq!(status_code(&output), 5);
+    assert!(stdout_text(&output).is_empty());
+    assert!(stderr_text(&output).contains("failed to open database"));
+
+    let _ = fs::remove_dir_all(&dir);
     Ok(())
 }
 
@@ -287,8 +463,14 @@ fn search_json_envelope_includes_agent_friendly_rows() -> Result<()> {
     assert!(output.status.success());
     assert_eq!(payload["schema_version"].as_u64(), Some(1));
     assert_eq!(payload["command"].as_str(), Some("search"));
-    assert_eq!(payload["applied_filters"]["requested_mode"].as_str(), Some("literal"));
-    assert_eq!(payload["applied_filters"]["mode_used"].as_str(), Some("literal"));
+    assert_eq!(
+        payload["applied_filters"]["requested_mode"].as_str(),
+        Some("literal")
+    );
+    assert_eq!(
+        payload["applied_filters"]["mode_used"].as_str(),
+        Some("literal")
+    );
     assert_eq!(payload["truncated"].as_bool(), Some(false));
     assert_eq!(payload["results"][0]["snapshot_id"].as_i64(), Some(ids[0]));
     assert_eq!(payload["results"][0]["event_id"].as_i64(), Some(1));
@@ -309,8 +491,18 @@ fn search_json_envelope_includes_agent_friendly_rows() -> Result<()> {
     }));
     assert_eq!(
         payload["results"][0]["why_matched"].as_str(),
-        Some("git status  https://example.com/repo  file:///Users/test/report.txt")
+        Some("Prefix match in best text")
     );
+    assert!(payload["results"][0]["matched_fields"]
+        .as_array()
+        .expect("matched_fields should be an array")
+        .iter()
+        .any(|field| field.as_str() == Some("best_text")));
+    assert!(payload["results"][0]["matched_fields"]
+        .as_array()
+        .expect("matched_fields should be an array")
+        .iter()
+        .any(|field| field.as_str() == Some("search_text")));
     assert_eq!(
         payload["results"][0]["urls"][0].as_str(),
         Some("https://example.com/repo")
@@ -323,6 +515,103 @@ fn search_json_envelope_includes_agent_friendly_rows() -> Result<()> {
         .as_str()
         .unwrap_or_default()
         .contains("git status"));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn search_handles_url_bundle_id_path_and_shell_queries_with_explanations() -> Result<()> {
+    let path = temp_db_path("search-robust-queries");
+    seed_database(
+        &path,
+        &[
+            app_text_snapshot(
+                1,
+                "Terminal",
+                "com.apple.Terminal",
+                "launchctl bootstrap gui/501 ~/Library/LaunchAgents/io.example.agent.plist",
+            ),
+            rich_snapshot(
+                2,
+                "repository link",
+                "https://example.com/repo",
+                "file:///Users/test/path/with/slashes",
+            ),
+            text_snapshot(3, "foo:bar"),
+            text_snapshot(4, "git commit -m"),
+        ],
+    )?;
+
+    let cases = [
+        ("https://example.com/repo", "Exact URL match", "urls"),
+        ("com.apple.Terminal", "Bundle ID match", "app_bundle_id"),
+        (
+            "~/path/with/slashes",
+            "Path fragment match in file paths",
+            "file_paths",
+        ),
+        ("foo:bar", "Exact text match in best text", "best_text"),
+        (
+            "git commit -m",
+            "Exact text match in best text",
+            "best_text",
+        ),
+    ];
+
+    for (query, why, field) in cases {
+        let output = run_cli(&[
+            "--db",
+            path.to_str().expect("db path should be UTF-8"),
+            "search",
+            "--format",
+            "json",
+            query,
+        ]);
+        assert!(output.status.success(), "search should succeed for {query}");
+        let payload: Value = serde_json::from_slice(&output.stdout)?;
+        assert_eq!(
+            payload["applied_filters"]["mode_used"].as_str(),
+            Some("literal")
+        );
+        assert_eq!(payload["results"][0]["why_matched"].as_str(), Some(why));
+        assert!(payload["results"][0]["matched_fields"]
+            .as_array()
+            .expect("matched_fields should be an array")
+            .iter()
+            .any(|value| value.as_str() == Some(field)));
+    }
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn search_exact_phrase_query_prefers_exact_phrase_hits() -> Result<()> {
+    let path = temp_db_path("search-exact-phrase");
+    let ids = seed_database(
+        &path,
+        &[
+            text_snapshot(1, "status git"),
+            text_snapshot(2, "git status"),
+        ],
+    )?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "search",
+        "--format",
+        "json",
+        "\"git status\"",
+    ]);
+    assert!(output.status.success());
+    let payload: Value = serde_json::from_slice(&output.stdout)?;
+    assert_eq!(
+        payload["applied_filters"]["mode_used"].as_str(),
+        Some("fts")
+    );
+    assert_eq!(payload["results"][0]["snapshot_id"].as_i64(), Some(ids[1]));
 
     cleanup_db(&path);
     Ok(())
@@ -346,7 +635,10 @@ fn recent_json_alias_uses_new_envelope_shape() -> Result<()> {
     assert_eq!(payload["command"].as_str(), Some("recent"));
     assert_eq!(payload["results"].as_array().map(Vec::len), Some(1));
     assert_eq!(payload["results"][0]["snapshot_id"].as_i64(), Some(ids[0]));
-    assert_eq!(payload["results"][0]["best_text"].as_str(), Some("git status"));
+    assert_eq!(
+        payload["results"][0]["best_text"].as_str(),
+        Some("git status")
+    );
     assert_eq!(
         payload["results"][0]["best_text_uti"].as_str(),
         Some("public.utf8-plain-text")
@@ -393,11 +685,23 @@ fn timeline_json_envelope_returns_event_rows_in_descending_order() -> Result<()>
     assert_eq!(payload["command"].as_str(), Some("timeline"));
     assert_eq!(payload["applied_filters"]["sort"].as_str(), Some("desc"));
     assert_eq!(payload["results"].as_array().map(Vec::len), Some(3));
-    assert_eq!(payload["results"][0]["event_id"].as_i64(), Some(events[2].1));
-    assert_eq!(payload["results"][1]["event_id"].as_i64(), Some(events[1].1));
-    assert_eq!(payload["results"][2]["event_id"].as_i64(), Some(events[0].1));
+    assert_eq!(
+        payload["results"][0]["event_id"].as_i64(),
+        Some(events[2].1)
+    );
+    assert_eq!(
+        payload["results"][1]["event_id"].as_i64(),
+        Some(events[1].1)
+    );
+    assert_eq!(
+        payload["results"][2]["event_id"].as_i64(),
+        Some(events[0].1)
+    );
     assert_eq!(payload["results"][0]["change_count"].as_i64(), Some(3));
-    assert_eq!(payload["results"][0]["best_text"].as_str(), Some("cargo test"));
+    assert_eq!(
+        payload["results"][0]["best_text"].as_str(),
+        Some("cargo test")
+    );
     assert_eq!(
         payload["results"][0]["best_text_uti"].as_str(),
         Some("public.utf8-plain-text")
@@ -450,8 +754,14 @@ fn timeline_paginates_with_cursor_and_sort_asc() -> Result<()> {
 
     assert!(first_output.status.success());
     assert_eq!(first_payload["truncated"].as_bool(), Some(true));
-    assert_eq!(first_payload["results"][0]["event_id"].as_i64(), Some(events[0].1));
-    assert_eq!(first_payload["results"][1]["event_id"].as_i64(), Some(events[1].1));
+    assert_eq!(
+        first_payload["results"][0]["event_id"].as_i64(),
+        Some(events[0].1)
+    );
+    assert_eq!(
+        first_payload["results"][1]["event_id"].as_i64(),
+        Some(events[1].1)
+    );
 
     let second_output = run_cli(&[
         "--db",
@@ -473,7 +783,10 @@ fn timeline_paginates_with_cursor_and_sort_asc() -> Result<()> {
     assert_eq!(second_payload["truncated"].as_bool(), Some(false));
     assert!(second_payload["next_cursor"].is_null());
     assert_eq!(second_payload["results"].as_array().map(Vec::len), Some(1));
-    assert_eq!(second_payload["results"][0]["event_id"].as_i64(), Some(events[2].1));
+    assert_eq!(
+        second_payload["results"][0]["event_id"].as_i64(),
+        Some(events[2].1)
+    );
 
     cleanup_db(&path);
     Ok(())
@@ -583,10 +896,17 @@ fn get_and_export_use_shared_filters_as_guards() -> Result<()> {
         "--format",
         "json",
     ]);
-    let get_payload: Value = serde_json::from_slice(&get_output.stdout).expect("get JSON should parse");
+    let get_payload: Value =
+        serde_json::from_slice(&get_output.stdout).expect("get JSON should parse");
     assert!(get_output.status.success());
-    assert_eq!(get_payload["applied_filters"]["app"].as_str(), Some("terminal"));
-    assert_eq!(get_payload["applied_filters"]["has_url"].as_bool(), Some(true));
+    assert_eq!(
+        get_payload["applied_filters"]["app"].as_str(),
+        Some("terminal")
+    );
+    assert_eq!(
+        get_payload["applied_filters"]["has_url"].as_bool(),
+        Some(true)
+    );
 
     let rejected_get = run_cli(&[
         "--db",
@@ -599,8 +919,8 @@ fn get_and_export_use_shared_filters_as_guards() -> Result<()> {
     assert!(!rejected_get.status.success());
     assert!(stderr_text(&rejected_get).contains("does not satisfy the active filters"));
 
-    let output_path = std::env::temp_dir()
-        .join(format!("clipmem-filter-export-{}-{}.txt", process::id(), 1));
+    let output_path =
+        std::env::temp_dir().join(format!("clipmem-filter-export-{}-{}.txt", process::id(), 1));
     let rejected_export = run_cli(&[
         "--db",
         path.to_str().expect("db path should be UTF-8"),
@@ -769,7 +1089,7 @@ fn get_rejects_toon_output() -> Result<()> {
     let stderr = stderr_text(&output);
 
     assert!(!output.status.success());
-    assert!(stderr.contains("TOON is only available for flattened list output"));
+    assert!(stderr.contains("format toon is only supported for flattened list outputs"));
 
     cleanup_db(&path);
     Ok(())
@@ -849,7 +1169,10 @@ fn agents_openclaw_doctor_reports_missing_clipmem_with_next_steps() -> Result<()
 
     let output = run_cli_with_env(
         &["agents", "openclaw", "doctor"],
-        &[("PATH", bin_dir.to_str().unwrap()), ("HOME", test_dir.to_str().unwrap())],
+        &[
+            ("PATH", bin_dir.to_str().unwrap()),
+            ("HOME", test_dir.to_str().unwrap()),
+        ],
     );
     assert!(!output.status.success());
     let stdout = stdout_text(&output);
@@ -885,7 +1208,10 @@ fn agents_openclaw_doctor_fails_when_reference_file_is_missing() -> Result<()> {
 
     let output = run_cli_with_env(
         &["agents", "openclaw", "doctor"],
-        &[("PATH", bin_dir.to_str().unwrap()), ("HOME", test_dir.to_str().unwrap())],
+        &[
+            ("PATH", bin_dir.to_str().unwrap()),
+            ("HOME", test_dir.to_str().unwrap()),
+        ],
     );
     assert!(!output.status.success());
     let stdout = stdout_text(&output);
@@ -901,7 +1227,9 @@ fn portable_skill_package_is_present() -> Result<()> {
     let portable_root = Path::new("extras/agent-skills/clipboard-memory");
     assert!(portable_root.join("SKILL.md").is_file());
     assert!(portable_root.join("references/commands.md").is_file());
-    assert!(portable_root.join("references/troubleshooting.md").is_file());
+    assert!(portable_root
+        .join("references/troubleshooting.md")
+        .is_file());
     Ok(())
 }
 
@@ -931,7 +1259,10 @@ fn recall_json_prefers_a_strong_query_match() -> Result<()> {
     assert!(output.status.success());
     assert_eq!(payload["command"].as_str(), Some("recall"));
     assert_eq!(payload["query"].as_str(), Some("git status"));
-    assert_eq!(payload["best_candidate"]["snapshot_id"].as_i64(), Some(ids[0]));
+    assert_eq!(
+        payload["best_candidate"]["snapshot_id"].as_i64(),
+        Some(ids[0])
+    );
     assert_eq!(
         payload["best_candidate"]["best_text"].as_str(),
         Some("git status")
@@ -944,14 +1275,20 @@ fn recall_json_prefers_a_strong_query_match() -> Result<()> {
         payload["best_candidate"]["text_fragments"][0]["text"].as_str(),
         Some("git status")
     );
-    assert_eq!(
-        payload["best_match_confidence"].as_str(),
-        Some("high")
-    );
+    assert_eq!(payload["best_match_confidence"].as_str(), Some("high"));
     assert!(payload["why_selected"]
         .as_str()
         .unwrap_or_default()
         .contains("strongest search match"));
+    assert!(payload["best_candidate"]["why_matched"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("match"));
+    assert!(payload["best_candidate"]["matched_fields"]
+        .as_array()
+        .expect("matched_fields should be an array")
+        .iter()
+        .any(|value| value.as_str() == Some("best_text")));
 
     cleanup_db(&path);
     Ok(())
@@ -964,7 +1301,12 @@ fn recall_json_falls_back_to_recent_when_search_is_weak() -> Result<()> {
         &path,
         &[
             text_snapshot(1, "git status"),
-            app_text_snapshot(2, "Preview", "com.apple.Preview", "Meeting notes from today"),
+            app_text_snapshot(
+                2,
+                "Preview",
+                "com.apple.Preview",
+                "Meeting notes from today",
+            ),
         ],
     )?;
 
@@ -985,7 +1327,10 @@ fn recall_json_falls_back_to_recent_when_search_is_weak() -> Result<()> {
         serde_json::from_slice(&output.stdout).expect("recall fallback JSON should parse");
 
     assert!(output.status.success());
-    assert_eq!(payload["best_candidate"]["snapshot_id"].as_i64(), Some(ids[1]));
+    assert_eq!(
+        payload["best_candidate"]["snapshot_id"].as_i64(),
+        Some(ids[1])
+    );
     assert!(payload["why_selected"]
         .as_str()
         .unwrap_or_default()
@@ -1018,7 +1363,10 @@ fn recall_without_query_returns_recent_candidates() -> Result<()> {
 
     assert!(output.status.success());
     assert!(payload["query"].is_null());
-    assert_eq!(payload["best_candidate"]["snapshot_id"].as_i64(), Some(ids[1]));
+    assert_eq!(
+        payload["best_candidate"]["snapshot_id"].as_i64(),
+        Some(ids[1])
+    );
     assert_eq!(
         payload["best_candidate"]["best_text"].as_str(),
         Some("newest text")
@@ -1054,7 +1402,10 @@ fn get_json_exposes_html_and_rtf_plain_text_projections() -> Result<()> {
     let html_payload: Value =
         serde_json::from_slice(&html_output.stdout).expect("html get JSON should parse");
     assert!(html_output.status.success());
-    assert_eq!(html_payload["snapshot"]["html_text"].as_str(), Some("Hello world"));
+    assert_eq!(
+        html_payload["snapshot"]["html_text"].as_str(),
+        Some("Hello world")
+    );
     assert_eq!(
         html_payload["snapshot"]["best_text"].as_str(),
         Some("Hello world")
@@ -1071,7 +1422,10 @@ fn get_json_exposes_html_and_rtf_plain_text_projections() -> Result<()> {
     let rtf_payload: Value =
         serde_json::from_slice(&rtf_output.stdout).expect("rtf get JSON should parse");
     assert!(rtf_output.status.success());
-    assert_eq!(rtf_payload["snapshot"]["rtf_text"].as_str(), Some("hello world"));
+    assert_eq!(
+        rtf_payload["snapshot"]["rtf_text"].as_str(),
+        Some("hello world")
+    );
     assert_eq!(
         rtf_payload["snapshot"]["best_text"].as_str(),
         Some("hello world")
@@ -1105,11 +1459,15 @@ fn recall_prefer_app_boosts_matching_candidates() -> Result<()> {
         serde_json::from_slice(&output.stdout).expect("recall prefer-app JSON should parse");
 
     assert!(output.status.success());
-    assert_eq!(payload["best_candidate"]["snapshot_id"].as_i64(), Some(ids[0]));
+    assert_eq!(
+        payload["best_candidate"]["snapshot_id"].as_i64(),
+        Some(ids[0])
+    );
     assert!(payload["why_selected"]
         .as_str()
         .unwrap_or_default()
         .contains("preferred app"));
+    assert!(payload["best_candidate"]["matched_fields"].is_array());
 
     cleanup_db(&path);
     Ok(())
@@ -1243,7 +1601,10 @@ fn search_rejects_cursor_filter_mismatches() -> Result<()> {
     let path = temp_db_path("search-cursor-mismatch");
     seed_database(
         &path,
-        &[text_snapshot(1, "git status"), text_snapshot(2, "git commit")],
+        &[
+            text_snapshot(1, "git status"),
+            text_snapshot(2, "git commit"),
+        ],
     )?;
 
     let first_output = run_cli(&[
@@ -1413,8 +1774,8 @@ fn recent_command_rejects_zero_limit() {
 #[test]
 fn export_command_writes_raw_representation_bytes() -> Result<()> {
     let path = temp_db_path("export-bytes");
-    let output_path = std::env::temp_dir()
-        .join(format!("clipmem-export-{}-{}.bin", process::id(), 1));
+    let output_path =
+        std::env::temp_dir().join(format!("clipmem-export-{}-{}.bin", process::id(), 1));
     let snapshot = build_snapshot(
         CaptureContext::new(1)
             .with_frontmost_app_name("Preview")

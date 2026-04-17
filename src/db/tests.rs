@@ -239,7 +239,10 @@ fn timeline_returns_real_events_in_stable_descending_order() -> Result<()> {
         .map(|event| event.event_id())
         .collect::<Vec<_>>();
 
-    assert_eq!(ids, vec![third.event_id(), second.event_id(), first.event_id()]);
+    assert_eq!(
+        ids,
+        vec![third.event_id(), second.event_id(), first.event_id()]
+    );
     assert_eq!(page.items()[1].snapshot_id(), first.snapshot_id());
     assert_eq!(page.items()[1].change_count(), 2);
     Ok(())
@@ -369,7 +372,10 @@ fn search_auto_falls_back_for_url_queries() -> Result<()> {
 
     assert_eq!(results.mode_used(), SearchMode::Literal);
     assert_eq!(results.hits().len(), 1);
-    assert_eq!(results.hits()[0].preview_text(), "git clone https://example.com/repo");
+    assert_eq!(
+        results.hits()[0].preview_text(),
+        "git clone https://example.com/repo"
+    );
     Ok(())
 }
 
@@ -595,13 +601,11 @@ fn latest_event_query_uses_compound_capture_events_index() -> Result<()> {
         &[&1_i64, &10_i64],
     )?;
 
-    assert!(
-        plan.iter()
-            .all(|detail| !detail.contains("USE TEMP B-TREE FOR ORDER BY"))
-    );
-    assert!(
-        plan.iter()
-            .any(|detail| detail.contains("idx_capture_events_snapshot_observed_id"))
-    );
+    assert!(plan
+        .iter()
+        .all(|detail| !detail.contains("USE TEMP B-TREE FOR ORDER BY")));
+    assert!(plan
+        .iter()
+        .any(|detail| detail.contains("idx_capture_events_snapshot_observed_id")));
     Ok(())
 }
