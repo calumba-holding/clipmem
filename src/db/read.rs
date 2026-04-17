@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use rusqlite::{named_params, params, Error as SqlError, ErrorCode, Row};
 
 use crate::model::{
-    CaptureEvent, ClipboardItem, ClipboardRepresentation, DoctorReport, SearchHit, SnapshotDetails,
-    TimelineEvent,
+    CaptureEvent, ClipboardItem, ClipboardRepresentation, DoctorReport, FlattenedTextProjection,
+    SearchHit, SnapshotDetails, TimelineEvent,
 };
 
 use super::{
@@ -299,6 +299,18 @@ impl Database {
         details.set_items(self.load_snapshot_items(snapshot_id)?);
 
         Ok(Some(details))
+    }
+
+    pub(crate) fn snapshot_projection(
+        &self,
+        snapshot_id: i64,
+    ) -> Result<Option<FlattenedTextProjection>> {
+        if self.load_snapshot_summary(snapshot_id)?.is_none() {
+            return Ok(None);
+        }
+
+        let items = self.load_snapshot_items(snapshot_id)?;
+        Ok(Some(FlattenedTextProjection::from_items(&items)))
     }
 
     /// Collect `SQLite` and FTS5 diagnostics for the current archive database.

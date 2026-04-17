@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use super::{ClipboardItem, SnapshotKind};
+use super::{ClipboardItem, FlattenedTextProjection, SnapshotKind, TextFragment};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CaptureStoreResult {
@@ -65,6 +65,14 @@ pub struct SnapshotDetails {
     snapshot_id: i64,
     sha256: String,
     snapshot_kind: SnapshotKind,
+    best_text: String,
+    best_text_uti: Option<String>,
+    text_fragments: Vec<TextFragment>,
+    urls: Vec<String>,
+    file_paths: Vec<String>,
+    html_text: Option<String>,
+    rtf_text: Option<String>,
+    text_summary: String,
     preview_text: String,
     search_text: String,
     item_count: usize,
@@ -410,10 +418,20 @@ impl SnapshotDetails {
         recent_events: Vec<CaptureEvent>,
         items: Vec<ClipboardItem>,
     ) -> Self {
+        let projection = FlattenedTextProjection::from_items(&items);
+
         Self {
             snapshot_id,
             sha256,
             snapshot_kind,
+            best_text: projection.best_text().to_string(),
+            best_text_uti: projection.best_text_uti().map(ToOwned::to_owned),
+            text_fragments: projection.text_fragments().to_vec(),
+            urls: projection.urls().to_vec(),
+            file_paths: projection.file_paths().to_vec(),
+            html_text: projection.html_text().map(ToOwned::to_owned),
+            rtf_text: projection.rtf_text().map(ToOwned::to_owned),
+            text_summary: projection.text_summary().to_string(),
             preview_text,
             search_text,
             item_count,
@@ -442,6 +460,46 @@ impl SnapshotDetails {
     #[must_use]
     pub fn snapshot_kind(&self) -> SnapshotKind {
         self.snapshot_kind
+    }
+
+    #[must_use]
+    pub fn best_text(&self) -> &str {
+        &self.best_text
+    }
+
+    #[must_use]
+    pub fn best_text_uti(&self) -> Option<&str> {
+        self.best_text_uti.as_deref()
+    }
+
+    #[must_use]
+    pub fn text_fragments(&self) -> &[TextFragment] {
+        &self.text_fragments
+    }
+
+    #[must_use]
+    pub fn urls(&self) -> &[String] {
+        &self.urls
+    }
+
+    #[must_use]
+    pub fn file_paths(&self) -> &[String] {
+        &self.file_paths
+    }
+
+    #[must_use]
+    pub fn html_text(&self) -> Option<&str> {
+        self.html_text.as_deref()
+    }
+
+    #[must_use]
+    pub fn rtf_text(&self) -> Option<&str> {
+        self.rtf_text.as_deref()
+    }
+
+    #[must_use]
+    pub fn text_summary(&self) -> &str {
+        &self.text_summary
     }
 
     #[must_use]
@@ -509,6 +567,15 @@ impl SnapshotDetails {
     }
 
     pub(crate) fn set_items(&mut self, items: Vec<ClipboardItem>) {
+        let projection = FlattenedTextProjection::from_items(&items);
+        self.best_text = projection.best_text().to_string();
+        self.best_text_uti = projection.best_text_uti().map(ToOwned::to_owned);
+        self.text_fragments = projection.text_fragments().to_vec();
+        self.urls = projection.urls().to_vec();
+        self.file_paths = projection.file_paths().to_vec();
+        self.html_text = projection.html_text().map(ToOwned::to_owned);
+        self.rtf_text = projection.rtf_text().map(ToOwned::to_owned);
+        self.text_summary = projection.text_summary().to_string();
         self.items = items;
     }
 }

@@ -173,6 +173,19 @@ For `search`, `recent`, and `timeline`, JSON output now uses a stable top-level 
 - `next_cursor`
 - `results`
 
+`get --format json` and all retrieval-style rows now also surface flattened text fields near the top of the payload:
+
+- `best_text`
+- `best_text_uti`
+- `text_fragments`
+- `urls`
+- `file_paths`
+- `html_text`
+- `rtf_text`
+- `text_summary`
+
+The nested `items[].representations[]` structure is still present on `get` for full-fidelity inspection and export workflows.
+
 Pagination uses `--limit` plus the opaque `next_cursor` returned by a prior response:
 
 ```bash
@@ -327,8 +340,8 @@ The key tables are:
 ## Limitations worth knowing
 
 - Binary payloads are stored exactly, but only recognized text-like payloads are indexed.
-- `clipmem get --format json` intentionally omits raw blob bytes. Use `clipmem export` to recover stored binary payloads.
-- `clipmem recall` exposes flat `best_text`, `urls`, `file_paths`, and a short snippet so agents do not need to walk nested representation arrays by default.
+- `clipmem get --format json` intentionally omits raw blob bytes, but it now surfaces flattened text projections (`best_text`, `text_fragments`, `html_text`, `rtf_text`, `text_summary`) ahead of the nested representation tree. Use `clipmem export` to recover stored binary payloads.
+- `clipmem recall` and the list-style retrieval commands expose the same flattened text fields so agents do not need to walk nested representation arrays by default.
 - RTF and HTML text extraction is intentionally lightweight and best-effort.
 - Search is great for commands, code, URLs, notes, logs and copied prose. Use `--mode auto` for the default FTS-or-literal behavior, `--mode fts` for strict FTS5 queries, or `--mode literal` for exact substring matching. It is not semantic search.
 - Explicit `--mode fts` keeps SQLite FTS5 semantics. In automatic mode, punctuation-heavy inputs may fall back to literal search.

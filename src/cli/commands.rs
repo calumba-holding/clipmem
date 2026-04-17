@@ -6,14 +6,16 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::app::{format_watch_capture_line, process_watch_snapshot, WatchState};
 use crate::db::{
     Database, RecentCursorState, RetrievalFilters, SearchCursorState, SearchMode, SearchResults,
     TimelineCursorState, TimelineSort,
 };
-use crate::model::{CaptureStoreResult, ClipboardSnapshot, SearchHit, TimelineEvent};
+use crate::model::{
+    CaptureStoreResult, ClipboardSnapshot, FlattenedTextProjection, SearchHit, TimelineEvent,
+};
 use crate::platform::{capture_snapshot, current_change_count};
 
 use super::output::{
@@ -189,6 +191,11 @@ fn search(db_path: &Path, args: &SearchArgs) -> Result<()> {
         return Ok(());
     }
 
+    let projections = load_snapshot_projections(
+        &db,
+        results.hits().iter().map(SearchHit::snapshot_id),
+    )?;
+
     let generated_at = generated_at_now()?;
     let next_cursor = if results.has_more() {
         results
@@ -215,7 +222,13 @@ fn search(db_path: &Path, args: &SearchArgs) -> Result<()> {
         results: results
             .hits()
             .iter()
-            .map(|hit| ListRow::from_hit(hit, true))
+            .map(|hit| {
+                let projection = projections
+                    .get(&hit.snapshot_id())
+                    .cloned()
+                    .unwrap_or_default();
+                ListRow::from_hit(hit, true, &projection)
+            })
             .collect(),
     };
     emit_list_output(format, &envelope)
@@ -240,6 +253,11 @@ fn recent(db_path: &Path, args: &RecentArgs) -> Result<()> {
         return Ok(());
     }
 
+    let projections = load_snapshot_projections(
+        &db,
+        hits.items().iter().map(SearchHit::snapshot_id),
+    )?;
+
     let generated_at = generated_at_now()?;
     let next_cursor = if hits.has_more() {
         hits.items()
@@ -262,7 +280,13 @@ fn recent(db_path: &Path, args: &RecentArgs) -> Result<()> {
         results: hits
             .items()
             .iter()
-            .map(|hit| ListRow::from_hit(hit, false))
+            .map(|hit| {
+                let projection = projections
+                    .get(&hit.snapshot_id())
+                    .cloned()
+                    .unwrap_or_default();
+                ListRow::from_hit(hit, false, &projection)
+            })
             .collect(),
     };
     emit_list_output(format, &envelope)
@@ -287,6 +311,11 @@ fn timeline(db_path: &Path, args: &TimelineArgs) -> Result<()> {
         return Ok(());
     }
 
+    let projections = load_snapshot_projections(
+        &db,
+        events.items().iter().map(TimelineEvent::snapshot_id),
+    )?;
+
     let next_cursor = if events.has_more() {
         events
             .items()
@@ -310,7 +339,13 @@ fn timeline(db_path: &Path, args: &TimelineArgs) -> Result<()> {
         results: events
             .items()
             .iter()
-            .map(ListRow::from_timeline_event)
+            .map(|event| {
+                let projection = projections
+                    .get(&event.snapshot_id())
+                    .cloned()
+                    .unwrap_or_default();
+                ListRow::from_timeline_event(event, &projection)
+            })
             .collect(),
     };
     emit_list_output(format, &envelope)
@@ -322,7 +357,20 @@ fn recall(db_path: &Path, args: &RecallArgs) -> Result<()> {
     let db = open_existing_db(db_path)?;
     let recall = anyhow::Context::context(compute_recall(&db, args, &filters), "recall query failed")?;
     let generated_at = generated_at_now()?;
-    let best_candidate = RecallOutputRow::from_hit(&recall.best.hit, args.full);
+    let projections = load_snapshot_projections(
+        &db,
+        std::iter::once(recall.best.hit.snapshot_id()).chain(
+            recall
+                .alternatives
+                .iter()
+                .map(|candidate| candidate.hit.snapshot_id()),
+        ),
+    )?;
+    let best_projection = projections
+        .get(&recall.best.hit.snapshot_id())
+        .cloned()
+        .unwrap_or_default();
+    let best_candidate = RecallOutputRow::from_hit(&recall.best.hit, args.full, &best_projection);
     let best_match_score = Some(recall.best.normalized_score);
     let confidence = RecallMatchConfidence::from_normalized_score(recall.best.normalized_score);
     let quoted_text = args
@@ -349,7 +397,13 @@ fn recall(db_path: &Path, args: &RecallArgs) -> Result<()> {
         alternatives: recall
             .alternatives
             .iter()
-            .map(|candidate| RecallOutputRow::from_hit(&candidate.hit, false))
+            .map(|candidate| {
+                let projection = projections
+                    .get(&candidate.hit.snapshot_id())
+                    .cloned()
+                    .unwrap_or_default();
+                RecallOutputRow::from_hit(&candidate.hit, false, &projection)
+            })
             .collect(),
         best_match_confidence: confidence,
         best_match_score,
@@ -937,6 +991,31 @@ fn normalize_retrieval_filters(
 ) -> Result<RetrievalFilters> {
     args.normalized()
         .map_err(|error| anyhow!(error.to_string()))
+}
+
+fn load_snapshot_projections<I>(
+    db: &Database,
+    snapshot_ids: I,
+) -> Result<HashMap<i64, FlattenedTextProjection>>
+where
+    I: IntoIterator<Item = i64>,
+{
+    let mut unique_ids = Vec::new();
+    let mut seen = HashSet::new();
+    for snapshot_id in snapshot_ids {
+        if seen.insert(snapshot_id) {
+            unique_ids.push(snapshot_id);
+        }
+    }
+
+    let mut projections = HashMap::with_capacity(unique_ids.len());
+    for snapshot_id in unique_ids {
+        if let Some(projection) = db.snapshot_projection(snapshot_id)? {
+            projections.insert(snapshot_id, projection);
+        }
+    }
+
+    Ok(projections)
 }
 
 fn merge_applied_filters(filters: &RetrievalFilters, command_specific: serde_json::Value) -> serde_json::Value {

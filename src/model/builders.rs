@@ -182,7 +182,7 @@ fn snapshot_kind(items: &[ClipboardItem]) -> SnapshotKind {
     }
 }
 
-fn truncate_chars(text: &str, max_chars: usize) -> String {
+pub(crate) fn truncate_chars(text: &str, max_chars: usize) -> String {
     if text.chars().count() <= max_chars {
         return text.to_string();
     }
@@ -198,11 +198,11 @@ fn truncate_chars(text: &str, max_chars: usize) -> String {
     out
 }
 
-fn normalise_whitespace(text: &str) -> String {
+pub(crate) fn normalise_whitespace(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-fn dedupe_text_fragments<I>(fragments: I) -> Vec<String>
+pub(crate) fn dedupe_text_fragments<I>(fragments: I) -> Vec<String>
 where
     I: IntoIterator<Item = String>,
 {
@@ -300,7 +300,7 @@ fn is_mostly_printable(bytes: &[u8]) -> bool {
     ratio_at_least(printable, bytes.len(), 85, 100)
 }
 
-fn html_to_text_lossy(html: &str) -> String {
+pub(crate) fn html_to_text_lossy(html: &str) -> String {
     let mut out = String::with_capacity(html.len());
     let mut in_tag = false;
     let mut entity = String::new();
@@ -349,7 +349,7 @@ fn html_to_text_lossy(html: &str) -> String {
     normalise_whitespace(&out)
 }
 
-fn rtf_to_text_lossy(rtf: &str) -> String {
+pub(crate) fn rtf_to_text_lossy(rtf: &str) -> String {
     let mut out = String::with_capacity(rtf.len());
     let chars = rtf.chars().collect::<Vec<_>>();
     let mut index = 0;

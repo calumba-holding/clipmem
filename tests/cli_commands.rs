@@ -95,6 +95,42 @@ fn rich_snapshot(change_count: i64, text: &str, url: &str, file_url: &str) -> Cl
     )
 }
 
+fn html_snapshot(change_count: i64, html: &str) -> ClipboardSnapshot {
+    let item = build_item(
+        0,
+        vec![build_representation(
+            "public.html".to_string(),
+            Some(html.to_string()),
+            html.as_bytes().to_vec(),
+        )],
+    );
+
+    build_snapshot(
+        CaptureContext::new(change_count)
+            .with_frontmost_app_name("Safari")
+            .with_frontmost_app_bundle_id("com.apple.Safari"),
+        vec![item],
+    )
+}
+
+fn rtf_snapshot(change_count: i64, rtf: &str) -> ClipboardSnapshot {
+    let item = build_item(
+        0,
+        vec![build_representation(
+            "public.rtf".to_string(),
+            Some(rtf.to_string()),
+            rtf.as_bytes().to_vec(),
+        )],
+    );
+
+    build_snapshot(
+        CaptureContext::new(change_count)
+            .with_frontmost_app_name("TextEdit")
+            .with_frontmost_app_bundle_id("com.apple.TextEdit"),
+        vec![item],
+    )
+}
+
 fn seed_database(path: &Path, snapshots: &[ClipboardSnapshot]) -> Result<Vec<i64>> {
     let mut db = Database::open_or_init(path)?;
     let mut ids = Vec::new();
@@ -211,6 +247,17 @@ fn search_json_envelope_includes_agent_friendly_rows() -> Result<()> {
         .unwrap_or_default()
         .contains("git status"));
     assert_eq!(
+        payload["results"][0]["best_text_uti"].as_str(),
+        Some("public.utf8-plain-text")
+    );
+    let fragments = payload["results"][0]["text_fragments"]
+        .as_array()
+        .expect("text_fragments should be an array");
+    assert!(fragments.iter().any(|fragment| {
+        fragment["text"].as_str() == Some("git status")
+            && fragment["uti"].as_str() == Some("public.utf8-plain-text")
+    }));
+    assert_eq!(
         payload["results"][0]["why_matched"].as_str(),
         Some("git status  https://example.com/repo  file:///Users/test/report.txt")
     );
@@ -222,6 +269,10 @@ fn search_json_envelope_includes_agent_friendly_rows() -> Result<()> {
         payload["results"][0]["file_paths"][0].as_str(),
         Some("/Users/test/report.txt")
     );
+    assert!(payload["results"][0]["text_summary"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("git status"));
 
     cleanup_db(&path);
     Ok(())
@@ -245,6 +296,11 @@ fn recent_json_alias_uses_new_envelope_shape() -> Result<()> {
     assert_eq!(payload["command"].as_str(), Some("recent"));
     assert_eq!(payload["results"].as_array().map(Vec::len), Some(1));
     assert_eq!(payload["results"][0]["snapshot_id"].as_i64(), Some(ids[0]));
+    assert_eq!(payload["results"][0]["best_text"].as_str(), Some("git status"));
+    assert_eq!(
+        payload["results"][0]["best_text_uti"].as_str(),
+        Some("public.utf8-plain-text")
+    );
     assert!(payload["results"][0]["why_matched"].is_null());
 
     cleanup_db(&path);
@@ -291,6 +347,11 @@ fn timeline_json_envelope_returns_event_rows_in_descending_order() -> Result<()>
     assert_eq!(payload["results"][1]["event_id"].as_i64(), Some(events[1].1));
     assert_eq!(payload["results"][2]["event_id"].as_i64(), Some(events[0].1));
     assert_eq!(payload["results"][0]["change_count"].as_i64(), Some(3));
+    assert_eq!(payload["results"][0]["best_text"].as_str(), Some("cargo test"));
+    assert_eq!(
+        payload["results"][0]["best_text_uti"].as_str(),
+        Some("public.utf8-plain-text")
+    );
     assert_eq!(
         payload["results"][0]["urls"][0].as_str(),
         Some("https://example.com/repo")
@@ -535,6 +596,30 @@ fn get_json_wraps_snapshot_in_versioned_envelope() -> Result<()> {
     assert_eq!(payload["command"].as_str(), Some("get"));
     assert_eq!(payload["snapshot"]["snapshot_id"].as_i64(), Some(ids[0]));
     assert_eq!(
+        payload["snapshot"]["best_text"].as_str(),
+        Some("git clone https://example.com/repo")
+    );
+    assert_eq!(
+        payload["snapshot"]["best_text_uti"].as_str(),
+        Some("public.utf8-plain-text")
+    );
+    assert_eq!(
+        payload["snapshot"]["text_fragments"][0]["text"].as_str(),
+        Some("git clone https://example.com/repo")
+    );
+    assert!(payload["snapshot"]["urls"]
+        .as_array()
+        .expect("urls should be an array")
+        .is_empty());
+    assert!(payload["snapshot"]["file_paths"]
+        .as_array()
+        .expect("file_paths should be an array")
+        .is_empty());
+    assert!(payload["snapshot"]["text_summary"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("git clone https://example.com/repo"));
+    assert_eq!(
         payload["snapshot"]["preview_text"].as_str(),
         Some("git clone https://example.com/repo")
     );
@@ -668,6 +753,18 @@ fn recall_json_prefers_a_strong_query_match() -> Result<()> {
     assert_eq!(payload["query"].as_str(), Some("git status"));
     assert_eq!(payload["best_candidate"]["snapshot_id"].as_i64(), Some(ids[0]));
     assert_eq!(
+        payload["best_candidate"]["best_text"].as_str(),
+        Some("git status")
+    );
+    assert_eq!(
+        payload["best_candidate"]["best_text_uti"].as_str(),
+        Some("public.utf8-plain-text")
+    );
+    assert_eq!(
+        payload["best_candidate"]["text_fragments"][0]["text"].as_str(),
+        Some("git status")
+    );
+    assert_eq!(
         payload["best_match_confidence"].as_str(),
         Some("high")
     );
@@ -742,10 +839,63 @@ fn recall_without_query_returns_recent_candidates() -> Result<()> {
     assert!(output.status.success());
     assert!(payload["query"].is_null());
     assert_eq!(payload["best_candidate"]["snapshot_id"].as_i64(), Some(ids[1]));
+    assert_eq!(
+        payload["best_candidate"]["best_text"].as_str(),
+        Some("newest text")
+    );
     assert!(payload["why_selected"]
         .as_str()
         .unwrap_or_default()
         .contains("most likely useful recent clipboard item"));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn get_json_exposes_html_and_rtf_plain_text_projections() -> Result<()> {
+    let path = temp_db_path("get-rich-text-projections");
+    let ids = seed_database(
+        &path,
+        &[
+            html_snapshot(1, "<p>Hello <strong>world</strong></p>"),
+            rtf_snapshot(2, r"{\rtf1\ansi hello\par world}"),
+        ],
+    )?;
+
+    let html_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "get",
+        &ids[0].to_string(),
+        "--format",
+        "json",
+    ]);
+    let html_payload: Value =
+        serde_json::from_slice(&html_output.stdout).expect("html get JSON should parse");
+    assert!(html_output.status.success());
+    assert_eq!(html_payload["snapshot"]["html_text"].as_str(), Some("Hello world"));
+    assert_eq!(
+        html_payload["snapshot"]["best_text"].as_str(),
+        Some("Hello world")
+    );
+
+    let rtf_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "get",
+        &ids[1].to_string(),
+        "--format",
+        "json",
+    ]);
+    let rtf_payload: Value =
+        serde_json::from_slice(&rtf_output.stdout).expect("rtf get JSON should parse");
+    assert!(rtf_output.status.success());
+    assert_eq!(rtf_payload["snapshot"]["rtf_text"].as_str(), Some("hello world"));
+    assert_eq!(
+        rtf_payload["snapshot"]["best_text"].as_str(),
+        Some("hello world")
+    );
 
     cleanup_db(&path);
     Ok(())

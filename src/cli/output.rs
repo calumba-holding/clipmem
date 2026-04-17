@@ -7,7 +7,8 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::db::SearchResults;
 use crate::model::{
-    CaptureStoreResult, ClipboardSnapshot, DoctorReport, SearchHit, SnapshotDetails, TimelineEvent,
+    CaptureStoreResult, ClipboardSnapshot, DoctorReport, FlattenedTextProjection, SearchHit,
+    SnapshotDetails, TextFragment, TimelineEvent,
 };
 
 use super::OutputFormat;
@@ -82,9 +83,14 @@ pub(super) struct SnapshotListRow {
     pub(super) app_name: Option<String>,
     pub(super) app_bundle_id: Option<String>,
     pub(super) best_text: String,
-    pub(super) preview_text: String,
+    pub(super) best_text_uti: Option<String>,
+    pub(super) text_fragments: Vec<TextFragment>,
     pub(super) urls: Vec<String>,
     pub(super) file_paths: Vec<String>,
+    pub(super) html_text: Option<String>,
+    pub(super) rtf_text: Option<String>,
+    pub(super) text_summary: String,
+    pub(super) preview_text: String,
     pub(super) item_count: usize,
     pub(super) total_bytes: usize,
     pub(super) capture_count: usize,
@@ -102,9 +108,14 @@ pub(super) struct TimelineListRow {
     pub(super) app_name: Option<String>,
     pub(super) app_bundle_id: Option<String>,
     pub(super) best_text: String,
-    pub(super) preview_text: String,
+    pub(super) best_text_uti: Option<String>,
+    pub(super) text_fragments: Vec<TextFragment>,
     pub(super) urls: Vec<String>,
     pub(super) file_paths: Vec<String>,
+    pub(super) html_text: Option<String>,
+    pub(super) rtf_text: Option<String>,
+    pub(super) text_summary: String,
+    pub(super) preview_text: String,
     pub(super) total_bytes: usize,
     pub(super) sha256: String,
     pub(super) item_count: usize,
@@ -129,9 +140,14 @@ pub(super) struct RecallOutputRow {
     pub(super) app_name: Option<String>,
     pub(super) app_bundle_id: Option<String>,
     pub(super) best_text: String,
-    pub(super) preview_text: String,
+    pub(super) best_text_uti: Option<String>,
+    pub(super) text_fragments: Vec<TextFragment>,
     pub(super) urls: Vec<String>,
     pub(super) file_paths: Vec<String>,
+    pub(super) html_text: Option<String>,
+    pub(super) rtf_text: Option<String>,
+    pub(super) text_summary: String,
+    pub(super) preview_text: String,
     pub(super) item_count: usize,
     pub(super) total_bytes: usize,
     pub(super) capture_count: usize,
@@ -142,16 +158,16 @@ pub(super) struct RecallOutputRow {
 
 impl SnapshotListRow {
     #[must_use]
-    pub(super) fn from_hit(hit: &SearchHit, include_why_matched: bool) -> Self {
+    pub(super) fn from_hit(
+        hit: &SearchHit,
+        include_why_matched: bool,
+        projection: &FlattenedTextProjection,
+    ) -> Self {
         let why_matched = include_why_matched.then(|| {
             hit.why_matched()
                 .unwrap_or(hit.preview_text())
                 .to_string()
         });
-        let best_text = why_matched
-            .clone()
-            .filter(|value| value != hit.preview_text())
-            .unwrap_or_else(|| hit.preview_text().to_string());
 
         Self {
             snapshot_id: hit.snapshot_id(),
@@ -163,10 +179,15 @@ impl SnapshotListRow {
             last_seen_at: hit.last_observed_at().to_string(),
             app_name: hit.last_frontmost_app_name().map(ToOwned::to_owned),
             app_bundle_id: hit.last_frontmost_app_bundle_id().map(ToOwned::to_owned),
-            best_text,
+            best_text: projection.best_text().to_string(),
+            best_text_uti: projection.best_text_uti().map(ToOwned::to_owned),
+            text_fragments: projection.text_fragments().to_vec(),
+            urls: projection.urls().to_vec(),
+            file_paths: projection.file_paths().to_vec(),
+            html_text: projection.html_text().map(ToOwned::to_owned),
+            rtf_text: projection.rtf_text().map(ToOwned::to_owned),
+            text_summary: projection.text_summary().to_string(),
             preview_text: hit.preview_text().to_string(),
-            urls: hit.urls().to_vec(),
-            file_paths: hit.file_paths().to_vec(),
             item_count: hit.item_count(),
             total_bytes: hit.total_bytes(),
             capture_count: hit.capture_count(),
@@ -178,7 +199,7 @@ impl SnapshotListRow {
 
 impl TimelineListRow {
     #[must_use]
-    pub(super) fn from_event(event: &TimelineEvent) -> Self {
+    pub(super) fn from_event(event: &TimelineEvent, projection: &FlattenedTextProjection) -> Self {
         Self {
             event_id: event.event_id(),
             snapshot_id: event.snapshot_id(),
@@ -187,10 +208,15 @@ impl TimelineListRow {
             kind: event.snapshot_kind().as_str().to_string(),
             app_name: event.frontmost_app_name().map(ToOwned::to_owned),
             app_bundle_id: event.frontmost_app_bundle_id().map(ToOwned::to_owned),
-            best_text: event.best_text().to_string(),
+            best_text: projection.best_text().to_string(),
+            best_text_uti: projection.best_text_uti().map(ToOwned::to_owned),
+            text_fragments: projection.text_fragments().to_vec(),
+            urls: projection.urls().to_vec(),
+            file_paths: projection.file_paths().to_vec(),
+            html_text: projection.html_text().map(ToOwned::to_owned),
+            rtf_text: projection.rtf_text().map(ToOwned::to_owned),
+            text_summary: projection.text_summary().to_string(),
             preview_text: event.preview_text().to_string(),
-            urls: event.urls().to_vec(),
-            file_paths: event.file_paths().to_vec(),
             total_bytes: event.total_bytes(),
             sha256: event.sha256().to_string(),
             item_count: event.item_count(),
@@ -200,13 +226,24 @@ impl TimelineListRow {
 
 impl ListRow {
     #[must_use]
-    pub(super) fn from_hit(hit: &SearchHit, include_why_matched: bool) -> Self {
-        Self::Snapshot(SnapshotListRow::from_hit(hit, include_why_matched))
+    pub(super) fn from_hit(
+        hit: &SearchHit,
+        include_why_matched: bool,
+        projection: &FlattenedTextProjection,
+    ) -> Self {
+        Self::Snapshot(SnapshotListRow::from_hit(
+            hit,
+            include_why_matched,
+            projection,
+        ))
     }
 
     #[must_use]
-    pub(super) fn from_timeline_event(event: &TimelineEvent) -> Self {
-        Self::Timeline(TimelineListRow::from_event(event))
+    pub(super) fn from_timeline_event(
+        event: &TimelineEvent,
+        projection: &FlattenedTextProjection,
+    ) -> Self {
+        Self::Timeline(TimelineListRow::from_event(event, projection))
     }
 
     #[must_use]
@@ -236,9 +273,17 @@ impl ListRow {
 
 impl RecallOutputRow {
     #[must_use]
-    pub(super) fn from_hit(hit: &SearchHit, full: bool) -> Self {
+    pub(super) fn from_hit(
+        hit: &SearchHit,
+        full: bool,
+        projection: &FlattenedTextProjection,
+    ) -> Self {
         let why_matched = hit.why_matched().map(ToOwned::to_owned);
-        let source_text = best_text_from_hit(hit);
+        let source_text = if projection.best_text().trim().is_empty() {
+            best_text_from_hit(hit)
+        } else {
+            projection.best_text().to_string()
+        };
         let best_text = if full {
             source_text.clone()
         } else {
@@ -257,9 +302,14 @@ impl RecallOutputRow {
             app_name: hit.last_frontmost_app_name().map(ToOwned::to_owned),
             app_bundle_id: hit.last_frontmost_app_bundle_id().map(ToOwned::to_owned),
             best_text,
+            best_text_uti: projection.best_text_uti().map(ToOwned::to_owned),
+            text_fragments: projection.text_fragments().to_vec(),
+            urls: projection.urls().to_vec(),
+            file_paths: projection.file_paths().to_vec(),
+            html_text: projection.html_text().map(ToOwned::to_owned),
+            rtf_text: projection.rtf_text().map(ToOwned::to_owned),
+            text_summary: projection.text_summary().to_string(),
             preview_text: hit.preview_text().to_string(),
-            urls: hit.urls().to_vec(),
-            file_paths: hit.file_paths().to_vec(),
             item_count: hit.item_count(),
             total_bytes: hit.total_bytes(),
             capture_count: hit.capture_count(),
@@ -484,8 +534,17 @@ pub(super) fn render_snapshot_text(snapshot: &SnapshotDetails) -> String {
     {
         let _ = writeln!(out, "last frontmost app: {app}");
     }
+    if !snapshot.best_text().is_empty() {
+        let _ = writeln!(out, "best: {}", snapshot.best_text());
+    }
     if !snapshot.preview_text().is_empty() {
         let _ = writeln!(out, "preview: {}", snapshot.preview_text());
+    }
+    if !snapshot.urls().is_empty() {
+        let _ = writeln!(out, "urls: {}", snapshot.urls().join(", "));
+    }
+    if !snapshot.file_paths().is_empty() {
+        let _ = writeln!(out, "files: {}", snapshot.file_paths().join(", "));
     }
     push_blank_line(&mut out);
 
@@ -683,6 +742,37 @@ fn render_get_markdown(envelope: &GetEnvelope) -> String {
     let _ = writeln!(out, "- Captures: {}", snapshot.capture_count());
     let _ = writeln!(out, "- Bytes: {}", snapshot.total_bytes());
     let _ = writeln!(out, "- Items: {}", snapshot.item_count());
+    if !snapshot.best_text().is_empty() {
+        let _ = writeln!(
+            out,
+            "- Best text: {}",
+            escape_markdown_cell(&truncate_for_markdown(snapshot.best_text(), 240))
+        );
+    }
+    if let Some(best_text_uti) = snapshot.best_text_uti() {
+        let _ = writeln!(out, "- Best text UTI: {}", escape_markdown_cell(best_text_uti));
+    }
+    if !snapshot.text_summary().is_empty() {
+        let _ = writeln!(
+            out,
+            "- Text summary: {}",
+            escape_markdown_cell(&truncate_for_markdown(snapshot.text_summary(), 240))
+        );
+    }
+    if !snapshot.urls().is_empty() {
+        let _ = writeln!(
+            out,
+            "- URLs: {}",
+            escape_markdown_cell(&truncate_for_markdown(&snapshot.urls().join(", "), 240))
+        );
+    }
+    if !snapshot.file_paths().is_empty() {
+        let _ = writeln!(
+            out,
+            "- File paths: {}",
+            escape_markdown_cell(&truncate_for_markdown(&snapshot.file_paths().join(", "), 240))
+        );
+    }
     if !snapshot.preview_text().is_empty() {
         let _ = writeln!(
             out,
@@ -835,9 +925,14 @@ fn render_list_toon(envelope: &ListEnvelope) -> String {
             "app_name",
             "app_bundle_id",
             "best_text",
-            "preview_text",
+            "best_text_uti",
+            "text_fragments",
             "urls",
             "file_paths",
+            "html_text",
+            "rtf_text",
+            "text_summary",
+            "preview_text",
             "total_bytes",
             "sha256",
             "item_count",
@@ -854,9 +949,14 @@ fn render_list_toon(envelope: &ListEnvelope) -> String {
             "app_name",
             "app_bundle_id",
             "best_text",
-            "preview_text",
+            "best_text_uti",
+            "text_fragments",
             "urls",
             "file_paths",
+            "html_text",
+            "rtf_text",
+            "text_summary",
+            "preview_text",
             "item_count",
             "total_bytes",
             "capture_count",
@@ -887,11 +987,19 @@ fn render_list_toon(envelope: &ListEnvelope) -> String {
                     .map(Value::String)
                     .unwrap_or(Value::Null),
                 Value::String(row.best_text.clone()),
-                Value::String(row.preview_text.clone()),
+                row.best_text_uti
+                    .clone()
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
+                serde_json::to_value(&row.text_fragments).unwrap_or(Value::Null),
                 Value::String(serde_json::to_string(&row.urls).unwrap_or_else(|_| "[]".to_string())),
                 Value::String(
                     serde_json::to_string(&row.file_paths).unwrap_or_else(|_| "[]".to_string()),
                 ),
+                row.html_text.clone().map(Value::String).unwrap_or(Value::Null),
+                row.rtf_text.clone().map(Value::String).unwrap_or(Value::Null),
+                Value::String(row.text_summary.clone()),
+                Value::String(row.preview_text.clone()),
                 Value::from(row.item_count as u64),
                 Value::from(row.total_bytes as u64),
                 Value::from(row.capture_count as u64),
@@ -913,11 +1021,19 @@ fn render_list_toon(envelope: &ListEnvelope) -> String {
                     .map(Value::String)
                     .unwrap_or(Value::Null),
                 Value::String(row.best_text.clone()),
-                Value::String(row.preview_text.clone()),
+                row.best_text_uti
+                    .clone()
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
+                serde_json::to_value(&row.text_fragments).unwrap_or(Value::Null),
                 Value::String(serde_json::to_string(&row.urls).unwrap_or_else(|_| "[]".to_string())),
                 Value::String(
                     serde_json::to_string(&row.file_paths).unwrap_or_else(|_| "[]".to_string()),
                 ),
+                row.html_text.clone().map(Value::String).unwrap_or(Value::Null),
+                row.rtf_text.clone().map(Value::String).unwrap_or(Value::Null),
+                Value::String(row.text_summary.clone()),
+                Value::String(row.preview_text.clone()),
                 Value::from(row.total_bytes as u64),
                 Value::String(row.sha256.clone()),
                 Value::from(row.item_count as u64),
@@ -1002,9 +1118,14 @@ fn render_recall_rows_toon(out: &mut String, key: &str, rows: &[RecallOutputRow]
         "app_name",
         "app_bundle_id",
         "best_text",
-        "preview_text",
+        "best_text_uti",
+        "text_fragments",
         "urls",
         "file_paths",
+        "html_text",
+        "rtf_text",
+        "text_summary",
+        "preview_text",
         "item_count",
         "total_bytes",
         "capture_count",
@@ -1028,11 +1149,19 @@ fn render_recall_rows_toon(out: &mut String, key: &str, rows: &[RecallOutputRow]
                 .map(Value::String)
                 .unwrap_or(Value::Null),
             Value::String(row.best_text.clone()),
-            Value::String(row.preview_text.clone()),
+            row.best_text_uti
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+            serde_json::to_value(&row.text_fragments).unwrap_or(Value::Null),
             Value::String(serde_json::to_string(&row.urls).unwrap_or_else(|_| "[]".to_string())),
             Value::String(
                 serde_json::to_string(&row.file_paths).unwrap_or_else(|_| "[]".to_string()),
             ),
+            row.html_text.clone().map(Value::String).unwrap_or(Value::Null),
+            row.rtf_text.clone().map(Value::String).unwrap_or(Value::Null),
+            Value::String(row.text_summary.clone()),
+            Value::String(row.preview_text.clone()),
             Value::from(row.item_count as u64),
             Value::from(row.total_bytes as u64),
             Value::from(row.capture_count as u64),
@@ -1363,9 +1492,14 @@ mod tests {
             app_name: Some("Terminal".to_string()),
             app_bundle_id: Some("com.apple.Terminal".to_string()),
             best_text: "git status".to_string(),
-            preview_text: "git status".to_string(),
+            best_text_uti: Some("public.utf8-plain-text".to_string()),
+            text_fragments: Vec::new(),
             urls: vec!["https://example.com".to_string()],
             file_paths: Vec::new(),
+            html_text: None,
+            rtf_text: None,
+            text_summary: "git status".to_string(),
+            preview_text: "git status".to_string(),
             item_count: 1,
             total_bytes: 10,
             capture_count: 1,
@@ -1461,9 +1595,14 @@ mod tests {
                 app_name: Some("Terminal".to_string()),
                 app_bundle_id: Some("com.apple.Terminal".to_string()),
                 best_text: "git status".to_string(),
-                preview_text: "git status".to_string(),
+                best_text_uti: Some("public.utf8-plain-text".to_string()),
+                text_fragments: Vec::new(),
                 urls: vec!["https://example.com".to_string()],
                 file_paths: vec!["/tmp/file.txt".to_string()],
+                html_text: None,
+                rtf_text: None,
+                text_summary: "git status".to_string(),
+                preview_text: "git status".to_string(),
                 item_count: 1,
                 total_bytes: 10,
                 capture_count: 1,
@@ -1482,9 +1621,14 @@ mod tests {
                 app_name: Some("Editor".to_string()),
                 app_bundle_id: Some("com.example.Editor".to_string()),
                 best_text: "git commit".to_string(),
-                preview_text: "git commit".to_string(),
+                best_text_uti: Some("public.utf8-plain-text".to_string()),
+                text_fragments: Vec::new(),
                 urls: Vec::new(),
                 file_paths: Vec::new(),
+                html_text: None,
+                rtf_text: None,
+                text_summary: "git commit".to_string(),
+                preview_text: "git commit".to_string(),
                 item_count: 1,
                 total_bytes: 10,
                 capture_count: 1,

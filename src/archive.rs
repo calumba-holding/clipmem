@@ -2,7 +2,8 @@ pub use crate::db::{
     Database, RetrievalFilters, RetrievalKind, SearchMode, SearchResults, TimelineSort,
 };
 pub use crate::model::{
-    CaptureEvent, CaptureStoreResult, DoctorReport, SearchHit, SnapshotDetails, TimelineEvent,
+    CaptureEvent, CaptureStoreResult, DoctorReport, FlattenedTextProjection, SearchHit,
+    SnapshotDetails, TextFragment, TimelineEvent,
 };
 
 #[cfg(test)]
