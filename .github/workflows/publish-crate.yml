@@ -56,7 +56,16 @@ jobs:
           PY
           )"
 
-          status="$(curl -s -o /dev/null -w '%{http_code}' "https://crates.io/api/v1/crates/clipmem/${version}")"
+          status="$(
+            curl \
+              --silent \
+              --show-error \
+              --output /dev/null \
+              --write-out '%{http_code}' \
+              --header 'Accept: application/json' \
+              --header 'User-Agent: clipmem-release-workflow (https://github.com/tristanmanchester/clipmem)' \
+              "https://crates.io/api/v1/crates/clipmem/${version}"
+          )"
           if [ "${status}" = "200" ]; then
             echo "clipmem ${version} is already published on crates.io" >&2
             exit 1
