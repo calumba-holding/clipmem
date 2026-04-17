@@ -1,5 +1,7 @@
 # clipmem
 
+![clipmem screenshot](docs/clipmem-screenshot.png)
+
 `clipmem` is a small Rust CLI for macOS that archives clipboard changes into SQLite, builds a searchable local clipboard history, and gives you a command that OpenClaw can call whenever it needs to recall something you copied.
 
 It captures the current `NSPasteboard` contents, stores every representation it can read for every pasteboard item, deduplicates identical clipboard snapshots by SHA-256 fingerprint, and records each observation as its own event.
