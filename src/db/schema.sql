@@ -59,6 +59,12 @@ CREATE TABLE IF NOT EXISTS snapshot_projection_cache (
     file_urls   TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS snapshot_event_filter_cache (
+    snapshot_id       INTEGER PRIMARY KEY REFERENCES snapshots(id) ON DELETE CASCADE,
+    app_names_lower   TEXT NOT NULL DEFAULT '',
+    bundle_ids_lower  TEXT NOT NULL DEFAULT ''
+);
+
 CREATE INDEX IF NOT EXISTS idx_capture_events_snapshot_id
     ON capture_events(snapshot_id);
 
@@ -156,6 +162,38 @@ CREATE TRIGGER IF NOT EXISTS capture_events_ai AFTER INSERT ON capture_events BE
                 THEN new.frontmost_app_name
             ELSE snapshot_stats.last_frontmost_app_name
         END;
+    INSERT INTO snapshot_event_filter_cache (
+        snapshot_id,
+        app_names_lower,
+        bundle_ids_lower
+    ) VALUES (
+        new.snapshot_id,
+        COALESCE(lower(new.frontmost_app_name), ''),
+        COALESCE(lower(new.frontmost_app_bundle_id), '')
+    )
+    ON CONFLICT(snapshot_id) DO UPDATE SET
+        app_names_lower = COALESCE((
+            SELECT GROUP_CONCAT(app_name, char(31))
+            FROM (
+                SELECT DISTINCT lower(frontmost_app_name) AS app_name
+                FROM capture_events
+                WHERE snapshot_id = new.snapshot_id
+                  AND frontmost_app_name IS NOT NULL
+                  AND frontmost_app_name != ''
+                ORDER BY app_name
+            )
+        ), ''),
+        bundle_ids_lower = COALESCE((
+            SELECT GROUP_CONCAT(bundle_id, char(31))
+            FROM (
+                SELECT DISTINCT lower(frontmost_app_bundle_id) AS bundle_id
+                FROM capture_events
+                WHERE snapshot_id = new.snapshot_id
+                  AND frontmost_app_bundle_id IS NOT NULL
+                  AND frontmost_app_bundle_id != ''
+                ORDER BY bundle_id
+            )
+        ), '');
 END;
 
 CREATE TRIGGER IF NOT EXISTS capture_events_au
@@ -199,6 +237,39 @@ AFTER UPDATE OF observed_at, frontmost_app_bundle_id, frontmost_app_name ON capt
     FROM capture_events ce
     WHERE ce.snapshot_id = new.snapshot_id
     GROUP BY ce.snapshot_id;
+    DELETE FROM snapshot_event_filter_cache WHERE snapshot_id = old.snapshot_id;
+    INSERT INTO snapshot_event_filter_cache (
+        snapshot_id,
+        app_names_lower,
+        bundle_ids_lower
+    )
+    SELECT
+        ce.snapshot_id,
+        COALESCE((
+            SELECT GROUP_CONCAT(app_name, char(31))
+            FROM (
+                SELECT DISTINCT lower(latest.frontmost_app_name) AS app_name
+                FROM capture_events latest
+                WHERE latest.snapshot_id = ce.snapshot_id
+                  AND latest.frontmost_app_name IS NOT NULL
+                  AND latest.frontmost_app_name != ''
+                ORDER BY app_name
+            )
+        ), '') AS app_names_lower,
+        COALESCE((
+            SELECT GROUP_CONCAT(bundle_id, char(31))
+            FROM (
+                SELECT DISTINCT lower(latest.frontmost_app_bundle_id) AS bundle_id
+                FROM capture_events latest
+                WHERE latest.snapshot_id = ce.snapshot_id
+                  AND latest.frontmost_app_bundle_id IS NOT NULL
+                  AND latest.frontmost_app_bundle_id != ''
+                ORDER BY bundle_id
+            )
+        ), '') AS bundle_ids_lower
+    FROM capture_events ce
+    WHERE ce.snapshot_id = new.snapshot_id
+    GROUP BY ce.snapshot_id;
 END;
 
 CREATE TRIGGER IF NOT EXISTS capture_events_ad AFTER DELETE ON capture_events BEGIN
@@ -238,6 +309,39 @@ CREATE TRIGGER IF NOT EXISTS capture_events_ad AFTER DELETE ON capture_events BE
             ORDER BY latest.observed_at DESC, latest.id DESC
             LIMIT 1
         ) AS last_frontmost_app_name
+    FROM capture_events ce
+    WHERE ce.snapshot_id = old.snapshot_id
+    GROUP BY ce.snapshot_id;
+    DELETE FROM snapshot_event_filter_cache WHERE snapshot_id = old.snapshot_id;
+    INSERT INTO snapshot_event_filter_cache (
+        snapshot_id,
+        app_names_lower,
+        bundle_ids_lower
+    )
+    SELECT
+        ce.snapshot_id,
+        COALESCE((
+            SELECT GROUP_CONCAT(app_name, char(31))
+            FROM (
+                SELECT DISTINCT lower(latest.frontmost_app_name) AS app_name
+                FROM capture_events latest
+                WHERE latest.snapshot_id = ce.snapshot_id
+                  AND latest.frontmost_app_name IS NOT NULL
+                  AND latest.frontmost_app_name != ''
+                ORDER BY app_name
+            )
+        ), '') AS app_names_lower,
+        COALESCE((
+            SELECT GROUP_CONCAT(bundle_id, char(31))
+            FROM (
+                SELECT DISTINCT lower(latest.frontmost_app_bundle_id) AS bundle_id
+                FROM capture_events latest
+                WHERE latest.snapshot_id = ce.snapshot_id
+                  AND latest.frontmost_app_bundle_id IS NOT NULL
+                  AND latest.frontmost_app_bundle_id != ''
+                ORDER BY bundle_id
+            )
+        ), '') AS bundle_ids_lower
     FROM capture_events ce
     WHERE ce.snapshot_id = old.snapshot_id
     GROUP BY ce.snapshot_id;

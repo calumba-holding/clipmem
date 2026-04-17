@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::model::SearchHit;
 
 const SCHEMA: &str = include_str!("db/schema.sql");
-const CURRENT_SCHEMA_VERSION: i64 = 3;
+const CURRENT_SCHEMA_VERSION: i64 = 4;
 const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
 
 pub struct Database {
@@ -559,6 +559,7 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             .context("rebuild FTS5 index")?;
             rebuild_snapshot_stats(&tx)?;
             rebuild_snapshot_projection_cache(&tx)?;
+            rebuild_snapshot_event_filter_cache(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -570,6 +571,7 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             }
             rebuild_snapshot_stats(&tx)?;
             rebuild_snapshot_projection_cache(&tx)?;
+            rebuild_snapshot_event_filter_cache(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -580,6 +582,17 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
                 );
             }
             rebuild_snapshot_projection_cache(&tx)?;
+            rebuild_snapshot_event_filter_cache(&tx)?;
+            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+                .context("set PRAGMA user_version")?;
+        }
+        3 => {
+            if legacy_prerelease_schema_detected(&tx)? {
+                bail!(
+                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
+                );
+            }
+            rebuild_snapshot_event_filter_cache(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -591,6 +604,7 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             }
             rebuild_snapshot_stats(&tx)?;
             rebuild_snapshot_projection_cache(&tx)?;
+            rebuild_snapshot_event_filter_cache(&tx)?;
         }
         version if version > CURRENT_SCHEMA_VERSION => {
             bail!(
@@ -695,6 +709,43 @@ fn rebuild_snapshot_projection_cache(conn: &Connection) -> Result<()> {
         ",
     )
     .context("rebuild snapshot projection cache")?;
+    Ok(())
+}
+
+fn rebuild_snapshot_event_filter_cache(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM snapshot_event_filter_cache", [])
+        .context("clear snapshot event filter cache")?;
+    conn.execute_batch(
+        r"
+        INSERT INTO snapshot_event_filter_cache (snapshot_id, app_names_lower, bundle_ids_lower)
+        SELECT
+            s.id,
+            COALESCE((
+                SELECT GROUP_CONCAT(app_name, char(31))
+                FROM (
+                    SELECT DISTINCT lower(ce.frontmost_app_name) AS app_name
+                    FROM capture_events ce
+                    WHERE ce.snapshot_id = s.id
+                      AND ce.frontmost_app_name IS NOT NULL
+                      AND ce.frontmost_app_name != ''
+                    ORDER BY app_name
+                )
+            ), '') AS app_names_lower,
+            COALESCE((
+                SELECT GROUP_CONCAT(bundle_id, char(31))
+                FROM (
+                    SELECT DISTINCT lower(ce.frontmost_app_bundle_id) AS bundle_id
+                    FROM capture_events ce
+                    WHERE ce.snapshot_id = s.id
+                      AND ce.frontmost_app_bundle_id IS NOT NULL
+                      AND ce.frontmost_app_bundle_id != ''
+                    ORDER BY bundle_id
+                )
+            ), '') AS bundle_ids_lower
+        FROM snapshots s;
+        ",
+    )
+    .context("rebuild snapshot event filter cache")?;
     Ok(())
 }
 

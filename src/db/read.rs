@@ -127,7 +127,9 @@ impl Database {
     ) -> Result<Page<SearchHit>> {
         let limit = sanitise_limit(limit);
         let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
-        let sql = recent_query(event_filters_active(filters));
+        let include_matching_events = requires_matching_events(filters);
+        let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
+        let sql = recent_query(include_matching_events, use_snapshot_event_cache);
         let app_like = app_like_pattern(filters);
         let bundle_id = filters.bundle_id().map(|value| value.to_ascii_lowercase());
         let kind = filters.kind().map(|value| value.as_str());
@@ -366,7 +368,9 @@ impl Database {
         let limit = sanitise_limit(limit);
         let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
         let analysis = analyze_query(query);
-        let sql = fts_query(event_filters_active(filters));
+        let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
+        let has_temporal_event_filters = has_temporal_event_filters(filters);
+        let sql = fts_query(use_snapshot_event_cache, has_temporal_event_filters);
         let app_like = app_like_pattern(filters);
         let bundle_id = filters.bundle_id().map(|value| value.to_ascii_lowercase());
         let kind = filters.kind().map(|value| value.as_str());
@@ -437,7 +441,9 @@ impl Database {
         let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
         let analysis = analyze_query(query);
         let like = format!("%{}%", escape_like_pattern(&analysis.trimmed));
-        let sql = literal_query(event_filters_active(filters));
+        let include_matching_events = requires_matching_events(filters);
+        let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
+        let sql = literal_query(include_matching_events, use_snapshot_event_cache);
         let app_like = app_like_pattern(filters);
         let bundle_id = filters.bundle_id().map(|value| value.to_ascii_lowercase());
         let kind = filters.kind().map(|value| value.as_str());
@@ -687,7 +693,7 @@ impl Database {
     }
 }
 
-fn recent_query(include_matching_events: bool) -> String {
+fn recent_query(include_matching_events: bool, use_snapshot_event_cache: bool) -> String {
     format!(
         "{matching_events_cte}
          SELECT
@@ -733,8 +739,9 @@ fn recent_query(include_matching_events: bool) -> String {
              JOIN snapshot_stats ss ON ss.snapshot_id = s.id
              {matching_events_join}
              LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
+             LEFT JOIN snapshot_event_filter_cache se ON se.snapshot_id = s.id
              WHERE {snapshot_filter_clause}
-               AND {event_filter_bind_clause}
+               AND {base_event_filter_clause}
          ) base
          WHERE (
              :cursor_last_seen_at IS NULL
@@ -745,7 +752,11 @@ fn recent_query(include_matching_events: bool) -> String {
          LIMIT :limit",
         matching_events_cte = matching_events_cte(include_matching_events),
         matching_events_join = matching_events_join(include_matching_events),
-        event_filter_bind_clause = event_filter_bind_clause(),
+        base_event_filter_clause = base_event_filter_clause(
+            "se",
+            include_matching_events,
+            use_snapshot_event_cache,
+        ),
         snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
     )
 }
@@ -802,7 +813,7 @@ fn timeline_query(sort: TimelineSort) -> String {
     )
 }
 
-fn literal_query(include_matching_events: bool) -> String {
+fn literal_query(include_matching_events: bool, use_snapshot_event_cache: bool) -> String {
     format!(
         "{matching_events_cte}
          SELECT
@@ -885,6 +896,7 @@ fn literal_query(include_matching_events: bool) -> String {
              JOIN snapshot_stats ss ON ss.snapshot_id = s.id
              {matching_events_join}
              LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
+             LEFT JOIN snapshot_event_filter_cache se ON se.snapshot_id = s.id
              WHERE (
                     lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\\'
                  OR lower(COALESCE(s.preview_text, '')) LIKE :like ESCAPE '\\'
@@ -894,7 +906,7 @@ fn literal_query(include_matching_events: bool) -> String {
                  OR (:path_tail_like IS NOT NULL AND lower(COALESCE(sp.file_urls, '')) LIKE :path_tail_like ESCAPE '\\')
                )
                AND {snapshot_filter_clause}
-               AND {event_filter_bind_clause}
+               AND {base_event_filter_clause}
          ) base
          WHERE (
              :cursor_score IS NULL
@@ -911,12 +923,16 @@ fn literal_query(include_matching_events: bool) -> String {
          LIMIT :limit",
         matching_events_cte = matching_events_cte(include_matching_events),
         matching_events_join = matching_events_join(include_matching_events),
-        event_filter_bind_clause = event_filter_bind_clause(),
+        base_event_filter_clause = base_event_filter_clause(
+            "se",
+            include_matching_events,
+            use_snapshot_event_cache,
+        ),
         snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
     )
 }
 
-fn fts_query(include_matching_events: bool) -> String {
+fn fts_query(use_snapshot_event_cache: bool, has_temporal_event_filters: bool) -> String {
     format!(
         "
          WITH search_rows AS (
@@ -964,6 +980,7 @@ fn fts_query(include_matching_events: bool) -> String {
              JOIN snapshots s ON s.id = snapshots_fts.rowid
              JOIN snapshot_stats ss ON ss.snapshot_id = s.id
              LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
+             LEFT JOIN snapshot_event_filter_cache se ON se.snapshot_id = s.id
              WHERE snapshots_fts MATCH :query
                AND {snapshot_filter_clause}
                AND {event_filter_where_clause}
@@ -1032,7 +1049,12 @@ fn fts_query(include_matching_events: bool) -> String {
          FROM ranked_rows
          JOIN snapshots_fts ON snapshots_fts.rowid = ranked_rows.snapshot_id
          ORDER BY ranked_rows.score ASC, ranked_rows.last_observed_at DESC, ranked_rows.snapshot_id DESC",
-        event_filter_where_clause = event_filter_where_clause("s.id", include_matching_events),
+        event_filter_where_clause = event_filter_where_clause(
+            "s.id",
+            "se",
+            use_snapshot_event_cache,
+            has_temporal_event_filters,
+        ),
         snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
     )
 }
@@ -1060,12 +1082,17 @@ fn matching_events_join(include_matching_events: bool) -> &'static str {
     }
 }
 
-fn event_filters_active(filters: &RetrievalFilters) -> bool {
-    filters.since().is_some()
-        || filters.until().is_some()
-        || filters.hours().is_some()
-        || filters.app().is_some()
-        || filters.bundle_id().is_some()
+fn has_temporal_event_filters(filters: &RetrievalFilters) -> bool {
+    filters.since().is_some() || filters.until().is_some() || filters.hours().is_some()
+}
+
+fn requires_matching_events(filters: &RetrievalFilters) -> bool {
+    has_temporal_event_filters(filters)
+}
+
+fn can_use_snapshot_event_cache(filters: &RetrievalFilters) -> bool {
+    !has_temporal_event_filters(filters)
+        && (filters.app().is_some() || filters.bundle_id().is_some())
 }
 
 fn event_filter_clause(alias: &str) -> String {
@@ -1084,8 +1111,38 @@ fn event_filter_bind_clause() -> &'static str {
      AND (:bundle_id IS NULL OR 1)"
 }
 
-fn event_filter_where_clause(snapshot_id_expr: &str, include_matching_events: bool) -> String {
+fn snapshot_event_filter_clause(cache_alias: &str) -> String {
+    format!(
+        "(:since IS NULL OR 1)
+         AND (:until IS NULL OR 1)
+         AND (:app_like IS NULL OR ({cache_alias}.app_names_lower != '' AND {cache_alias}.app_names_lower LIKE :app_like ESCAPE '\\'))
+         AND (:bundle_id IS NULL OR instr(char(31) || {cache_alias}.bundle_ids_lower || char(31), char(31) || :bundle_id || char(31)) > 0)"
+    )
+}
+
+fn base_event_filter_clause(
+    cache_alias: &str,
+    include_matching_events: bool,
+    use_snapshot_event_cache: bool,
+) -> String {
     if include_matching_events {
+        event_filter_bind_clause().to_string()
+    } else if use_snapshot_event_cache {
+        snapshot_event_filter_clause(cache_alias)
+    } else {
+        event_filter_bind_clause().to_string()
+    }
+}
+
+fn event_filter_where_clause(
+    snapshot_id_expr: &str,
+    cache_alias: &str,
+    use_snapshot_event_cache: bool,
+    has_temporal_event_filters: bool,
+) -> String {
+    if use_snapshot_event_cache {
+        snapshot_event_filter_clause(cache_alias)
+    } else if has_temporal_event_filters {
         format!(
             "EXISTS (
                  SELECT 1
