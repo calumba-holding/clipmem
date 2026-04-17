@@ -65,6 +65,11 @@ CREATE TABLE IF NOT EXISTS snapshot_event_filter_cache (
     bundle_ids_lower  TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS snapshot_literal_cache (
+    snapshot_id INTEGER PRIMARY KEY REFERENCES snapshots(id) ON DELETE CASCADE,
+    haystack    TEXT NOT NULL DEFAULT ''
+);
+
 CREATE INDEX IF NOT EXISTS idx_capture_events_snapshot_id
     ON capture_events(snapshot_id);
 
@@ -88,9 +93,25 @@ CREATE VIRTUAL TABLE IF NOT EXISTS snapshots_fts USING fts5(
     tokenize='unicode61'
 );
 
+CREATE VIRTUAL TABLE IF NOT EXISTS snapshots_literal_fts USING fts5(
+    haystack,
+    tokenize='trigram'
+);
+
 CREATE TRIGGER IF NOT EXISTS snapshots_ai AFTER INSERT ON snapshots BEGIN
     INSERT INTO snapshots_fts(rowid, search_text, preview_text)
     VALUES (new.id, new.search_text, new.preview_text);
+    INSERT INTO snapshot_literal_cache (snapshot_id, haystack)
+    VALUES (
+        new.id,
+        lower(
+            COALESCE(NULLIF(new.preview_text, ''), new.search_text, '') || char(31) ||
+            COALESCE(new.preview_text, '') || char(31) ||
+            COALESCE(new.search_text, '')
+        )
+    )
+    ON CONFLICT(snapshot_id) DO UPDATE SET
+        haystack = excluded.haystack;
 END;
 
 CREATE TRIGGER IF NOT EXISTS snapshots_ad AFTER DELETE ON snapshots BEGIN
@@ -103,6 +124,35 @@ CREATE TRIGGER IF NOT EXISTS snapshots_au AFTER UPDATE ON snapshots BEGIN
     VALUES ('delete', old.id, old.search_text, old.preview_text);
     INSERT INTO snapshots_fts(rowid, search_text, preview_text)
     VALUES (new.id, new.search_text, new.preview_text);
+    INSERT INTO snapshot_literal_cache (snapshot_id, haystack)
+    VALUES (
+        new.id,
+        lower(
+            COALESCE(NULLIF(new.preview_text, ''), new.search_text, '') || char(31) ||
+            COALESCE(new.preview_text, '') || char(31) ||
+            COALESCE(new.search_text, '')
+        )
+    )
+    ON CONFLICT(snapshot_id) DO UPDATE SET
+        haystack = excluded.haystack;
+END;
+
+CREATE TRIGGER IF NOT EXISTS snapshot_literal_cache_ai
+AFTER INSERT ON snapshot_literal_cache BEGIN
+    INSERT INTO snapshots_literal_fts(rowid, haystack)
+    VALUES (new.snapshot_id, new.haystack);
+END;
+
+CREATE TRIGGER IF NOT EXISTS snapshot_literal_cache_au
+AFTER UPDATE ON snapshot_literal_cache BEGIN
+    DELETE FROM snapshots_literal_fts WHERE rowid = old.snapshot_id;
+    INSERT INTO snapshots_literal_fts(rowid, haystack)
+    VALUES (new.snapshot_id, new.haystack);
+END;
+
+CREATE TRIGGER IF NOT EXISTS snapshot_literal_cache_ad
+AFTER DELETE ON snapshot_literal_cache BEGIN
+    DELETE FROM snapshots_literal_fts WHERE rowid = old.snapshot_id;
 END;
 
 CREATE TRIGGER IF NOT EXISTS capture_events_ai AFTER INSERT ON capture_events BEGIN
@@ -194,6 +244,24 @@ CREATE TRIGGER IF NOT EXISTS capture_events_ai AFTER INSERT ON capture_events BE
                 ORDER BY bundle_id
             )
         ), '');
+    INSERT INTO snapshot_literal_cache (snapshot_id, haystack)
+    SELECT
+        s.id,
+        lower(
+            COALESCE(NULLIF(s.preview_text, ''), s.search_text, '') || char(31) ||
+            COALESCE(s.preview_text, '') || char(31) ||
+            COALESCE(s.search_text, '') || char(31) ||
+            COALESCE(sp.urls, '') || char(31) ||
+            COALESCE(sp.file_urls, '') || char(31) ||
+            COALESCE(ss.last_frontmost_app_name, '') || char(31) ||
+            COALESCE(ss.last_frontmost_app_bundle_id, '')
+        )
+    FROM snapshots s
+    LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
+    LEFT JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+    WHERE s.id = new.snapshot_id
+    ON CONFLICT(snapshot_id) DO UPDATE SET
+        haystack = excluded.haystack;
 END;
 
 CREATE TRIGGER IF NOT EXISTS capture_events_au
@@ -270,6 +338,24 @@ AFTER UPDATE OF observed_at, frontmost_app_bundle_id, frontmost_app_name ON capt
     FROM capture_events ce
     WHERE ce.snapshot_id = new.snapshot_id
     GROUP BY ce.snapshot_id;
+    INSERT INTO snapshot_literal_cache (snapshot_id, haystack)
+    SELECT
+        s.id,
+        lower(
+            COALESCE(NULLIF(s.preview_text, ''), s.search_text, '') || char(31) ||
+            COALESCE(s.preview_text, '') || char(31) ||
+            COALESCE(s.search_text, '') || char(31) ||
+            COALESCE(sp.urls, '') || char(31) ||
+            COALESCE(sp.file_urls, '') || char(31) ||
+            COALESCE(ss.last_frontmost_app_name, '') || char(31) ||
+            COALESCE(ss.last_frontmost_app_bundle_id, '')
+        )
+    FROM snapshots s
+    LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
+    LEFT JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+    WHERE s.id = new.snapshot_id
+    ON CONFLICT(snapshot_id) DO UPDATE SET
+        haystack = excluded.haystack;
 END;
 
 CREATE TRIGGER IF NOT EXISTS capture_events_ad AFTER DELETE ON capture_events BEGIN
@@ -345,6 +431,24 @@ CREATE TRIGGER IF NOT EXISTS capture_events_ad AFTER DELETE ON capture_events BE
     FROM capture_events ce
     WHERE ce.snapshot_id = old.snapshot_id
     GROUP BY ce.snapshot_id;
+    INSERT INTO snapshot_literal_cache (snapshot_id, haystack)
+    SELECT
+        s.id,
+        lower(
+            COALESCE(NULLIF(s.preview_text, ''), s.search_text, '') || char(31) ||
+            COALESCE(s.preview_text, '') || char(31) ||
+            COALESCE(s.search_text, '') || char(31) ||
+            COALESCE(sp.urls, '') || char(31) ||
+            COALESCE(sp.file_urls, '') || char(31) ||
+            COALESCE(ss.last_frontmost_app_name, '') || char(31) ||
+            COALESCE(ss.last_frontmost_app_bundle_id, '')
+        )
+    FROM snapshots s
+    LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
+    LEFT JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+    WHERE s.id = old.snapshot_id
+    ON CONFLICT(snapshot_id) DO UPDATE SET
+        haystack = excluded.haystack;
 END;
 
 CREATE TRIGGER IF NOT EXISTS item_representations_ai AFTER INSERT ON item_representations BEGIN
@@ -378,6 +482,24 @@ CREATE TRIGGER IF NOT EXISTS item_representations_ai AFTER INSERT ON item_repres
             )
         ), '')
     WHERE snapshot_id = new.snapshot_id;
+    INSERT INTO snapshot_literal_cache (snapshot_id, haystack)
+    SELECT
+        s.id,
+        lower(
+            COALESCE(NULLIF(s.preview_text, ''), s.search_text, '') || char(31) ||
+            COALESCE(s.preview_text, '') || char(31) ||
+            COALESCE(s.search_text, '') || char(31) ||
+            COALESCE(sp.urls, '') || char(31) ||
+            COALESCE(sp.file_urls, '') || char(31) ||
+            COALESCE(ss.last_frontmost_app_name, '') || char(31) ||
+            COALESCE(ss.last_frontmost_app_bundle_id, '')
+        )
+    FROM snapshots s
+    LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
+    LEFT JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+    WHERE s.id = new.snapshot_id
+    ON CONFLICT(snapshot_id) DO UPDATE SET
+        haystack = excluded.haystack;
 END;
 
 CREATE TRIGGER IF NOT EXISTS item_representations_au AFTER UPDATE ON item_representations BEGIN
@@ -411,6 +533,24 @@ CREATE TRIGGER IF NOT EXISTS item_representations_au AFTER UPDATE ON item_repres
             )
         ), '')
     WHERE snapshot_id = old.snapshot_id;
+    INSERT INTO snapshot_literal_cache (snapshot_id, haystack)
+    SELECT
+        s.id,
+        lower(
+            COALESCE(NULLIF(s.preview_text, ''), s.search_text, '') || char(31) ||
+            COALESCE(s.preview_text, '') || char(31) ||
+            COALESCE(s.search_text, '') || char(31) ||
+            COALESCE(sp.urls, '') || char(31) ||
+            COALESCE(sp.file_urls, '') || char(31) ||
+            COALESCE(ss.last_frontmost_app_name, '') || char(31) ||
+            COALESCE(ss.last_frontmost_app_bundle_id, '')
+        )
+    FROM snapshots s
+    LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
+    LEFT JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+    WHERE s.id = old.snapshot_id
+    ON CONFLICT(snapshot_id) DO UPDATE SET
+        haystack = excluded.haystack;
     UPDATE snapshot_projection_cache
     SET
         urls = COALESCE((
@@ -438,6 +578,24 @@ CREATE TRIGGER IF NOT EXISTS item_representations_au AFTER UPDATE ON item_repres
             )
         ), '')
     WHERE snapshot_id = new.snapshot_id;
+    INSERT INTO snapshot_literal_cache (snapshot_id, haystack)
+    SELECT
+        s.id,
+        lower(
+            COALESCE(NULLIF(s.preview_text, ''), s.search_text, '') || char(31) ||
+            COALESCE(s.preview_text, '') || char(31) ||
+            COALESCE(s.search_text, '') || char(31) ||
+            COALESCE(sp.urls, '') || char(31) ||
+            COALESCE(sp.file_urls, '') || char(31) ||
+            COALESCE(ss.last_frontmost_app_name, '') || char(31) ||
+            COALESCE(ss.last_frontmost_app_bundle_id, '')
+        )
+    FROM snapshots s
+    LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
+    LEFT JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+    WHERE s.id = new.snapshot_id
+    ON CONFLICT(snapshot_id) DO UPDATE SET
+        haystack = excluded.haystack;
 END;
 
 CREATE TRIGGER IF NOT EXISTS item_representations_ad AFTER DELETE ON item_representations BEGIN
@@ -468,4 +626,22 @@ CREATE TRIGGER IF NOT EXISTS item_representations_ad AFTER DELETE ON item_repres
             )
         ), '')
     WHERE snapshot_id = old.snapshot_id;
+    INSERT INTO snapshot_literal_cache (snapshot_id, haystack)
+    SELECT
+        s.id,
+        lower(
+            COALESCE(NULLIF(s.preview_text, ''), s.search_text, '') || char(31) ||
+            COALESCE(s.preview_text, '') || char(31) ||
+            COALESCE(s.search_text, '') || char(31) ||
+            COALESCE(sp.urls, '') || char(31) ||
+            COALESCE(sp.file_urls, '') || char(31) ||
+            COALESCE(ss.last_frontmost_app_name, '') || char(31) ||
+            COALESCE(ss.last_frontmost_app_bundle_id, '')
+        )
+    FROM snapshots s
+    LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
+    LEFT JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+    WHERE s.id = old.snapshot_id
+    ON CONFLICT(snapshot_id) DO UPDATE SET
+        haystack = excluded.haystack;
 END;

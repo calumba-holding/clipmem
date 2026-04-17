@@ -303,6 +303,32 @@ fn search_like_treats_escape_character_as_literal() -> Result<()> {
 }
 
 #[test]
+fn search_literal_matches_file_url_paths() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+
+    let snapshot = build_snapshot(
+        CaptureContext::new(1)
+            .with_frontmost_app_name("Finder")
+            .with_frontmost_app_bundle_id("com.apple.finder"),
+        vec![build_item(
+            0,
+            vec![build_representation(
+                "public.file-url".to_string(),
+                Some("file:///tmp/repo/42/Cargo.toml".to_string()),
+                b"file:///tmp/repo/42/Cargo.toml".to_vec(),
+            )],
+        )],
+    );
+    db.store_capture(&snapshot)?;
+
+    let hits = db.search_literal("/tmp/repo/42/Cargo.toml", 10, &unfiltered())?;
+
+    assert_eq!(hits.hits().len(), 1);
+    assert_eq!(hits.hits()[0].preview_text(), "file:///tmp/repo/42/Cargo.toml");
+    Ok(())
+}
+
+#[test]
 fn search_percent_literal_returns_only_exact_matches() -> Result<()> {
     let mut db = Database::open_in_memory()?;
 
@@ -631,7 +657,7 @@ fn open_existing_migrates_legacy_database_and_rebuilds_fts() -> Result<()> {
         .query_row("PRAGMA user_version", [], |row| row.get(0))?;
     let results = db.search_auto("git", 10, &unfiltered())?;
 
-    assert_eq!(version, 4);
+    assert_eq!(version, 5);
     assert_eq!(results.mode_used(), SearchMode::Fts);
     assert_eq!(results.hits().len(), 1);
 
@@ -677,7 +703,7 @@ fn repeated_open_existing_is_idempotent_after_migration() -> Result<()> {
         .conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))?;
 
-    assert_eq!(version, 4);
+    assert_eq!(version, 5);
 
     std::fs::remove_file(&path)?;
     Ok(())

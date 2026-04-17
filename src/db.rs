@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::model::SearchHit;
 
 const SCHEMA: &str = include_str!("db/schema.sql");
-const CURRENT_SCHEMA_VERSION: i64 = 4;
+const CURRENT_SCHEMA_VERSION: i64 = 5;
 const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
 
 pub struct Database {
@@ -560,6 +560,7 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             rebuild_snapshot_stats(&tx)?;
             rebuild_snapshot_projection_cache(&tx)?;
             rebuild_snapshot_event_filter_cache(&tx)?;
+            rebuild_snapshot_literal_cache(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -572,6 +573,7 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             rebuild_snapshot_stats(&tx)?;
             rebuild_snapshot_projection_cache(&tx)?;
             rebuild_snapshot_event_filter_cache(&tx)?;
+            rebuild_snapshot_literal_cache(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -583,6 +585,7 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             }
             rebuild_snapshot_projection_cache(&tx)?;
             rebuild_snapshot_event_filter_cache(&tx)?;
+            rebuild_snapshot_literal_cache(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -593,6 +596,17 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
                 );
             }
             rebuild_snapshot_event_filter_cache(&tx)?;
+            rebuild_snapshot_literal_cache(&tx)?;
+            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+                .context("set PRAGMA user_version")?;
+        }
+        4 => {
+            if legacy_prerelease_schema_detected(&tx)? {
+                bail!(
+                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
+                );
+            }
+            rebuild_snapshot_literal_cache(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -743,6 +757,34 @@ fn rebuild_snapshot_event_filter_cache(conn: &Connection) -> Result<()> {
         ",
     )
     .context("rebuild snapshot event filter cache")?;
+    Ok(())
+}
+
+fn rebuild_snapshot_literal_cache(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM snapshot_literal_cache", [])
+        .context("clear snapshot literal cache")?;
+    conn.execute("DELETE FROM snapshots_literal_fts", [])
+        .context("clear literal FTS cache")?;
+    conn.execute_batch(
+        r"
+        INSERT INTO snapshot_literal_cache (snapshot_id, haystack)
+        SELECT
+            s.id,
+            lower(
+                COALESCE(NULLIF(s.preview_text, ''), s.search_text, '') || char(31) ||
+                COALESCE(s.preview_text, '') || char(31) ||
+                COALESCE(s.search_text, '') || char(31) ||
+                COALESCE(sp.urls, '') || char(31) ||
+                COALESCE(sp.file_urls, '') || char(31) ||
+                COALESCE(ss.last_frontmost_app_name, '') || char(31) ||
+                COALESCE(ss.last_frontmost_app_bundle_id, '')
+            )
+        FROM snapshots s
+        LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
+        LEFT JOIN snapshot_stats ss ON ss.snapshot_id = s.id;
+        ",
+    )
+    .context("rebuild snapshot literal cache")?;
     Ok(())
 }
 

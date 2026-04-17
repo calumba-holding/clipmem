@@ -443,7 +443,12 @@ impl Database {
         let like = format!("%{}%", escape_like_pattern(&analysis.trimmed));
         let include_matching_events = requires_matching_events(filters);
         let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
-        let sql = literal_query(include_matching_events, use_snapshot_event_cache);
+        let literal_match = literal_fts_match_query(&analysis);
+        let sql = literal_query(
+            include_matching_events,
+            use_snapshot_event_cache,
+            literal_match.is_some(),
+        );
         let app_like = app_like_pattern(filters);
         let bundle_id = filters.bundle_id().map(|value| value.to_ascii_lowercase());
         let kind = filters.kind().map(|value| value.as_str());
@@ -453,16 +458,21 @@ impl Database {
             .conn
             .prepare(&sql)
             .context("prepare literal search query")?;
-        let rows = stmt
-            .query_map(
+        let prefix_like = format!("{}%", escape_like_pattern(&analysis.lower));
+        let path_tail_like = analysis
+            .path_tail
+            .as_ref()
+            .map(|value| format!("%{}%", escape_like_pattern(value)));
+        let min_bytes = filters.min_bytes().map(usize_to_i64).transpose()?;
+        let max_bytes = filters.max_bytes().map(usize_to_i64).transpose()?;
+        let rows = if let Some(literal_match) = literal_match.as_deref() {
+            stmt.query_map(
                 named_params! {
                     ":query_lower" : analysis.lower.as_str(),
                     ":like" : like,
-                    ":prefix_like" : format!("{}%", escape_like_pattern(&analysis.lower)),
-                    ":path_tail_like" : analysis
-                        .path_tail
-                        .as_ref()
-                        .map(|value| format!("%{}%", escape_like_pattern(value))),
+                    ":prefix_like" : prefix_like.as_str(),
+                    ":literal_match" : literal_match,
+                    ":path_tail_like" : path_tail_like.as_deref(),
                     ":exact_phrase_lower" : analysis.exact_phrase.as_deref(),
                     ":since" : since.as_deref(),
                     ":until" : filters.until(),
@@ -474,16 +484,44 @@ impl Database {
                     ":has_file_url" : filters.has_file_url(),
                     ":has_image" : filters.has_image(),
                     ":has_pdf" : filters.has_pdf(),
-                    ":min_bytes" : filters.min_bytes().map(usize_to_i64).transpose()?,
-                    ":max_bytes" : filters.max_bytes().map(usize_to_i64).transpose()?,
+                    ":min_bytes" : min_bytes,
+                    ":max_bytes" : max_bytes,
                     ":cursor_score" : cursor.and_then(SearchCursorState::score),
                     ":cursor_last_seen_at" : cursor.map(SearchCursorState::last_seen_at),
                     ":cursor_snapshot_id" : cursor.map(SearchCursorState::snapshot_id),
                     ":limit" : fetch_limit,
                 },
-                |row| map_search_hit_row(row, true),
+                map_scored_search_hit_row,
             )
-            .context("execute literal search query")?;
+        } else {
+            stmt.query_map(
+                named_params! {
+                    ":query_lower" : analysis.lower.as_str(),
+                    ":like" : like,
+                    ":prefix_like" : prefix_like.as_str(),
+                    ":path_tail_like" : path_tail_like.as_deref(),
+                    ":exact_phrase_lower" : analysis.exact_phrase.as_deref(),
+                    ":since" : since.as_deref(),
+                    ":until" : filters.until(),
+                    ":app_like" : app_like.as_deref(),
+                    ":bundle_id" : bundle_id.as_deref(),
+                    ":kind" : kind,
+                    ":has_text" : filters.has_text(),
+                    ":has_url" : filters.has_url(),
+                    ":has_file_url" : filters.has_file_url(),
+                    ":has_image" : filters.has_image(),
+                    ":has_pdf" : filters.has_pdf(),
+                    ":min_bytes" : min_bytes,
+                    ":max_bytes" : max_bytes,
+                    ":cursor_score" : cursor.and_then(SearchCursorState::score),
+                    ":cursor_last_seen_at" : cursor.map(SearchCursorState::last_seen_at),
+                    ":cursor_snapshot_id" : cursor.map(SearchCursorState::snapshot_id),
+                    ":limit" : fetch_limit,
+                },
+                map_scored_search_hit_row,
+            )
+        }
+        .context("execute literal search query")?;
 
         collect_rows(rows)
             .map(|hits| paginate_rows(hits, limit))
@@ -813,9 +851,42 @@ fn timeline_query(sort: TimelineSort) -> String {
     )
 }
 
-fn literal_query(include_matching_events: bool, use_snapshot_event_cache: bool) -> String {
+fn literal_query(
+    include_matching_events: bool,
+    use_snapshot_event_cache: bool,
+    use_literal_fts: bool,
+) -> String {
+    let mut ctes = Vec::new();
+    let literal_candidates_join = if use_literal_fts {
+        ctes.push(
+            "literal_candidates AS (
+                 SELECT rowid AS snapshot_id
+                 FROM snapshots_literal_fts
+                 WHERE snapshots_literal_fts MATCH :literal_match
+             )"
+            .to_string(),
+        );
+        "JOIN literal_candidates lc ON lc.snapshot_id = s.id"
+    } else {
+        ""
+    };
+    if include_matching_events {
+        ctes.push(format!(
+            "matching_events AS (
+                 SELECT DISTINCT ce.snapshot_id
+                 FROM capture_events ce
+                 WHERE {}
+             )",
+            event_filter_clause("ce")
+        ));
+    }
+    let with_clause = if ctes.is_empty() {
+        String::new()
+    } else {
+        format!("WITH {}", ctes.join(", "))
+    };
     format!(
-        "{matching_events_cte}
+        "{with_clause}
          SELECT
              base.snapshot_id,
              base.event_id,
@@ -893,6 +964,7 @@ fn literal_query(include_matching_events: bool, use_snapshot_event_cache: bool) 
                      END
                  ) AS score
              FROM snapshots s
+             {literal_candidates_join}
              JOIN snapshot_stats ss ON ss.snapshot_id = s.id
              {matching_events_join}
              LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
@@ -921,7 +993,8 @@ fn literal_query(include_matching_events: bool, use_snapshot_event_cache: bool) 
          )
          ORDER BY base.score DESC, base.last_observed_at DESC, base.snapshot_id DESC
          LIMIT :limit",
-        matching_events_cte = matching_events_cte(include_matching_events),
+        with_clause = with_clause,
+        literal_candidates_join = literal_candidates_join,
         matching_events_join = matching_events_join(include_matching_events),
         base_event_filter_clause = base_event_filter_clause(
             "se",
@@ -1287,6 +1360,10 @@ fn map_search_hit_row(row: &Row<'_>, has_score: bool) -> rusqlite::Result<Search
     ))
 }
 
+fn map_scored_search_hit_row(row: &Row<'_>) -> rusqlite::Result<SearchHit> {
+    map_search_hit_row(row, true)
+}
+
 fn map_timeline_event_row(row: &Row<'_>) -> rusqlite::Result<TimelineEvent> {
     let urls = split_aggregated_values(&row.get::<_, String>(10)?);
     let file_paths = split_aggregated_values(&row.get::<_, String>(11)?)
@@ -1476,6 +1553,24 @@ fn escape_like_pattern(query: &str) -> String {
         .replace('_', "\\_")
 }
 
+fn literal_fts_match_query(analysis: &QueryAnalysis) -> Option<String> {
+    let candidate = analysis.path_tail.as_deref().unwrap_or(&analysis.lower);
+
+    if candidate.chars().count() < 3 {
+        return None;
+    }
+
+    if analysis
+        .trimmed
+        .chars()
+        .any(|ch| matches!(ch, '%' | '_' | '\\'))
+    {
+        return None;
+    }
+
+    Some(format!("\"{}\"", candidate.replace('"', "\"\"")))
+}
+
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
@@ -1483,7 +1578,9 @@ mod tests {
     use crate::db::{Database, RetrievalFilters, SearchMode, SearchResults};
     use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
 
-    use super::{analyze_query, invalid_fts_message, normalise_file_path};
+    use super::{
+        analyze_query, invalid_fts_message, literal_fts_match_query, normalise_file_path,
+    };
 
     fn fake_snapshot(change_count: i64, text: &str) -> crate::model::ClipboardSnapshot {
         build_snapshot(
@@ -1534,6 +1631,17 @@ mod tests {
         assert!(invalid_fts_message("malformed MATCH expression"));
         assert!(invalid_fts_message("no such column: https"));
         assert!(!invalid_fts_message("database disk image is malformed"));
+    }
+
+    #[test]
+    fn literal_fts_match_query_skips_like_escaped_inputs() {
+        assert!(literal_fts_match_query(&analyze_query("50%")).is_none());
+        assert!(literal_fts_match_query(&analyze_query("config_test")).is_none());
+        assert!(literal_fts_match_query(&analyze_query(r"logs\2024")).is_none());
+        assert_eq!(
+            literal_fts_match_query(&analyze_query("/tmp/repo/42/Cargo.toml")).as_deref(),
+            Some("\"/tmp/repo/42/cargo.toml\"")
+        );
     }
 
     #[test]
