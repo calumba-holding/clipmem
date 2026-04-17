@@ -602,9 +602,6 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
                     "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
                 );
             }
-            rebuild_snapshot_stats(&tx)?;
-            rebuild_snapshot_projection_cache(&tx)?;
-            rebuild_snapshot_event_filter_cache(&tx)?;
         }
         version if version > CURRENT_SCHEMA_VERSION => {
             bail!(

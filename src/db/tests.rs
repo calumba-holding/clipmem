@@ -856,3 +856,30 @@ fn profile_large_retrieval_queries() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+#[ignore = "profiling harness for repeated open_existing startup cost"]
+fn profile_open_existing_on_large_archive() -> Result<()> {
+    let path = temp_db_path("open-existing-profile");
+    let mut db = Database::open_or_init(&path)?;
+    seed_large_archive(&mut db, 5_000, 100_000)?;
+    drop(db);
+
+    let started = Instant::now();
+    let db = Database::open_existing(&path)?;
+    let first_open_elapsed = started.elapsed();
+    drop(db);
+
+    let started = Instant::now();
+    let db = Database::open_existing(&path)?;
+    let second_open_elapsed = started.elapsed();
+    drop(db);
+
+    eprintln!(
+        "open_existing_first={:?} open_existing_second={:?}",
+        first_open_elapsed, second_open_elapsed
+    );
+
+    cleanup_db(&path);
+    Ok(())
+}
