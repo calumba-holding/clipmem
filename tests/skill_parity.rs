@@ -1,10 +1,10 @@
-//! Parity test for the two clipmem agent-skill packages.
+//! Parity test for the clipmem agent-skill packages.
 //!
-//! Asserts that the OpenClaw-native variant under
-//! `extras/openclaw/clipboard_memory/` and the portable variant under
-//! `extras/agent-skills/clipboard-memory/` stay in sync on everything that
-//! matters to a calling agent: frontmatter, documented CLI surface, reference
-//! files, and the setup-check script.
+//! Asserts that the canonical skill under
+//! `skills/clipboard-memory/`, `extras/openclaw/clipboard-memory/`, and the
+//! portable mirror under `extras/agent-skills/clipboard-memory/` stay in sync
+//! on everything that matters to a calling agent: frontmatter, documented CLI
+//! surface, reference files, and the setup-check script.
 //!
 //! Some files are expected to be byte-identical across variants (the
 //! "shared reference core"); others are allowed to diverge on metadata only
@@ -18,7 +18,11 @@ fn repo_root() -> PathBuf {
 }
 
 fn openclaw_pkg() -> PathBuf {
-    repo_root().join("extras/openclaw/clipboard_memory")
+    repo_root().join("extras/openclaw/clipboard-memory")
+}
+
+fn canonical_pkg() -> PathBuf {
+    repo_root().join("skills/clipboard-memory")
 }
 
 fn portable_pkg() -> PathBuf {
@@ -83,7 +87,7 @@ fn read_file(path: &Path) -> String {
 
 #[test]
 fn both_skills_have_valid_frontmatter() {
-    for pkg in [openclaw_pkg(), portable_pkg()] {
+    for pkg in [canonical_pkg(), openclaw_pkg(), portable_pkg()] {
         let skill_path = pkg.join("SKILL.md");
         let content = read_file(&skill_path);
         let (frontmatter, body) = split_frontmatter(&content);
@@ -188,7 +192,7 @@ fn assert_contains_all(haystack: &str, needles: &[&str], where_: &Path) {
 
 #[test]
 fn both_skills_document_full_cli_surface() {
-    for pkg in [openclaw_pkg(), portable_pkg()] {
+    for pkg in [canonical_pkg(), openclaw_pkg(), portable_pkg()] {
         let skill_path = pkg.join("SKILL.md");
         let commands_path = pkg.join("references/commands.md");
         let skill = read_file(&skill_path);
@@ -241,8 +245,8 @@ const SHARED_REFERENCES: &[&str] = &[
 const VARIANT_SPECIFIC_REFERENCES: &[&str] = &["references/troubleshooting.md"];
 
 #[test]
-fn both_variants_ship_all_reference_files() {
-    for pkg in [openclaw_pkg(), portable_pkg()] {
+fn all_variants_ship_all_reference_files() {
+    for pkg in [canonical_pkg(), openclaw_pkg(), portable_pkg()] {
         for rel in SHARED_REFERENCES
             .iter()
             .chain(VARIANT_SPECIFIC_REFERENCES.iter())
@@ -263,11 +267,17 @@ fn both_variants_ship_all_reference_files() {
 #[test]
 fn shared_references_are_byte_identical_across_variants() {
     for rel in SHARED_REFERENCES {
-        let oc = read_file(&openclaw_pkg().join(rel));
-        let pt = read_file(&portable_pkg().join(rel));
+        let canonical = read_file(&canonical_pkg().join(rel));
+        let openclaw = read_file(&openclaw_pkg().join(rel));
+        let portable = read_file(&portable_pkg().join(rel));
         assert_eq!(
-            oc, pt,
-            "{} diverged between OpenClaw and portable variants",
+            canonical, openclaw,
+            "{} diverged between canonical and OpenClaw variants",
+            rel
+        );
+        assert_eq!(
+            canonical, portable,
+            "{} diverged between canonical and portable variants",
             rel
         );
     }
@@ -278,7 +288,7 @@ fn troubleshooting_is_non_trivial_in_both_variants() {
     // troubleshooting.md is allowed (and expected) to differ because the
     // OpenClaw variant covers sandbox/PATH issues that don't apply to the
     // portable runtime. Still, both files should be substantial.
-    for pkg in [openclaw_pkg(), portable_pkg()] {
+    for pkg in [canonical_pkg(), openclaw_pkg(), portable_pkg()] {
         let path = pkg.join("references/troubleshooting.md");
         let content = read_file(&path);
         assert!(
@@ -295,8 +305,8 @@ fn troubleshooting_is_non_trivial_in_both_variants() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn setup_check_script_is_present_in_both_variants() {
-    for pkg in [openclaw_pkg(), portable_pkg()] {
+fn setup_check_script_is_present_in_all_variants() {
+    for pkg in [canonical_pkg(), openclaw_pkg(), portable_pkg()] {
         let path = pkg.join("scripts/check-setup.sh");
         assert!(
             path.exists(),
@@ -319,11 +329,16 @@ fn setup_check_script_is_present_in_both_variants() {
 
 #[test]
 fn setup_check_script_is_byte_identical_across_variants() {
+    let canonical_script = read_file(&canonical_pkg().join("scripts/check-setup.sh"));
     let openclaw_script = read_file(&openclaw_pkg().join("scripts/check-setup.sh"));
     let portable_script = read_file(&portable_pkg().join("scripts/check-setup.sh"));
     assert_eq!(
-        openclaw_script, portable_script,
-        "scripts/check-setup.sh diverged between OpenClaw and portable variants"
+        canonical_script, openclaw_script,
+        "scripts/check-setup.sh diverged between canonical and OpenClaw variants"
+    );
+    assert_eq!(
+        canonical_script, portable_script,
+        "scripts/check-setup.sh diverged between canonical and portable variants"
     );
 }
 
@@ -332,7 +347,7 @@ fn setup_check_script_is_byte_identical_across_variants() {
 fn setup_check_script_is_executable_in_both_variants() {
     use std::os::unix::fs::PermissionsExt;
 
-    for pkg in [openclaw_pkg(), portable_pkg()] {
+    for pkg in [canonical_pkg(), openclaw_pkg(), portable_pkg()] {
         let path = pkg.join("scripts/check-setup.sh");
         let perms = fs::metadata(&path)
             .unwrap_or_else(|e| panic!("cannot stat {}: {}", path.display(), e))

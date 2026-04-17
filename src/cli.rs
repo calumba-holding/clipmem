@@ -119,17 +119,17 @@ const OPENCLAW_INSTALL_AFTER_HELP: &str = "\
 Examples:
   clipmem agents openclaw install-skill
   clipmem agents openclaw install-skill --shared
-  clipmem agents openclaw install-skill --dest /tmp/clipboard_memory --force
+  clipmem agents openclaw install-skill --dest /tmp/clipboard-memory --force
 
 Notes:
   - Default install target is the current OpenClaw workspace skills directory.
-  - `--shared` installs into ~/.openclaw/skills/clipboard_memory instead.";
+  - `--shared` installs into ~/.openclaw/skills/clipboard-memory instead.";
 
 const OPENCLAW_UNINSTALL_AFTER_HELP: &str = "\
 Examples:
   clipmem agents openclaw uninstall-skill
   clipmem agents openclaw uninstall-skill --shared
-  clipmem agents openclaw uninstall-skill --dest /tmp/clipboard_memory";
+  clipmem agents openclaw uninstall-skill --dest /tmp/clipboard-memory";
 
 const OPENCLAW_PRINT_AFTER_HELP: &str = "\
 Examples:
@@ -142,7 +142,7 @@ const OPENCLAW_DOCTOR_AFTER_HELP: &str = "\
 Examples:
   clipmem agents openclaw doctor
   clipmem agents openclaw doctor --shared
-  clipmem agents openclaw doctor --dest /tmp/clipboard_memory
+  clipmem agents openclaw doctor --dest /tmp/clipboard-memory
 
 Notes:
   - Reports are written to stdout.
@@ -991,7 +991,7 @@ mod tests {
             "install-skill",
             "--shared",
             "--dest",
-            "/tmp/clipboard_memory",
+            "/tmp/clipboard-memory",
             "--force",
         ]);
 
@@ -1000,7 +1000,7 @@ mod tests {
                 super::AgentsCommand::Openclaw(args) => match args.command {
                     super::OpenClawCommand::InstallSkill(args) => {
                         assert!(args.shared);
-                        assert_eq!(args.dest, Some(PathBuf::from("/tmp/clipboard_memory")));
+                        assert_eq!(args.dest, Some(PathBuf::from("/tmp/clipboard-memory")));
                         assert!(args.force);
                     }
                     other => panic!("expected install-skill command, got {other:?}"),
@@ -1015,13 +1015,13 @@ mod tests {
             "openclaw",
             "doctor",
             "--dest",
-            "/tmp/clipboard_memory",
+            "/tmp/clipboard-memory",
         ]);
         match doctor_cli.command {
             Command::Agents(args) => match args.command {
                 super::AgentsCommand::Openclaw(args) => match args.command {
                     super::OpenClawCommand::Doctor(args) => {
-                        assert_eq!(args.dest, Some(PathBuf::from("/tmp/clipboard_memory")));
+                        assert_eq!(args.dest, Some(PathBuf::from("/tmp/clipboard-memory")));
                         assert!(!args.shared);
                     }
                     other => panic!("expected doctor command, got {other:?}"),

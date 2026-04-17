@@ -289,7 +289,7 @@ clipmem agents openclaw install-skill
 By default this installs into the active OpenClaw workspace:
 
 ```text
-~/.openclaw/workspace/skills/clipboard_memory
+~/.openclaw/workspace/skills/clipboard-memory
 ```
 
 The workspace root is resolved from `openclaw config get agents.defaults.workspace`, falling back to `~/.openclaw/workspace`.
@@ -298,7 +298,7 @@ To install into the shared OpenClaw skills directory instead:
 
 ```bash
 clipmem agents openclaw install-skill --shared
-# writes to ~/.openclaw/skills/clipboard_memory
+# writes to ~/.openclaw/skills/clipboard-memory
 ```
 
 Or to a specific destination:
@@ -342,7 +342,7 @@ clipmem agents openclaw doctor
 openclaw sandbox explain   # when available
 ```
 
-For empty results, sandbox visibility, or binary-only (image / PDF) snapshots where exact text isn't available, see [`extras/openclaw/clipboard_memory/references/troubleshooting.md`](extras/openclaw/clipboard_memory/references/troubleshooting.md).
+For empty results, sandbox visibility, or binary-only (image / PDF) snapshots where exact text isn't available, see [`extras/openclaw/clipboard-memory/references/troubleshooting.md`](extras/openclaw/clipboard-memory/references/troubleshooting.md).
 
 ### Example OpenClaw prompts once installed
 
@@ -353,8 +353,9 @@ For empty results, sandbox visibility, or binary-only (image / PDF) snapshots wh
 
 ### Skill packaging (reference)
 
-- `extras/openclaw/clipboard_memory/` — the OpenClaw-native package installed by `clipmem agents openclaw install-skill`.
-- `extras/agent-skills/clipboard-memory/` — a portable package for generic agent-skill runtimes.
+- `skills/clipboard-memory/` — the canonical cross-agent skill source that `skills.sh` discovers from the repo root.
+- `extras/openclaw/clipboard-memory/` — the OpenClaw-native package installed by `clipmem agents openclaw install-skill`.
+- `extras/agent-skills/clipboard-memory/` — a portable packaging mirror for generic agent-skill runtimes.
 
 For compatibility, `./scripts/install_openclaw_skill.sh` still exists as a thin wrapper around `clipmem agents openclaw install-skill --shared --force`.
 
@@ -425,8 +426,9 @@ Project layout:
 
 - `src/` — Rust source. Capture is gated behind `cfg(target_os = "macos")`; database, search, and tests compile cross-platform.
 - `extras/launchd/` — LaunchAgent plist template.
-- `extras/openclaw/clipboard_memory/` — packaged OpenClaw-native skill content.
-- `extras/agent-skills/clipboard-memory/` — portable skill package for non-OpenClaw runtimes.
+- `skills/clipboard-memory/` — canonical public skill content for repo-based installers.
+- `extras/openclaw/clipboard-memory/` — packaged OpenClaw-native skill content.
+- `extras/agent-skills/clipboard-memory/` — portable skill package mirror for non-OpenClaw runtimes.
 - `scripts/install_launchagent.sh` / `scripts/uninstall_launchagent.sh` — install and remove the LaunchAgent.
 - `scripts/install_openclaw_skill.sh` — compatibility wrapper around `clipmem agents openclaw install-skill`.
 

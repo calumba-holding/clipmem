@@ -89,37 +89,37 @@ struct RecallComputation {
     search_mode_used: Option<SearchMode>,
 }
 
-const OPENCLAW_SKILL_NAME: &str = "clipboard_memory";
+const OPENCLAW_SKILL_NAME: &str = "clipboard-memory";
 const OPENCLAW_SHARED_ROOT: &str = ".openclaw/skills";
 const OPENCLAW_WORKSPACE_ROOT: &str = ".openclaw/workspace";
 
 const OPENCLAW_SKILL_MD: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/extras/openclaw/clipboard_memory/SKILL.md"
+    "/extras/openclaw/clipboard-memory/SKILL.md"
 ));
 const OPENCLAW_COMMANDS_REF: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/extras/openclaw/clipboard_memory/references/commands.md"
+    "/extras/openclaw/clipboard-memory/references/commands.md"
 ));
 const OPENCLAW_TROUBLESHOOTING_REF: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/extras/openclaw/clipboard_memory/references/troubleshooting.md"
+    "/extras/openclaw/clipboard-memory/references/troubleshooting.md"
 ));
 const OPENCLAW_JSON_SCHEMA_REF: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/extras/openclaw/clipboard_memory/references/json-schema.md"
+    "/extras/openclaw/clipboard-memory/references/json-schema.md"
 ));
 const OPENCLAW_EXAMPLES_REF: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/extras/openclaw/clipboard_memory/references/examples.md"
+    "/extras/openclaw/clipboard-memory/references/examples.md"
 ));
 const OPENCLAW_SETUP_CHECK_REF: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/extras/openclaw/clipboard_memory/references/setup-check.md"
+    "/extras/openclaw/clipboard-memory/references/setup-check.md"
 ));
 const OPENCLAW_CHECK_SETUP_SH: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/extras/openclaw/clipboard_memory/scripts/check-setup.sh"
+    "/extras/openclaw/clipboard-memory/scripts/check-setup.sh"
 ));
 
 #[derive(Debug, Clone, Copy)]

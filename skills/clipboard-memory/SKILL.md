@@ -1,11 +1,14 @@
 ---
-name: clipboard_memory
+name: clipboard-memory
 description: Recall what the user copied on this Mac via the local clipmem archive — text, commands, URLs, file paths, HTML, images, PDFs. Triggers on requests like "what was that command I copied?", "the URL I copied from Safari", "find that snippet before I restarted", or any paraphrase involving copy, paste, or clipboard. Offers ranked recall, chronological timeline, lexical / FTS search, raw-byte export for binary content, cursor pagination, and filters by app, kind, time window, and content shape. Use before reaching for generic web or repo search whenever the user is trying to recover something they previously had on the clipboard.
 license: MIT
-metadata: {"openclaw":{"emoji":"📋","os":["darwin"],"requires":{"bins":["clipmem"]},"install":[{"id":"brew","kind":"brew","label":"Install clipmem (brew)","bins":["clipmem"],"formula":"clipmem","tap":"tristanmanchester/tap"},{"id":"cargo","kind":"cargo","label":"Install clipmem (cargo)","bins":["clipmem"],"package":"clipmem"}],"version":"1.1.0"}}
+compatibility: macOS with a local `clipmem` binary on PATH. Works in any agent runtime with filesystem and shell access. The `clipmem` watcher daemon (LaunchAgent `io.openclaw.clipmem.watch`) should be running for continuous capture; a stale watcher is the most common cause of empty results.
+metadata:
+  version: "1.1.1"
+  variant: "portable"
 ---
 
-Recall what the user copied on this Mac before reaching for generic search. `clipmem` maintains a local, privacy-preserving SQLite archive of every clipboard state macOS emits, and exposes a JSON-first CLI built for agents. This package is installed by `clipmem agents openclaw install-skill`; a portable sibling for generic agent runtimes ships under `extras/agent-skills/clipboard-memory/`.
+Recall what the user copied on this Mac before reaching for generic search. `clipmem` maintains a local, privacy-preserving SQLite archive of every clipboard state macOS emits, and exposes a JSON-first CLI built for agents. The OpenClaw-native packaging variant lives at `extras/openclaw/clipboard-memory/`; the portable packaging mirror lives at `extras/agent-skills/clipboard-memory/`.
 
 ## Use this skill when
 
@@ -34,7 +37,6 @@ Before querying, confirm the setup is healthy — otherwise empty results may be
 1. The watcher daemon must be running. It is usually installed as a LaunchAgent (`io.openclaw.clipmem.watch`).
 2. The binary `clipmem` must be on PATH with write access to `~/Library/Application Support/clipmem/clipmem.sqlite3`.
 3. Run [`scripts/check-setup.sh`](scripts/check-setup.sh) once per session when results look wrong. It exits `0` on a healthy host, `1` if the watcher is stale, `2` if the binary is missing, `3` if `clipmem doctor` fails. The prose equivalent is in [references/setup-check.md](references/setup-check.md).
-4. If OpenClaw cannot see the binary, run `clipmem agents openclaw doctor` and follow its remediation lines.
 
 ## Command ladder
 

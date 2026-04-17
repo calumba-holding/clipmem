@@ -259,31 +259,31 @@ fn write_openclaw_skill_package(skill_dir: &Path) -> Result<()> {
     fs::create_dir_all(skill_dir.join("scripts"))?;
     fs::write(
         skill_dir.join("SKILL.md"),
-        include_str!("../extras/openclaw/clipboard_memory/SKILL.md"),
+        include_str!("../extras/openclaw/clipboard-memory/SKILL.md"),
     )?;
     fs::write(
         skill_dir.join("references/commands.md"),
-        include_str!("../extras/openclaw/clipboard_memory/references/commands.md"),
+        include_str!("../extras/openclaw/clipboard-memory/references/commands.md"),
     )?;
     fs::write(
         skill_dir.join("references/troubleshooting.md"),
-        include_str!("../extras/openclaw/clipboard_memory/references/troubleshooting.md"),
+        include_str!("../extras/openclaw/clipboard-memory/references/troubleshooting.md"),
     )?;
     fs::write(
         skill_dir.join("references/json-schema.md"),
-        include_str!("../extras/openclaw/clipboard_memory/references/json-schema.md"),
+        include_str!("../extras/openclaw/clipboard-memory/references/json-schema.md"),
     )?;
     fs::write(
         skill_dir.join("references/examples.md"),
-        include_str!("../extras/openclaw/clipboard_memory/references/examples.md"),
+        include_str!("../extras/openclaw/clipboard-memory/references/examples.md"),
     )?;
     fs::write(
         skill_dir.join("references/setup-check.md"),
-        include_str!("../extras/openclaw/clipboard_memory/references/setup-check.md"),
+        include_str!("../extras/openclaw/clipboard-memory/references/setup-check.md"),
     )?;
     write_executable(
         &skill_dir.join("scripts/check-setup.sh"),
-        include_str!("../extras/openclaw/clipboard_memory/scripts/check-setup.sh"),
+        include_str!("../extras/openclaw/clipboard-memory/scripts/check-setup.sh"),
     )?;
     Ok(())
 }
@@ -395,7 +395,7 @@ fn command_help_includes_examples_and_pagination_guidance() {
 #[test]
 fn setup_check_script_treats_loaded_but_not_running_launchagent_as_stale() -> Result<()> {
     let output = run_setup_check_script_with_launchctl(
-        Path::new("extras/openclaw/clipboard_memory/scripts/check-setup.sh"),
+        Path::new("extras/openclaw/clipboard-memory/scripts/check-setup.sh"),
         Some("- 0 io.openclaw.clipmem.watch"),
     )?;
 
@@ -410,7 +410,7 @@ fn setup_check_script_treats_loaded_but_not_running_launchagent_as_stale() -> Re
 #[test]
 fn setup_check_script_treats_running_launchagent_as_soft_warning_only() -> Result<()> {
     let output = run_setup_check_script_with_launchctl(
-        Path::new("extras/openclaw/clipboard_memory/scripts/check-setup.sh"),
+        Path::new("extras/openclaw/clipboard-memory/scripts/check-setup.sh"),
         Some("123 0 io.openclaw.clipmem.watch"),
     )?;
 
@@ -425,7 +425,7 @@ fn setup_check_script_treats_running_launchagent_as_soft_warning_only() -> Resul
 #[test]
 fn setup_check_script_treats_missing_launchagent_as_stale() -> Result<()> {
     let output = run_setup_check_script_with_launchctl(
-        Path::new("extras/openclaw/clipboard_memory/scripts/check-setup.sh"),
+        Path::new("extras/openclaw/clipboard-memory/scripts/check-setup.sh"),
         None,
     )?;
 
@@ -1225,7 +1225,7 @@ fn agents_openclaw_install_print_and_uninstall_skill_work() -> Result<()> {
     let test_dir = temp_test_dir("openclaw-install");
     let bin_dir = test_dir.join("bin");
     let workspace_dir = test_dir.join("workspace");
-    let install_dir = workspace_dir.join("skills").join("clipboard_memory");
+    let install_dir = workspace_dir.join("skills").join("clipboard-memory");
     fs::create_dir_all(&bin_dir)?;
     fs::create_dir_all(&workspace_dir)?;
 
@@ -1293,7 +1293,7 @@ fn agents_openclaw_doctor_reports_missing_clipmem_with_next_steps() -> Result<()
     let test_dir = temp_test_dir("openclaw-doctor-missing-clipmem");
     let bin_dir = test_dir.join("bin");
     let workspace_dir = test_dir.join("workspace");
-    let skill_dir = workspace_dir.join("skills").join("clipboard_memory");
+    let skill_dir = workspace_dir.join("skills").join("clipboard-memory");
     fs::create_dir_all(&bin_dir)?;
     write_openclaw_skill_package(&skill_dir)?;
 
@@ -1327,7 +1327,7 @@ fn agents_openclaw_doctor_fails_when_reference_file_is_missing() -> Result<()> {
     let test_dir = temp_test_dir("openclaw-doctor-missing-reference");
     let bin_dir = test_dir.join("bin");
     let workspace_dir = test_dir.join("workspace");
-    let skill_dir = workspace_dir.join("skills").join("clipboard_memory");
+    let skill_dir = workspace_dir.join("skills").join("clipboard-memory");
     fs::create_dir_all(&bin_dir)?;
     write_openclaw_skill_package(&skill_dir)?;
     fs::remove_file(skill_dir.join("references/troubleshooting.md"))?;
@@ -1366,7 +1366,7 @@ fn agents_openclaw_doctor_fails_when_setup_script_is_missing() -> Result<()> {
     let test_dir = temp_test_dir("openclaw-doctor-missing-setup-script");
     let bin_dir = test_dir.join("bin");
     let workspace_dir = test_dir.join("workspace");
-    let skill_dir = workspace_dir.join("skills").join("clipboard_memory");
+    let skill_dir = workspace_dir.join("skills").join("clipboard-memory");
     fs::create_dir_all(&bin_dir)?;
     write_openclaw_skill_package(&skill_dir)?;
     fs::remove_file(skill_dir.join("scripts/check-setup.sh"))?;
@@ -1407,7 +1407,7 @@ fn agents_openclaw_doctor_fails_when_setup_script_is_not_executable() -> Result<
     let test_dir = temp_test_dir("openclaw-doctor-nonexec-setup-script");
     let bin_dir = test_dir.join("bin");
     let workspace_dir = test_dir.join("workspace");
-    let skill_dir = workspace_dir.join("skills").join("clipboard_memory");
+    let skill_dir = workspace_dir.join("skills").join("clipboard-memory");
     fs::create_dir_all(&bin_dir)?;
     write_openclaw_skill_package(&skill_dir)?;
     set_mode(&skill_dir.join("scripts/check-setup.sh"), 0o644)?;
@@ -1442,17 +1442,19 @@ fn agents_openclaw_doctor_fails_when_setup_script_is_not_executable() -> Result<
 }
 
 #[test]
-fn portable_skill_package_is_present() -> Result<()> {
-    let portable_root = Path::new("extras/agent-skills/clipboard-memory");
-    assert!(portable_root.join("SKILL.md").is_file());
-    assert!(portable_root.join("references/commands.md").is_file());
-    assert!(portable_root
-        .join("references/troubleshooting.md")
-        .is_file());
-    assert!(portable_root.join("references/json-schema.md").is_file());
-    assert!(portable_root.join("references/examples.md").is_file());
-    assert!(portable_root.join("references/setup-check.md").is_file());
-    assert!(portable_root.join("scripts/check-setup.sh").is_file());
+fn portable_and_canonical_skill_packages_are_present() -> Result<()> {
+    for root in [
+        Path::new("skills/clipboard-memory"),
+        Path::new("extras/agent-skills/clipboard-memory"),
+    ] {
+        assert!(root.join("SKILL.md").is_file());
+        assert!(root.join("references/commands.md").is_file());
+        assert!(root.join("references/troubleshooting.md").is_file());
+        assert!(root.join("references/json-schema.md").is_file());
+        assert!(root.join("references/examples.md").is_file());
+        assert!(root.join("references/setup-check.md").is_file());
+        assert!(root.join("scripts/check-setup.sh").is_file());
+    }
     Ok(())
 }
 
