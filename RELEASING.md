@@ -119,3 +119,4 @@ The release publish workflow reruns the same validation before publishing.
 - The packaged binary target is currently `aarch64-apple-darwin` only.
 - The Homebrew formula is published to the dedicated tap, not `homebrew/core`.
 - GitHub Release is an output of the tag push, not the thing that triggers publishing.
+- [`.github/workflows/release.yml`](/Users/tristan/Projects/clipmem/.github/workflows/release.yml) is now a security-owned workflow. If you regenerate cargo-dist files with `dist init --yes`, review the diff manually and keep the pinned installer hardening in place instead of restoring generated bootstrap commands.

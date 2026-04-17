@@ -14,6 +14,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Reject insecure workflow installers
+        shell: bash
+        run: |
+          forbidden_patterns=(
+            'curl[[:space:]].*\|[[:space:]]*sh'
+            'sh\.rustup\.rs'
+            '\|[[:space:]]*iex'
+          )
+
+          for pattern in "${forbidden_patterns[@]}"; do
+            if rg -n --glob '*.yml' "$pattern" .github/workflows; then
+              echo "forbidden workflow pattern detected: $pattern" >&2
+              exit 1
+            fi
+          done
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
