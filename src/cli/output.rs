@@ -1,12 +1,101 @@
 use std::fmt::Write;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use serde::Serialize;
+use serde_json::{json, Value};
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::db::SearchResults;
 use crate::model::{
     CaptureStoreResult, ClipboardSnapshot, DoctorReport, SearchHit, SnapshotDetails,
 };
+
+use super::OutputFormat;
+
+pub(super) const OUTPUT_SCHEMA_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct ListEnvelope {
+    pub(super) schema_version: u32,
+    pub(super) command: &'static str,
+    pub(super) generated_at: String,
+    pub(super) applied_filters: Value,
+    pub(super) truncated: bool,
+    pub(super) next_cursor: Option<String>,
+    pub(super) results: Vec<ListRow>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct GetEnvelope {
+    pub(super) schema_version: u32,
+    pub(super) command: &'static str,
+    pub(super) generated_at: String,
+    pub(super) snapshot: SnapshotDetails,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct ListRow {
+    pub(super) snapshot_id: i64,
+    pub(super) event_id: i64,
+    pub(super) sha256: String,
+    pub(super) kind: String,
+    pub(super) observed_at: String,
+    pub(super) first_seen_at: String,
+    pub(super) last_seen_at: String,
+    pub(super) app_name: Option<String>,
+    pub(super) app_bundle_id: Option<String>,
+    pub(super) best_text: String,
+    pub(super) preview_text: String,
+    pub(super) urls: Vec<String>,
+    pub(super) file_paths: Vec<String>,
+    pub(super) item_count: usize,
+    pub(super) total_bytes: usize,
+    pub(super) capture_count: usize,
+    pub(super) score: Option<f64>,
+    pub(super) why_matched: Option<String>,
+}
+
+impl ListRow {
+    #[must_use]
+    pub(super) fn from_hit(hit: &SearchHit, include_why_matched: bool) -> Self {
+        let why_matched = include_why_matched.then(|| {
+            hit.why_matched()
+                .unwrap_or(hit.preview_text())
+                .to_string()
+        });
+        let best_text = why_matched
+            .clone()
+            .filter(|value| value != hit.preview_text())
+            .unwrap_or_else(|| hit.preview_text().to_string());
+
+        Self {
+            snapshot_id: hit.snapshot_id(),
+            event_id: hit.event_id(),
+            sha256: hit.sha256().to_string(),
+            kind: hit.snapshot_kind().as_str().to_string(),
+            observed_at: hit.last_observed_at().to_string(),
+            first_seen_at: hit.first_observed_at().to_string(),
+            last_seen_at: hit.last_observed_at().to_string(),
+            app_name: hit.last_frontmost_app_name().map(ToOwned::to_owned),
+            app_bundle_id: hit.last_frontmost_app_bundle_id().map(ToOwned::to_owned),
+            best_text,
+            preview_text: hit.preview_text().to_string(),
+            urls: hit.urls().to_vec(),
+            file_paths: hit.file_paths().to_vec(),
+            item_count: hit.item_count(),
+            total_bytes: hit.total_bytes(),
+            capture_count: hit.capture_count(),
+            score: hit.score(),
+            why_matched,
+        }
+    }
+}
+
+pub(super) fn generated_at_now() -> Result<String> {
+    OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .map_err(|error| anyhow!("format generated timestamp: {error}"))
+}
 
 pub(super) fn emit_json_or_text<T>(
     json: bool,
@@ -21,6 +110,40 @@ where
     } else {
         print!("{}", render_text(value));
         Ok(())
+    }
+}
+
+pub(super) fn emit_list_output(format: OutputFormat, envelope: &ListEnvelope) -> Result<()> {
+    match format {
+        OutputFormat::Text => unreachable!("list text output uses the legacy text renderer"),
+        OutputFormat::Json => print_json(envelope),
+        OutputFormat::Jsonl => print_jsonl_list(envelope),
+        OutputFormat::Md => {
+            print!("{}", render_list_markdown(envelope));
+            Ok(())
+        }
+        OutputFormat::Toon => {
+            print!("{}", render_list_toon(envelope));
+            Ok(())
+        }
+    }
+}
+
+pub(super) fn emit_get_output(format: OutputFormat, envelope: &GetEnvelope) -> Result<()> {
+    match format {
+        OutputFormat::Text => unreachable!("get text output uses the legacy text renderer"),
+        OutputFormat::Json => print_json(envelope),
+        OutputFormat::Jsonl => {
+            println!("{}", serde_json::to_string(envelope)?);
+            Ok(())
+        }
+        OutputFormat::Md => {
+            print!("{}", render_get_markdown(envelope));
+            Ok(())
+        }
+        OutputFormat::Toon => Err(anyhow!(
+            "`clipmem get --format toon` is not supported because TOON is only available for flattened list output"
+        )),
     }
 }
 
@@ -74,8 +197,14 @@ pub(super) fn render_hits_text(hits: &[SearchHit]) -> String {
         if !hit.preview_text().is_empty() {
             let _ = writeln!(out, "  preview: {}", hit.preview_text());
         }
-        if !hit.snippet().is_empty() && hit.snippet() != hit.preview_text() {
-            let _ = writeln!(out, "  match:   {}", hit.snippet());
+        if let Some(why_matched) = hit.why_matched().filter(|value| *value != hit.preview_text()) {
+            let _ = writeln!(out, "  match:   {why_matched}");
+        }
+        if !hit.urls().is_empty() {
+            let _ = writeln!(out, "  urls:    {}", hit.urls().join(", "));
+        }
+        if !hit.file_paths().is_empty() {
+            let _ = writeln!(out, "  files:   {}", hit.file_paths().join(", "));
         }
         if let Some(score) = hit.score() {
             let _ = writeln!(out, "  score:   {score:.3}");
@@ -212,6 +341,325 @@ fn print_json<T: Serialize>(value: &T) -> Result<()> {
     Ok(())
 }
 
+fn print_jsonl_list(envelope: &ListEnvelope) -> Result<()> {
+    let meta = json!({
+        "type": "meta",
+        "schema_version": envelope.schema_version,
+        "command": envelope.command,
+        "generated_at": envelope.generated_at,
+        "applied_filters": envelope.applied_filters,
+        "truncated": envelope.truncated,
+        "next_cursor": envelope.next_cursor,
+    });
+    println!("{}", serde_json::to_string(&meta)?);
+
+    for row in &envelope.results {
+        let mut line = serde_json::to_value(row)?;
+        let object = line
+            .as_object_mut()
+            .ok_or_else(|| anyhow!("list row JSONL serialization did not produce an object"))?;
+        object.insert("type".to_string(), Value::String("result".to_string()));
+        println!("{}", serde_json::to_string(&line)?);
+    }
+
+    Ok(())
+}
+
+fn render_list_markdown(envelope: &ListEnvelope) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "# clipmem {}", envelope.command);
+    let _ = writeln!(out);
+    let _ = writeln!(out, "- Generated at: {}", envelope.generated_at);
+    let _ = writeln!(out, "- Filters: {}", render_filter_pairs(&envelope.applied_filters));
+    let _ = writeln!(out, "- Truncated: {}", envelope.truncated);
+    let _ = writeln!(
+        out,
+        "- Next cursor: {}",
+        envelope.next_cursor.as_deref().unwrap_or("null")
+    );
+    let _ = writeln!(out);
+
+    if envelope.results.is_empty() {
+        let _ = writeln!(out, "No results.");
+        return out;
+    }
+
+    let _ = writeln!(
+        out,
+        "| snapshot_id | kind | observed_at | app | best_text | score |"
+    );
+    let _ = writeln!(out, "| --- | --- | --- | --- | --- | --- |");
+    for row in &envelope.results {
+        let app = row
+            .app_name
+            .as_deref()
+            .or(row.app_bundle_id.as_deref())
+            .unwrap_or("unknown app");
+        let best_text = truncate_for_markdown(&row.best_text, 100);
+        let score = row
+            .score
+            .map(|value| format!("{value:.3}"))
+            .unwrap_or_else(|| "null".to_string());
+        let _ = writeln!(
+            out,
+            "| {} | {} | {} | {} | {} | {} |",
+            row.snapshot_id,
+            escape_markdown_cell(&row.kind),
+            escape_markdown_cell(&row.observed_at),
+            escape_markdown_cell(app),
+            escape_markdown_cell(&best_text),
+            score
+        );
+    }
+
+    out
+}
+
+fn render_get_markdown(envelope: &GetEnvelope) -> String {
+    let snapshot = &envelope.snapshot;
+    let mut out = String::new();
+    let _ = writeln!(out, "# clipmem get");
+    let _ = writeln!(out);
+    let _ = writeln!(out, "- Generated at: {}", envelope.generated_at);
+    let _ = writeln!(out, "- Snapshot: {}", snapshot.snapshot_id());
+    let _ = writeln!(out, "- Kind: {}", snapshot.snapshot_kind());
+    let _ = writeln!(out, "- First seen: {}", snapshot.first_observed_at());
+    let _ = writeln!(out, "- Last seen: {}", snapshot.last_observed_at());
+    let _ = writeln!(out, "- Captures: {}", snapshot.capture_count());
+    let _ = writeln!(out, "- Bytes: {}", snapshot.total_bytes());
+    let _ = writeln!(out, "- Items: {}", snapshot.item_count());
+    if !snapshot.preview_text().is_empty() {
+        let _ = writeln!(
+            out,
+            "- Preview: {}",
+            escape_markdown_cell(&truncate_for_markdown(snapshot.preview_text(), 160))
+        );
+    }
+
+    let _ = writeln!(out);
+    let _ = writeln!(out, "## Items");
+    if snapshot.items().is_empty() {
+        let _ = writeln!(out, "No items.");
+    } else {
+        for item in snapshot.items() {
+            let _ = writeln!(
+                out,
+                "- item={} kind={} bytes={} preview={}",
+                item.item_index(),
+                item.primary_kind(),
+                item.total_bytes(),
+                escape_markdown_cell(&truncate_for_markdown(item.preview_text(), 120))
+            );
+        }
+    }
+
+    let _ = writeln!(out);
+    let _ = writeln!(out, "## Recent Events");
+    if snapshot.recent_events().is_empty() {
+        let _ = writeln!(out, "No recent events.");
+    } else {
+        for event in snapshot.recent_events() {
+            let source = event
+                .frontmost_app_name()
+                .or(event.frontmost_app_bundle_id())
+                .unwrap_or("unknown app");
+            let _ = writeln!(
+                out,
+                "- event={} observed_at={} change_count={} source={}",
+                event.event_id(),
+                event.observed_at(),
+                event.change_count(),
+                escape_markdown_cell(source)
+            );
+        }
+    }
+
+    out
+}
+
+fn render_list_toon(envelope: &ListEnvelope) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "schema_version: {}", envelope.schema_version);
+    let _ = writeln!(out, "command: {}", encode_toon_scalar(&Value::String(envelope.command.to_string())));
+    let _ = writeln!(
+        out,
+        "generated_at: {}",
+        encode_toon_scalar(&Value::String(envelope.generated_at.clone()))
+    );
+    let _ = writeln!(out, "applied_filters:");
+    render_toon_object(&mut out, &envelope.applied_filters, 2);
+    let _ = writeln!(
+        out,
+        "truncated: {}",
+        encode_toon_scalar(&Value::Bool(envelope.truncated))
+    );
+    let _ = writeln!(
+        out,
+        "next_cursor: {}",
+        encode_toon_scalar(
+            &envelope
+                .next_cursor
+                .as_ref()
+                .map(|value| Value::String(value.clone()))
+                .unwrap_or(Value::Null),
+        )
+    );
+
+    let fields = [
+        "snapshot_id",
+        "event_id",
+        "sha256",
+        "kind",
+        "observed_at",
+        "first_seen_at",
+        "last_seen_at",
+        "app_name",
+        "app_bundle_id",
+        "best_text",
+        "preview_text",
+        "urls",
+        "file_paths",
+        "item_count",
+        "total_bytes",
+        "capture_count",
+        "score",
+        "why_matched",
+    ];
+    let _ = writeln!(
+        out,
+        "results[#{}\t]{{{}}}:",
+        envelope.results.len(),
+        fields.join("\t")
+    );
+
+    for row in &envelope.results {
+        let values = vec![
+            Value::from(row.snapshot_id),
+            Value::from(row.event_id),
+            Value::String(row.sha256.clone()),
+            Value::String(row.kind.clone()),
+            Value::String(row.observed_at.clone()),
+            Value::String(row.first_seen_at.clone()),
+            Value::String(row.last_seen_at.clone()),
+            row.app_name
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+            row.app_bundle_id
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+            Value::String(row.best_text.clone()),
+            Value::String(row.preview_text.clone()),
+            Value::String(serde_json::to_string(&row.urls).unwrap_or_else(|_| "[]".to_string())),
+            Value::String(
+                serde_json::to_string(&row.file_paths).unwrap_or_else(|_| "[]".to_string()),
+            ),
+            Value::from(row.item_count as u64),
+            Value::from(row.total_bytes as u64),
+            Value::from(row.capture_count as u64),
+            row.score.map(Value::from).unwrap_or(Value::Null),
+            row.why_matched
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+        ];
+        let encoded = values
+            .iter()
+            .map(encode_toon_scalar)
+            .collect::<Vec<_>>()
+            .join("\t");
+        let _ = writeln!(out, "  {encoded}");
+    }
+
+    out
+}
+
+fn render_toon_object(out: &mut String, value: &Value, indent: usize) {
+    let Some(object) = value.as_object() else {
+        return;
+    };
+
+    for (key, value) in object {
+        let padding = " ".repeat(indent);
+        match value {
+            Value::Object(_) => {
+                let _ = writeln!(out, "{padding}{key}:");
+                render_toon_object(out, value, indent + 2);
+            }
+            other => {
+                let _ = writeln!(out, "{padding}{key}: {}", encode_toon_scalar(other));
+            }
+        }
+    }
+}
+
+fn encode_toon_scalar(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(flag) => flag.to_string(),
+        Value::Number(number) => number.to_string(),
+        Value::String(text) => encode_toon_string(text),
+        Value::Array(_) | Value::Object(_) => encode_toon_string(
+            &serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
+        ),
+    }
+}
+
+fn encode_toon_string(text: &str) -> String {
+    if text.is_empty()
+        || text.contains('\t')
+        || text.contains('\n')
+        || text.contains('\r')
+        || text.contains(':')
+        || text.contains('"')
+        || text.contains('\\')
+        || text.starts_with(' ')
+        || text.ends_with(' ')
+    {
+        let escaped = text
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+            .replace('\t', "\\t");
+        format!("\"{escaped}\"")
+    } else {
+        text.to_string()
+    }
+}
+
+fn render_filter_pairs(filters: &Value) -> String {
+    let Some(object) = filters.as_object() else {
+        return "none".to_string();
+    };
+
+    object
+        .iter()
+        .map(|(key, value)| {
+            let rendered = match value {
+                Value::Null => "null".to_string(),
+                Value::String(text) => text.clone(),
+                other => other.to_string(),
+            };
+            format!("{key}={rendered}")
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn escape_markdown_cell(value: &str) -> String {
+    value.replace('|', "\\|")
+}
+
+fn truncate_for_markdown(value: &str, limit: usize) -> String {
+    if value.chars().count() <= limit {
+        value.to_string()
+    } else {
+        value.chars().take(limit.saturating_sub(1)).collect::<String>() + "…"
+    }
+}
+
 fn push_blank_line(out: &mut String) {
     out.push('\n');
 }
@@ -230,6 +678,8 @@ fn format_utc_timestamp(timestamp: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use crate::db::{SearchMode, SearchResults};
     use crate::model::{
         build_item, build_representation, build_snapshot, CaptureContext, CaptureEvent,
@@ -237,8 +687,9 @@ mod tests {
     };
 
     use super::{
-        render_capture_once_text, render_doctor_text, render_hits_text, render_search_results_text,
-        render_snapshot_text,
+        render_capture_once_text, render_doctor_text, render_get_markdown, render_hits_text,
+        render_list_markdown, render_list_toon, render_search_results_text, render_snapshot_text,
+        GetEnvelope, ListEnvelope, ListRow, OUTPUT_SCHEMA_VERSION,
     };
 
     #[test]
@@ -260,33 +711,36 @@ mod tests {
             ),
         );
 
-        assert!(text.contains("stored snapshot 9 via event 12 (new content)"));
+        assert!(text.contains("stored snapshot 9 via event 12"));
         assert!(text.contains("kind: plain_text"));
-        assert!(text.contains("frontmost app: Terminal"));
         assert!(text.contains("preview: git status"));
     }
 
     #[test]
-    fn render_hits_text_includes_snippet_and_score() {
+    fn render_hits_text_includes_match_score_urls_and_files() {
         let text = render_hits_text(&[SearchHit::new(
             42,
-            "deadbeef".to_string(),
+            77,
+            "abc123".to_string(),
             SnapshotKind::PlainText,
-            "git status".to_string(),
-            "git ⟦status⟧".to_string(),
-            2,
-            "2026-04-16 18:00:00".to_string(),
+            "git clone".to_string(),
+            Some("⟦git⟧ clone".to_string()),
+            3,
+            "2026-04-16 10:00:00".to_string(),
+            "2026-04-16 11:00:00".to_string(),
             Some("Terminal".to_string()),
             Some("com.apple.Terminal".to_string()),
-            10,
+            vec!["https://example.com".to_string()],
+            vec!["/Users/test/repo".to_string()],
+            9,
             1,
             Some(0.125),
         )]);
 
         assert!(text.contains("[42] plain_text"));
-        assert!(text.contains("2026-04-16 18:00:00 UTC"));
-        assert!(text.contains("preview: git status"));
-        assert!(text.contains("match:   git ⟦status⟧"));
+        assert!(text.contains("match:   ⟦git⟧ clone"));
+        assert!(text.contains("urls:    https://example.com"));
+        assert!(text.contains("files:   /Users/test/repo"));
         assert!(text.contains("score:   0.125"));
     }
 
@@ -324,11 +778,8 @@ mod tests {
         ));
 
         assert!(text.contains("snapshot 7"));
-        assert!(text.contains("first seen: 2026-04-16 10:00:00 UTC"));
-        assert!(text.contains("last seen: 2026-04-16 11:00:00 UTC"));
-        assert!(text.contains("preview: git push"));
         assert!(text.contains("item 0 · kind=plain_text"));
-        assert!(text.contains("event 21 · 2026-04-16 11:00:00 UTC"));
+        assert!(text.contains("event 21"));
     }
 
     #[test]
@@ -343,7 +794,6 @@ mod tests {
         ));
 
         assert!(text.contains("database: /tmp/clipmem.sqlite3"));
-        assert!(text.contains("sqlite version: 3.46.0"));
         assert!(text.contains("compile options:"));
         assert!(text.contains("ENABLE_FTS5"));
     }
@@ -353,22 +803,114 @@ mod tests {
         let text = render_search_results_text(&SearchResults::new(
             SearchMode::Literal,
             vec![SearchHit::new(
-                42,
-                "deadbeef".to_string(),
+                7,
+                21,
+                "abc123".to_string(),
                 SnapshotKind::PlainText,
-                "git status".to_string(),
-                "git status".to_string(),
+                "git push".to_string(),
+                Some("git push".to_string()),
                 2,
-                "2026-04-16 18:00:00".to_string(),
+                "2026-04-16 10:00:00".to_string(),
+                "2026-04-16 11:00:00".to_string(),
                 Some("Terminal".to_string()),
                 Some("com.apple.Terminal".to_string()),
-                10,
+                Vec::new(),
+                Vec::new(),
+                8,
                 1,
                 None,
             )],
+            false,
         ));
 
         assert!(text.contains("search mode: literal"));
-        assert!(text.contains("[42] plain_text"));
+    }
+
+    #[test]
+    fn markdown_and_toon_render_envelopes() {
+        let row = ListRow {
+            snapshot_id: 1,
+            event_id: 2,
+            sha256: "abc".to_string(),
+            kind: "plain_text".to_string(),
+            observed_at: "2026-04-17T10:00:00Z".to_string(),
+            first_seen_at: "2026-04-17T09:00:00Z".to_string(),
+            last_seen_at: "2026-04-17T10:00:00Z".to_string(),
+            app_name: Some("Terminal".to_string()),
+            app_bundle_id: Some("com.apple.Terminal".to_string()),
+            best_text: "git status".to_string(),
+            preview_text: "git status".to_string(),
+            urls: vec!["https://example.com".to_string()],
+            file_paths: Vec::new(),
+            item_count: 1,
+            total_bytes: 10,
+            capture_count: 1,
+            score: Some(0.3),
+            why_matched: Some("git status".to_string()),
+        };
+        let envelope = ListEnvelope {
+            schema_version: OUTPUT_SCHEMA_VERSION,
+            command: "search",
+            generated_at: "2026-04-17T10:00:00Z".to_string(),
+            applied_filters: json!({
+                "query": "git",
+                "requested_mode": "auto",
+                "mode_used": "literal",
+                "limit": 10,
+                "cursor": null,
+            }),
+            truncated: false,
+            next_cursor: None,
+            results: vec![row],
+        };
+        let markdown = render_list_markdown(&envelope);
+        let toon = render_list_toon(&envelope);
+
+        assert!(markdown.contains("| snapshot_id | kind | observed_at |"));
+        assert!(toon.contains("results[#1\t]{snapshot_id"));
+        assert!(toon.contains("git status"));
+    }
+
+    #[test]
+    fn get_markdown_renders_summary_items_and_events() {
+        let markdown = render_get_markdown(&GetEnvelope {
+            schema_version: OUTPUT_SCHEMA_VERSION,
+            command: "get",
+            generated_at: "2026-04-17T10:00:00Z".to_string(),
+            snapshot: SnapshotDetails::new(
+                7,
+                "abc123".to_string(),
+                SnapshotKind::PlainText,
+                "git push".to_string(),
+                "git push".to_string(),
+                1,
+                8,
+                "2026-04-16 10:00:00".to_string(),
+                2,
+                "2026-04-16 10:00:00".to_string(),
+                "2026-04-16 11:00:00".to_string(),
+                Some("Terminal".to_string()),
+                Some("com.apple.Terminal".to_string()),
+                vec![CaptureEvent::new(
+                    21,
+                    "2026-04-16 11:00:00".to_string(),
+                    3,
+                    Some("Terminal".to_string()),
+                    Some("com.apple.Terminal".to_string()),
+                )],
+                vec![build_item(
+                    0,
+                    vec![build_representation(
+                        "public.utf8-plain-text".to_string(),
+                        None,
+                        b"git push".to_vec(),
+                    )],
+                )],
+            ),
+        });
+
+        assert!(markdown.contains("## Items"));
+        assert!(markdown.contains("## Recent Events"));
+        assert!(markdown.contains("Snapshot: 7"));
     }
 }

@@ -11,7 +11,7 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use clap::ValueEnum;
 use rusqlite::{Connection, OpenFlags, Row};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::model::SearchHit;
 
@@ -23,7 +23,7 @@ pub struct Database {
     pub(super) path: PathBuf,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
 pub enum SearchMode {
     Auto,
     Fts,
@@ -34,12 +34,37 @@ pub enum SearchMode {
 pub struct SearchResults {
     mode_used: SearchMode,
     hits: Vec<SearchHit>,
+    has_more: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Page<T> {
+    items: Vec<T>,
+    has_more: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct RecentCursorState {
+    last_seen_at: String,
+    snapshot_id: i64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SearchCursorState {
+    mode_used: SearchMode,
+    score: Option<f64>,
+    last_seen_at: String,
+    snapshot_id: i64,
 }
 
 impl SearchResults {
     #[must_use]
-    pub(crate) fn new(mode_used: SearchMode, hits: Vec<SearchHit>) -> Self {
-        Self { mode_used, hits }
+    pub(crate) fn new(mode_used: SearchMode, hits: Vec<SearchHit>, has_more: bool) -> Self {
+        Self {
+            mode_used,
+            hits,
+            has_more,
+        }
     }
 
     #[must_use]
@@ -50,6 +75,90 @@ impl SearchResults {
     #[must_use]
     pub fn hits(&self) -> &[SearchHit] {
         &self.hits
+    }
+
+    #[must_use]
+    pub fn has_more(&self) -> bool {
+        self.has_more
+    }
+}
+
+impl<T> Page<T> {
+    #[must_use]
+    pub(crate) fn new(items: Vec<T>, has_more: bool) -> Self {
+        Self { items, has_more }
+    }
+
+    #[must_use]
+    pub(crate) fn items(&self) -> &[T] {
+        &self.items
+    }
+
+    #[must_use]
+    pub(crate) fn into_items(self) -> Vec<T> {
+        self.items
+    }
+
+    #[must_use]
+    pub(crate) fn has_more(&self) -> bool {
+        self.has_more
+    }
+}
+
+impl RecentCursorState {
+    #[must_use]
+    pub(crate) fn new(last_seen_at: String, snapshot_id: i64) -> Self {
+        Self {
+            last_seen_at,
+            snapshot_id,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn last_seen_at(&self) -> &str {
+        &self.last_seen_at
+    }
+
+    #[must_use]
+    pub(crate) fn snapshot_id(&self) -> i64 {
+        self.snapshot_id
+    }
+}
+
+impl SearchCursorState {
+    #[must_use]
+    pub(crate) fn new(
+        mode_used: SearchMode,
+        score: Option<f64>,
+        last_seen_at: String,
+        snapshot_id: i64,
+    ) -> Self {
+        Self {
+            mode_used,
+            score,
+            last_seen_at,
+            snapshot_id,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn mode_used(&self) -> SearchMode {
+        self.mode_used
+    }
+
+    #[must_use]
+    pub(crate) fn score(&self) -> Option<f64> {
+        self.score
+    }
+
+    #[must_use]
+    pub(crate) fn last_seen_at(&self) -> &str {
+        &self.last_seen_at
+    }
+
+    #[must_use]
+    pub(crate) fn snapshot_id(&self) -> i64 {
+        self.snapshot_id
     }
 }
 

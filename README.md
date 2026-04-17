@@ -104,7 +104,9 @@ Search the archive:
 
 ```bash
 clipmem search "launchctl bootstrap" --limit 5
-clipmem search "that shell one-liner with rsync" --json
+clipmem search "that shell one-liner with rsync" --format json
+clipmem search "launchctl bootstrap" --format md
+clipmem search "launchctl bootstrap" --format jsonl
 clipmem search --mode literal "50%"
 clipmem search --mode fts "\"launchctl\" AND bootstrap"
 ```
@@ -113,13 +115,15 @@ Show recent unique clipboard states from the last 24 hours:
 
 ```bash
 clipmem recent --hours 24
+clipmem recent --hours 24 --format toon
 ```
 
 Inspect one stored snapshot:
 
 ```bash
 clipmem get 42
-clipmem get 42 --json
+clipmem get 42 --format md
+clipmem get 42 --format json
 ```
 
 Export a stored raw representation:
@@ -132,6 +136,35 @@ Check SQLite / FTS5 diagnostics:
 
 ```bash
 clipmem doctor
+```
+
+## Output formats
+
+Agent-facing retrieval commands (`search`, `recent`, `get`) share a common `--format` flag:
+
+- `text` – default human-oriented terminal output
+- `json` – canonical machine-readable format with `schema_version`
+- `jsonl` – line-oriented output for pipelines and batch processing
+- `md` – compact markdown for mixed human/agent review
+- `toon` – token-efficient flat list output for `search` and `recent` only
+
+`--json` remains available as a compatibility alias for `--format json`.
+
+For `search` and `recent`, JSON output now uses a stable top-level envelope with:
+
+- `schema_version`
+- `command`
+- `generated_at`
+- `applied_filters`
+- `truncated`
+- `next_cursor`
+- `results`
+
+Pagination uses `--limit` plus the opaque `next_cursor` returned by a prior response:
+
+```bash
+clipmem search "git status" --format json --limit 10
+clipmem search "git status" --format json --limit 10 --cursor "<next_cursor>"
 ```
 
 ## LaunchAgent install
@@ -184,9 +217,9 @@ into:
 
 The skill tells OpenClaw to use:
 
-- `clipmem search "<query>" --json`
-- `clipmem recent --hours 24 --json`
-- `clipmem get <snapshot-id> --json`
+- `clipmem search "<query>" --format json`
+- `clipmem recent --hours 24 --format json`
+- `clipmem get <snapshot-id> --format json`
 
 OpenClaw must be able to run `clipmem` from its own environment, not just from your interactive shell. If you installed `clipmem` into `~/.local/bin`, make sure that directory is on the PATH seen by OpenClaw.
 
@@ -205,10 +238,11 @@ The key tables are:
 ## Limitations worth knowing
 
 - Binary payloads are stored exactly, but only recognized text-like payloads are indexed.
-- `clipmem get --json` intentionally omits raw blob bytes. Use `clipmem export` to recover stored binary payloads.
+- `clipmem get --format json` intentionally omits raw blob bytes. Use `clipmem export` to recover stored binary payloads.
 - RTF and HTML text extraction is intentionally lightweight and best-effort.
 - Search is great for commands, code, URLs, notes, logs and copied prose. Use `--mode auto` for the default FTS-or-literal behavior, `--mode fts` for strict FTS5 queries, or `--mode literal` for exact substring matching. It is not semantic search.
 - Explicit `--mode fts` keeps SQLite FTS5 semantics. In automatic mode, punctuation-heavy inputs may fall back to literal search.
+- `--format toon` is only supported for flattened list output (`search` and `recent`), not nested snapshot detail from `get`.
 - This project is written to be easy to extend: adding export commands, embeddings, OCR, source-app heuristics or richer HTML parsing is straightforward.
 
 ## Example OpenClaw prompts once installed

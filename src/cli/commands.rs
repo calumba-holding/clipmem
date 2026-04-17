@@ -2,26 +2,50 @@ use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
-use anyhow::Result;
-use serde::Serialize;
+use anyhow::{anyhow, Result};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use crate::app::{format_watch_capture_line, process_watch_snapshot, WatchState};
-use crate::db::{Database, SearchMode, SearchResults};
+use crate::db::{
+    Database, RecentCursorState, SearchCursorState, SearchMode, SearchResults,
+};
 use crate::model::{CaptureStoreResult, ClipboardSnapshot};
 use crate::platform::{capture_snapshot, current_change_count};
 
 use super::output::{
-    emit_json_or_text, render_capture_once_text, render_doctor_text, render_hits_text,
-    render_search_results_text, render_snapshot_text,
+    emit_get_output, emit_json_or_text, emit_list_output, generated_at_now, render_capture_once_text,
+    render_doctor_text, render_hits_text, render_search_results_text, render_snapshot_text,
+    GetEnvelope, ListEnvelope, ListRow, OUTPUT_SCHEMA_VERSION,
 };
 use super::{
-    CaptureOnceArgs, Command, DoctorArgs, ExportArgs, GetArgs, RecentArgs, SearchArgs, WatchArgs,
+    CaptureOnceArgs, Command, DoctorArgs, ExportArgs, GetArgs, OutputFormat, RecentArgs,
+    SearchArgs, WatchArgs,
 };
 
 #[derive(Debug, Serialize)]
 struct CaptureOnceOutput {
     store: CaptureStoreResult,
     snapshot: ClipboardSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SearchCursorToken {
+    command: String,
+    query: String,
+    requested_mode: SearchMode,
+    mode_used: SearchMode,
+    last_seen_at: String,
+    snapshot_id: i64,
+    score: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RecentCursorToken {
+    command: String,
+    hours: Option<u32>,
+    last_seen_at: String,
+    snapshot_id: i64,
 }
 
 pub(super) fn run_command(command: Command, db_path: &Path) -> Result<()> {
@@ -108,38 +132,127 @@ fn capture_once(db_path: &Path, args: &CaptureOnceArgs) -> Result<()> {
 }
 
 fn search(db_path: &Path, args: &SearchArgs) -> Result<()> {
+    let format = args.output.resolved()?;
     let db = open_existing_db(db_path)?;
-    let results = anyhow::Context::with_context(query_search_results(&db, args), || {
+    let cursor = args
+        .cursor
+        .as_deref()
+        .map(|value| parse_search_cursor(value, &args.query, args.mode))
+        .transpose()?;
+    let results = anyhow::Context::with_context(query_search_results(&db, args, cursor.as_ref()), || {
         format!("search failed for query '{}'", args.query)
     })?;
-    emit_json_or_text(args.json, &results, render_search_results_text)?;
 
-    Ok(())
+    if matches!(format, OutputFormat::Text) {
+        print!("{}", render_search_results_text(&results));
+        return Ok(());
+    }
+
+    let generated_at = generated_at_now()?;
+    let next_cursor = if results.has_more() {
+        results
+            .hits()
+            .last()
+            .map(|hit| encode_search_cursor(&args.query, args.mode, results.mode_used(), hit))
+            .transpose()?
+    } else {
+        None
+    };
+    let envelope = ListEnvelope {
+        schema_version: OUTPUT_SCHEMA_VERSION,
+        command: "search",
+        generated_at,
+        applied_filters: json!({
+            "query": args.query,
+            "requested_mode": args.mode.as_str(),
+            "mode_used": results.mode_used().as_str(),
+            "limit": args.limit,
+            "cursor": args.cursor,
+        }),
+        truncated: results.has_more(),
+        next_cursor,
+        results: results
+            .hits()
+            .iter()
+            .map(|hit| ListRow::from_hit(hit, true))
+            .collect(),
+    };
+    emit_list_output(format, &envelope)
 }
 
 fn recent(db_path: &Path, args: &RecentArgs) -> Result<()> {
+    let format = args.output.resolved()?;
     let db = open_existing_db(db_path)?;
-    let hits = anyhow::Context::with_context(db.recent(args.limit, args.hours), || {
-        args.hours.map_or_else(
-            || "recent query failed".to_string(),
-            |hours| format!("recent query failed for the last {hours} hours"),
-        )
-    })?;
-    emit_json_or_text(args.json, &hits, |value| render_hits_text(value))?;
+    let cursor = args
+        .cursor
+        .as_deref()
+        .map(|value| parse_recent_cursor(value, args.hours))
+        .transpose()?;
+    let hits = anyhow::Context::with_context(
+        db.recent_page(args.limit, args.hours, cursor.as_ref()),
+        || {
+            args.hours.map_or_else(
+                || "recent query failed".to_string(),
+                |hours| format!("recent query failed for the last {hours} hours"),
+            )
+        },
+    )?;
 
-    Ok(())
+    if matches!(format, OutputFormat::Text) {
+        print!("{}", render_hits_text(hits.items()));
+        return Ok(());
+    }
+
+    let generated_at = generated_at_now()?;
+    let next_cursor = if hits.has_more() {
+        hits.items()
+            .last()
+            .map(|hit| encode_recent_cursor(args.hours, hit))
+            .transpose()?
+    } else {
+        None
+    };
+    let envelope = ListEnvelope {
+        schema_version: OUTPUT_SCHEMA_VERSION,
+        command: "recent",
+        generated_at,
+        applied_filters: json!({
+            "hours": args.hours,
+            "limit": args.limit,
+            "cursor": args.cursor,
+        }),
+        truncated: hits.has_more(),
+        next_cursor,
+        results: hits
+            .items()
+            .iter()
+            .map(|hit| ListRow::from_hit(hit, false))
+            .collect(),
+    };
+    emit_list_output(format, &envelope)
 }
 
 fn show_snapshot(db_path: &Path, args: &GetArgs) -> Result<()> {
+    let format = args.output.resolved()?;
     let db = open_existing_db(db_path)?;
     let snapshot =
         anyhow::Context::with_context(db.find_snapshot(args.snapshot_id, args.events), || {
             format!("get failed for snapshot {}", args.snapshot_id)
         })?
-        .ok_or_else(|| anyhow::anyhow!("snapshot {} was not found", args.snapshot_id))?;
-    emit_json_or_text(args.json, &snapshot, render_snapshot_text)?;
+        .ok_or_else(|| anyhow!("snapshot {} was not found", args.snapshot_id))?;
 
-    Ok(())
+    if matches!(format, OutputFormat::Text) {
+        print!("{}", render_snapshot_text(&snapshot));
+        return Ok(());
+    }
+
+    let envelope = GetEnvelope {
+        schema_version: OUTPUT_SCHEMA_VERSION,
+        command: "get",
+        generated_at: generated_at_now()?,
+        snapshot,
+    };
+    emit_get_output(format, &envelope)
 }
 
 fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -> Result<()> {
@@ -147,7 +260,7 @@ fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -> Result<()> {
     let representation = db
         .find_representation_bytes(args.snapshot_id, args.item, &args.uti)?
         .ok_or_else(|| {
-            anyhow::anyhow!(
+            anyhow!(
                 "representation not found for snapshot {} item {} uti {}",
                 args.snapshot_id,
                 args.item,
@@ -198,12 +311,102 @@ fn open_or_init_db(path: &Path) -> Result<Database> {
     })
 }
 
-fn query_search_results(db: &Database, args: &SearchArgs) -> Result<SearchResults> {
+fn query_search_results(
+    db: &Database,
+    args: &SearchArgs,
+    cursor: Option<&SearchCursorState>,
+) -> Result<SearchResults> {
     match args.mode {
-        SearchMode::Auto => db.search_auto(&args.query, args.limit),
-        SearchMode::Fts => db.search_fts(&args.query, args.limit),
-        SearchMode::Literal => db.search_literal(&args.query, args.limit),
+        SearchMode::Auto => db.search_auto_page(&args.query, args.limit, cursor),
+        SearchMode::Fts => db.search_fts_page(&args.query, args.limit, cursor),
+        SearchMode::Literal => db.search_literal_page(&args.query, args.limit, cursor),
     }
+}
+
+fn parse_search_cursor(
+    encoded: &str,
+    query: &str,
+    requested_mode: SearchMode,
+) -> Result<SearchCursorState> {
+    let token: SearchCursorToken = decode_cursor(encoded)?;
+    if token.command != "search" {
+        return Err(anyhow!(
+            "cursor is for command `{}` but was used with `search`",
+            token.command
+        ));
+    }
+    if token.query != query || token.requested_mode != requested_mode {
+        return Err(anyhow!(
+            "cursor does not match the active search query or mode"
+        ));
+    }
+    if requested_mode != SearchMode::Auto && token.mode_used != requested_mode {
+        return Err(anyhow!(
+            "cursor mode `{}` does not match the requested search mode `{}`",
+            token.mode_used.as_str(),
+            requested_mode.as_str()
+        ));
+    }
+
+    Ok(SearchCursorState::new(
+        token.mode_used,
+        token.score,
+        token.last_seen_at,
+        token.snapshot_id,
+    ))
+}
+
+fn parse_recent_cursor(encoded: &str, hours: Option<u32>) -> Result<RecentCursorState> {
+    let token: RecentCursorToken = decode_cursor(encoded)?;
+    if token.command != "recent" {
+        return Err(anyhow!(
+            "cursor is for command `{}` but was used with `recent`",
+            token.command
+        ));
+    }
+    if token.hours != hours {
+        return Err(anyhow!(
+            "cursor does not match the active recent-hours filter"
+        ));
+    }
+
+    Ok(RecentCursorState::new(token.last_seen_at, token.snapshot_id))
+}
+
+fn encode_search_cursor(
+    query: &str,
+    requested_mode: SearchMode,
+    mode_used: SearchMode,
+    hit: &crate::model::SearchHit,
+) -> Result<String> {
+    encode_cursor(&SearchCursorToken {
+        command: "search".to_string(),
+        query: query.to_string(),
+        requested_mode,
+        mode_used,
+        last_seen_at: hit.last_observed_at().to_string(),
+        snapshot_id: hit.snapshot_id(),
+        score: hit.score(),
+    })
+}
+
+fn encode_recent_cursor(hours: Option<u32>, hit: &crate::model::SearchHit) -> Result<String> {
+    encode_cursor(&RecentCursorToken {
+        command: "recent".to_string(),
+        hours,
+        last_seen_at: hit.last_observed_at().to_string(),
+        snapshot_id: hit.snapshot_id(),
+    })
+}
+
+fn encode_cursor<T: Serialize>(token: &T) -> Result<String> {
+    let json = serde_json::to_vec(token)?;
+    Ok(hex::encode(json))
+}
+
+fn decode_cursor<T: for<'de> Deserialize<'de>>(encoded: &str) -> Result<T> {
+    let bytes = hex::decode(encoded).map_err(|error| anyhow!("invalid cursor encoding: {error}"))?;
+    serde_json::from_slice(&bytes).map_err(|error| anyhow!("invalid cursor payload: {error}"))
 }
 
 #[cfg(test)]
@@ -215,9 +418,11 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::{
-        query_search_results, run_watch_iteration_with_capture, SearchArgs, WatchArgs, WatchState,
+        encode_recent_cursor, encode_search_cursor, parse_recent_cursor, parse_search_cursor,
+        query_search_results, run_watch_iteration_with_capture, SearchArgs, SearchMode,
+        SearchResults, WatchArgs, WatchState,
     };
-    use crate::db::{Database, SearchMode};
+    use crate::db::Database;
     use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
 
     fn temp_db_path(test_name: &str) -> PathBuf {
@@ -259,95 +464,115 @@ mod tests {
                 vec![build_representation(
                     "public.utf8-plain-text".to_string(),
                     None,
-                    b"Discount: 50 percent off".to_vec(),
+                    b"git status".to_vec(),
                 )],
             )],
         );
         let second = build_snapshot(
             CaptureContext::new(2)
-                .with_frontmost_app_name("Editor")
-                .with_frontmost_app_bundle_id("com.example.Editor"),
+                .with_frontmost_app_name("Terminal")
+                .with_frontmost_app_bundle_id("com.apple.Terminal"),
             vec![build_item(
                 0,
                 vec![build_representation(
                     "public.utf8-plain-text".to_string(),
                     None,
-                    b"Discount: 50%".to_vec(),
+                    b"cargo test".to_vec(),
                 )],
             )],
         );
-        db.store_capture(&first)
-            .expect("first search fixture should store");
-        db.store_capture(&second)
-            .expect("second search fixture should store");
 
-        let results = query_search_results(
+        db.store_capture(&first).expect("seed should succeed");
+        db.store_capture(&second).expect("seed should succeed");
+
+        let results: SearchResults = query_search_results(
             &db,
             &SearchArgs {
-                query: "50%".to_string(),
+                query: "git".to_string(),
                 mode: SearchMode::Literal,
                 limit: 10,
-                json: false,
+                cursor: None,
+                output: crate::cli::OutputArgs {
+                    format: None,
+                    json: false,
+                },
             },
+            None,
         )
-        .expect("search should succeed");
+        .expect("query should succeed");
 
         assert_eq!(results.mode_used(), SearchMode::Literal);
         assert_eq!(results.hits().len(), 1);
-        assert_eq!(results.hits()[0].preview_text(), "Discount: 50%");
+        assert_eq!(results.hits()[0].preview_text(), "git status");
 
         cleanup_db(&path);
     }
 
     #[test]
-    fn watch_iteration_skips_full_capture_when_change_count_is_unchanged() {
-        let path = temp_db_path("watch-no-capture");
-        let mut db = Database::open_or_init(&path).expect("test database should open");
-        let mut state = WatchState::new();
-        let args = WatchArgs {
-            interval_ms: 250,
-            quiet: true,
-            skip_initial: false,
-        };
-        let capture_calls = Cell::new(0);
-
-        let first = run_watch_iteration_with_capture(
-            &mut db,
-            &args,
-            &mut state,
-            || Ok(7),
-            || {
-                capture_calls.set(capture_calls.get() + 1);
-                Ok(build_snapshot(CaptureContext::new(7), Vec::new()))
-            },
+    fn search_cursor_round_trips_and_rejects_mismatches() {
+        let hit = crate::model::SearchHit::new(
+            9,
+            12,
+            "abc".to_string(),
+            crate::model::SnapshotKind::PlainText,
+            "git status".to_string(),
+            Some("git status".to_string()),
+            1,
+            "2026-04-16T09:00:00Z".to_string(),
+            "2026-04-16T10:00:00Z".to_string(),
+            Some("Terminal".to_string()),
+            Some("com.apple.Terminal".to_string()),
+            Vec::new(),
+            Vec::new(),
+            10,
+            1,
+            Some(0.5),
         );
-        let second = run_watch_iteration_with_capture(
-            &mut db,
-            &args,
-            &mut state,
-            || Ok(7),
-            || {
-                capture_calls.set(capture_calls.get() + 1);
-                Ok(build_snapshot(CaptureContext::new(7), Vec::new()))
-            },
-        );
+        let encoded =
+            encode_search_cursor("git", SearchMode::Auto, SearchMode::Fts, &hit).unwrap();
+        let cursor = parse_search_cursor(&encoded, "git", SearchMode::Auto).unwrap();
 
-        assert!(first.is_ok());
-        assert!(second.is_ok());
-        assert_eq!(capture_calls.get(), 1);
-        cleanup_db(&path);
+        assert_eq!(cursor.mode_used(), SearchMode::Fts);
+        assert!(parse_search_cursor(&encoded, "cargo", SearchMode::Auto).is_err());
     }
 
     #[test]
-    fn watch_iteration_skips_initial_capture_without_materialising_snapshot() {
+    fn recent_cursor_round_trips_and_rejects_mismatches() {
+        let hit = crate::model::SearchHit::new(
+            9,
+            12,
+            "abc".to_string(),
+            crate::model::SnapshotKind::PlainText,
+            "git status".to_string(),
+            None,
+            1,
+            "2026-04-16T09:00:00Z".to_string(),
+            "2026-04-16T10:00:00Z".to_string(),
+            Some("Terminal".to_string()),
+            Some("com.apple.Terminal".to_string()),
+            Vec::new(),
+            Vec::new(),
+            10,
+            1,
+            None,
+        );
+        let encoded = encode_recent_cursor(Some(24), &hit).unwrap();
+        let cursor = parse_recent_cursor(&encoded, Some(24)).unwrap();
+
+        assert_eq!(cursor.snapshot_id(), 9);
+        assert!(parse_recent_cursor(&encoded, Some(12)).is_err());
+    }
+
+    #[test]
+    fn watch_iteration_skips_initial_clipboard_state_once() {
         let path = temp_db_path("watch-skip-initial");
         let mut db = Database::open_or_init(&path).expect("test database should open");
-        let mut state = WatchState::new();
         let args = WatchArgs {
-            interval_ms: 250,
+            interval_ms: 350,
             quiet: true,
             skip_initial: true,
         };
+        let mut state = WatchState::new();
         let capture_calls = Cell::new(0);
 
         let result = run_watch_iteration_with_capture(
@@ -357,12 +582,68 @@ mod tests {
             || Ok(7),
             || {
                 capture_calls.set(capture_calls.get() + 1);
-                Ok(build_snapshot(CaptureContext::new(7), Vec::new()))
+                Ok(build_snapshot(
+                    CaptureContext::new(7)
+                        .with_frontmost_app_name("Terminal")
+                        .with_frontmost_app_bundle_id("com.apple.Terminal"),
+                    vec![build_item(
+                        0,
+                        vec![build_representation(
+                            "public.utf8-plain-text".to_string(),
+                            None,
+                            b"git status".to_vec(),
+                        )],
+                    )],
+                ))
             },
         );
 
         assert!(result.is_ok());
         assert_eq!(capture_calls.get(), 0);
+        assert!(db.recent(10, None).unwrap().is_empty());
+
+        cleanup_db(&path);
+    }
+
+    #[test]
+    fn watch_iteration_captures_when_clipboard_changes() {
+        let path = temp_db_path("watch-capture-change");
+        let mut db = Database::open_or_init(&path).expect("test database should open");
+        let args = WatchArgs {
+            interval_ms: 350,
+            quiet: true,
+            skip_initial: false,
+        };
+        let mut state = WatchState::new();
+        let capture_calls = Cell::new(0);
+
+        let result = run_watch_iteration_with_capture(
+            &mut db,
+            &args,
+            &mut state,
+            || Ok(2),
+            || {
+                capture_calls.set(capture_calls.get() + 1);
+                Ok(build_snapshot(
+                    CaptureContext::new(2)
+                        .with_frontmost_app_name("Terminal")
+                        .with_frontmost_app_bundle_id("com.apple.Terminal"),
+                    vec![build_item(
+                        0,
+                        vec![build_representation(
+                            "public.utf8-plain-text".to_string(),
+                            None,
+                            b"git status".to_vec(),
+                        )],
+                    )],
+                ))
+            },
+        );
+
+        assert!(result.is_ok());
+        assert_eq!(capture_calls.get(), 1);
+        assert_eq!(db.recent(10, None).unwrap().len(), 1);
+
         cleanup_db(&path);
     }
 }

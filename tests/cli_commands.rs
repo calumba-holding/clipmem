@@ -55,6 +55,36 @@ fn text_snapshot(change_count: i64, text: &str) -> ClipboardSnapshot {
     )
 }
 
+fn rich_snapshot(change_count: i64, text: &str, url: &str, file_url: &str) -> ClipboardSnapshot {
+    let item = build_item(
+        0,
+        vec![
+            build_representation(
+                "public.utf8-plain-text".to_string(),
+                Some(text.to_string()),
+                text.as_bytes().to_vec(),
+            ),
+            build_representation(
+                "public.url".to_string(),
+                Some(url.to_string()),
+                url.as_bytes().to_vec(),
+            ),
+            build_representation(
+                "public.file-url".to_string(),
+                Some(file_url.to_string()),
+                file_url.as_bytes().to_vec(),
+            ),
+        ],
+    );
+
+    build_snapshot(
+        CaptureContext::new(change_count)
+            .with_frontmost_app_name("Terminal")
+            .with_frontmost_app_bundle_id("com.apple.Terminal"),
+        vec![item],
+    )
+}
+
 fn seed_database(path: &Path, snapshots: &[ClipboardSnapshot]) -> Result<Vec<i64>> {
     let mut db = Database::open_or_init(path)?;
     let mut ids = Vec::new();
@@ -74,8 +104,16 @@ fn run_cli(args: &[&str]) -> process::Output {
         .expect("clipmem binary should execute")
 }
 
+fn stdout_text(output: &process::Output) -> String {
+    String::from_utf8(output.stdout.clone()).expect("stdout should be UTF-8")
+}
+
+fn stderr_text(output: &process::Output) -> String {
+    String::from_utf8(output.stderr.clone()).expect("stderr should be UTF-8")
+}
+
 #[test]
-fn search_command_prints_literal_results() -> Result<()> {
+fn search_command_prints_literal_results_in_text_mode() -> Result<()> {
     let path = temp_db_path("search-text");
     seed_database(
         &path,
@@ -93,7 +131,7 @@ fn search_command_prints_literal_results() -> Result<()> {
         "literal",
         "50%",
     ]);
-    let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
+    let stdout = stdout_text(&output);
 
     assert!(output.status.success());
     assert!(stdout.contains("preview: Discount: 50%"));
@@ -104,7 +142,62 @@ fn search_command_prints_literal_results() -> Result<()> {
 }
 
 #[test]
-fn recent_command_emits_json_hits() -> Result<()> {
+fn search_json_envelope_includes_agent_friendly_rows() -> Result<()> {
+    let path = temp_db_path("search-json");
+    let ids = seed_database(
+        &path,
+        &[rich_snapshot(
+            1,
+            "git status",
+            "https://example.com/repo",
+            "file:///Users/test/report.txt",
+        )],
+    )?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "search",
+        "--mode",
+        "literal",
+        "--format",
+        "json",
+        "git",
+    ]);
+    let payload: Value =
+        serde_json::from_slice(&output.stdout).expect("search JSON output should parse");
+
+    assert!(output.status.success());
+    assert_eq!(payload["schema_version"].as_u64(), Some(1));
+    assert_eq!(payload["command"].as_str(), Some("search"));
+    assert_eq!(payload["applied_filters"]["requested_mode"].as_str(), Some("literal"));
+    assert_eq!(payload["applied_filters"]["mode_used"].as_str(), Some("literal"));
+    assert_eq!(payload["truncated"].as_bool(), Some(false));
+    assert_eq!(payload["results"][0]["snapshot_id"].as_i64(), Some(ids[0]));
+    assert_eq!(payload["results"][0]["event_id"].as_i64(), Some(1));
+    assert!(payload["results"][0]["best_text"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("git status"));
+    assert_eq!(
+        payload["results"][0]["why_matched"].as_str(),
+        Some("git status  https://example.com/repo  file:///Users/test/report.txt")
+    );
+    assert_eq!(
+        payload["results"][0]["urls"][0].as_str(),
+        Some("https://example.com/repo")
+    );
+    assert_eq!(
+        payload["results"][0]["file_paths"][0].as_str(),
+        Some("/Users/test/report.txt")
+    );
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn recent_json_alias_uses_new_envelope_shape() -> Result<()> {
     let path = temp_db_path("recent-json");
     let ids = seed_database(&path, &[text_snapshot(1, "git status")])?;
 
@@ -114,21 +207,22 @@ fn recent_command_emits_json_hits() -> Result<()> {
         "recent",
         "--json",
     ]);
-    let hits: Vec<Value> =
+    let payload: Value =
         serde_json::from_slice(&output.stdout).expect("recent JSON output should parse");
 
     assert!(output.status.success());
-    assert_eq!(hits.len(), 1);
-    assert_eq!(hits[0]["snapshot_id"].as_i64(), Some(ids[0]));
-    assert_eq!(hits[0]["preview_text"].as_str(), Some("git status"));
+    assert_eq!(payload["command"].as_str(), Some("recent"));
+    assert_eq!(payload["results"].as_array().map(Vec::len), Some(1));
+    assert_eq!(payload["results"][0]["snapshot_id"].as_i64(), Some(ids[0]));
+    assert!(payload["results"][0]["why_matched"].is_null());
 
     cleanup_db(&path);
     Ok(())
 }
 
 #[test]
-fn get_command_prints_snapshot_details() -> Result<()> {
-    let path = temp_db_path("get-text");
+fn get_json_wraps_snapshot_in_versioned_envelope() -> Result<()> {
+    let path = temp_db_path("get-json");
     let ids = seed_database(
         &path,
         &[text_snapshot(1, "git clone https://example.com/repo")],
@@ -139,16 +233,262 @@ fn get_command_prints_snapshot_details() -> Result<()> {
         path.to_str().expect("db path should be UTF-8"),
         "get",
         &ids[0].to_string(),
+        "--format",
+        "json",
     ]);
-    let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("get JSON should parse");
 
     assert!(output.status.success());
-    assert!(stdout.contains(&format!("snapshot {}", ids[0])));
-    assert!(stdout.contains("item 0 · kind=plain_text"));
-    assert!(stdout.contains("text: git clone https://example.com/repo"));
+    assert_eq!(payload["schema_version"].as_u64(), Some(1));
+    assert_eq!(payload["command"].as_str(), Some("get"));
+    assert_eq!(payload["snapshot"]["snapshot_id"].as_i64(), Some(ids[0]));
+    assert_eq!(
+        payload["snapshot"]["preview_text"].as_str(),
+        Some("git clone https://example.com/repo")
+    );
 
     cleanup_db(&path);
     Ok(())
+}
+
+#[test]
+fn jsonl_output_emits_meta_and_result_records() -> Result<()> {
+    let path = temp_db_path("search-jsonl");
+    seed_database(&path, &[text_snapshot(1, "git status")])?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "search",
+        "--mode",
+        "literal",
+        "--format",
+        "jsonl",
+        "git",
+    ]);
+    let stdout = stdout_text(&output);
+    let lines = stdout.lines().collect::<Vec<_>>();
+    let meta: Value = serde_json::from_str(lines[0]).expect("meta JSONL line should parse");
+    let row: Value = serde_json::from_str(lines[1]).expect("result JSONL line should parse");
+
+    assert!(output.status.success());
+    assert_eq!(lines.len(), 2);
+    assert_eq!(meta["type"].as_str(), Some("meta"));
+    assert_eq!(row["type"].as_str(), Some("result"));
+    assert_eq!(row["best_text"].as_str(), Some("git status"));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn markdown_output_is_compact_and_scannable() -> Result<()> {
+    let path = temp_db_path("search-md");
+    seed_database(&path, &[text_snapshot(1, "git status")])?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "search",
+        "--format",
+        "md",
+        "git",
+    ]);
+    let stdout = stdout_text(&output);
+
+    assert!(output.status.success());
+    assert!(stdout.contains("# clipmem search"));
+    assert!(stdout.contains("| snapshot_id | kind | observed_at |"));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn toon_output_is_available_for_flattened_list_commands() -> Result<()> {
+    let path = temp_db_path("recent-toon");
+    seed_database(&path, &[text_snapshot(1, "git status")])?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "recent",
+        "--format",
+        "toon",
+    ]);
+    let stdout = stdout_text(&output);
+
+    assert!(output.status.success());
+    assert!(stdout.contains("results[#1\t]{snapshot_id"));
+    assert!(stdout.contains("git status"));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn get_rejects_toon_output() -> Result<()> {
+    let path = temp_db_path("get-toon");
+    let ids = seed_database(&path, &[text_snapshot(1, "git status")])?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "get",
+        &ids[0].to_string(),
+        "--format",
+        "toon",
+    ]);
+    let stderr = stderr_text(&output);
+
+    assert!(!output.status.success());
+    assert!(stderr.contains("TOON is only available for flattened list output"));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn list_commands_include_truncation_metadata_and_resume_with_cursor() -> Result<()> {
+    let path = temp_db_path("search-pagination");
+    seed_database(
+        &path,
+        &[
+            text_snapshot(1, "git one"),
+            text_snapshot(2, "git two"),
+            text_snapshot(3, "git three"),
+        ],
+    )?;
+
+    let first_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "search",
+        "--mode",
+        "literal",
+        "--limit",
+        "2",
+        "--format",
+        "json",
+        "git",
+    ]);
+    let first_payload: Value =
+        serde_json::from_slice(&first_output.stdout).expect("first page should parse");
+    let next_cursor = first_payload["next_cursor"]
+        .as_str()
+        .expect("first page should include a cursor")
+        .to_string();
+    let first_ids = first_payload["results"]
+        .as_array()
+        .expect("results should be an array")
+        .iter()
+        .map(|row| row["snapshot_id"].as_i64().unwrap())
+        .collect::<Vec<_>>();
+
+    assert!(first_output.status.success());
+    assert_eq!(first_payload["truncated"].as_bool(), Some(true));
+    assert_eq!(first_payload["results"].as_array().map(Vec::len), Some(2));
+
+    let second_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "search",
+        "--mode",
+        "literal",
+        "--limit",
+        "2",
+        "--cursor",
+        &next_cursor,
+        "--format",
+        "json",
+        "git",
+    ]);
+    let second_payload: Value =
+        serde_json::from_slice(&second_output.stdout).expect("second page should parse");
+    let second_ids = second_payload["results"]
+        .as_array()
+        .expect("results should be an array")
+        .iter()
+        .map(|row| row["snapshot_id"].as_i64().unwrap())
+        .collect::<Vec<_>>();
+
+    assert!(second_output.status.success());
+    assert_eq!(second_payload["truncated"].as_bool(), Some(false));
+    assert!(second_payload["next_cursor"].is_null());
+    assert_eq!(second_ids.len(), 1);
+    assert!(!first_ids.contains(&second_ids[0]));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn search_rejects_cursor_filter_mismatches() -> Result<()> {
+    let path = temp_db_path("search-cursor-mismatch");
+    seed_database(
+        &path,
+        &[text_snapshot(1, "git status"), text_snapshot(2, "git commit")],
+    )?;
+
+    let first_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "search",
+        "--mode",
+        "literal",
+        "--limit",
+        "1",
+        "--format",
+        "json",
+        "git",
+    ]);
+    let first_payload: Value =
+        serde_json::from_slice(&first_output.stdout).expect("first page should parse");
+    let next_cursor = first_payload["next_cursor"]
+        .as_str()
+        .expect("first page should include a cursor")
+        .to_string();
+
+    let mismatched = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "search",
+        "--mode",
+        "literal",
+        "--limit",
+        "1",
+        "--cursor",
+        &next_cursor,
+        "--format",
+        "json",
+        "cargo",
+    ]);
+    let stderr = stderr_text(&mismatched);
+
+    assert!(!mismatched.status.success());
+    assert!(stderr.contains("cursor does not match the active search query or mode"));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn search_help_mentions_new_format_and_cursor_flags() {
+    let output = run_cli(&["help", "search"]);
+    let help_text = format!("{}{}", stdout_text(&output), stderr_text(&output));
+
+    assert!(help_text.contains("--format <FORMAT>"));
+    assert!(help_text.contains("--json"));
+    assert!(help_text.contains("--cursor <CURSOR>"));
+}
+
+#[test]
+fn json_alias_rejects_non_json_format() {
+    let output = run_cli(&["search", "git", "--json", "--format", "md"]);
+    let stderr = stderr_text(&output);
+
+    assert!(!output.status.success());
+    assert!(stderr.contains("`--json` is only compatible with `--format json`"));
 }
 
 #[test]
@@ -161,7 +501,7 @@ fn doctor_command_reports_database_capabilities() {
         path.to_str().expect("db path should be UTF-8"),
         "doctor",
     ]);
-    let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
+    let stdout = stdout_text(&output);
 
     assert!(output.status.success());
     assert!(stdout.contains("database:"));
@@ -181,7 +521,7 @@ fn recent_command_rejects_zero_limit() {
         "--limit",
         "0",
     ]);
-    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    let stderr = stderr_text(&output);
 
     assert!(!output.status.success());
     assert!(stderr.contains('0'));
@@ -221,7 +561,7 @@ fn export_command_writes_raw_representation_bytes() -> Result<()> {
         "--out",
         output_path.to_str().expect("output path should be UTF-8"),
     ]);
-    let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
+    let stdout = stdout_text(&output);
     let bytes = fs::read(&output_path)?;
 
     assert!(output.status.success());
@@ -252,7 +592,7 @@ fn export_command_fails_for_unknown_representation() -> Result<()> {
         "--out",
         "/tmp/clipmem-missing.bin",
     ]);
-    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+    let stderr = stderr_text(&output);
 
     assert!(!output.status.success());
     assert!(stderr.contains("representation not found"));

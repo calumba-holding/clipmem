@@ -13,14 +13,18 @@ pub struct CaptureStoreResult {
 #[derive(Debug, Clone, Serialize)]
 pub struct SearchHit {
     snapshot_id: i64,
+    event_id: i64,
     sha256: String,
     snapshot_kind: SnapshotKind,
     preview_text: String,
-    snippet: String,
+    why_matched: Option<String>,
     capture_count: usize,
+    first_observed_at: String,
     last_observed_at: String,
     last_frontmost_app_name: Option<String>,
     last_frontmost_app_bundle_id: Option<String>,
+    urls: Vec<String>,
+    file_paths: Vec<String>,
     total_bytes: usize,
     item_count: usize,
     score: Option<f64>,
@@ -98,28 +102,36 @@ impl SearchHit {
     #[must_use]
     pub(crate) fn new(
         snapshot_id: i64,
+        event_id: i64,
         sha256: String,
         snapshot_kind: SnapshotKind,
         preview_text: String,
-        snippet: String,
+        why_matched: Option<String>,
         capture_count: usize,
+        first_observed_at: String,
         last_observed_at: String,
         last_frontmost_app_name: Option<String>,
         last_frontmost_app_bundle_id: Option<String>,
+        urls: Vec<String>,
+        file_paths: Vec<String>,
         total_bytes: usize,
         item_count: usize,
         score: Option<f64>,
     ) -> Self {
         Self {
             snapshot_id,
+            event_id,
             sha256,
             snapshot_kind,
             preview_text,
-            snippet,
+            why_matched,
             capture_count,
+            first_observed_at,
             last_observed_at,
             last_frontmost_app_name,
             last_frontmost_app_bundle_id,
+            urls,
+            file_paths,
             total_bytes,
             item_count,
             score,
@@ -129,6 +141,11 @@ impl SearchHit {
     #[must_use]
     pub fn snapshot_id(&self) -> i64 {
         self.snapshot_id
+    }
+
+    #[must_use]
+    pub fn event_id(&self) -> i64 {
+        self.event_id
     }
 
     #[must_use]
@@ -147,13 +164,18 @@ impl SearchHit {
     }
 
     #[must_use]
-    pub fn snippet(&self) -> &str {
-        &self.snippet
+    pub fn why_matched(&self) -> Option<&str> {
+        self.why_matched.as_deref()
     }
 
     #[must_use]
     pub fn capture_count(&self) -> usize {
         self.capture_count
+    }
+
+    #[must_use]
+    pub fn first_observed_at(&self) -> &str {
+        &self.first_observed_at
     }
 
     #[must_use]
@@ -169,6 +191,16 @@ impl SearchHit {
     #[must_use]
     pub fn last_frontmost_app_bundle_id(&self) -> Option<&str> {
         self.last_frontmost_app_bundle_id.as_deref()
+    }
+
+    #[must_use]
+    pub fn urls(&self) -> &[String] {
+        &self.urls
+    }
+
+    #[must_use]
+    pub fn file_paths(&self) -> &[String] {
+        &self.file_paths
     }
 
     #[must_use]

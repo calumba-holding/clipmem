@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::{Args, Parser, Subcommand};
+use clap::{error::ErrorKind, Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use std::ffi::OsString;
 use std::path::PathBuf;
 
@@ -8,6 +8,56 @@ use crate::db::SearchMode;
 mod commands;
 mod db_path;
 mod output;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(super) enum OutputFormat {
+    Text,
+    Json,
+    Jsonl,
+    Md,
+    Toon,
+}
+
+impl OutputFormat {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Json => "json",
+            Self::Jsonl => "jsonl",
+            Self::Md => "md",
+            Self::Toon => "toon",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+pub(super) struct OutputArgs {
+    /// Output format: `text` for terminal use, `json` for stable parsing, `jsonl` for pipelines, `md` for compact review, and `toon` for flat list output only (default: text).
+    #[arg(long, value_enum)]
+    format: Option<OutputFormat>,
+
+    /// Compatibility alias for `--format json`.
+    #[arg(long, default_value_t = false)]
+    json: bool,
+}
+
+impl OutputArgs {
+    pub(super) fn resolved(&self) -> std::result::Result<OutputFormat, clap::Error> {
+        match (self.json, self.format) {
+            (false, Some(format)) => Ok(format),
+            (false, None) => Ok(OutputFormat::Text),
+            (true, None) | (true, Some(OutputFormat::Json)) => Ok(OutputFormat::Json),
+            (true, Some(format)) => Err(Cli::command().error(
+                ErrorKind::ArgumentConflict,
+                format!(
+                    "`--json` is only compatible with `--format json`, got `--format {}`",
+                    format.as_str()
+                ),
+            )),
+        }
+    }
+}
 
 #[derive(Debug, Parser)]
 #[command(name = "clipmem")]
@@ -75,9 +125,12 @@ struct SearchArgs {
     #[arg(long, default_value_t = 10, value_parser = parse_bounded_limit)]
     limit: usize,
 
-    /// Emit results as JSON.
-    #[arg(long, default_value_t = false)]
-    json: bool,
+    /// Resume a paginated result set using the opaque `next_cursor` from a prior response.
+    #[arg(long)]
+    cursor: Option<String>,
+
+    #[command(flatten)]
+    output: OutputArgs,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,9 +168,12 @@ struct RecentArgs {
     #[arg(long)]
     hours: Option<u32>,
 
-    /// Emit results as JSON.
-    #[arg(long, default_value_t = false)]
-    json: bool,
+    /// Resume a paginated result set using the opaque `next_cursor` from a prior response.
+    #[arg(long)]
+    cursor: Option<String>,
+
+    #[command(flatten)]
+    output: OutputArgs,
 }
 
 #[derive(Debug, Args)]
@@ -129,9 +185,8 @@ struct GetArgs {
     #[arg(long, default_value_t = 10, value_parser = parse_bounded_limit)]
     events: usize,
 
-    /// Emit the snapshot as JSON.
-    #[arg(long, default_value_t = false)]
-    json: bool,
+    #[command(flatten)]
+    output: OutputArgs,
 }
 
 #[derive(Debug, Args)]
@@ -179,8 +234,29 @@ where
     T: Into<OsString> + Clone,
 {
     let cli = Cli::try_parse_from(args)?;
+    validate_cli(&cli)?;
     let db_path = cli.db.unwrap_or_else(db_path::default_db_path);
     commands::run_command(cli.command, &db_path)
+}
+
+fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
+    match &cli.command {
+        Command::Search(args) => {
+            args.output.resolved()?;
+        }
+        Command::Recent(args) => {
+            args.output.resolved()?;
+        }
+        Command::Get(args) => {
+            args.output.resolved()?;
+        }
+        Command::Watch(_)
+        | Command::CaptureOnce(_)
+        | Command::Export(_)
+        | Command::Doctor(_) => {}
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -191,7 +267,7 @@ mod tests {
 
     use crate::db::SearchMode;
 
-    use super::{Cli, Command};
+    use super::{Cli, Command, OutputFormat};
 
     #[test]
     fn watch_command_parses_global_db_and_runtime_flags() {
@@ -225,9 +301,54 @@ mod tests {
             Command::Search(args) => {
                 assert!(matches!(args.mode, SearchMode::Literal));
                 assert_eq!(args.query, "50%");
+                assert_eq!(args.output.resolved().unwrap(), OutputFormat::Text);
             }
             other => panic!("expected search command, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn list_commands_parse_output_format_and_cursor() {
+        let cli = Cli::parse_from([
+            "clipmem",
+            "recent",
+            "--limit",
+            "5",
+            "--cursor",
+            "abcd",
+            "--format",
+            "jsonl",
+        ]);
+
+        match cli.command {
+            Command::Recent(args) => {
+                assert_eq!(args.cursor.as_deref(), Some("abcd"));
+                assert_eq!(args.output.resolved().unwrap(), OutputFormat::Jsonl);
+            }
+            other => panic!("expected recent command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn json_alias_resolves_to_json_output() {
+        let cli = Cli::parse_from(["clipmem", "get", "42", "--json"]);
+
+        match cli.command {
+            Command::Get(args) => {
+                assert_eq!(args.output.resolved().unwrap(), OutputFormat::Json);
+            }
+            other => panic!("expected get command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn json_alias_rejects_non_json_format() {
+        let error = super::run_from(["clipmem", "search", "git", "--json", "--format", "md"])
+            .expect_err("invalid output alias combination should fail");
+
+        assert!(error
+            .to_string()
+            .contains("`--json` is only compatible with `--format json`"));
     }
 
     #[test]

@@ -8,9 +8,9 @@ Use this skill when the user asks you to remember, find, search, or recover some
 
 Preferred flow:
 
-1. Run `clipmem search "<query>" --json --limit 8`.
-2. If the result set is empty or vague, run `clipmem recent --hours 24 --json --limit 12`.
-3. When a promising `snapshot_id` appears, run `clipmem get <snapshot_id> --json`.
+1. Run `clipmem search "<query>" --format json --limit 8`.
+2. If the result set is empty or vague, run `clipmem recent --hours 24 --format json --limit 12`.
+3. When a promising `snapshot_id` appears, run `clipmem get <snapshot_id> --format json`.
 4. Quote or summarise the stored clipboard text directly from the JSON output.
 5. If a snapshot contains multiple items or multiple representations, prefer the plain-text representation first, then URL, then HTML-derived text.
 
