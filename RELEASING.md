@@ -60,8 +60,10 @@ For the first release only:
      - must have write access to `tristanmanchester/homebrew-tap`
    - `CARGO_REGISTRY_TOKEN`
      - temporary bootstrap token for crates.io
-3. In GitHub repo settings, confirm the `release` environment exists.
-4. Run local checks:
+3. In crates.io account settings, ensure the account behind `CARGO_REGISTRY_TOKEN` has a verified email address.
+   - crates.io rejects publishes with HTTP 400 until at least one email address is verified
+4. In GitHub repo settings, confirm the `release` environment exists.
+5. Run local checks:
 
    ```bash
    cargo test
@@ -70,20 +72,28 @@ For the first release only:
    dist plan
    ```
 
-5. Push the bootstrap tag:
+6. Push the bootstrap tag:
 
    ```bash
    git tag v0.1.0
    git push origin v0.1.0
    ```
 
-6. Verify:
+7. Verify:
    - GitHub Release contains:
      - `clipmem-aarch64-apple-darwin.tar.xz`
      - checksums
      - `clipmem.rb`
    - crates.io contains `clipmem 0.1.0`
    - `brew install tristanmanchester/tap/clipmem` succeeds
+
+If the workflow fails on the crates publish step with:
+
+```text
+A verified email address is required to publish crates to crates.io
+```
+
+verify the email in crates.io, then rerun the failed GitHub Actions job for the same tag.
 
 ## Migrate to crates.io Trusted Publishing
 

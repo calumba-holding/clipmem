@@ -250,6 +250,7 @@ Bootstrap for `0.1.0`:
 1. Create the tap repo `tristanmanchester/homebrew-tap`.
 2. Add the GitHub Actions secret `HOMEBREW_TAP_TOKEN` with write access to that repo.
 3. Add a temporary `CARGO_REGISTRY_TOKEN` secret for the first crates.io publish.
-4. Push tag `v0.1.0`.
+4. Ensure the crates.io account behind that token has a verified email address.
+5. Push tag `v0.1.0`.
 
 After `0.1.0` is live on crates.io, migrate the crates publish step from the temporary `CARGO_REGISTRY_TOKEN` secret to crates.io Trusted Publishing with `rust-lang/crates-io-auth-action@v1`, then remove the long-lived secret.
