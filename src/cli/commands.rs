@@ -105,6 +105,22 @@ const OPENCLAW_TROUBLESHOOTING_REF: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/extras/openclaw/clipboard_memory/references/troubleshooting.md"
 ));
+const OPENCLAW_JSON_SCHEMA_REF: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/openclaw/clipboard_memory/references/json-schema.md"
+));
+const OPENCLAW_EXAMPLES_REF: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/openclaw/clipboard_memory/references/examples.md"
+));
+const OPENCLAW_SETUP_CHECK_REF: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/openclaw/clipboard_memory/references/setup-check.md"
+));
+const OPENCLAW_CHECK_SETUP_SH: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/openclaw/clipboard_memory/scripts/check-setup.sh"
+));
 
 #[derive(Debug, Clone, Copy)]
 struct PackagedOpenClawFile {
@@ -664,6 +680,22 @@ fn packaged_openclaw_files() -> &'static [PackagedOpenClawFile] {
             relative_path: "references/troubleshooting.md",
             contents: OPENCLAW_TROUBLESHOOTING_REF,
         },
+        PackagedOpenClawFile {
+            relative_path: "references/json-schema.md",
+            contents: OPENCLAW_JSON_SCHEMA_REF,
+        },
+        PackagedOpenClawFile {
+            relative_path: "references/examples.md",
+            contents: OPENCLAW_EXAMPLES_REF,
+        },
+        PackagedOpenClawFile {
+            relative_path: "references/setup-check.md",
+            contents: OPENCLAW_SETUP_CHECK_REF,
+        },
+        PackagedOpenClawFile {
+            relative_path: "scripts/check-setup.sh",
+            contents: OPENCLAW_CHECK_SETUP_SH,
+        },
     ]
 }
 
@@ -679,8 +711,29 @@ fn install_openclaw_package(target_dir: &Path) -> Result<()> {
         }
         std::fs::write(&path, file.contents)
             .with_context(|| format!("failed to write {}", path.display()))?;
+        if file.relative_path.ends_with(".sh") {
+            set_executable(&path)
+                .with_context(|| format!("failed to mark {} executable", path.display()))?;
+        }
     }
 
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_executable(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut perms = std::fs::metadata(path)?.permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(path, perms)?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_executable(_path: &Path) -> Result<()> {
+    // On non-Unix targets there is no concept of the executable bit to set;
+    // scripts are invoked via their interpreter explicitly.
     Ok(())
 }
 
@@ -911,18 +964,41 @@ fn validate_openclaw_skill_dir(path: &Path) -> Result<()> {
     let skill_path = path.join("SKILL.md");
     validate_openclaw_skill_file(&skill_path)?;
 
-    let content = std::fs::read_to_string(&skill_path)
-        .with_context(|| format!("failed to read {}", skill_path.display()))?;
-    for relative_reference in referenced_markdown_files(&content) {
-        let reference_path = path.join(&relative_reference);
-        if !reference_path.is_file() {
-            return Err(anyhow!(
-                "referenced file is missing: {}",
-                reference_path.display()
-            ));
-        }
+    for file in packaged_openclaw_files() {
+        let installed_path = path.join(file.relative_path);
+        validate_packaged_openclaw_file(&installed_path, file.relative_path)?;
     }
 
+    Ok(())
+}
+
+fn validate_packaged_openclaw_file(path: &Path, relative_path: &str) -> Result<()> {
+    if !path.is_file() {
+        return Err(anyhow!("packaged file is missing: {}", path.display()));
+    }
+
+    if relative_path.ends_with(".sh") {
+        ensure_executable(path)
+            .with_context(|| format!("packaged script is not executable: {}", path.display()))?;
+    }
+
+    Ok(())
+}
+
+#[cfg(unix)]
+fn ensure_executable(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mode = std::fs::metadata(path)?.permissions().mode() & 0o777;
+    if mode & 0o111 == 0 {
+        return Err(anyhow!("mode {:o} does not include any execute bit", mode));
+    }
+
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn ensure_executable(_path: &Path) -> Result<()> {
     Ok(())
 }
 
@@ -1965,17 +2041,26 @@ mod tests {
         validate_openclaw_skill_content(&content).expect("packaged skill should validate");
         assert!(content.contains("\"openclaw\""));
         assert!(content.contains("\"requires\":{\"bins\":[\"clipmem\"]}"));
+        assert!(content.contains("license:"));
         assert!(content.contains("clipmem recall"));
         assert!(content.contains("clipmem timeline"));
+        assert!(content.contains("clipmem export"));
         assert!(content.contains("references/commands.md"));
+        assert!(content.contains("references/json-schema.md"));
+        assert!(content.contains("references/examples.md"));
+        assert!(content.contains("references/setup-check.md"));
         assert!(content.contains("references/troubleshooting.md"));
+        assert!(content.contains("scripts/check-setup.sh"));
         assert!(content.contains("what was that command I copied?"));
+        assert!(content.contains("toon"));
+        assert!(content.contains("--cursor"));
+        assert!(content.contains("schema_version"));
     }
 
     #[test]
     fn packaged_openclaw_package_embeds_reference_files() {
         let files = packaged_openclaw_files();
-        assert_eq!(files.len(), 3);
+        assert_eq!(files.len(), 7);
         assert!(files.iter().any(|file| file.relative_path == "SKILL.md"));
         assert!(files
             .iter()
@@ -1983,6 +2068,18 @@ mod tests {
         assert!(files
             .iter()
             .any(|file| file.relative_path == "references/troubleshooting.md"));
+        assert!(files
+            .iter()
+            .any(|file| file.relative_path == "references/json-schema.md"));
+        assert!(files
+            .iter()
+            .any(|file| file.relative_path == "references/examples.md"));
+        assert!(files
+            .iter()
+            .any(|file| file.relative_path == "references/setup-check.md"));
+        assert!(files
+            .iter()
+            .any(|file| file.relative_path == "scripts/check-setup.sh"));
     }
 
     #[test]
@@ -1994,5 +2091,14 @@ mod tests {
         assert!(references
             .iter()
             .any(|path| path == &PathBuf::from("references/troubleshooting.md")));
+        assert!(references
+            .iter()
+            .any(|path| path == &PathBuf::from("references/json-schema.md")));
+        assert!(references
+            .iter()
+            .any(|path| path == &PathBuf::from("references/examples.md")));
+        assert!(references
+            .iter()
+            .any(|path| path == &PathBuf::from("references/setup-check.md")));
     }
 }

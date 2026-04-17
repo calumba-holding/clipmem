@@ -182,6 +182,25 @@ fn run_cli_with_env(args: &[&str], envs: &[(&str, &str)]) -> process::Output {
         .expect("clipmem binary should execute with env")
 }
 
+fn run_command_with_env(
+    command_path: &Path,
+    args: &[&str],
+    envs: &[(&str, &str)],
+) -> process::Output {
+    let mut command = Command::new(command_path);
+    command.args(args);
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+    command.output().unwrap_or_else(|error| {
+        panic!(
+            "{} should execute with env: {}",
+            command_path.display(),
+            error
+        )
+    })
+}
+
 fn stdout_text(output: &process::Output) -> String {
     String::from_utf8(output.stdout.clone()).expect("stdout should be UTF-8")
 }
@@ -219,8 +238,25 @@ fn write_executable(path: &Path, content: &str) -> Result<()> {
     Ok(())
 }
 
+#[cfg(not(unix))]
+fn write_executable(path: &Path, content: &str) -> Result<()> {
+    fs::write(path, content)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_mode(path: &Path, mode: u32) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut perms = fs::metadata(path)?.permissions();
+    perms.set_mode(mode);
+    fs::set_permissions(path, perms)?;
+    Ok(())
+}
+
 fn write_openclaw_skill_package(skill_dir: &Path) -> Result<()> {
     fs::create_dir_all(skill_dir.join("references"))?;
+    fs::create_dir_all(skill_dir.join("scripts"))?;
     fs::write(
         skill_dir.join("SKILL.md"),
         include_str!("../extras/openclaw/clipboard_memory/SKILL.md"),
@@ -233,7 +269,51 @@ fn write_openclaw_skill_package(skill_dir: &Path) -> Result<()> {
         skill_dir.join("references/troubleshooting.md"),
         include_str!("../extras/openclaw/clipboard_memory/references/troubleshooting.md"),
     )?;
+    fs::write(
+        skill_dir.join("references/json-schema.md"),
+        include_str!("../extras/openclaw/clipboard_memory/references/json-schema.md"),
+    )?;
+    fs::write(
+        skill_dir.join("references/examples.md"),
+        include_str!("../extras/openclaw/clipboard_memory/references/examples.md"),
+    )?;
+    fs::write(
+        skill_dir.join("references/setup-check.md"),
+        include_str!("../extras/openclaw/clipboard_memory/references/setup-check.md"),
+    )?;
+    write_executable(
+        &skill_dir.join("scripts/check-setup.sh"),
+        include_str!("../extras/openclaw/clipboard_memory/scripts/check-setup.sh"),
+    )?;
     Ok(())
+}
+
+#[cfg(unix)]
+fn run_setup_check_script_with_launchctl(
+    script_path: &Path,
+    launchctl_row: Option<&str>,
+) -> Result<process::Output> {
+    let test_dir = temp_test_dir("setup-check-script");
+    let bin_dir = test_dir.join("bin");
+    fs::create_dir_all(&bin_dir)?;
+
+    write_executable(
+        &bin_dir.join("clipmem"),
+        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  printf 'clipmem test\\n'\n  exit 0\nfi\nif [ \"$1\" = \"doctor\" ] && [ \"$2\" = \"--json\" ]; then\n  printf '{\"fts5_create_virtual_table_ok\":true}\\n'\n  exit 0\nfi\nif [ \"$1\" = \"timeline\" ]; then\n  printf '{\"command\":\"timeline\",\"results\":[],\"truncated\":false,\"next_cursor\":null}\\n'\n  exit 0\nfi\nif [ \"$1\" = \"agents\" ] && [ \"$2\" = \"openclaw\" ] && [ \"$3\" = \"--help\" ]; then\n  exit 0\nfi\nif [ \"$1\" = \"agents\" ] && [ \"$2\" = \"openclaw\" ] && [ \"$3\" = \"doctor\" ]; then\n  exit 0\nfi\nprintf 'unexpected clipmem args: %s\\n' \"$*\" >&2\nexit 99\n",
+    )?;
+    write_executable(&bin_dir.join("uname"), "#!/bin/sh\nprintf 'Darwin\\n'\n")?;
+
+    let launchctl_content = match launchctl_row {
+        Some(row) => format!("#!/bin/sh\nprintf '%s\\n' '{}'\n", row),
+        None => "#!/bin/sh\nprintf '%s\\n' '123 0 unrelated.label'\n".to_string(),
+    };
+    write_executable(&bin_dir.join("launchctl"), &launchctl_content)?;
+
+    let path_value = format!("{}:/usr/bin:/bin", bin_dir.display());
+    let output = run_command_with_env(script_path, &[], &[("PATH", &path_value)]);
+
+    let _ = fs::remove_dir_all(&test_dir);
+    Ok(output)
 }
 
 #[test]
@@ -309,6 +389,51 @@ fn command_help_includes_examples_and_pagination_guidance() {
             );
         }
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn setup_check_script_treats_loaded_but_not_running_launchagent_as_stale() -> Result<()> {
+    let output = run_setup_check_script_with_launchctl(
+        Path::new("extras/openclaw/clipboard_memory/scripts/check-setup.sh"),
+        Some("- 0 io.openclaw.clipmem.watch"),
+    )?;
+
+    assert_eq!(status_code(&output), 1);
+    let stdout = stdout_text(&output);
+    assert!(stdout.contains("loaded but not running"));
+    assert!(stdout.contains("STALE: no recent captures and the LaunchAgent is not running"));
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn setup_check_script_treats_running_launchagent_as_soft_warning_only() -> Result<()> {
+    let output = run_setup_check_script_with_launchctl(
+        Path::new("extras/openclaw/clipboard_memory/scripts/check-setup.sh"),
+        Some("123 0 io.openclaw.clipmem.watch"),
+    )?;
+
+    assert_eq!(status_code(&output), 0);
+    let stdout = stdout_text(&output);
+    assert!(stdout.contains("is running (PID 123)"));
+    assert!(stdout.contains("All checks passed."));
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn setup_check_script_treats_missing_launchagent_as_stale() -> Result<()> {
+    let output = run_setup_check_script_with_launchctl(
+        Path::new("extras/openclaw/clipboard_memory/scripts/check-setup.sh"),
+        None,
+    )?;
+
+    assert_eq!(status_code(&output), 1);
+    let stdout = stdout_text(&output);
+    assert!(stdout.contains("is not loaded"));
+    assert!(stdout.contains("STALE: no recent captures and the LaunchAgent is not running"));
+    Ok(())
 }
 
 #[test]
@@ -1127,6 +1252,20 @@ fn agents_openclaw_install_print_and_uninstall_skill_work() -> Result<()> {
     assert!(install_dir.join("SKILL.md").is_file());
     assert!(install_dir.join("references/commands.md").is_file());
     assert!(install_dir.join("references/troubleshooting.md").is_file());
+    assert!(install_dir.join("references/json-schema.md").is_file());
+    assert!(install_dir.join("references/examples.md").is_file());
+    assert!(install_dir.join("references/setup-check.md").is_file());
+    assert!(install_dir.join("scripts/check-setup.sh").is_file());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mode = fs::metadata(install_dir.join("scripts/check-setup.sh"))?
+            .permissions()
+            .mode()
+            & 0o777;
+        assert!(mode & 0o111 != 0);
+    }
 
     let printed = run_cli_with_env(
         &["agents", "openclaw", "print-skill"],
@@ -1216,7 +1355,87 @@ fn agents_openclaw_doctor_fails_when_reference_file_is_missing() -> Result<()> {
     assert!(!output.status.success());
     let stdout = stdout_text(&output);
     assert!(stdout.contains("[FAIL] SKILL.md metadata"));
-    assert!(stdout.contains("referenced file is missing"));
+    assert!(stdout.contains("packaged file is missing"));
+
+    let _ = fs::remove_dir_all(&test_dir);
+    Ok(())
+}
+
+#[test]
+fn agents_openclaw_doctor_fails_when_setup_script_is_missing() -> Result<()> {
+    let test_dir = temp_test_dir("openclaw-doctor-missing-setup-script");
+    let bin_dir = test_dir.join("bin");
+    let workspace_dir = test_dir.join("workspace");
+    let skill_dir = workspace_dir.join("skills").join("clipboard_memory");
+    fs::create_dir_all(&bin_dir)?;
+    write_openclaw_skill_package(&skill_dir)?;
+    fs::remove_file(skill_dir.join("scripts/check-setup.sh"))?;
+
+    let openclaw_path = bin_dir.join("openclaw");
+    write_executable(
+        &openclaw_path,
+        &format!(
+            "#!/bin/sh\nif [ \"$1\" = \"config\" ] && [ \"$2\" = \"get\" ] && [ \"$3\" = \"agents.defaults.workspace\" ]; then\n  printf '%s\\n' '{}'\n  exit 0\nfi\nif [ \"$1\" = \"sandbox\" ] && [ \"$2\" = \"explain\" ]; then\n  printf 'sandbox disabled\\n'\n  exit 0\nfi\nexit 1\n",
+            workspace_dir.display()
+        ),
+    )?;
+
+    let clipmem_link = bin_dir.join("clipmem");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_clipmem"), &clipmem_link)?;
+
+    let output = run_cli_with_env(
+        &["agents", "openclaw", "doctor"],
+        &[
+            ("PATH", bin_dir.to_str().unwrap()),
+            ("HOME", test_dir.to_str().unwrap()),
+        ],
+    );
+    assert!(!output.status.success());
+    let stdout = stdout_text(&output);
+    assert!(stdout.contains("[FAIL] SKILL.md metadata"));
+    assert!(stdout.contains("packaged file is missing"));
+    assert!(stdout.contains("scripts/check-setup.sh"));
+
+    let _ = fs::remove_dir_all(&test_dir);
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn agents_openclaw_doctor_fails_when_setup_script_is_not_executable() -> Result<()> {
+    let test_dir = temp_test_dir("openclaw-doctor-nonexec-setup-script");
+    let bin_dir = test_dir.join("bin");
+    let workspace_dir = test_dir.join("workspace");
+    let skill_dir = workspace_dir.join("skills").join("clipboard_memory");
+    fs::create_dir_all(&bin_dir)?;
+    write_openclaw_skill_package(&skill_dir)?;
+    set_mode(&skill_dir.join("scripts/check-setup.sh"), 0o644)?;
+
+    let openclaw_path = bin_dir.join("openclaw");
+    write_executable(
+        &openclaw_path,
+        &format!(
+            "#!/bin/sh\nif [ \"$1\" = \"config\" ] && [ \"$2\" = \"get\" ] && [ \"$3\" = \"agents.defaults.workspace\" ]; then\n  printf '%s\\n' '{}'\n  exit 0\nfi\nif [ \"$1\" = \"sandbox\" ] && [ \"$2\" = \"explain\" ]; then\n  printf 'sandbox disabled\\n'\n  exit 0\nfi\nexit 1\n",
+            workspace_dir.display()
+        ),
+    )?;
+
+    let clipmem_link = bin_dir.join("clipmem");
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_clipmem"), &clipmem_link)?;
+
+    let output = run_cli_with_env(
+        &["agents", "openclaw", "doctor"],
+        &[
+            ("PATH", bin_dir.to_str().unwrap()),
+            ("HOME", test_dir.to_str().unwrap()),
+        ],
+    );
+    assert!(!output.status.success());
+    let stdout = stdout_text(&output);
+    assert!(stdout.contains("[FAIL] SKILL.md metadata"));
+    assert!(stdout.contains("packaged script is not executable"));
+    assert!(stdout.contains("scripts/check-setup.sh"));
 
     let _ = fs::remove_dir_all(&test_dir);
     Ok(())
@@ -1230,6 +1449,10 @@ fn portable_skill_package_is_present() -> Result<()> {
     assert!(portable_root
         .join("references/troubleshooting.md")
         .is_file());
+    assert!(portable_root.join("references/json-schema.md").is_file());
+    assert!(portable_root.join("references/examples.md").is_file());
+    assert!(portable_root.join("references/setup-check.md").is_file());
+    assert!(portable_root.join("scripts/check-setup.sh").is_file());
     Ok(())
 }
 
