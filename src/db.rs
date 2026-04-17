@@ -30,6 +30,43 @@ pub enum SearchMode {
     Literal,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
+pub enum TimelineSort {
+    Asc,
+    Desc,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum RetrievalKind {
+    Text,
+    Html,
+    Rtf,
+    Url,
+    File,
+    Image,
+    Pdf,
+    Binary,
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct RetrievalFilters {
+    since: Option<String>,
+    until: Option<String>,
+    hours: Option<u32>,
+    app: Option<String>,
+    bundle_id: Option<String>,
+    kind: Option<RetrievalKind>,
+    has_text: bool,
+    has_url: bool,
+    has_file_url: bool,
+    has_image: bool,
+    has_pdf: bool,
+    min_bytes: Option<usize>,
+    max_bytes: Option<usize>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct SearchResults {
     mode_used: SearchMode,
@@ -55,6 +92,12 @@ pub(crate) struct SearchCursorState {
     score: Option<f64>,
     last_seen_at: String,
     snapshot_id: i64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct TimelineCursorState {
+    observed_at: String,
+    event_id: i64,
 }
 
 impl SearchResults {
@@ -170,6 +213,154 @@ impl SearchMode {
             Self::Fts => "fts",
             Self::Literal => "literal",
         }
+    }
+}
+
+impl TimelineSort {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Asc => "asc",
+            Self::Desc => "desc",
+        }
+    }
+}
+
+impl RetrievalKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Html => "html",
+            Self::Rtf => "rtf",
+            Self::Url => "url",
+            Self::File => "file",
+            Self::Image => "image",
+            Self::Pdf => "pdf",
+            Self::Binary => "binary",
+            Self::Other => "other",
+        }
+    }
+}
+
+impl RetrievalFilters {
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub fn new(
+        since: Option<String>,
+        until: Option<String>,
+        hours: Option<u32>,
+        app: Option<String>,
+        bundle_id: Option<String>,
+        kind: Option<RetrievalKind>,
+        has_text: bool,
+        has_url: bool,
+        has_file_url: bool,
+        has_image: bool,
+        has_pdf: bool,
+        min_bytes: Option<usize>,
+        max_bytes: Option<usize>,
+    ) -> Self {
+        Self {
+            since,
+            until,
+            hours,
+            app,
+            bundle_id,
+            kind,
+            has_text,
+            has_url,
+            has_file_url,
+            has_image,
+            has_pdf,
+            min_bytes,
+            max_bytes,
+        }
+    }
+
+    #[must_use]
+    pub fn since(&self) -> Option<&str> {
+        self.since.as_deref()
+    }
+
+    #[must_use]
+    pub fn until(&self) -> Option<&str> {
+        self.until.as_deref()
+    }
+
+    #[must_use]
+    pub fn hours(&self) -> Option<u32> {
+        self.hours
+    }
+
+    #[must_use]
+    pub fn app(&self) -> Option<&str> {
+        self.app.as_deref()
+    }
+
+    #[must_use]
+    pub fn bundle_id(&self) -> Option<&str> {
+        self.bundle_id.as_deref()
+    }
+
+    #[must_use]
+    pub fn kind(&self) -> Option<RetrievalKind> {
+        self.kind
+    }
+
+    #[must_use]
+    pub fn has_text(&self) -> bool {
+        self.has_text
+    }
+
+    #[must_use]
+    pub fn has_url(&self) -> bool {
+        self.has_url
+    }
+
+    #[must_use]
+    pub fn has_file_url(&self) -> bool {
+        self.has_file_url
+    }
+
+    #[must_use]
+    pub fn has_image(&self) -> bool {
+        self.has_image
+    }
+
+    #[must_use]
+    pub fn has_pdf(&self) -> bool {
+        self.has_pdf
+    }
+
+    #[must_use]
+    pub fn min_bytes(&self) -> Option<usize> {
+        self.min_bytes
+    }
+
+    #[must_use]
+    pub fn max_bytes(&self) -> Option<usize> {
+        self.max_bytes
+    }
+}
+
+impl TimelineCursorState {
+    #[must_use]
+    pub(crate) fn new(observed_at: String, event_id: i64) -> Self {
+        Self {
+            observed_at,
+            event_id,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn observed_at(&self) -> &str {
+        &self.observed_at
+    }
+
+    #[must_use]
+    pub(crate) fn event_id(&self) -> i64 {
+        self.event_id
     }
 }
 

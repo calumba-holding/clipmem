@@ -97,7 +97,7 @@ mod tests {
     use super::{
         format_watch_capture_line, process_watch_snapshot, should_capture_change, WatchState,
     };
-    use crate::db::Database;
+    use crate::db::{Database, RetrievalFilters};
     use crate::model::{
         build_item, build_representation, build_snapshot, CaptureContext, CaptureStoreResult,
     };
@@ -114,7 +114,7 @@ mod tests {
         let should_capture = should_capture_change(snapshot.change_count(), true, &mut state);
 
         assert!(!should_capture);
-        assert!(db.recent(10, None)?.is_empty());
+        assert!(db.recent(10, &RetrievalFilters::default())?.is_empty());
         Ok(())
     }
 
@@ -132,7 +132,7 @@ mod tests {
 
         assert!(first.is_some());
         assert!(second.is_none());
-        assert_eq!(db.recent(10, None)?.len(), 1);
+        assert_eq!(db.recent(10, &RetrievalFilters::default())?.len(), 1);
         Ok(())
     }
 

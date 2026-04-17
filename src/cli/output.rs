@@ -7,7 +7,7 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::db::SearchResults;
 use crate::model::{
-    CaptureStoreResult, ClipboardSnapshot, DoctorReport, SearchHit, SnapshotDetails,
+    CaptureStoreResult, ClipboardSnapshot, DoctorReport, SearchHit, SnapshotDetails, TimelineEvent,
 };
 
 use super::OutputFormat;
@@ -30,6 +30,7 @@ pub(super) struct GetEnvelope {
     pub(super) schema_version: u32,
     pub(super) command: &'static str,
     pub(super) generated_at: String,
+    pub(super) applied_filters: Value,
     pub(super) snapshot: SnapshotDetails,
 }
 
@@ -70,7 +71,7 @@ pub(super) struct RecallEnvelope {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(super) struct ListRow {
+pub(super) struct SnapshotListRow {
     pub(super) snapshot_id: i64,
     pub(super) event_id: i64,
     pub(super) sha256: String,
@@ -89,6 +90,31 @@ pub(super) struct ListRow {
     pub(super) capture_count: usize,
     pub(super) score: Option<f64>,
     pub(super) why_matched: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct TimelineListRow {
+    pub(super) event_id: i64,
+    pub(super) snapshot_id: i64,
+    pub(super) observed_at: String,
+    pub(super) change_count: i64,
+    pub(super) kind: String,
+    pub(super) app_name: Option<String>,
+    pub(super) app_bundle_id: Option<String>,
+    pub(super) best_text: String,
+    pub(super) preview_text: String,
+    pub(super) urls: Vec<String>,
+    pub(super) file_paths: Vec<String>,
+    pub(super) total_bytes: usize,
+    pub(super) sha256: String,
+    pub(super) item_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub(super) enum ListRow {
+    Snapshot(SnapshotListRow),
+    Timeline(TimelineListRow),
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -114,7 +140,7 @@ pub(super) struct RecallOutputRow {
     pub(super) snippet: String,
 }
 
-impl ListRow {
+impl SnapshotListRow {
     #[must_use]
     pub(super) fn from_hit(hit: &SearchHit, include_why_matched: bool) -> Self {
         let why_matched = include_why_matched.then(|| {
@@ -146,6 +172,64 @@ impl ListRow {
             capture_count: hit.capture_count(),
             score: hit.score(),
             why_matched,
+        }
+    }
+}
+
+impl TimelineListRow {
+    #[must_use]
+    pub(super) fn from_event(event: &TimelineEvent) -> Self {
+        Self {
+            event_id: event.event_id(),
+            snapshot_id: event.snapshot_id(),
+            observed_at: event.observed_at().to_string(),
+            change_count: event.change_count(),
+            kind: event.snapshot_kind().as_str().to_string(),
+            app_name: event.frontmost_app_name().map(ToOwned::to_owned),
+            app_bundle_id: event.frontmost_app_bundle_id().map(ToOwned::to_owned),
+            best_text: event.best_text().to_string(),
+            preview_text: event.preview_text().to_string(),
+            urls: event.urls().to_vec(),
+            file_paths: event.file_paths().to_vec(),
+            total_bytes: event.total_bytes(),
+            sha256: event.sha256().to_string(),
+            item_count: event.item_count(),
+        }
+    }
+}
+
+impl ListRow {
+    #[must_use]
+    pub(super) fn from_hit(hit: &SearchHit, include_why_matched: bool) -> Self {
+        Self::Snapshot(SnapshotListRow::from_hit(hit, include_why_matched))
+    }
+
+    #[must_use]
+    pub(super) fn from_timeline_event(event: &TimelineEvent) -> Self {
+        Self::Timeline(TimelineListRow::from_event(event))
+    }
+
+    #[must_use]
+    fn app_name(&self) -> Option<&str> {
+        match self {
+            Self::Snapshot(row) => row.app_name.as_deref(),
+            Self::Timeline(row) => row.app_name.as_deref(),
+        }
+    }
+
+    #[must_use]
+    fn app_bundle_id(&self) -> Option<&str> {
+        match self {
+            Self::Snapshot(row) => row.app_bundle_id.as_deref(),
+            Self::Timeline(row) => row.app_bundle_id.as_deref(),
+        }
+    }
+
+    #[must_use]
+    fn best_text(&self) -> &str {
+        match self {
+            Self::Snapshot(row) => &row.best_text,
+            Self::Timeline(row) => &row.best_text,
         }
     }
 }
@@ -326,6 +410,42 @@ pub(super) fn render_hits_text(hits: &[SearchHit]) -> String {
     out
 }
 
+pub(super) fn render_timeline_text(events: &[TimelineEvent]) -> String {
+    let mut out = String::new();
+    for event in events {
+        let app = event
+            .frontmost_app_name()
+            .or(event.frontmost_app_bundle_id())
+            .unwrap_or("unknown app");
+
+        let _ = writeln!(
+            out,
+            "event {} · snapshot {} · {} · change_count={} · {} · {} bytes",
+            event.event_id(),
+            event.snapshot_id(),
+            format_utc_timestamp(event.observed_at()),
+            event.change_count(),
+            app,
+            event.total_bytes()
+        );
+
+        if !event.best_text().is_empty() {
+            let _ = writeln!(out, "  best:    {}", event.best_text());
+        }
+        if !event.preview_text().is_empty() && event.preview_text() != event.best_text() {
+            let _ = writeln!(out, "  preview: {}", event.preview_text());
+        }
+        if !event.urls().is_empty() {
+            let _ = writeln!(out, "  urls:    {}", event.urls().join(", "));
+        }
+        if !event.file_paths().is_empty() {
+            let _ = writeln!(out, "  files:   {}", event.file_paths().join(", "));
+        }
+        push_blank_line(&mut out);
+    }
+    out
+}
+
 pub(super) fn render_search_results_text(results: &SearchResults) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "search mode: {}", results.mode_used().as_str());
@@ -496,32 +616,54 @@ fn render_list_markdown(envelope: &ListEnvelope) -> String {
         return out;
     }
 
-    let _ = writeln!(
-        out,
-        "| snapshot_id | kind | observed_at | app | best_text | score |"
-    );
-    let _ = writeln!(out, "| --- | --- | --- | --- | --- | --- |");
-    for row in &envelope.results {
-        let app = row
-            .app_name
-            .as_deref()
-            .or(row.app_bundle_id.as_deref())
-            .unwrap_or("unknown app");
-        let best_text = truncate_for_markdown(&row.best_text, 100);
-        let score = row
-            .score
-            .map(|value| format!("{value:.3}"))
-            .unwrap_or_else(|| "null".to_string());
+    if envelope.command == "timeline" {
         let _ = writeln!(
             out,
-            "| {} | {} | {} | {} | {} | {} |",
-            row.snapshot_id,
-            escape_markdown_cell(&row.kind),
-            escape_markdown_cell(&row.observed_at),
-            escape_markdown_cell(app),
-            escape_markdown_cell(&best_text),
-            score
+            "| event_id | snapshot_id | observed_at | app | best_text |"
         );
+        let _ = writeln!(out, "| --- | --- | --- | --- | --- |");
+    } else {
+        let _ = writeln!(
+            out,
+            "| snapshot_id | kind | observed_at | app | best_text | score |"
+        );
+        let _ = writeln!(out, "| --- | --- | --- | --- | --- | --- |");
+    }
+    for row in &envelope.results {
+        let app = row
+            .app_name()
+            .or(row.app_bundle_id())
+            .unwrap_or("unknown app");
+        let best_text = truncate_for_markdown(row.best_text(), 100);
+        match row {
+            ListRow::Snapshot(row) => {
+                let score = row
+                    .score
+                    .map(|value| format!("{value:.3}"))
+                    .unwrap_or_else(|| "null".to_string());
+                let _ = writeln!(
+                    out,
+                    "| {} | {} | {} | {} | {} | {} |",
+                    row.snapshot_id,
+                    escape_markdown_cell(&row.kind),
+                    escape_markdown_cell(&row.observed_at),
+                    escape_markdown_cell(app),
+                    escape_markdown_cell(&best_text),
+                    score
+                );
+            }
+            ListRow::Timeline(row) => {
+                let _ = writeln!(
+                    out,
+                    "| {} | {} | {} | {} | {} |",
+                    row.event_id,
+                    row.snapshot_id,
+                    escape_markdown_cell(&row.observed_at),
+                    escape_markdown_cell(app),
+                    escape_markdown_cell(&best_text)
+                );
+            }
+        }
     }
 
     out
@@ -533,6 +675,7 @@ fn render_get_markdown(envelope: &GetEnvelope) -> String {
     let _ = writeln!(out, "# clipmem get");
     let _ = writeln!(out);
     let _ = writeln!(out, "- Generated at: {}", envelope.generated_at);
+    let _ = writeln!(out, "- Filters: {}", render_filter_pairs(&envelope.applied_filters));
     let _ = writeln!(out, "- Snapshot: {}", snapshot.snapshot_id());
     let _ = writeln!(out, "- Kind: {}", snapshot.snapshot_kind());
     let _ = writeln!(out, "- First seen: {}", snapshot.first_observed_at());
@@ -682,26 +825,45 @@ fn render_list_toon(envelope: &ListEnvelope) -> String {
         )
     );
 
-    let fields = [
-        "snapshot_id",
-        "event_id",
-        "sha256",
-        "kind",
-        "observed_at",
-        "first_seen_at",
-        "last_seen_at",
-        "app_name",
-        "app_bundle_id",
-        "best_text",
-        "preview_text",
-        "urls",
-        "file_paths",
-        "item_count",
-        "total_bytes",
-        "capture_count",
-        "score",
-        "why_matched",
-    ];
+    let fields = if envelope.command == "timeline" {
+        vec![
+            "event_id",
+            "snapshot_id",
+            "observed_at",
+            "change_count",
+            "kind",
+            "app_name",
+            "app_bundle_id",
+            "best_text",
+            "preview_text",
+            "urls",
+            "file_paths",
+            "total_bytes",
+            "sha256",
+            "item_count",
+        ]
+    } else {
+        vec![
+            "snapshot_id",
+            "event_id",
+            "sha256",
+            "kind",
+            "observed_at",
+            "first_seen_at",
+            "last_seen_at",
+            "app_name",
+            "app_bundle_id",
+            "best_text",
+            "preview_text",
+            "urls",
+            "file_paths",
+            "item_count",
+            "total_bytes",
+            "capture_count",
+            "score",
+            "why_matched",
+        ]
+    };
     let _ = writeln!(
         out,
         "results[#{}\t]{{{}}}:",
@@ -710,37 +872,57 @@ fn render_list_toon(envelope: &ListEnvelope) -> String {
     );
 
     for row in &envelope.results {
-        let values = vec![
-            Value::from(row.snapshot_id),
-            Value::from(row.event_id),
-            Value::String(row.sha256.clone()),
-            Value::String(row.kind.clone()),
-            Value::String(row.observed_at.clone()),
-            Value::String(row.first_seen_at.clone()),
-            Value::String(row.last_seen_at.clone()),
-            row.app_name
-                .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null),
-            row.app_bundle_id
-                .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null),
-            Value::String(row.best_text.clone()),
-            Value::String(row.preview_text.clone()),
-            Value::String(serde_json::to_string(&row.urls).unwrap_or_else(|_| "[]".to_string())),
-            Value::String(
-                serde_json::to_string(&row.file_paths).unwrap_or_else(|_| "[]".to_string()),
-            ),
-            Value::from(row.item_count as u64),
-            Value::from(row.total_bytes as u64),
-            Value::from(row.capture_count as u64),
-            row.score.map(Value::from).unwrap_or(Value::Null),
-            row.why_matched
-                .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null),
-        ];
+        let values = match row {
+            ListRow::Snapshot(row) => vec![
+                Value::from(row.snapshot_id),
+                Value::from(row.event_id),
+                Value::String(row.sha256.clone()),
+                Value::String(row.kind.clone()),
+                Value::String(row.observed_at.clone()),
+                Value::String(row.first_seen_at.clone()),
+                Value::String(row.last_seen_at.clone()),
+                row.app_name.clone().map(Value::String).unwrap_or(Value::Null),
+                row.app_bundle_id
+                    .clone()
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
+                Value::String(row.best_text.clone()),
+                Value::String(row.preview_text.clone()),
+                Value::String(serde_json::to_string(&row.urls).unwrap_or_else(|_| "[]".to_string())),
+                Value::String(
+                    serde_json::to_string(&row.file_paths).unwrap_or_else(|_| "[]".to_string()),
+                ),
+                Value::from(row.item_count as u64),
+                Value::from(row.total_bytes as u64),
+                Value::from(row.capture_count as u64),
+                row.score.map(Value::from).unwrap_or(Value::Null),
+                row.why_matched
+                    .clone()
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
+            ],
+            ListRow::Timeline(row) => vec![
+                Value::from(row.event_id),
+                Value::from(row.snapshot_id),
+                Value::String(row.observed_at.clone()),
+                Value::from(row.change_count),
+                Value::String(row.kind.clone()),
+                row.app_name.clone().map(Value::String).unwrap_or(Value::Null),
+                row.app_bundle_id
+                    .clone()
+                    .map(Value::String)
+                    .unwrap_or(Value::Null),
+                Value::String(row.best_text.clone()),
+                Value::String(row.preview_text.clone()),
+                Value::String(serde_json::to_string(&row.urls).unwrap_or_else(|_| "[]".to_string())),
+                Value::String(
+                    serde_json::to_string(&row.file_paths).unwrap_or_else(|_| "[]".to_string()),
+                ),
+                Value::from(row.total_bytes as u64),
+                Value::String(row.sha256.clone()),
+                Value::from(row.item_count as u64),
+            ],
+        };
         let encoded = values
             .iter()
             .map(encode_toon_scalar)
@@ -999,14 +1181,15 @@ mod tests {
     use crate::db::{SearchMode, SearchResults};
     use crate::model::{
         build_item, build_representation, build_snapshot, CaptureContext, CaptureEvent,
-        CaptureStoreResult, DoctorReport, SearchHit, SnapshotDetails, SnapshotKind,
+        CaptureStoreResult, DoctorReport, SearchHit, SnapshotDetails, SnapshotKind, TimelineEvent,
     };
 
     use super::{
         render_capture_once_text, render_doctor_text, render_get_markdown, render_hits_text,
         render_list_markdown, render_list_toon, render_recall_markdown, render_recall_toon,
-        render_search_results_text, render_snapshot_text, GetEnvelope, ListEnvelope, ListRow,
-        RecallEnvelope, RecallMatchConfidence, RecallOutputRow, OUTPUT_SCHEMA_VERSION,
+        render_search_results_text, render_snapshot_text, render_timeline_text, GetEnvelope,
+        ListEnvelope, ListRow, RecallEnvelope, RecallMatchConfidence, RecallOutputRow,
+        SnapshotListRow, OUTPUT_SCHEMA_VERSION,
     };
 
     #[test]
@@ -1144,8 +1327,32 @@ mod tests {
     }
 
     #[test]
+    fn render_timeline_text_reports_event_history() {
+        let text = render_timeline_text(&[TimelineEvent::new(
+            21,
+            7,
+            "2026-04-16 11:00:00".to_string(),
+            3,
+            "abc123".to_string(),
+            SnapshotKind::PlainText,
+            "git push".to_string(),
+            "git push".to_string(),
+            Some("Terminal".to_string()),
+            Some("com.apple.Terminal".to_string()),
+            vec!["https://example.com".to_string()],
+            vec!["/Users/test/repo".to_string()],
+            8,
+            1,
+        )]);
+
+        assert!(text.contains("event 21"));
+        assert!(text.contains("change_count=3"));
+        assert!(text.contains("best:    git push"));
+    }
+
+    #[test]
     fn markdown_and_toon_render_envelopes() {
-        let row = ListRow {
+        let row = ListRow::Snapshot(SnapshotListRow {
             snapshot_id: 1,
             event_id: 2,
             sha256: "abc".to_string(),
@@ -1164,7 +1371,7 @@ mod tests {
             capture_count: 1,
             score: Some(0.3),
             why_matched: Some("git status".to_string()),
-        };
+        });
         let envelope = ListEnvelope {
             schema_version: OUTPUT_SCHEMA_VERSION,
             command: "search",
@@ -1194,6 +1401,7 @@ mod tests {
             schema_version: OUTPUT_SCHEMA_VERSION,
             command: "get",
             generated_at: "2026-04-17T10:00:00Z".to_string(),
+            applied_filters: json!({}),
             snapshot: SnapshotDetails::new(
                 7,
                 "abc123".to_string(),

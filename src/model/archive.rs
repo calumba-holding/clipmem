@@ -42,6 +42,25 @@ pub struct CaptureEvent {
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize)]
+pub struct TimelineEvent {
+    event_id: i64,
+    snapshot_id: i64,
+    observed_at: String,
+    change_count: i64,
+    sha256: String,
+    snapshot_kind: SnapshotKind,
+    best_text: String,
+    preview_text: String,
+    frontmost_app_name: Option<String>,
+    frontmost_app_bundle_id: Option<String>,
+    urls: Vec<String>,
+    file_paths: Vec<String>,
+    total_bytes: usize,
+    item_count: usize,
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, Serialize)]
 pub struct SnapshotDetails {
     snapshot_id: i64,
     sha256: String,
@@ -260,6 +279,114 @@ impl CaptureEvent {
     #[must_use]
     pub fn frontmost_app_bundle_id(&self) -> Option<&str> {
         self.frontmost_app_bundle_id.as_deref()
+    }
+}
+
+impl TimelineEvent {
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub(crate) fn new(
+        event_id: i64,
+        snapshot_id: i64,
+        observed_at: String,
+        change_count: i64,
+        sha256: String,
+        snapshot_kind: SnapshotKind,
+        best_text: String,
+        preview_text: String,
+        frontmost_app_name: Option<String>,
+        frontmost_app_bundle_id: Option<String>,
+        urls: Vec<String>,
+        file_paths: Vec<String>,
+        total_bytes: usize,
+        item_count: usize,
+    ) -> Self {
+        Self {
+            event_id,
+            snapshot_id,
+            observed_at,
+            change_count,
+            sha256,
+            snapshot_kind,
+            best_text,
+            preview_text,
+            frontmost_app_name,
+            frontmost_app_bundle_id,
+            urls,
+            file_paths,
+            total_bytes,
+            item_count,
+        }
+    }
+
+    #[must_use]
+    pub fn event_id(&self) -> i64 {
+        self.event_id
+    }
+
+    #[must_use]
+    pub fn snapshot_id(&self) -> i64 {
+        self.snapshot_id
+    }
+
+    #[must_use]
+    pub fn observed_at(&self) -> &str {
+        &self.observed_at
+    }
+
+    #[must_use]
+    pub fn change_count(&self) -> i64 {
+        self.change_count
+    }
+
+    #[must_use]
+    pub fn sha256(&self) -> &str {
+        &self.sha256
+    }
+
+    #[must_use]
+    pub fn snapshot_kind(&self) -> SnapshotKind {
+        self.snapshot_kind
+    }
+
+    #[must_use]
+    pub fn best_text(&self) -> &str {
+        &self.best_text
+    }
+
+    #[must_use]
+    pub fn preview_text(&self) -> &str {
+        &self.preview_text
+    }
+
+    #[must_use]
+    pub fn frontmost_app_name(&self) -> Option<&str> {
+        self.frontmost_app_name.as_deref()
+    }
+
+    #[must_use]
+    pub fn frontmost_app_bundle_id(&self) -> Option<&str> {
+        self.frontmost_app_bundle_id.as_deref()
+    }
+
+    #[must_use]
+    pub fn urls(&self) -> &[String] {
+        &self.urls
+    }
+
+    #[must_use]
+    pub fn file_paths(&self) -> &[String] {
+        &self.file_paths
+    }
+
+    #[must_use]
+    pub fn total_bytes(&self) -> usize {
+        self.total_bytes
+    }
+
+    #[must_use]
+    pub fn item_count(&self) -> usize {
+        self.item_count
     }
 }
 

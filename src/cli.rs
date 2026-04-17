@@ -2,8 +2,9 @@ use anyhow::Result;
 use clap::{error::ErrorKind, Args, CommandFactory, Parser, Subcommand, ValueEnum};
 use std::ffi::OsString;
 use std::path::PathBuf;
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-use crate::db::SearchMode;
+use crate::db::{RetrievalFilters, RetrievalKind, SearchMode, TimelineSort};
 
 mod commands;
 mod db_path;
@@ -101,8 +102,10 @@ enum Command {
     CaptureOnce(CaptureOnceArgs),
     /// Search the clipboard archive.
     Search(SearchArgs),
-    /// Show recently captured clipboard states.
+    /// Show recent unique clipboard states (deduplicated by snapshot).
     Recent(RecentArgs),
+    /// Show chronological clipboard capture events (one row per observation).
+    Timeline(TimelineArgs),
     /// Recall the most likely clipboard item for an agent query.
     Recall(RecallArgs),
     /// Show a stored snapshot in detail.
@@ -153,6 +156,9 @@ struct SearchArgs {
     cursor: Option<String>,
 
     #[command(flatten)]
+    filters: RetrievalFilterArgs,
+
+    #[command(flatten)]
     output: OutputArgs,
 }
 
@@ -195,19 +201,138 @@ fn parse_bounded_limit(value: &str) -> Result<usize, LimitParseError> {
     }
 }
 
+fn parse_rfc3339_timestamp(value: &str) -> Result<String, LimitParseError> {
+    OffsetDateTime::parse(value, &Rfc3339)
+        .map_err(|_| LimitParseError(format!("invalid RFC3339 timestamp '{value}'")))
+        .and_then(|timestamp| {
+            timestamp
+                .format(&Rfc3339)
+                .map_err(|error| LimitParseError(format!("format timestamp '{value}': {error}")))
+        })
+}
+
+fn parse_nonnegative_bytes(value: &str) -> Result<usize, LimitParseError> {
+    value
+        .parse::<usize>()
+        .map_err(|_| LimitParseError(format!("invalid integer value '{value}'")))
+}
+
+#[derive(Debug, Clone, Args)]
+pub(super) struct RetrievalFilterArgs {
+    /// Include captures observed at or after this RFC3339 timestamp. When combined with `--hours`, this takes precedence.
+    #[arg(long, value_parser = parse_rfc3339_timestamp)]
+    since: Option<String>,
+
+    /// Include captures observed at or before this RFC3339 timestamp.
+    #[arg(long, value_parser = parse_rfc3339_timestamp)]
+    until: Option<String>,
+
+    /// Restrict results to the most recent N hours unless `--since` is provided.
+    #[arg(long)]
+    hours: Option<u32>,
+
+    /// Filter by recorded frontmost app name using a case-insensitive substring match.
+    #[arg(long)]
+    app: Option<String>,
+
+    /// Filter by recorded frontmost bundle id using a case-insensitive exact match.
+    #[arg(long)]
+    bundle_id: Option<String>,
+
+    /// Filter by clipboard content shape. `file` means file URLs; `other` means mixed or empty snapshots.
+    #[arg(long, value_enum)]
+    kind: Option<RetrievalKind>,
+
+    /// Require at least one non-empty text-like representation.
+    #[arg(long, default_value_t = false)]
+    has_text: bool,
+
+    /// Require at least one URL representation.
+    #[arg(long, default_value_t = false)]
+    has_url: bool,
+
+    /// Require at least one file URL representation.
+    #[arg(long, default_value_t = false)]
+    has_file_url: bool,
+
+    /// Require at least one image representation.
+    #[arg(long, default_value_t = false)]
+    has_image: bool,
+
+    /// Require at least one PDF representation.
+    #[arg(long, default_value_t = false)]
+    has_pdf: bool,
+
+    /// Require snapshot size to be at least this many bytes.
+    #[arg(long, value_parser = parse_nonnegative_bytes)]
+    min_bytes: Option<usize>,
+
+    /// Require snapshot size to be at most this many bytes.
+    #[arg(long, value_parser = parse_nonnegative_bytes)]
+    max_bytes: Option<usize>,
+}
+
+impl RetrievalFilterArgs {
+    pub(super) fn normalized(&self) -> std::result::Result<RetrievalFilters, clap::Error> {
+        validate_time_window(self.since.as_deref(), self.until.as_deref())?;
+        validate_byte_window(self.min_bytes, self.max_bytes)?;
+
+        let app = normalize_nonempty_filter_value(self.app.as_deref(), "--app")?;
+        let bundle_id = normalize_nonempty_filter_value(self.bundle_id.as_deref(), "--bundle-id")?;
+        let since = self.since.clone();
+        let hours = if self.since.is_some() { None } else { self.hours };
+
+        Ok(RetrievalFilters::new(
+            since,
+            self.until.clone(),
+            hours,
+            app,
+            bundle_id,
+            self.kind,
+            self.has_text,
+            self.has_url,
+            self.has_file_url,
+            self.has_image,
+            self.has_pdf,
+            self.min_bytes,
+            self.max_bytes,
+        ))
+    }
+}
+
 #[derive(Debug, Args)]
 struct RecentArgs {
     /// Maximum number of results.
     #[arg(long, default_value_t = 10, value_parser = parse_bounded_limit)]
     limit: usize,
 
-    /// Restrict results to the most recent N hours.
+    /// Resume a paginated result set using the opaque `next_cursor` from a prior response.
     #[arg(long)]
-    hours: Option<u32>,
+    cursor: Option<String>,
+
+    #[command(flatten)]
+    filters: RetrievalFilterArgs,
+
+    #[command(flatten)]
+    output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
+struct TimelineArgs {
+    /// Maximum number of results.
+    #[arg(long, default_value_t = 10, value_parser = parse_bounded_limit)]
+    limit: usize,
 
     /// Resume a paginated result set using the opaque `next_cursor` from a prior response.
     #[arg(long)]
     cursor: Option<String>,
+
+    /// Sort timeline events chronologically ascending or descending.
+    #[arg(long, value_enum, default_value_t = TimelineSort::Desc)]
+    sort: TimelineSort,
+
+    #[command(flatten)]
+    filters: RetrievalFilterArgs,
 
     #[command(flatten)]
     output: OutputArgs,
@@ -225,10 +350,6 @@ struct RecallArgs {
     /// Maximum number of ranked candidates to consider.
     #[arg(long, default_value_t = 5, value_parser = parse_bounded_limit)]
     limit: usize,
-
-    /// Restrict recent fallback candidates to the most recent N hours.
-    #[arg(long)]
-    hours: Option<u32>,
 
     /// Expand the best candidate text instead of returning the compact form.
     #[arg(long, default_value_t = false)]
@@ -251,6 +372,9 @@ struct RecallArgs {
     prefer_app: Option<String>,
 
     #[command(flatten)]
+    filters: RetrievalFilterArgs,
+
+    #[command(flatten)]
     output: RecallOutputArgs,
 }
 
@@ -262,6 +386,9 @@ struct GetArgs {
     /// Number of recent events to include.
     #[arg(long, default_value_t = 10, value_parser = parse_bounded_limit)]
     events: usize,
+
+    #[command(flatten)]
+    filters: RetrievalFilterArgs,
 
     #[command(flatten)]
     output: OutputArgs,
@@ -283,6 +410,9 @@ struct ExportArgs {
     /// Destination path for the raw bytes.
     #[arg(long)]
     out: PathBuf,
+
+    #[command(flatten)]
+    filters: RetrievalFilterArgs,
 }
 
 #[derive(Debug, Args)]
@@ -321,21 +451,86 @@ fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
     match &cli.command {
         Command::Search(args) => {
             args.output.resolved()?;
+            args.filters.normalized()?;
         }
         Command::Recent(args) => {
             args.output.resolved()?;
+            args.filters.normalized()?;
         }
-        Command::Recall(_args) => {}
+        Command::Timeline(args) => {
+            args.output.resolved()?;
+            args.filters.normalized()?;
+        }
+        Command::Recall(args) => {
+            args.filters.normalized()?;
+        }
         Command::Get(args) => {
             args.output.resolved()?;
+            args.filters.normalized()?;
+        }
+        Command::Export(args) => {
+            args.filters.normalized()?;
         }
         Command::Watch(_)
         | Command::CaptureOnce(_)
-        | Command::Export(_)
         | Command::Doctor(_) => {}
     }
 
     Ok(())
+}
+
+fn validate_time_window(
+    since: Option<&str>,
+    until: Option<&str>,
+) -> std::result::Result<(), clap::Error> {
+    let Some(since) = since else {
+        return Ok(());
+    };
+    let Some(until) = until else {
+        return Ok(());
+    };
+
+    let since = OffsetDateTime::parse(since, &Rfc3339)
+        .map_err(|error| Cli::command().error(ErrorKind::InvalidValue, error.to_string()))?;
+    let until = OffsetDateTime::parse(until, &Rfc3339)
+        .map_err(|error| Cli::command().error(ErrorKind::InvalidValue, error.to_string()))?;
+
+    if since > until {
+        Err(Cli::command().error(
+            ErrorKind::InvalidValue,
+            "`--since` must be earlier than or equal to `--until`",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_byte_window(
+    min_bytes: Option<usize>,
+    max_bytes: Option<usize>,
+) -> std::result::Result<(), clap::Error> {
+    if matches!((min_bytes, max_bytes), (Some(min), Some(max)) if min > max) {
+        return Err(Cli::command().error(
+            ErrorKind::InvalidValue,
+            "`--min-bytes` must be less than or equal to `--max-bytes`",
+        ));
+    }
+
+    Ok(())
+}
+
+fn normalize_nonempty_filter_value(
+    value: Option<&str>,
+    flag: &str,
+) -> std::result::Result<Option<String>, clap::Error> {
+    match value.map(str::trim) {
+        Some("") => Err(Cli::command().error(
+            ErrorKind::InvalidValue,
+            format!("{flag} cannot be empty"),
+        )),
+        Some(trimmed) => Ok(Some(trimmed.to_string())),
+        None => Ok(None),
+    }
 }
 
 #[cfg(test)]
@@ -344,7 +539,7 @@ mod tests {
 
     use clap::Parser;
 
-    use crate::db::SearchMode;
+    use crate::db::{SearchMode, TimelineSort};
 
     use super::{Cli, Command, OutputFormat, RecallOutputFormat};
 
@@ -409,6 +604,53 @@ mod tests {
     }
 
     #[test]
+    fn timeline_command_parses_filters_and_sort() {
+        let cli = Cli::parse_from([
+            "clipmem",
+            "timeline",
+            "--since",
+            "2026-04-16T09:00:00Z",
+            "--until",
+            "2026-04-16T10:00:00Z",
+            "--hours",
+            "24",
+            "--limit",
+            "5",
+            "--cursor",
+            "abcd",
+            "--sort",
+            "asc",
+            "--format",
+            "md",
+        ]);
+
+        match cli.command {
+            Command::Timeline(args) => {
+                assert_eq!(args.filters.since.as_deref(), Some("2026-04-16T09:00:00Z"));
+                assert_eq!(args.filters.until.as_deref(), Some("2026-04-16T10:00:00Z"));
+                assert_eq!(args.filters.hours, Some(24));
+                assert_eq!(args.limit, 5);
+                assert_eq!(args.cursor.as_deref(), Some("abcd"));
+                assert_eq!(args.sort, TimelineSort::Asc);
+                assert_eq!(args.output.resolved().unwrap(), OutputFormat::Md);
+            }
+            other => panic!("expected timeline command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn timeline_command_defaults_to_desc_sort() {
+        let cli = Cli::parse_from(["clipmem", "timeline"]);
+
+        match cli.command {
+            Command::Timeline(args) => {
+                assert_eq!(args.sort, TimelineSort::Desc);
+            }
+            other => panic!("expected timeline command, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn recall_command_parses_optional_query_and_flags() {
         let cli = Cli::parse_from([
             "clipmem",
@@ -434,7 +676,7 @@ mod tests {
                 assert_eq!(args.query.as_deref(), Some("git status"));
                 assert_eq!(args.output.resolved(), RecallOutputFormat::Json);
                 assert_eq!(args.limit, 4);
-                assert_eq!(args.hours, Some(24));
+                assert_eq!(args.filters.hours, Some(24));
                 assert!(args.full);
                 assert!(args.quote);
                 assert_eq!(args.min_score, Some(0.7));
@@ -477,6 +719,157 @@ mod tests {
         assert!(error
             .to_string()
             .contains("`--json` is only compatible with `--format json`"));
+    }
+
+    #[test]
+    fn timeline_command_rejects_inverted_time_range() {
+        let error = super::run_from([
+            "clipmem",
+            "timeline",
+            "--since",
+            "2026-04-16T11:00:00Z",
+            "--until",
+            "2026-04-16T10:00:00Z",
+        ])
+        .expect_err("invalid time range should fail");
+
+        assert!(error
+            .to_string()
+            .contains("`--since` must be earlier than or equal to `--until`"));
+    }
+
+    #[test]
+    fn get_command_parses_shared_filters() {
+        let cli = Cli::parse_from([
+            "clipmem",
+            "get",
+            "42",
+            "--events",
+            "3",
+            "--app",
+            "terminal",
+            "--bundle-id",
+            "com.apple.Terminal",
+            "--kind",
+            "url",
+            "--has-url",
+            "--min-bytes",
+            "20",
+            "--max-bytes",
+            "200",
+            "--format",
+            "json",
+        ]);
+
+        match cli.command {
+            Command::Get(args) => {
+                assert_eq!(args.snapshot_id, 42);
+                assert_eq!(args.events, 3);
+                assert_eq!(args.filters.app.as_deref(), Some("terminal"));
+                assert_eq!(
+                    args.filters.bundle_id.as_deref(),
+                    Some("com.apple.Terminal")
+                );
+                assert!(matches!(args.filters.kind, Some(crate::db::RetrievalKind::Url)));
+                assert!(args.filters.has_url);
+                assert_eq!(args.filters.min_bytes, Some(20));
+                assert_eq!(args.filters.max_bytes, Some(200));
+                assert_eq!(args.output.resolved().unwrap(), OutputFormat::Json);
+            }
+            other => panic!("expected get command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn export_command_parses_shared_filters() {
+        let cli = Cli::parse_from([
+            "clipmem",
+            "export",
+            "42",
+            "--item",
+            "1",
+            "--uti",
+            "public.url",
+            "--out",
+            "/tmp/clipmem.url",
+            "--since",
+            "2026-04-16T09:00:00Z",
+            "--hours",
+            "24",
+            "--app",
+            "safari",
+            "--kind",
+            "file",
+            "--has-file-url",
+        ]);
+
+        match cli.command {
+            Command::Export(args) => {
+                assert_eq!(args.snapshot_id, 42);
+                assert_eq!(args.item, 1);
+                assert_eq!(args.uti, "public.url");
+                assert_eq!(args.out, PathBuf::from("/tmp/clipmem.url"));
+                assert_eq!(args.filters.since.as_deref(), Some("2026-04-16T09:00:00Z"));
+                assert_eq!(args.filters.hours, Some(24));
+                assert_eq!(args.filters.app.as_deref(), Some("safari"));
+                assert!(matches!(args.filters.kind, Some(crate::db::RetrievalKind::File)));
+                assert!(args.filters.has_file_url);
+            }
+            other => panic!("expected export command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn shared_filters_reject_inverted_byte_window() {
+        let error = super::run_from([
+            "clipmem",
+            "search",
+            "git",
+            "--min-bytes",
+            "200",
+            "--max-bytes",
+            "20",
+        ])
+        .expect_err("invalid byte range should fail");
+
+        assert!(error
+            .to_string()
+            .contains("`--min-bytes` must be less than or equal to `--max-bytes`"));
+    }
+
+    #[test]
+    fn shared_filters_reject_empty_app_and_bundle_id_values() {
+        let app_error = super::run_from(["clipmem", "recent", "--app", "   "])
+            .expect_err("empty app filter should fail");
+        assert!(app_error.to_string().contains("--app cannot be empty"));
+
+        let bundle_error = super::run_from(["clipmem", "timeline", "--bundle-id", ""])
+            .expect_err("empty bundle id filter should fail");
+        assert!(bundle_error
+            .to_string()
+            .contains("--bundle-id cannot be empty"));
+    }
+
+    #[test]
+    fn shared_filters_normalize_hours_away_when_since_is_present() {
+        let cli = Cli::parse_from([
+            "clipmem",
+            "search",
+            "--since",
+            "2026-04-16T09:00:00Z",
+            "--hours",
+            "24",
+            "git",
+        ]);
+
+        match cli.command {
+            Command::Search(args) => {
+                let filters = args.filters.normalized().expect("filters should normalize");
+                assert_eq!(filters.since(), Some("2026-04-16T09:00:00Z"));
+                assert_eq!(filters.hours(), None);
+            }
+            other => panic!("expected search command, got {other:?}"),
+        }
     }
 
     #[test]

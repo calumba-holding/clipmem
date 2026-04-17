@@ -9,6 +9,7 @@ use clipmem::archive::Database;
 use clipmem::capture::{
     build_item, build_representation, build_snapshot, CaptureContext, ClipboardSnapshot,
 };
+use rusqlite::Connection;
 use serde_json::Value;
 
 fn temp_db_path(test_name: &str) -> PathBuf {
@@ -104,6 +105,27 @@ fn seed_database(path: &Path, snapshots: &[ClipboardSnapshot]) -> Result<Vec<i64
     }
 
     Ok(ids)
+}
+
+fn seed_events(path: &Path, snapshots: &[ClipboardSnapshot]) -> Result<Vec<(i64, i64)>> {
+    let mut db = Database::open_or_init(path)?;
+    let mut ids = Vec::new();
+
+    for snapshot in snapshots {
+        let stored = db.store_capture(snapshot)?;
+        ids.push((stored.snapshot_id(), stored.event_id()));
+    }
+
+    Ok(ids)
+}
+
+fn set_event_observed_at(path: &Path, event_id: i64, observed_at: &str) -> Result<()> {
+    let conn = Connection::open(path)?;
+    conn.execute(
+        "UPDATE capture_events SET observed_at = ?1 WHERE id = ?2",
+        (observed_at, event_id),
+    )?;
+    Ok(())
 }
 
 fn run_cli(args: &[&str]) -> process::Output {
@@ -224,6 +246,267 @@ fn recent_json_alias_uses_new_envelope_shape() -> Result<()> {
     assert_eq!(payload["results"].as_array().map(Vec::len), Some(1));
     assert_eq!(payload["results"][0]["snapshot_id"].as_i64(), Some(ids[0]));
     assert!(payload["results"][0]["why_matched"].is_null());
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn timeline_json_envelope_returns_event_rows_in_descending_order() -> Result<()> {
+    let path = temp_db_path("timeline-json");
+    let events = seed_events(
+        &path,
+        &[
+            text_snapshot(1, "git status"),
+            text_snapshot(2, "git status"),
+            rich_snapshot(
+                3,
+                "cargo test",
+                "https://example.com/repo",
+                "file:///Users/test/report.txt",
+            ),
+        ],
+    )?;
+    set_event_observed_at(&path, events[0].1, "2026-04-16 09:00:00")?;
+    set_event_observed_at(&path, events[1].1, "2026-04-16 10:00:00")?;
+    set_event_observed_at(&path, events[2].1, "2026-04-16 11:00:00")?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "timeline",
+        "--format",
+        "json",
+        "--limit",
+        "3",
+    ]);
+    let payload: Value =
+        serde_json::from_slice(&output.stdout).expect("timeline JSON output should parse");
+
+    assert!(output.status.success());
+    assert_eq!(payload["command"].as_str(), Some("timeline"));
+    assert_eq!(payload["applied_filters"]["sort"].as_str(), Some("desc"));
+    assert_eq!(payload["results"].as_array().map(Vec::len), Some(3));
+    assert_eq!(payload["results"][0]["event_id"].as_i64(), Some(events[2].1));
+    assert_eq!(payload["results"][1]["event_id"].as_i64(), Some(events[1].1));
+    assert_eq!(payload["results"][2]["event_id"].as_i64(), Some(events[0].1));
+    assert_eq!(payload["results"][0]["change_count"].as_i64(), Some(3));
+    assert_eq!(
+        payload["results"][0]["urls"][0].as_str(),
+        Some("https://example.com/repo")
+    );
+    assert_eq!(
+        payload["results"][0]["file_paths"][0].as_str(),
+        Some("/Users/test/report.txt")
+    );
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn timeline_paginates_with_cursor_and_sort_asc() -> Result<()> {
+    let path = temp_db_path("timeline-pagination");
+    let events = seed_events(
+        &path,
+        &[
+            text_snapshot(1, "alpha"),
+            text_snapshot(2, "beta"),
+            text_snapshot(3, "gamma"),
+        ],
+    )?;
+    set_event_observed_at(&path, events[0].1, "2026-04-16 09:00:00")?;
+    set_event_observed_at(&path, events[1].1, "2026-04-16 10:00:00")?;
+    set_event_observed_at(&path, events[2].1, "2026-04-16 11:00:00")?;
+
+    let first_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "timeline",
+        "--sort",
+        "asc",
+        "--limit",
+        "2",
+        "--format",
+        "json",
+    ]);
+    let first_payload: Value =
+        serde_json::from_slice(&first_output.stdout).expect("first timeline page should parse");
+    let next_cursor = first_payload["next_cursor"]
+        .as_str()
+        .expect("first timeline page should include a cursor")
+        .to_string();
+
+    assert!(first_output.status.success());
+    assert_eq!(first_payload["truncated"].as_bool(), Some(true));
+    assert_eq!(first_payload["results"][0]["event_id"].as_i64(), Some(events[0].1));
+    assert_eq!(first_payload["results"][1]["event_id"].as_i64(), Some(events[1].1));
+
+    let second_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "timeline",
+        "--sort",
+        "asc",
+        "--limit",
+        "2",
+        "--cursor",
+        &next_cursor,
+        "--format",
+        "json",
+    ]);
+    let second_payload: Value =
+        serde_json::from_slice(&second_output.stdout).expect("second timeline page should parse");
+
+    assert!(second_output.status.success());
+    assert_eq!(second_payload["truncated"].as_bool(), Some(false));
+    assert!(second_payload["next_cursor"].is_null());
+    assert_eq!(second_payload["results"].as_array().map(Vec::len), Some(1));
+    assert_eq!(second_payload["results"][0]["event_id"].as_i64(), Some(events[2].1));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn search_filters_are_combined_and_echoed_in_structured_output() -> Result<()> {
+    let path = temp_db_path("search-shared-filters");
+    seed_database(
+        &path,
+        &[
+            rich_snapshot(
+                1,
+                "git clone https://example.com/repo",
+                "https://example.com/repo",
+                "file:///Users/test/report.txt",
+            ),
+            app_text_snapshot(2, "Preview", "com.apple.Preview", "git clone local mirror"),
+        ],
+    )?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "search",
+        "--mode",
+        "literal",
+        "--app",
+        "terminal",
+        "--kind",
+        "url",
+        "--has-url",
+        "--min-bytes",
+        "20",
+        "--format",
+        "json",
+        "example.com",
+    ]);
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("search JSON should parse");
+
+    assert!(output.status.success());
+    assert_eq!(payload["results"].as_array().map(Vec::len), Some(1));
+    assert_eq!(payload["applied_filters"]["app"].as_str(), Some("terminal"));
+    assert_eq!(payload["applied_filters"]["kind"].as_str(), Some("url"));
+    assert_eq!(payload["applied_filters"]["has_url"].as_bool(), Some(true));
+    assert_eq!(payload["applied_filters"]["min_bytes"].as_u64(), Some(20));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn recall_respects_shared_filters() -> Result<()> {
+    let path = temp_db_path("recall-shared-filters");
+    seed_database(
+        &path,
+        &[
+            app_text_snapshot(1, "Terminal", "com.apple.Terminal", "deploy checklist"),
+            app_text_snapshot(2, "Preview", "com.apple.Preview", "invoice draft"),
+        ],
+    )?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "recall",
+        "--prefer-recent",
+        "--app",
+        "preview",
+        "--format",
+        "json",
+    ]);
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("recall JSON should parse");
+
+    assert!(output.status.success());
+    assert_eq!(
+        payload["best_candidate"]["app_name"].as_str(),
+        Some("Preview")
+    );
+    assert_eq!(payload["applied_filters"]["app"].as_str(), Some("preview"));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn get_and_export_use_shared_filters_as_guards() -> Result<()> {
+    let path = temp_db_path("get-export-guards");
+    let ids = seed_database(
+        &path,
+        &[rich_snapshot(
+            1,
+            "git status",
+            "https://example.com/repo",
+            "file:///Users/test/report.txt",
+        )],
+    )?;
+
+    let get_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "get",
+        &ids[0].to_string(),
+        "--app",
+        "terminal",
+        "--has-url",
+        "--format",
+        "json",
+    ]);
+    let get_payload: Value = serde_json::from_slice(&get_output.stdout).expect("get JSON should parse");
+    assert!(get_output.status.success());
+    assert_eq!(get_payload["applied_filters"]["app"].as_str(), Some("terminal"));
+    assert_eq!(get_payload["applied_filters"]["has_url"].as_bool(), Some(true));
+
+    let rejected_get = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "get",
+        &ids[0].to_string(),
+        "--app",
+        "preview",
+    ]);
+    assert!(!rejected_get.status.success());
+    assert!(stderr_text(&rejected_get).contains("does not satisfy the active filters"));
+
+    let output_path = std::env::temp_dir()
+        .join(format!("clipmem-filter-export-{}-{}.txt", process::id(), 1));
+    let rejected_export = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "export",
+        &ids[0].to_string(),
+        "--item",
+        "0",
+        "--uti",
+        "public.utf8-plain-text",
+        "--out",
+        output_path.to_str().expect("export path should be UTF-8"),
+        "--app",
+        "preview",
+    ]);
+    assert!(!rejected_export.status.success());
+    assert!(stderr_text(&rejected_export).contains("does not satisfy the active filters"));
+    let _ = fs::remove_file(&output_path);
 
     cleanup_db(&path);
     Ok(())
@@ -676,6 +959,56 @@ fn search_rejects_cursor_filter_mismatches() -> Result<()> {
 }
 
 #[test]
+fn timeline_rejects_cursor_filter_mismatches() -> Result<()> {
+    let path = temp_db_path("timeline-cursor-mismatch");
+    let events = seed_events(
+        &path,
+        &[text_snapshot(1, "alpha"), text_snapshot(2, "beta")],
+    )?;
+    set_event_observed_at(&path, events[0].1, "2026-04-16 09:00:00")?;
+    set_event_observed_at(&path, events[1].1, "2026-04-16 10:00:00")?;
+
+    let first_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "timeline",
+        "--sort",
+        "asc",
+        "--limit",
+        "1",
+        "--format",
+        "json",
+    ]);
+    let first_payload: Value =
+        serde_json::from_slice(&first_output.stdout).expect("timeline page should parse");
+    let next_cursor = first_payload["next_cursor"]
+        .as_str()
+        .expect("timeline page should include a cursor")
+        .to_string();
+
+    let mismatched = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "timeline",
+        "--sort",
+        "desc",
+        "--limit",
+        "1",
+        "--cursor",
+        &next_cursor,
+        "--format",
+        "json",
+    ]);
+    let stderr = stderr_text(&mismatched);
+
+    assert!(!mismatched.status.success());
+    assert!(stderr.contains("cursor does not match the active timeline filters or sort"));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
 fn search_help_mentions_new_format_and_cursor_flags() {
     let output = run_cli(&["help", "search"]);
     let help_text = format!("{}{}", stdout_text(&output), stderr_text(&output));
@@ -683,6 +1016,21 @@ fn search_help_mentions_new_format_and_cursor_flags() {
     assert!(help_text.contains("--format <FORMAT>"));
     assert!(help_text.contains("--json"));
     assert!(help_text.contains("--cursor <CURSOR>"));
+}
+
+#[test]
+fn recent_and_timeline_help_make_the_distinction_clear() {
+    let recent = run_cli(&["help", "recent"]);
+    let recent_help = format!("{}{}", stdout_text(&recent), stderr_text(&recent));
+    let timeline = run_cli(&["help", "timeline"]);
+    let timeline_help = format!("{}{}", stdout_text(&timeline), stderr_text(&timeline));
+
+    assert!(recent_help.contains("recent unique clipboard states"));
+    assert!(recent_help.contains("deduplicated by snapshot"));
+    assert!(timeline_help.contains("chronological clipboard capture events"));
+    assert!(timeline_help.contains("one row per observation"));
+    assert!(timeline_help.contains("--since <SINCE>"));
+    assert!(timeline_help.contains("--sort <SORT>"));
 }
 
 #[test]

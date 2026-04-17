@@ -121,18 +121,28 @@ clipmem recent --hours 24
 clipmem recent --hours 24 --format toon
 ```
 
+Show chronological clipboard capture events:
+
+```bash
+clipmem timeline --hours 24 --format md
+clipmem timeline --since 2026-04-16T09:00:00Z --until 2026-04-16T18:00:00Z --sort asc --format json
+clipmem timeline --app safari --has-url --format json
+```
+
 Inspect one stored snapshot:
 
 ```bash
 clipmem get 42
 clipmem get 42 --format md
 clipmem get 42 --format json
+clipmem get 42 --app terminal --has-url --format json
 ```
 
 Export a stored raw representation:
 
 ```bash
 clipmem export 42 --item 0 --uti public.png --out ./clipboard.png
+clipmem export 42 --item 0 --uti public.file-url --out ./clipboard.bin --kind file
 ```
 
 Check SQLite / FTS5 diagnostics:
@@ -143,17 +153,17 @@ clipmem doctor
 
 ## Output formats
 
-Agent-facing retrieval commands (`search`, `recent`, `get`) share a common `--format` flag, and `recall` exposes `--format md|json|toon`:
+Agent-facing retrieval commands (`search`, `recent`, `timeline`, `get`) share a common `--format` flag, and `recall` exposes `--format md|json|toon`:
 
 - `text` – default human-oriented terminal output
 - `json` – canonical machine-readable format with `schema_version`
 - `jsonl` – line-oriented output for pipelines and batch processing
 - `md` – compact markdown for mixed human/agent review
-- `toon` – token-efficient flat list output for `search` and `recent` only
+- `toon` – token-efficient flat list output for `search`, `recent`, `timeline`, and flattened `recall`
 
 `--json` remains available as a compatibility alias for `--format json`.
 
-For `search` and `recent`, JSON output now uses a stable top-level envelope with:
+For `search`, `recent`, and `timeline`, JSON output now uses a stable top-level envelope with:
 
 - `schema_version`
 - `command`
@@ -168,7 +178,62 @@ Pagination uses `--limit` plus the opaque `next_cursor` returned by a prior resp
 ```bash
 clipmem search "git status" --format json --limit 10
 clipmem search "git status" --format json --limit 10 --cursor "<next_cursor>"
+clipmem timeline --hours 24 --format json --limit 25 --cursor "<next_cursor>"
 ```
+
+## Shared Retrieval Filters
+
+`search`, `recent`, `timeline`, and `recall` all accept the same retrieval filters. `get` and `export` accept the same flags as guards against the explicitly targeted snapshot or representation.
+
+Time filters:
+
+- `--since <RFC3339>` includes captures observed at or after the given timestamp.
+- `--until <RFC3339>` includes captures observed at or before the given timestamp.
+- `--hours <N>` limits results to the last N hours unless `--since` is also provided. When both are present, `--since` wins.
+
+Source filters:
+
+- `--app <name>` matches the recorded frontmost app name with a case-insensitive substring match.
+- `--bundle-id <id>` matches the recorded bundle id with a case-insensitive exact match.
+
+Content-shape filters:
+
+- `--kind text|html|rtf|url|file|image|pdf|binary|other`
+- `--has-text`
+- `--has-url`
+- `--has-file-url`
+- `--has-image`
+- `--has-pdf`
+
+Notes:
+
+- `--kind file` means file URLs.
+- `--kind other` means snapshots whose stored kind is `mixed` or `empty`.
+- `--has-text` matches non-empty text-like content, including surfaced preview text.
+- Presence flags are additive. Combined filters use AND semantics.
+
+Size filters:
+
+- `--min-bytes <N>`
+- `--max-bytes <N>`
+
+Examples:
+
+```bash
+clipmem search "git" --app terminal --kind text --has-text --min-bytes 10 --format json
+clipmem recent --hours 24 --bundle-id com.apple.Safari --has-url --format md
+clipmem timeline --since 2026-04-16T09:00:00Z --until 2026-04-16T18:00:00Z --app finder --kind file --sort asc --format json
+clipmem recall "invoice" --app preview --has-pdf --format json
+clipmem get 42 --app terminal --has-url --format json
+clipmem export 42 --item 0 --uti public.url --out ./clipboard.url --app safari --has-url
+```
+
+## When To Use Which Command
+
+- `clipmem recall` when an agent wants one best answer plus a few alternatives.
+- `clipmem recent` when you want recent unique clipboard states deduplicated by snapshot.
+- `clipmem timeline` when you want the true chronological history of capture events, including repeated copies of the same content.
+- `clipmem get <snapshot-id>` when you need nested item and representation detail for one stored snapshot.
 
 `clipmem recall` is the primary agent-facing retrieval command. It accepts an optional query and returns one best candidate plus alternatives:
 
@@ -267,7 +332,7 @@ The key tables are:
 - RTF and HTML text extraction is intentionally lightweight and best-effort.
 - Search is great for commands, code, URLs, notes, logs and copied prose. Use `--mode auto` for the default FTS-or-literal behavior, `--mode fts` for strict FTS5 queries, or `--mode literal` for exact substring matching. It is not semantic search.
 - Explicit `--mode fts` keeps SQLite FTS5 semantics. In automatic mode, punctuation-heavy inputs may fall back to literal search.
-- `--format toon` is only supported for flattened list output (`search` and `recent`), not nested snapshot detail from `get`.
+- `--format toon` is only supported for flattened output (`search`, `recent`, `timeline`, and `recall`), not nested snapshot detail from `get`.
 - This project is written to be easy to extend: adding export commands, embeddings, OCR, source-app heuristics or richer HTML parsing is straightforward.
 
 ## Example OpenClaw prompts once installed

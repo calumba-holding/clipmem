@@ -1,6 +1,8 @@
-pub use crate::db::{Database, SearchMode, SearchResults};
+pub use crate::db::{
+    Database, RetrievalFilters, RetrievalKind, SearchMode, SearchResults, TimelineSort,
+};
 pub use crate::model::{
-    CaptureEvent, CaptureStoreResult, DoctorReport, SearchHit, SnapshotDetails,
+    CaptureEvent, CaptureStoreResult, DoctorReport, SearchHit, SnapshotDetails, TimelineEvent,
 };
 
 #[cfg(test)]

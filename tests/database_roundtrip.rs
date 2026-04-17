@@ -4,7 +4,7 @@ use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use clipmem::archive::{Database, SearchMode};
+use clipmem::archive::{Database, RetrievalFilters, SearchMode};
 use clipmem::capture::{
     build_item, build_representation, build_snapshot, CaptureContext, ClipboardKind,
     ClipboardSnapshot, SnapshotKind,
@@ -63,7 +63,7 @@ fn public_database_api_round_trips_a_stored_snapshot() -> Result<()> {
     drop(db);
 
     let db = Database::open_existing(&path)?;
-    let results = db.search_auto("git", 10)?;
+    let results = db.search_auto("git", 10, &RetrievalFilters::default())?;
     let details = db
         .find_snapshot(stored.snapshot_id(), 10)?
         .context("expected stored snapshot details")?;

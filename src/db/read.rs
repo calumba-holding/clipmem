@@ -1,13 +1,15 @@
 use anyhow::{Context, Result};
-use rusqlite::{params, Error as SqlError, ErrorCode, Row};
+use rusqlite::{named_params, params, Error as SqlError, ErrorCode, Row};
 
 use crate::model::{
     CaptureEvent, ClipboardItem, ClipboardRepresentation, DoctorReport, SearchHit, SnapshotDetails,
+    TimelineEvent,
 };
 
 use super::{
     collect_rows, row_enum, row_usize, sanitise_limit, usize_to_i64, Database, Page,
-    RecentCursorState, SearchCursorState, SearchMode, SearchResults,
+    RecentCursorState, RetrievalFilters, SearchCursorState, SearchMode, SearchResults,
+    TimelineCursorState, TimelineSort,
 };
 
 const LIST_VALUE_SEPARATOR: char = '\u{1f}';
@@ -73,36 +75,42 @@ impl Database {
     ///
     /// Returns an error if the query cannot be prepared or executed, or when `SQLite` returns a
     /// non-syntax FTS error.
-    pub fn search_auto(&self, query: &str, limit: usize) -> Result<SearchResults> {
-        self.search_auto_page(query, limit, None)
+    pub fn search_auto(
+        &self,
+        query: &str,
+        limit: usize,
+        filters: &RetrievalFilters,
+    ) -> Result<SearchResults> {
+        self.search_auto_page(query, limit, filters, None)
     }
 
     pub(crate) fn search_auto_page(
         &self,
         query: &str,
         limit: usize,
+        filters: &RetrievalFilters,
         cursor: Option<&SearchCursorState>,
     ) -> Result<SearchResults> {
         let limit = sanitise_limit(limit);
 
         if requires_literal_like_search(query) {
-            return self.search_literal_page(query, limit, cursor);
+            return self.search_literal_page(query, limit, filters, cursor);
         }
 
         if let Some(cursor) = cursor {
             return match cursor.mode_used() {
-                SearchMode::Fts => self.search_fts_page(query, limit, Some(cursor)),
-                SearchMode::Literal => self.search_literal_page(query, limit, Some(cursor)),
-                SearchMode::Auto => self.search_literal_page(query, limit, Some(cursor)),
+                SearchMode::Fts => self.search_fts_page(query, limit, filters, Some(cursor)),
+                SearchMode::Literal => self.search_literal_page(query, limit, filters, Some(cursor)),
+                SearchMode::Auto => self.search_literal_page(query, limit, filters, Some(cursor)),
             };
         }
 
-        let results = match self.search_fts_page(query, limit, None) {
+        let results = match self.search_fts_page(query, limit, filters, None) {
             Ok(results) => results,
             Err(error) => {
                 if let Some(sqlite_error) = error.downcast_ref::<SqlError>() {
                     if is_invalid_fts_query(sqlite_error) {
-                        self.search_literal_page(query, limit, None)?
+                        self.search_literal_page(query, limit, filters, None)?
                     } else {
                         return Err(error);
                     }
@@ -113,7 +121,7 @@ impl Database {
         };
 
         if results.hits().is_empty() {
-            self.search_literal_page(query, limit, None)
+            self.search_literal_page(query, limit, filters, None)
         } else {
             Ok(results)
         }
@@ -124,30 +132,44 @@ impl Database {
     /// # Errors
     ///
     /// Returns an error if the query cannot be prepared or executed.
-    pub fn recent(&self, limit: usize, hours: Option<u32>) -> Result<Vec<SearchHit>> {
-        self.recent_page(limit, hours, None).map(Page::into_items)
+    pub fn recent(&self, limit: usize, filters: &RetrievalFilters) -> Result<Vec<SearchHit>> {
+        self.recent_page(limit, filters, None).map(Page::into_items)
     }
 
     pub(crate) fn recent_page(
         &self,
         limit: usize,
-        hours: Option<u32>,
+        filters: &RetrievalFilters,
         cursor: Option<&RecentCursorState>,
     ) -> Result<Page<SearchHit>> {
         let limit = sanitise_limit(limit);
         let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
-        let modifier = hours.map(|value| format!("-{value} hours"));
         let sql = recent_query();
+        let app_like = app_like_pattern(filters);
+        let bundle_id = filters.bundle_id().map(|value| value.to_ascii_lowercase());
+        let kind = filters.kind().map(|value| value.as_str());
+        let since = effective_since_param(filters)?;
 
         let mut stmt = self.conn.prepare(&sql).context("prepare recent query")?;
         let rows = stmt
             .query_map(
-                params![
-                    modifier.as_deref(),
-                    cursor.map(RecentCursorState::last_seen_at),
-                    cursor.map(RecentCursorState::snapshot_id),
-                    fetch_limit
-                ],
+                named_params! {
+                    ":since" : since.as_deref(),
+                    ":until" : filters.until(),
+                    ":app_like" : app_like.as_deref(),
+                    ":bundle_id" : bundle_id.as_deref(),
+                    ":kind" : kind,
+                    ":has_text" : filters.has_text(),
+                    ":has_url" : filters.has_url(),
+                    ":has_file_url" : filters.has_file_url(),
+                    ":has_image" : filters.has_image(),
+                    ":has_pdf" : filters.has_pdf(),
+                    ":min_bytes" : filters.min_bytes().map(usize_to_i64).transpose()?,
+                    ":max_bytes" : filters.max_bytes().map(usize_to_i64).transpose()?,
+                    ":cursor_last_seen_at" : cursor.map(RecentCursorState::last_seen_at),
+                    ":cursor_snapshot_id" : cursor.map(RecentCursorState::snapshot_id),
+                    ":limit" : fetch_limit,
+                },
                 |row| map_search_hit_row(row, false),
             )
             .context("execute recent query")?;
@@ -155,6 +177,107 @@ impl Database {
         collect_rows(rows)
             .map(|hits| paginate_rows(hits, limit))
             .context("collect recent query rows")
+    }
+
+    /// Return capture events in stable chronological order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query cannot be prepared or executed.
+    pub(crate) fn timeline_page(
+        &self,
+        limit: usize,
+        filters: &RetrievalFilters,
+        sort: TimelineSort,
+        cursor: Option<&TimelineCursorState>,
+    ) -> Result<Page<TimelineEvent>> {
+        let limit = sanitise_limit(limit);
+        let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
+        let sql = timeline_query(sort);
+        let app_like = app_like_pattern(filters);
+        let bundle_id = filters.bundle_id().map(|value| value.to_ascii_lowercase());
+        let kind = filters.kind().map(|value| value.as_str());
+        let since = effective_since_param(filters)?;
+
+        let mut stmt = self.conn.prepare(&sql).context("prepare timeline query")?;
+        let rows = stmt
+            .query_map(
+                named_params! {
+                    ":since" : since.as_deref(),
+                    ":until" : filters.until(),
+                    ":app_like" : app_like.as_deref(),
+                    ":bundle_id" : bundle_id.as_deref(),
+                    ":kind" : kind,
+                    ":has_text" : filters.has_text(),
+                    ":has_url" : filters.has_url(),
+                    ":has_file_url" : filters.has_file_url(),
+                    ":has_image" : filters.has_image(),
+                    ":has_pdf" : filters.has_pdf(),
+                    ":min_bytes" : filters.min_bytes().map(usize_to_i64).transpose()?,
+                    ":max_bytes" : filters.max_bytes().map(usize_to_i64).transpose()?,
+                    ":cursor_observed_at" : cursor.map(TimelineCursorState::observed_at),
+                    ":cursor_event_id" : cursor.map(TimelineCursorState::event_id),
+                    ":limit" : fetch_limit,
+                },
+                map_timeline_event_row,
+            )
+            .context("execute timeline query")?;
+
+        collect_rows(rows)
+            .map(|events| paginate_timeline_rows(events, limit))
+            .context("collect timeline query rows")
+    }
+
+    pub(crate) fn snapshot_matches_filters(
+        &self,
+        snapshot_id: i64,
+        filters: &RetrievalFilters,
+    ) -> Result<bool> {
+        let sql = format!(
+            "{LIST_QUERY_CTES}
+             SELECT EXISTS(
+                 SELECT 1
+                 FROM snapshots s
+                 WHERE s.id = :snapshot_id
+                   AND EXISTS (
+                       SELECT 1
+                       FROM capture_events ce
+                       WHERE ce.snapshot_id = s.id
+                         AND {event_filter_clause}
+                   )
+                   AND {snapshot_filter_clause}
+             )",
+            event_filter_clause = event_filter_clause("ce"),
+            snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
+        );
+        let app_like = app_like_pattern(filters);
+        let bundle_id = filters.bundle_id().map(|value| value.to_ascii_lowercase());
+        let kind = filters.kind().map(|value| value.as_str());
+        let since = effective_since_param(filters)?;
+        let exists: i64 = self
+            .conn
+            .query_row(
+                &sql,
+                named_params! {
+                    ":snapshot_id" : snapshot_id,
+                    ":since" : since.as_deref(),
+                    ":until" : filters.until(),
+                    ":app_like" : app_like.as_deref(),
+                    ":bundle_id" : bundle_id.as_deref(),
+                    ":kind" : kind,
+                    ":has_text" : filters.has_text(),
+                    ":has_url" : filters.has_url(),
+                    ":has_file_url" : filters.has_file_url(),
+                    ":has_image" : filters.has_image(),
+                    ":has_pdf" : filters.has_pdf(),
+                    ":min_bytes" : filters.min_bytes().map(usize_to_i64).transpose()?,
+                    ":max_bytes" : filters.max_bytes().map(usize_to_i64).transpose()?,
+                },
+                |row| row.get(0),
+            )
+            .context("evaluate snapshot filters")?;
+
+        Ok(exists != 0)
     }
 
     /// Load one snapshot with its recent events and stored item representations.
@@ -230,19 +353,29 @@ impl Database {
     /// # Errors
     ///
     /// Returns an error if the FTS query cannot be prepared or executed.
-    pub fn search_fts(&self, query: &str, limit: usize) -> Result<SearchResults> {
-        self.search_fts_page(query, limit, None)
+    pub fn search_fts(
+        &self,
+        query: &str,
+        limit: usize,
+        filters: &RetrievalFilters,
+    ) -> Result<SearchResults> {
+        self.search_fts_page(query, limit, filters, None)
     }
 
     pub(crate) fn search_fts_page(
         &self,
         query: &str,
         limit: usize,
+        filters: &RetrievalFilters,
         cursor: Option<&SearchCursorState>,
     ) -> Result<SearchResults> {
         let limit = sanitise_limit(limit);
         let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
         let sql = fts_query();
+        let app_like = app_like_pattern(filters);
+        let bundle_id = filters.bundle_id().map(|value| value.to_ascii_lowercase());
+        let kind = filters.kind().map(|value| value.as_str());
+        let since = effective_since_param(filters)?;
 
         let mut stmt = self
             .conn
@@ -250,13 +383,25 @@ impl Database {
             .context("prepare FTS search query")?;
         let rows = stmt
             .query_map(
-                params![
-                    query,
-                    cursor.and_then(SearchCursorState::score),
-                    cursor.map(SearchCursorState::last_seen_at),
-                    cursor.map(SearchCursorState::snapshot_id),
-                    fetch_limit
-                ],
+                named_params! {
+                    ":query" : query,
+                    ":since" : since.as_deref(),
+                    ":until" : filters.until(),
+                    ":app_like" : app_like.as_deref(),
+                    ":bundle_id" : bundle_id.as_deref(),
+                    ":kind" : kind,
+                    ":has_text" : filters.has_text(),
+                    ":has_url" : filters.has_url(),
+                    ":has_file_url" : filters.has_file_url(),
+                    ":has_image" : filters.has_image(),
+                    ":has_pdf" : filters.has_pdf(),
+                    ":min_bytes" : filters.min_bytes().map(usize_to_i64).transpose()?,
+                    ":max_bytes" : filters.max_bytes().map(usize_to_i64).transpose()?,
+                    ":cursor_score" : cursor.and_then(SearchCursorState::score),
+                    ":cursor_last_seen_at" : cursor.map(SearchCursorState::last_seen_at),
+                    ":cursor_snapshot_id" : cursor.map(SearchCursorState::snapshot_id),
+                    ":limit" : fetch_limit,
+                },
                 |row| map_search_hit_row(row, true),
             )
             .context("execute FTS search query")?;
@@ -275,20 +420,30 @@ impl Database {
     /// # Errors
     ///
     /// Returns an error if the literal query cannot be prepared or executed.
-    pub fn search_literal(&self, query: &str, limit: usize) -> Result<SearchResults> {
-        self.search_literal_page(query, limit, None)
+    pub fn search_literal(
+        &self,
+        query: &str,
+        limit: usize,
+        filters: &RetrievalFilters,
+    ) -> Result<SearchResults> {
+        self.search_literal_page(query, limit, filters, None)
     }
 
     pub(crate) fn search_literal_page(
         &self,
         query: &str,
         limit: usize,
+        filters: &RetrievalFilters,
         cursor: Option<&SearchCursorState>,
     ) -> Result<SearchResults> {
         let limit = sanitise_limit(limit);
         let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
         let like = format!("%{}%", escape_like_pattern(query));
         let sql = literal_query();
+        let app_like = app_like_pattern(filters);
+        let bundle_id = filters.bundle_id().map(|value| value.to_ascii_lowercase());
+        let kind = filters.kind().map(|value| value.as_str());
+        let since = effective_since_param(filters)?;
 
         let mut stmt = self
             .conn
@@ -296,12 +451,24 @@ impl Database {
             .context("prepare literal search query")?;
         let rows = stmt
             .query_map(
-                params![
-                    like,
-                    cursor.map(SearchCursorState::last_seen_at),
-                    cursor.map(SearchCursorState::snapshot_id),
-                    fetch_limit
-                ],
+                named_params! {
+                    ":like" : like,
+                    ":since" : since.as_deref(),
+                    ":until" : filters.until(),
+                    ":app_like" : app_like.as_deref(),
+                    ":bundle_id" : bundle_id.as_deref(),
+                    ":kind" : kind,
+                    ":has_text" : filters.has_text(),
+                    ":has_url" : filters.has_url(),
+                    ":has_file_url" : filters.has_file_url(),
+                    ":has_image" : filters.has_image(),
+                    ":has_pdf" : filters.has_pdf(),
+                    ":min_bytes" : filters.min_bytes().map(usize_to_i64).transpose()?,
+                    ":max_bytes" : filters.max_bytes().map(usize_to_i64).transpose()?,
+                    ":cursor_last_seen_at" : cursor.map(SearchCursorState::last_seen_at),
+                    ":cursor_snapshot_id" : cursor.map(SearchCursorState::snapshot_id),
+                    ":limit" : fetch_limit,
+                },
                 |row| map_search_hit_row(row, false),
             )
             .context("execute literal search query")?;
@@ -517,6 +684,11 @@ impl Database {
 fn recent_query() -> String {
     format!(
         "{LIST_QUERY_CTES}
+         , matching_events AS (
+             SELECT DISTINCT ce.snapshot_id
+             FROM capture_events ce
+             WHERE {event_filter_clause}
+         )
          SELECT
              base.snapshot_id,
              base.event_id,
@@ -553,31 +725,106 @@ fn recent_query() -> String {
              FROM snapshots s
              JOIN event_summary es ON es.snapshot_id = s.id
              JOIN latest_event le ON le.snapshot_id = s.id
+             JOIN matching_events me ON me.snapshot_id = s.id
              LEFT JOIN url_values uv ON uv.snapshot_id = s.id
              LEFT JOIN file_url_values fv ON fv.snapshot_id = s.id
-             WHERE (
-                 ?1 IS NULL
-                 OR EXISTS (
-                     SELECT 1
-                     FROM capture_events ce
-                     WHERE ce.snapshot_id = s.id
-                       AND ce.observed_at >= datetime('now', ?1)
-                 )
-             )
+             WHERE {snapshot_filter_clause}
          ) base
          WHERE (
-             ?2 IS NULL
-             OR base.last_observed_at < ?2
-             OR (base.last_observed_at = ?2 AND base.snapshot_id < ?3)
+             :cursor_last_seen_at IS NULL
+             OR base.last_observed_at < :cursor_last_seen_at
+             OR (base.last_observed_at = :cursor_last_seen_at AND base.snapshot_id < :cursor_snapshot_id)
          )
          ORDER BY base.last_observed_at DESC, base.snapshot_id DESC
-         LIMIT ?4"
+         LIMIT :limit",
+        event_filter_clause = event_filter_clause("ce"),
+        snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
+    )
+}
+
+fn timeline_query(sort: TimelineSort) -> String {
+    let cursor_predicate = match sort {
+        TimelineSort::Desc => {
+            r"(
+                :cursor_observed_at IS NULL
+                OR ce.observed_at < :cursor_observed_at
+                OR (ce.observed_at = :cursor_observed_at AND ce.id < :cursor_event_id)
+            )"
+        }
+        TimelineSort::Asc => {
+            r"(
+                :cursor_observed_at IS NULL
+                OR ce.observed_at > :cursor_observed_at
+                OR (ce.observed_at = :cursor_observed_at AND ce.id > :cursor_event_id)
+            )"
+        }
+    };
+    let ordering = match sort {
+        TimelineSort::Desc => "ce.observed_at DESC, ce.id DESC",
+        TimelineSort::Asc => "ce.observed_at ASC, ce.id ASC",
+    };
+
+    format!(
+        r"
+         WITH url_values AS (
+             SELECT
+                 snapshot_id,
+                 GROUP_CONCAT(text_value, char(31)) AS urls
+             FROM (
+                 SELECT DISTINCT snapshot_id, text_value
+                 FROM item_representations
+                 WHERE kind = 'url' AND text_value IS NOT NULL AND text_value != ''
+             )
+             GROUP BY snapshot_id
+         ),
+         file_url_values AS (
+             SELECT
+                 snapshot_id,
+                 GROUP_CONCAT(text_value, char(31)) AS file_urls
+             FROM (
+                 SELECT DISTINCT snapshot_id, text_value
+                 FROM item_representations
+                 WHERE kind = 'file_url' AND text_value IS NOT NULL AND text_value != ''
+             )
+             GROUP BY snapshot_id
+         )
+         SELECT
+             ce.id AS event_id,
+             ce.snapshot_id AS snapshot_id,
+             ce.observed_at AS observed_at,
+             ce.change_count AS change_count,
+             s.sha256 AS sha256,
+             s.snapshot_kind AS snapshot_kind,
+             COALESCE(NULLIF(s.preview_text, ''), s.search_text, '') AS best_text,
+             s.preview_text AS preview_text,
+             ce.frontmost_app_name AS frontmost_app_name,
+             ce.frontmost_app_bundle_id AS frontmost_app_bundle_id,
+             COALESCE(uv.urls, '') AS urls,
+             COALESCE(fv.file_urls, '') AS file_urls,
+             s.total_bytes AS total_bytes,
+             s.item_count AS item_count
+         FROM capture_events ce
+         JOIN snapshots s ON s.id = ce.snapshot_id
+         LEFT JOIN url_values uv ON uv.snapshot_id = ce.snapshot_id
+         LEFT JOIN file_url_values fv ON fv.snapshot_id = ce.snapshot_id
+         WHERE {event_filter_clause}
+           AND {snapshot_filter_clause}
+           AND {cursor_predicate}
+         ORDER BY {ordering}
+         LIMIT :limit",
+        event_filter_clause = event_filter_clause("ce"),
+        snapshot_filter_clause = snapshot_filter_clause("s", "ce.snapshot_id"),
     )
 }
 
 fn literal_query() -> String {
     format!(
         "{LIST_QUERY_CTES}
+         , matching_events AS (
+             SELECT DISTINCT ce.snapshot_id
+             FROM capture_events ce
+             WHERE {event_filter_clause}
+         )
          SELECT
              base.snapshot_id,
              base.event_id,
@@ -614,24 +861,33 @@ fn literal_query() -> String {
              FROM snapshots s
              JOIN event_summary es ON es.snapshot_id = s.id
              JOIN latest_event le ON le.snapshot_id = s.id
+             JOIN matching_events me ON me.snapshot_id = s.id
              LEFT JOIN url_values uv ON uv.snapshot_id = s.id
              LEFT JOIN file_url_values fv ON fv.snapshot_id = s.id
-             WHERE s.search_text LIKE ?1 ESCAPE '\\'
-                OR s.preview_text LIKE ?1 ESCAPE '\\'
+             WHERE (s.search_text LIKE :like ESCAPE '\\'
+                OR s.preview_text LIKE :like ESCAPE '\\')
+               AND {snapshot_filter_clause}
          ) base
          WHERE (
-             ?2 IS NULL
-             OR base.last_observed_at < ?2
-             OR (base.last_observed_at = ?2 AND base.snapshot_id < ?3)
+             :cursor_last_seen_at IS NULL
+             OR base.last_observed_at < :cursor_last_seen_at
+             OR (base.last_observed_at = :cursor_last_seen_at AND base.snapshot_id < :cursor_snapshot_id)
          )
          ORDER BY base.last_observed_at DESC, base.snapshot_id DESC
-         LIMIT ?4"
+         LIMIT :limit",
+        event_filter_clause = event_filter_clause("ce"),
+        snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
     )
 }
 
 fn fts_query() -> String {
     format!(
         "{LIST_QUERY_CTES}
+         , matching_events AS (
+             SELECT DISTINCT ce.snapshot_id
+             FROM capture_events ce
+             WHERE {event_filter_clause}
+         )
          , search_rows AS (
              SELECT
                  s.id AS snapshot_id,
@@ -654,9 +910,11 @@ fn fts_query() -> String {
              JOIN snapshots s ON s.id = snapshots_fts.rowid
              JOIN event_summary es ON es.snapshot_id = s.id
              JOIN latest_event le ON le.snapshot_id = s.id
+             JOIN matching_events me ON me.snapshot_id = s.id
              LEFT JOIN url_values uv ON uv.snapshot_id = s.id
              LEFT JOIN file_url_values fv ON fv.snapshot_id = s.id
-             WHERE snapshots_fts MATCH ?1
+             WHERE snapshots_fts MATCH :query
+               AND {snapshot_filter_clause}
          )
          SELECT
              search_rows.snapshot_id,
@@ -677,22 +935,133 @@ fn fts_query() -> String {
              search_rows.score
          FROM search_rows
          WHERE (
-             ?2 IS NULL
-             OR search_rows.score > ?2
+             :cursor_score IS NULL
+             OR search_rows.score > :cursor_score
              OR (
-                 search_rows.score = ?2
+                 search_rows.score = :cursor_score
                  AND (
-                     search_rows.last_observed_at < ?3
+                     search_rows.last_observed_at < :cursor_last_seen_at
                      OR (
-                         search_rows.last_observed_at = ?3
-                         AND search_rows.snapshot_id < ?4
+                         search_rows.last_observed_at = :cursor_last_seen_at
+                         AND search_rows.snapshot_id < :cursor_snapshot_id
                      )
                  )
              )
          )
          ORDER BY search_rows.score ASC, search_rows.last_observed_at DESC, search_rows.snapshot_id DESC
-         LIMIT ?5"
+         LIMIT :limit",
+        event_filter_clause = event_filter_clause("ce"),
+        snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
     )
+}
+
+fn event_filter_clause(alias: &str) -> String {
+    format!(
+        "(:since IS NULL OR datetime({alias}.observed_at) >= datetime(:since))
+         AND (:until IS NULL OR datetime({alias}.observed_at) <= datetime(:until))
+         AND (:app_like IS NULL OR ({alias}.frontmost_app_name IS NOT NULL AND lower({alias}.frontmost_app_name) LIKE :app_like ESCAPE '\\'))
+         AND (:bundle_id IS NULL OR ({alias}.frontmost_app_bundle_id IS NOT NULL AND lower({alias}.frontmost_app_bundle_id) = :bundle_id))"
+    )
+}
+
+fn snapshot_filter_clause(snapshot_alias: &str, snapshot_id_expr: &str) -> String {
+    format!(
+        "(:min_bytes IS NULL OR {snapshot_alias}.total_bytes >= :min_bytes)
+         AND (:max_bytes IS NULL OR {snapshot_alias}.total_bytes <= :max_bytes)
+         AND (
+             :kind IS NULL
+             OR (:kind = 'text' AND EXISTS (
+                 SELECT 1 FROM item_representations ir
+                 WHERE ir.snapshot_id = {snapshot_id_expr}
+                   AND ir.kind IN ('plain_text', 'html', 'json', 'xml', 'rtf')
+             ))
+             OR (:kind = 'html' AND EXISTS (
+                 SELECT 1 FROM item_representations ir
+                 WHERE ir.snapshot_id = {snapshot_id_expr}
+                   AND ir.kind = 'html'
+             ))
+             OR (:kind = 'rtf' AND EXISTS (
+                 SELECT 1 FROM item_representations ir
+                 WHERE ir.snapshot_id = {snapshot_id_expr}
+                   AND ir.kind = 'rtf'
+             ))
+             OR (:kind = 'url' AND EXISTS (
+                 SELECT 1 FROM item_representations ir
+                 WHERE ir.snapshot_id = {snapshot_id_expr}
+                   AND ir.kind = 'url'
+             ))
+             OR (:kind = 'file' AND EXISTS (
+                 SELECT 1 FROM item_representations ir
+                 WHERE ir.snapshot_id = {snapshot_id_expr}
+                   AND ir.kind = 'file_url'
+             ))
+             OR (:kind = 'image' AND EXISTS (
+                 SELECT 1 FROM item_representations ir
+                 WHERE ir.snapshot_id = {snapshot_id_expr}
+                   AND ir.kind = 'image'
+             ))
+             OR (:kind = 'pdf' AND EXISTS (
+                 SELECT 1 FROM item_representations ir
+                 WHERE ir.snapshot_id = {snapshot_id_expr}
+                   AND ir.kind = 'pdf'
+             ))
+             OR (:kind = 'binary' AND EXISTS (
+                 SELECT 1 FROM item_representations ir
+                 WHERE ir.snapshot_id = {snapshot_id_expr}
+                   AND ir.kind = 'binary'
+             ))
+             OR (:kind = 'other' AND {snapshot_alias}.snapshot_kind IN ('mixed', 'empty'))
+         )
+         AND (:has_text = 0 OR (
+             ({snapshot_alias}.preview_text IS NOT NULL AND {snapshot_alias}.preview_text != '')
+             OR EXISTS (
+                 SELECT 1 FROM item_representations ir
+                 WHERE ir.snapshot_id = {snapshot_id_expr}
+                   AND ir.kind IN ('plain_text', 'url', 'file_url', 'html', 'json', 'xml', 'rtf')
+                   AND ir.text_value IS NOT NULL AND ir.text_value != ''
+             )
+         ))
+         AND (:has_url = 0 OR EXISTS (
+             SELECT 1 FROM item_representations ir
+             WHERE ir.snapshot_id = {snapshot_id_expr}
+               AND ir.kind = 'url'
+         ))
+         AND (:has_file_url = 0 OR EXISTS (
+             SELECT 1 FROM item_representations ir
+             WHERE ir.snapshot_id = {snapshot_id_expr}
+               AND ir.kind = 'file_url'
+         ))
+         AND (:has_image = 0 OR EXISTS (
+             SELECT 1 FROM item_representations ir
+             WHERE ir.snapshot_id = {snapshot_id_expr}
+               AND ir.kind = 'image'
+         ))
+         AND (:has_pdf = 0 OR EXISTS (
+             SELECT 1 FROM item_representations ir
+             WHERE ir.snapshot_id = {snapshot_id_expr}
+               AND ir.kind = 'pdf'
+         ))"
+    )
+}
+
+fn app_like_pattern(filters: &RetrievalFilters) -> Option<String> {
+    filters
+        .app()
+        .map(|value| format!("%{}%", escape_like_pattern(&value.to_ascii_lowercase())))
+}
+
+fn effective_since_param(filters: &RetrievalFilters) -> Result<Option<String>> {
+    if let Some(since) = filters.since() {
+        return Ok(Some(since.to_string()));
+    }
+
+    let Some(hours) = filters.hours() else {
+        return Ok(None);
+    };
+    let since = (time::OffsetDateTime::now_utc() - time::Duration::hours(i64::from(hours)))
+        .format(&time::format_description::well_known::Rfc3339)
+        .map_err(|error| anyhow::anyhow!("format filter time: {error}"))?;
+    Ok(Some(since))
 }
 
 fn map_search_hit_row(row: &Row<'_>, has_score: bool) -> rusqlite::Result<SearchHit> {
@@ -722,7 +1091,41 @@ fn map_search_hit_row(row: &Row<'_>, has_score: bool) -> rusqlite::Result<Search
     ))
 }
 
+fn map_timeline_event_row(row: &Row<'_>) -> rusqlite::Result<TimelineEvent> {
+    let urls = split_aggregated_values(&row.get::<_, String>(10)?);
+    let file_paths = split_aggregated_values(&row.get::<_, String>(11)?)
+        .into_iter()
+        .map(|value| normalise_file_path(&value))
+        .collect::<Vec<_>>();
+
+    Ok(TimelineEvent::new(
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+        row.get(4)?,
+        row_enum(row, 5)?,
+        row.get(6)?,
+        row.get(7)?,
+        row.get(8)?,
+        row.get(9)?,
+        urls,
+        file_paths,
+        row_usize(row, 12)?,
+        row_usize(row, 13)?,
+    ))
+}
+
 fn paginate_rows(mut rows: Vec<SearchHit>, limit: usize) -> Page<SearchHit> {
+    let has_more = rows.len() > limit;
+    if has_more {
+        rows.truncate(limit);
+    }
+
+    Page::new(rows, has_more)
+}
+
+fn paginate_timeline_rows(mut rows: Vec<TimelineEvent>, limit: usize) -> Page<TimelineEvent> {
     let has_more = rows.len() > limit;
     if has_more {
         rows.truncate(limit);
@@ -824,7 +1227,7 @@ fn requires_literal_like_search(query: &str) -> bool {
 mod tests {
     use anyhow::Result;
 
-    use crate::db::{Database, SearchMode, SearchResults};
+    use crate::db::{Database, RetrievalFilters, SearchMode, SearchResults};
     use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
 
     use super::{invalid_fts_message, normalise_file_path, requires_literal_like_search};
@@ -843,6 +1246,10 @@ mod tests {
                 )],
             )],
         )
+    }
+
+    fn unfiltered() -> RetrievalFilters {
+        RetrievalFilters::default()
     }
 
     #[test]
@@ -880,7 +1287,7 @@ mod tests {
         db.store_capture(&fake_snapshot(1, "Discount: 50 percent off"))?;
         db.store_capture(&fake_snapshot(2, "Discount: 50%"))?;
 
-        let results = db.search_auto("50%", 10)?;
+        let results = db.search_auto("50%", 10, &unfiltered())?;
         assert_eq!(results.mode_used(), SearchMode::Literal);
         assert_eq!(results.hits().len(), 1);
         assert_eq!(results.hits()[0].preview_text(), "Discount: 50%");
@@ -917,7 +1324,7 @@ mod tests {
         let mut db = Database::open_in_memory()?;
         db.store_capture(&fake_snapshot(1, "https://example.com/repo"))?;
 
-        let results: SearchResults = db.search_auto("https://example.com/repo", 10)?;
+        let results: SearchResults = db.search_auto("https://example.com/repo", 10, &unfiltered())?;
         assert_eq!(results.mode_used(), SearchMode::Literal);
         assert_eq!(results.hits().len(), 1);
         Ok(())

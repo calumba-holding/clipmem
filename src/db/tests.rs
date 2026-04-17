@@ -9,7 +9,10 @@ use crate::model::{
     build_item, build_representation, build_snapshot, CaptureContext, ClipboardSnapshot,
 };
 
-use super::{configure_connection, explain_query_plan, Database, SearchMode, SCHEMA};
+use super::{
+    configure_connection, explain_query_plan, Database, RetrievalFilters, RetrievalKind,
+    SearchMode, TimelineSort, SCHEMA,
+};
 
 fn temp_db_path(test_name: &str) -> std::path::PathBuf {
     let timestamp = SystemTime::now()
@@ -53,6 +56,18 @@ fn fake_snapshot(change_count: i64, text: &str) -> ClipboardSnapshot {
     )
 }
 
+fn set_event_observed_at(db: &Database, event_id: i64, observed_at: &str) -> Result<()> {
+    db.conn.execute(
+        "UPDATE capture_events SET observed_at = ?1 WHERE id = ?2",
+        [observed_at, &event_id.to_string()],
+    )?;
+    Ok(())
+}
+
+fn unfiltered() -> RetrievalFilters {
+    RetrievalFilters::default()
+}
+
 #[test]
 fn duplicate_snapshots_share_content_row() -> Result<()> {
     let mut db = Database::open_in_memory()?;
@@ -67,7 +82,7 @@ fn duplicate_snapshots_share_content_row() -> Result<()> {
     assert!(!second_store.inserted_new_snapshot());
     assert_eq!(first_store.snapshot_id(), second_store.snapshot_id());
 
-    let results = db.search_auto("git", 10)?;
+    let results = db.search_auto("git", 10, &unfiltered())?;
     assert_eq!(results.mode_used(), SearchMode::Fts);
     assert_eq!(results.hits().len(), 1);
     assert_eq!(results.hits()[0].capture_count(), 2);
@@ -98,7 +113,7 @@ fn search_like_treats_percent_as_literal() -> Result<()> {
     db.store_capture(&fake_snapshot(1, "Discount: 50 percent off"))?;
     db.store_capture(&fake_snapshot(2, "Discount: 50%"))?;
 
-    let hits = db.search_literal("50%", 10)?;
+    let hits = db.search_literal("50%", 10, &unfiltered())?;
     let previews: Vec<_> = hits
         .hits()
         .iter()
@@ -117,7 +132,7 @@ fn search_like_treats_underscore_as_literal() -> Result<()> {
     db.store_capture(&fake_snapshot(2, "config test"))?;
     db.store_capture(&fake_snapshot(3, "config_test"))?;
 
-    let hits = db.search_literal("config_test", 10)?;
+    let hits = db.search_literal("config_test", 10, &unfiltered())?;
     let previews: Vec<_> = hits
         .hits()
         .iter()
@@ -135,7 +150,7 @@ fn search_like_treats_escape_character_as_literal() -> Result<()> {
     db.store_capture(&fake_snapshot(1, r"logs\2024\archive"))?;
     db.store_capture(&fake_snapshot(2, "logs/2024/archive"))?;
 
-    let hits = db.search_literal(r"logs\2024", 10)?;
+    let hits = db.search_literal(r"logs\2024", 10, &unfiltered())?;
     let previews: Vec<_> = hits
         .hits()
         .iter()
@@ -153,7 +168,7 @@ fn search_percent_literal_returns_only_exact_matches() -> Result<()> {
     db.store_capture(&fake_snapshot(1, "Discount: 50 percent off"))?;
     db.store_capture(&fake_snapshot(2, "Discount: 50%"))?;
 
-    let results = db.search_auto("50%", 10)?;
+    let results = db.search_auto("50%", 10, &unfiltered())?;
     let previews: Vec<_> = results
         .hits()
         .iter()
@@ -173,7 +188,7 @@ fn search_underscore_literal_returns_only_exact_matches() -> Result<()> {
     db.store_capture(&fake_snapshot(2, "config test"))?;
     db.store_capture(&fake_snapshot(3, "config_test"))?;
 
-    let results = db.search_auto("config_test", 10)?;
+    let results = db.search_auto("config_test", 10, &unfiltered())?;
     let previews: Vec<_> = results
         .hits()
         .iter()
@@ -191,7 +206,7 @@ fn search_propagates_non_syntax_fts_failures() -> Result<()> {
     db.store_capture(&fake_snapshot(1, "git clone https://example.com/repo"))?;
     db.conn.execute_batch("DROP TABLE snapshots_fts;")?;
 
-    assert!(db.search_auto("git", 10).is_err());
+    assert!(db.search_auto("git", 10, &unfiltered()).is_err());
     Ok(())
 }
 
@@ -202,6 +217,137 @@ fn schema_keeps_fts_index_and_triggers() {
     assert!(SCHEMA.contains("CREATE TRIGGER IF NOT EXISTS snapshots_ad"));
     assert!(SCHEMA.contains("CREATE TRIGGER IF NOT EXISTS snapshots_au"));
     assert!(SCHEMA.contains("idx_capture_events_snapshot_observed_id"));
+    assert!(SCHEMA.contains("idx_capture_events_observed_id"));
+}
+
+#[test]
+fn timeline_returns_real_events_in_stable_descending_order() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+
+    let first = db.store_capture(&fake_snapshot(1, "git status"))?;
+    let second = db.store_capture(&fake_snapshot(2, "git status"))?;
+    let third = db.store_capture(&fake_snapshot(3, "cargo test"))?;
+
+    set_event_observed_at(&db, first.event_id(), "2026-04-16 10:00:00")?;
+    set_event_observed_at(&db, second.event_id(), "2026-04-16 10:00:00")?;
+    set_event_observed_at(&db, third.event_id(), "2026-04-16 11:00:00")?;
+
+    let page = db.timeline_page(10, &unfiltered(), TimelineSort::Desc, None)?;
+    let ids = page
+        .items()
+        .iter()
+        .map(|event| event.event_id())
+        .collect::<Vec<_>>();
+
+    assert_eq!(ids, vec![third.event_id(), second.event_id(), first.event_id()]);
+    assert_eq!(page.items()[1].snapshot_id(), first.snapshot_id());
+    assert_eq!(page.items()[1].change_count(), 2);
+    Ok(())
+}
+
+#[test]
+fn timeline_paging_respects_sort_and_cursor_boundaries() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+
+    let first = db.store_capture(&fake_snapshot(1, "alpha"))?;
+    let second = db.store_capture(&fake_snapshot(2, "beta"))?;
+    let third = db.store_capture(&fake_snapshot(3, "gamma"))?;
+
+    set_event_observed_at(&db, first.event_id(), "2026-04-16 09:00:00")?;
+    set_event_observed_at(&db, second.event_id(), "2026-04-16 10:00:00")?;
+    set_event_observed_at(&db, third.event_id(), "2026-04-16 11:00:00")?;
+
+    let first_page = db.timeline_page(2, &unfiltered(), TimelineSort::Asc, None)?;
+    assert!(first_page.has_more());
+    let cursor = super::TimelineCursorState::new(
+        first_page
+            .items()
+            .last()
+            .expect("timeline page should not be empty")
+            .observed_at()
+            .to_string(),
+        first_page
+            .items()
+            .last()
+            .expect("timeline page should not be empty")
+            .event_id(),
+    );
+
+    let second_page = db.timeline_page(2, &unfiltered(), TimelineSort::Asc, Some(&cursor))?;
+    let ids = second_page
+        .items()
+        .iter()
+        .map(|event| event.event_id())
+        .collect::<Vec<_>>();
+
+    assert!(!second_page.has_more());
+    assert_eq!(ids, vec![third.event_id()]);
+    Ok(())
+}
+
+#[test]
+fn shared_filters_constrain_search_recent_and_timeline_consistently() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+
+    let rich = build_snapshot(
+        CaptureContext::new(1)
+            .with_frontmost_app_name("Terminal")
+            .with_frontmost_app_bundle_id("com.apple.Terminal"),
+        vec![build_item(
+            0,
+            vec![
+                build_representation(
+                    "public.utf8-plain-text".to_string(),
+                    Some("git clone https://example.com/repo".to_string()),
+                    b"git clone https://example.com/repo".to_vec(),
+                ),
+                build_representation(
+                    "public.url".to_string(),
+                    Some("https://example.com/repo".to_string()),
+                    b"https://example.com/repo".to_vec(),
+                ),
+            ],
+        )],
+    );
+    let preview = fake_snapshot(2, "meeting notes");
+
+    let first = db.store_capture(&rich)?;
+    let second = db.store_capture(&rich)?;
+    let _third = db.store_capture(&preview)?;
+
+    set_event_observed_at(&db, first.event_id(), "2026-04-16 09:00:00")?;
+    set_event_observed_at(&db, second.event_id(), "2026-04-16 10:00:00")?;
+
+    let filters = RetrievalFilters::new(
+        None,
+        None,
+        None,
+        Some("terminal".to_string()),
+        None,
+        Some(RetrievalKind::Url),
+        false,
+        true,
+        false,
+        false,
+        false,
+        Some(20),
+        None,
+    );
+
+    let search = db.search_auto("example.com", 10, &filters)?;
+    let recent = db.recent(10, &filters)?;
+    let timeline = db.timeline_page(10, &filters, TimelineSort::Desc, None)?;
+
+    assert_eq!(search.hits().len(), 1);
+    assert_eq!(recent.len(), 1);
+    assert_eq!(timeline.items().len(), 2);
+    assert_eq!(search.hits()[0].snapshot_id(), first.snapshot_id());
+    assert_eq!(recent[0].snapshot_id(), first.snapshot_id());
+    assert!(timeline
+        .items()
+        .iter()
+        .all(|event| event.snapshot_id() == first.snapshot_id()));
+    Ok(())
 }
 
 #[test]
@@ -219,7 +365,7 @@ fn search_auto_falls_back_for_url_queries() -> Result<()> {
     let mut db = Database::open_in_memory()?;
     db.store_capture(&fake_snapshot(1, "git clone https://example.com/repo"))?;
 
-    let results = db.search_auto("https://example.com/repo", 10)?;
+    let results = db.search_auto("https://example.com/repo", 10, &unfiltered())?;
 
     assert_eq!(results.mode_used(), SearchMode::Literal);
     assert_eq!(results.hits().len(), 1);
@@ -232,7 +378,7 @@ fn search_auto_falls_back_for_colon_queries() -> Result<()> {
     let mut db = Database::open_in_memory()?;
     db.store_capture(&fake_snapshot(1, "foo:bar"))?;
 
-    let results = db.search_auto("foo:bar", 10)?;
+    let results = db.search_auto("foo:bar", 10, &unfiltered())?;
 
     assert_eq!(results.mode_used(), SearchMode::Literal);
     assert_eq!(results.hits().len(), 1);
@@ -245,7 +391,7 @@ fn search_auto_falls_back_for_bundle_id_queries() -> Result<()> {
     let mut db = Database::open_in_memory()?;
     db.store_capture(&fake_snapshot(1, "com.apple.Terminal"))?;
 
-    let results = db.search_auto("com.apple.Terminal", 10)?;
+    let results = db.search_auto("com.apple.Terminal", 10, &unfiltered())?;
 
     assert_eq!(results.mode_used(), SearchMode::Literal);
     assert_eq!(results.hits().len(), 1);
@@ -258,7 +404,7 @@ fn search_auto_falls_back_for_slashy_path_queries() -> Result<()> {
     let mut db = Database::open_in_memory()?;
     db.store_capture(&fake_snapshot(1, "logs/2024/archive"))?;
 
-    let results = db.search_auto("logs/2024", 10)?;
+    let results = db.search_auto("logs/2024", 10, &unfiltered())?;
 
     assert_eq!(results.mode_used(), SearchMode::Literal);
     assert_eq!(results.hits().len(), 1);
@@ -271,7 +417,7 @@ fn search_auto_handles_leading_colon_queries_without_error() -> Result<()> {
     let mut db = Database::open_in_memory()?;
     db.store_capture(&fake_snapshot(1, "git clone https://example.com/repo"))?;
 
-    let results = db.search_auto(":leading", 10)?;
+    let results = db.search_auto(":leading", 10, &unfiltered())?;
 
     assert_eq!(results.mode_used(), SearchMode::Literal);
     assert!(results.hits().is_empty());
@@ -283,7 +429,7 @@ fn search_auto_keeps_valid_quoted_fts_queries_in_fts_mode() -> Result<()> {
     let mut db = Database::open_in_memory()?;
     db.store_capture(&fake_snapshot(1, "launchctl bootstrap"))?;
 
-    let results = db.search_auto("\"launchctl\" AND bootstrap", 10)?;
+    let results = db.search_auto("\"launchctl\" AND bootstrap", 10, &unfiltered())?;
 
     assert_eq!(results.mode_used(), SearchMode::Fts);
     assert_eq!(results.hits().len(), 1);
@@ -336,7 +482,7 @@ fn open_existing_migrates_legacy_database_and_rebuilds_fts() -> Result<()> {
     let version: i64 = db
         .conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    let results = db.search_auto("git", 10)?;
+    let results = db.search_auto("git", 10, &unfiltered())?;
 
     assert_eq!(version, 1);
     assert_eq!(results.mode_used(), SearchMode::Fts);

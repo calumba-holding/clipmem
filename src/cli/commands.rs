@@ -10,20 +10,21 @@ use std::collections::HashMap;
 
 use crate::app::{format_watch_capture_line, process_watch_snapshot, WatchState};
 use crate::db::{
-    Database, RecentCursorState, SearchCursorState, SearchMode, SearchResults,
+    Database, RecentCursorState, RetrievalFilters, SearchCursorState, SearchMode, SearchResults,
+    TimelineCursorState, TimelineSort,
 };
-use crate::model::{CaptureStoreResult, ClipboardSnapshot, SearchHit};
+use crate::model::{CaptureStoreResult, ClipboardSnapshot, SearchHit, TimelineEvent};
 use crate::platform::{capture_snapshot, current_change_count};
 
 use super::output::{
     emit_get_output, emit_json_or_text, emit_list_output, emit_recall_output, generated_at_now,
     render_capture_once_text, render_doctor_text, render_hits_text, render_search_results_text,
-    render_snapshot_text, GetEnvelope, ListEnvelope, ListRow, RecallEnvelope, RecallMatchConfidence,
-    RecallOutputRow, OUTPUT_SCHEMA_VERSION,
+    render_snapshot_text, render_timeline_text, GetEnvelope, ListEnvelope, ListRow,
+    RecallEnvelope, RecallMatchConfidence, RecallOutputRow, OUTPUT_SCHEMA_VERSION,
 };
 use super::{
     CaptureOnceArgs, Command, DoctorArgs, ExportArgs, GetArgs, OutputFormat, RecallArgs,
-    RecentArgs, SearchArgs, WatchArgs,
+    RecentArgs, SearchArgs, TimelineArgs, WatchArgs,
 };
 
 #[derive(Debug, Serialize)]
@@ -38,6 +39,7 @@ struct SearchCursorToken {
     query: String,
     requested_mode: SearchMode,
     mode_used: SearchMode,
+    filters: RetrievalFilters,
     last_seen_at: String,
     snapshot_id: i64,
     score: Option<f64>,
@@ -46,9 +48,18 @@ struct SearchCursorToken {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct RecentCursorToken {
     command: String,
-    hours: Option<u32>,
+    filters: RetrievalFilters,
     last_seen_at: String,
     snapshot_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TimelineCursorToken {
+    command: String,
+    filters: RetrievalFilters,
+    sort: TimelineSort,
+    observed_at: String,
+    event_id: i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,6 +91,7 @@ pub(super) fn run_command(command: Command, db_path: &Path) -> Result<()> {
         Command::CaptureOnce(args) => capture_once(db_path, &args),
         Command::Search(args) => search(db_path, &args),
         Command::Recent(args) => recent(db_path, &args),
+        Command::Timeline(args) => timeline(db_path, &args),
         Command::Recall(args) => recall(db_path, &args),
         Command::Get(args) => show_snapshot(db_path, &args),
         Command::Export(args) => export_snapshot_bytes(db_path, &args),
@@ -160,15 +172,17 @@ fn capture_once(db_path: &Path, args: &CaptureOnceArgs) -> Result<()> {
 
 fn search(db_path: &Path, args: &SearchArgs) -> Result<()> {
     let format = args.output.resolved()?;
+    let filters = normalize_retrieval_filters(&args.filters)?;
     let db = open_existing_db(db_path)?;
     let cursor = args
         .cursor
         .as_deref()
-        .map(|value| parse_search_cursor(value, &args.query, args.mode))
+        .map(|value| parse_search_cursor(value, &args.query, args.mode, &filters))
         .transpose()?;
-    let results = anyhow::Context::with_context(query_search_results(&db, args, cursor.as_ref()), || {
-        format!("search failed for query '{}'", args.query)
-    })?;
+    let results = anyhow::Context::with_context(
+        query_search_results(&db, args, &filters, cursor.as_ref()),
+        || format!("search failed for query '{}'", args.query),
+    )?;
 
     if matches!(format, OutputFormat::Text) {
         print!("{}", render_search_results_text(&results));
@@ -180,7 +194,7 @@ fn search(db_path: &Path, args: &SearchArgs) -> Result<()> {
         results
             .hits()
             .last()
-            .map(|hit| encode_search_cursor(&args.query, args.mode, results.mode_used(), hit))
+            .map(|hit| encode_search_cursor(&args.query, args.mode, &filters, results.mode_used(), hit))
             .transpose()?
     } else {
         None
@@ -189,13 +203,13 @@ fn search(db_path: &Path, args: &SearchArgs) -> Result<()> {
         schema_version: OUTPUT_SCHEMA_VERSION,
         command: "search",
         generated_at,
-        applied_filters: json!({
+        applied_filters: merge_applied_filters(&filters, json!({
             "query": args.query,
             "requested_mode": args.mode.as_str(),
             "mode_used": results.mode_used().as_str(),
             "limit": args.limit,
             "cursor": args.cursor,
-        }),
+        })),
         truncated: results.has_more(),
         next_cursor,
         results: results
@@ -209,20 +223,16 @@ fn search(db_path: &Path, args: &SearchArgs) -> Result<()> {
 
 fn recent(db_path: &Path, args: &RecentArgs) -> Result<()> {
     let format = args.output.resolved()?;
+    let filters = normalize_retrieval_filters(&args.filters)?;
     let db = open_existing_db(db_path)?;
     let cursor = args
         .cursor
         .as_deref()
-        .map(|value| parse_recent_cursor(value, args.hours))
+        .map(|value| parse_recent_cursor(value, &filters))
         .transpose()?;
     let hits = anyhow::Context::with_context(
-        db.recent_page(args.limit, args.hours, cursor.as_ref()),
-        || {
-            args.hours.map_or_else(
-                || "recent query failed".to_string(),
-                |hours| format!("recent query failed for the last {hours} hours"),
-            )
-        },
+        db.recent_page(args.limit, &filters, cursor.as_ref()),
+        || "recent query failed".to_string(),
     )?;
 
     if matches!(format, OutputFormat::Text) {
@@ -234,7 +244,7 @@ fn recent(db_path: &Path, args: &RecentArgs) -> Result<()> {
     let next_cursor = if hits.has_more() {
         hits.items()
             .last()
-            .map(|hit| encode_recent_cursor(args.hours, hit))
+            .map(|hit| encode_recent_cursor(&filters, hit))
             .transpose()?
     } else {
         None
@@ -243,11 +253,10 @@ fn recent(db_path: &Path, args: &RecentArgs) -> Result<()> {
         schema_version: OUTPUT_SCHEMA_VERSION,
         command: "recent",
         generated_at,
-        applied_filters: json!({
-            "hours": args.hours,
+        applied_filters: merge_applied_filters(&filters, json!({
             "limit": args.limit,
             "cursor": args.cursor,
-        }),
+        })),
         truncated: hits.has_more(),
         next_cursor,
         results: hits
@@ -259,10 +268,59 @@ fn recent(db_path: &Path, args: &RecentArgs) -> Result<()> {
     emit_list_output(format, &envelope)
 }
 
+fn timeline(db_path: &Path, args: &TimelineArgs) -> Result<()> {
+    let format = args.output.resolved()?;
+    let filters = normalize_retrieval_filters(&args.filters)?;
+    let db = open_existing_db(db_path)?;
+    let cursor = args
+        .cursor
+        .as_deref()
+        .map(|value| parse_timeline_cursor(value, &filters, args.sort))
+        .transpose()?;
+    let events = anyhow::Context::with_context(
+        db.timeline_page(args.limit, &filters, args.sort, cursor.as_ref()),
+        || "timeline query failed".to_string(),
+    )?;
+
+    if matches!(format, OutputFormat::Text) {
+        print!("{}", render_timeline_text(events.items()));
+        return Ok(());
+    }
+
+    let next_cursor = if events.has_more() {
+        events
+            .items()
+            .last()
+            .map(|event| encode_timeline_cursor(&filters, args.sort, event))
+            .transpose()?
+    } else {
+        None
+    };
+    let envelope = ListEnvelope {
+        schema_version: OUTPUT_SCHEMA_VERSION,
+        command: "timeline",
+        generated_at: generated_at_now()?,
+        applied_filters: merge_applied_filters(&filters, json!({
+            "limit": args.limit,
+            "sort": args.sort.as_str(),
+            "cursor": args.cursor,
+        })),
+        truncated: events.has_more(),
+        next_cursor,
+        results: events
+            .items()
+            .iter()
+            .map(ListRow::from_timeline_event)
+            .collect(),
+    };
+    emit_list_output(format, &envelope)
+}
+
 fn recall(db_path: &Path, args: &RecallArgs) -> Result<()> {
     let format = args.output.resolved();
+    let filters = normalize_retrieval_filters(&args.filters)?;
     let db = open_existing_db(db_path)?;
-    let recall = anyhow::Context::context(compute_recall(&db, args), "recall query failed")?;
+    let recall = anyhow::Context::context(compute_recall(&db, args, &filters), "recall query failed")?;
     let generated_at = generated_at_now()?;
     let best_candidate = RecallOutputRow::from_hit(&recall.best.hit, args.full);
     let best_match_score = Some(recall.best.normalized_score);
@@ -275,9 +333,8 @@ fn recall(db_path: &Path, args: &RecallArgs) -> Result<()> {
         schema_version: OUTPUT_SCHEMA_VERSION,
         command: "recall",
         generated_at,
-        applied_filters: json!({
+        applied_filters: merge_applied_filters(&filters, json!({
             "limit": args.limit,
-            "hours": args.hours,
             "query_present": args.query.is_some(),
             "requested_mode": args.query.as_ref().map(|_| args.mode.as_str()),
             "mode_used": recall.search_mode_used.map(SearchMode::as_str),
@@ -286,7 +343,7 @@ fn recall(db_path: &Path, args: &RecallArgs) -> Result<()> {
             "min_score": args.min_score,
             "prefer_recent": args.prefer_recent,
             "prefer_app": args.prefer_app,
-        }),
+        })),
         query: args.query.clone(),
         best_candidate,
         alternatives: recall
@@ -304,7 +361,14 @@ fn recall(db_path: &Path, args: &RecallArgs) -> Result<()> {
 
 fn show_snapshot(db_path: &Path, args: &GetArgs) -> Result<()> {
     let format = args.output.resolved()?;
+    let filters = normalize_retrieval_filters(&args.filters)?;
     let db = open_existing_db(db_path)?;
+    if !db.snapshot_matches_filters(args.snapshot_id, &filters)? {
+        return Err(anyhow!(
+            "snapshot {} does not satisfy the active filters",
+            args.snapshot_id
+        ));
+    }
     let snapshot =
         anyhow::Context::with_context(db.find_snapshot(args.snapshot_id, args.events), || {
             format!("get failed for snapshot {}", args.snapshot_id)
@@ -320,13 +384,21 @@ fn show_snapshot(db_path: &Path, args: &GetArgs) -> Result<()> {
         schema_version: OUTPUT_SCHEMA_VERSION,
         command: "get",
         generated_at: generated_at_now()?,
+        applied_filters: serde_json::to_value(&filters)?,
         snapshot,
     };
     emit_get_output(format, &envelope)
 }
 
 fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -> Result<()> {
+    let filters = normalize_retrieval_filters(&args.filters)?;
     let db = open_existing_db(db_path)?;
+    if !db.snapshot_matches_filters(args.snapshot_id, &filters)? {
+        return Err(anyhow!(
+            "snapshot {} does not satisfy the active filters",
+            args.snapshot_id
+        ));
+    }
     let representation = db
         .find_representation_bytes(args.snapshot_id, args.item, &args.uti)?
         .ok_or_else(|| {
@@ -384,23 +456,28 @@ fn open_or_init_db(path: &Path) -> Result<Database> {
 fn query_search_results(
     db: &Database,
     args: &SearchArgs,
+    filters: &RetrievalFilters,
     cursor: Option<&SearchCursorState>,
 ) -> Result<SearchResults> {
     match args.mode {
-        SearchMode::Auto => db.search_auto_page(&args.query, args.limit, cursor),
-        SearchMode::Fts => db.search_fts_page(&args.query, args.limit, cursor),
-        SearchMode::Literal => db.search_literal_page(&args.query, args.limit, cursor),
+        SearchMode::Auto => db.search_auto_page(&args.query, args.limit, filters, cursor),
+        SearchMode::Fts => db.search_fts_page(&args.query, args.limit, filters, cursor),
+        SearchMode::Literal => db.search_literal_page(&args.query, args.limit, filters, cursor),
     }
 }
 
-fn compute_recall(db: &Database, args: &RecallArgs) -> Result<RecallComputation> {
+fn compute_recall(
+    db: &Database,
+    args: &RecallArgs,
+    filters: &RetrievalFilters,
+) -> Result<RecallComputation> {
     let query = args.query.as_deref().map(str::trim).filter(|query| !query.is_empty());
     let mut merged = HashMap::<i64, RecallCandidate>::new();
     let mut search_mode_used = None;
     let mut search_was_weak = false;
 
     if let Some(query) = query {
-        let results = run_search_query(db, query, args.mode, args.limit)?;
+        let results = run_search_query(db, query, args.mode, args.limit, filters)?;
         search_mode_used = Some(results.mode_used());
         let search_candidates = results
             .hits()
@@ -433,7 +510,7 @@ fn compute_recall(db: &Database, args: &RecallArgs) -> Result<RecallComputation>
         }
 
         if search_was_weak {
-            for (index, hit) in db.recent(args.limit, args.hours)?.into_iter().enumerate() {
+            for (index, hit) in db.recent(args.limit, filters)?.into_iter().enumerate() {
                 upsert_recall_candidate(
                     &mut merged,
                     build_recent_candidate(
@@ -446,7 +523,7 @@ fn compute_recall(db: &Database, args: &RecallArgs) -> Result<RecallComputation>
             }
         }
     } else {
-        for (index, hit) in db.recent(args.limit, args.hours)?.into_iter().enumerate() {
+        for (index, hit) in db.recent(args.limit, filters)?.into_iter().enumerate() {
             upsert_recall_candidate(
                 &mut merged,
                 build_recent_candidate(
@@ -488,11 +565,12 @@ fn run_search_query(
     query: &str,
     mode: SearchMode,
     limit: usize,
+    filters: &RetrievalFilters,
 ) -> Result<SearchResults> {
     match mode {
-        SearchMode::Auto => db.search_auto(query, limit),
-        SearchMode::Fts => db.search_fts(query, limit),
-        SearchMode::Literal => db.search_literal(query, limit),
+        SearchMode::Auto => db.search_auto(query, limit, filters),
+        SearchMode::Fts => db.search_fts(query, limit, filters),
+        SearchMode::Literal => db.search_literal(query, limit, filters),
     }
 }
 
@@ -729,6 +807,7 @@ fn parse_search_cursor(
     encoded: &str,
     query: &str,
     requested_mode: SearchMode,
+    filters: &RetrievalFilters,
 ) -> Result<SearchCursorState> {
     let token: SearchCursorToken = decode_cursor(encoded)?;
     if token.command != "search" {
@@ -740,6 +819,11 @@ fn parse_search_cursor(
     if token.query != query || token.requested_mode != requested_mode {
         return Err(anyhow!(
             "cursor does not match the active search query or mode"
+        ));
+    }
+    if token.filters != *filters {
+        return Err(anyhow!(
+            "cursor does not match the active search filters"
         ));
     }
     if requested_mode != SearchMode::Auto && token.mode_used != requested_mode {
@@ -758,7 +842,7 @@ fn parse_search_cursor(
     ))
 }
 
-fn parse_recent_cursor(encoded: &str, hours: Option<u32>) -> Result<RecentCursorState> {
+fn parse_recent_cursor(encoded: &str, filters: &RetrievalFilters) -> Result<RecentCursorState> {
     let token: RecentCursorToken = decode_cursor(encoded)?;
     if token.command != "recent" {
         return Err(anyhow!(
@@ -766,18 +850,40 @@ fn parse_recent_cursor(encoded: &str, hours: Option<u32>) -> Result<RecentCursor
             token.command
         ));
     }
-    if token.hours != hours {
+    if token.filters != *filters {
         return Err(anyhow!(
-            "cursor does not match the active recent-hours filter"
+            "cursor does not match the active recent filters"
         ));
     }
 
     Ok(RecentCursorState::new(token.last_seen_at, token.snapshot_id))
 }
 
+fn parse_timeline_cursor(
+    encoded: &str,
+    filters: &RetrievalFilters,
+    sort: TimelineSort,
+) -> Result<TimelineCursorState> {
+    let token: TimelineCursorToken = decode_cursor(encoded)?;
+    if token.command != "timeline" {
+        return Err(anyhow!(
+            "cursor is for command `{}` but was used with `timeline`",
+            token.command
+        ));
+    }
+    if token.filters != *filters || token.sort != sort {
+        return Err(anyhow!(
+            "cursor does not match the active timeline filters or sort"
+        ));
+    }
+
+    Ok(TimelineCursorState::new(token.observed_at, token.event_id))
+}
+
 fn encode_search_cursor(
     query: &str,
     requested_mode: SearchMode,
+    filters: &RetrievalFilters,
     mode_used: SearchMode,
     hit: &crate::model::SearchHit,
 ) -> Result<String> {
@@ -786,18 +892,33 @@ fn encode_search_cursor(
         query: query.to_string(),
         requested_mode,
         mode_used,
+        filters: filters.clone(),
         last_seen_at: hit.last_observed_at().to_string(),
         snapshot_id: hit.snapshot_id(),
         score: hit.score(),
     })
 }
 
-fn encode_recent_cursor(hours: Option<u32>, hit: &crate::model::SearchHit) -> Result<String> {
+fn encode_recent_cursor(filters: &RetrievalFilters, hit: &crate::model::SearchHit) -> Result<String> {
     encode_cursor(&RecentCursorToken {
         command: "recent".to_string(),
-        hours,
+        filters: filters.clone(),
         last_seen_at: hit.last_observed_at().to_string(),
         snapshot_id: hit.snapshot_id(),
+    })
+}
+
+fn encode_timeline_cursor(
+    filters: &RetrievalFilters,
+    sort: TimelineSort,
+    event: &TimelineEvent,
+) -> Result<String> {
+    encode_cursor(&TimelineCursorToken {
+        command: "timeline".to_string(),
+        filters: filters.clone(),
+        sort,
+        observed_at: event.observed_at().to_string(),
+        event_id: event.event_id(),
     })
 }
 
@@ -809,6 +930,23 @@ fn encode_cursor<T: Serialize>(token: &T) -> Result<String> {
 fn decode_cursor<T: for<'de> Deserialize<'de>>(encoded: &str) -> Result<T> {
     let bytes = hex::decode(encoded).map_err(|error| anyhow!("invalid cursor encoding: {error}"))?;
     serde_json::from_slice(&bytes).map_err(|error| anyhow!("invalid cursor payload: {error}"))
+}
+
+fn normalize_retrieval_filters(
+    args: &super::RetrievalFilterArgs,
+) -> Result<RetrievalFilters> {
+    args.normalized()
+        .map_err(|error| anyhow!(error.to_string()))
+}
+
+fn merge_applied_filters(filters: &RetrievalFilters, command_specific: serde_json::Value) -> serde_json::Value {
+    let mut value = serde_json::to_value(filters).unwrap_or_else(|_| json!({}));
+    if let (Some(base), Some(extra)) = (value.as_object_mut(), command_specific.as_object()) {
+        for (key, value) in extra {
+            base.insert(key.clone(), value.clone());
+        }
+    }
+    value
 }
 
 #[cfg(test)]
@@ -824,7 +962,7 @@ mod tests {
         query_search_results, run_watch_iteration_with_capture, SearchArgs, SearchMode,
         SearchResults, WatchArgs, WatchState,
     };
-    use crate::db::Database;
+    use crate::db::{Database, RetrievalFilters};
     use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
 
     fn temp_db_path(test_name: &str) -> PathBuf {
@@ -851,6 +989,10 @@ mod tests {
         if let Some(parent) = path.parent() {
             let _ = fs::remove_dir(parent);
         }
+    }
+
+    fn unfiltered() -> RetrievalFilters {
+        RetrievalFilters::default()
     }
 
     #[test]
@@ -894,11 +1036,27 @@ mod tests {
                 mode: SearchMode::Literal,
                 limit: 10,
                 cursor: None,
+                filters: crate::cli::RetrievalFilterArgs {
+                    since: None,
+                    until: None,
+                    hours: None,
+                    app: None,
+                    bundle_id: None,
+                    kind: None,
+                    has_text: false,
+                    has_url: false,
+                    has_file_url: false,
+                    has_image: false,
+                    has_pdf: false,
+                    min_bytes: None,
+                    max_bytes: None,
+                },
                 output: crate::cli::OutputArgs {
                     format: None,
                     json: false,
                 },
             },
+            &unfiltered(),
             None,
         )
         .expect("query should succeed");
@@ -930,12 +1088,13 @@ mod tests {
             1,
             Some(0.5),
         );
+        let filters = unfiltered();
         let encoded =
-            encode_search_cursor("git", SearchMode::Auto, SearchMode::Fts, &hit).unwrap();
-        let cursor = parse_search_cursor(&encoded, "git", SearchMode::Auto).unwrap();
+            encode_search_cursor("git", SearchMode::Auto, &filters, SearchMode::Fts, &hit).unwrap();
+        let cursor = parse_search_cursor(&encoded, "git", SearchMode::Auto, &filters).unwrap();
 
         assert_eq!(cursor.mode_used(), SearchMode::Fts);
-        assert!(parse_search_cursor(&encoded, "cargo", SearchMode::Auto).is_err());
+        assert!(parse_search_cursor(&encoded, "cargo", SearchMode::Auto, &filters).is_err());
     }
 
     #[test]
@@ -958,11 +1117,41 @@ mod tests {
             1,
             None,
         );
-        let encoded = encode_recent_cursor(Some(24), &hit).unwrap();
-        let cursor = parse_recent_cursor(&encoded, Some(24)).unwrap();
+        let filters = RetrievalFilters::new(
+            None,
+            None,
+            Some(24),
+            None,
+            None,
+            None,
+            false,
+            false,
+            false,
+            false,
+            false,
+            None,
+            None,
+        );
+        let encoded = encode_recent_cursor(&filters, &hit).unwrap();
+        let cursor = parse_recent_cursor(&encoded, &filters).unwrap();
 
         assert_eq!(cursor.snapshot_id(), 9);
-        assert!(parse_recent_cursor(&encoded, Some(12)).is_err());
+        assert!(parse_recent_cursor(&encoded, &RetrievalFilters::new(
+            None,
+            None,
+            Some(12),
+            None,
+            None,
+            None,
+            false,
+            false,
+            false,
+            false,
+            false,
+            None,
+            None,
+        ))
+        .is_err());
     }
 
     #[test]
@@ -1002,7 +1191,7 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(capture_calls.get(), 0);
-        assert!(db.recent(10, None).unwrap().is_empty());
+        assert!(db.recent(10, &unfiltered()).unwrap().is_empty());
 
         cleanup_db(&path);
     }
@@ -1044,7 +1233,7 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(capture_calls.get(), 1);
-        assert_eq!(db.recent(10, None).unwrap().len(), 1);
+        assert_eq!(db.recent(10, &unfiltered()).unwrap().len(), 1);
 
         cleanup_db(&path);
     }

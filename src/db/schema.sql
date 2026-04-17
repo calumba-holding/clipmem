@@ -49,6 +49,9 @@ CREATE INDEX IF NOT EXISTS idx_capture_events_snapshot_id
 CREATE INDEX IF NOT EXISTS idx_capture_events_snapshot_observed_id
     ON capture_events(snapshot_id, observed_at DESC, id DESC);
 
+CREATE INDEX IF NOT EXISTS idx_capture_events_observed_id
+    ON capture_events(observed_at DESC, id DESC);
+
 CREATE INDEX IF NOT EXISTS idx_snapshot_items_snapshot_id
     ON snapshot_items(snapshot_id, item_index);
 
