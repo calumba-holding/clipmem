@@ -50,10 +50,14 @@ pub fn build_representation(
     let kind = classify_uti(&uti, string_value.is_some());
     let decoded_text = if let Some(text) = string_value {
         Some(text)
-    } else if kind.is_textual() {
-        decode_text_bytes_lossy(&raw_bytes)
     } else {
-        None
+        decode_text_bytes_strict(&raw_bytes).or_else(|| {
+            if kind.is_textual() {
+                decode_text_bytes_lossy(&raw_bytes)
+            } else {
+                None
+            }
+        })
     };
 
     ClipboardRepresentation::new(uti, kind, hash_bytes(&raw_bytes), decoded_text, raw_bytes)
@@ -108,7 +112,7 @@ pub(crate) fn classify_uti(uti: &str, text_value_present: bool) -> ClipboardKind
     }
 }
 
-pub(crate) fn decode_text_bytes_lossy(bytes: &[u8]) -> Option<String> {
+pub(crate) fn decode_text_bytes_strict(bytes: &[u8]) -> Option<String> {
     if bytes.is_empty() {
         return Some(String::new());
     }
@@ -123,7 +127,11 @@ pub(crate) fn decode_text_bytes_lossy(bytes: &[u8]) -> Option<String> {
         return Some(text.to_string());
     }
 
-    if let Some(text) = decode_utf16(bytes) {
+    None
+}
+
+pub(crate) fn decode_text_bytes_lossy(bytes: &[u8]) -> Option<String> {
+    if let Some(text) = decode_text_bytes_strict(bytes) {
         return Some(text);
     }
 
@@ -263,24 +271,6 @@ fn ratio_at_most(count: usize, total: usize, numerator: usize, denominator: usiz
     count.saturating_mul(denominator) <= total.saturating_mul(numerator)
 }
 
-fn decode_utf16(bytes: &[u8]) -> Option<String> {
-    if bytes.len() < 2 || !bytes.len().is_multiple_of(2) {
-        return None;
-    }
-
-    let little_endian = decode_utf16_with_endian(bytes, true)?;
-    let big_endian = decode_utf16_with_endian(bytes, false)?;
-
-    let little_endian_score = readable_text_score(&little_endian);
-    let big_endian_score = readable_text_score(&big_endian);
-
-    if little_endian_score >= big_endian_score {
-        Some(little_endian)
-    } else {
-        Some(big_endian)
-    }
-}
-
 fn decode_utf16_with_endian(bytes: &[u8], little_endian: bool) -> Option<String> {
     let mut words = Vec::with_capacity(bytes.len() / 2);
     for chunk in bytes.chunks_exact(2) {
@@ -308,16 +298,6 @@ fn is_mostly_printable(bytes: &[u8]) -> bool {
         .count();
 
     ratio_at_least(printable, bytes.len(), 85, 100)
-}
-
-fn readable_text_score(text: &str) -> usize {
-    text.chars()
-        .filter(|character| {
-            character.is_ascii_graphic()
-                || character.is_whitespace()
-                || (*character as u32) > 0x7f && !character.is_control()
-        })
-        .count()
 }
 
 fn html_to_text_lossy(html: &str) -> String {
@@ -512,8 +492,11 @@ fn joined_search_text(items: &[ClipboardItem]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_snapshot, decode_text_bytes_lossy, html_to_text_lossy, rtf_to_text_lossy};
-    use crate::model::{CaptureContext, SnapshotKind};
+    use super::{
+        build_item, build_representation, build_snapshot, decode_text_bytes_lossy,
+        html_to_text_lossy, rtf_to_text_lossy,
+    };
+    use crate::model::{CaptureContext, ClipboardKind, SnapshotKind};
 
     #[test]
     fn html_is_stripped_reasonably() {
@@ -560,5 +543,42 @@ mod tests {
         assert_eq!(snapshot.item_count(), 0);
         assert!(snapshot.items().is_empty());
         assert_eq!(snapshot.preview_text(), "[empty clipboard]");
+    }
+
+    #[test]
+    fn generic_utf8_payloads_decode_without_becoming_searchable() {
+        let representation =
+            build_representation("public.data".to_string(), None, b"hello".to_vec());
+        let item = build_item(0, vec![representation.clone()]);
+
+        assert_eq!(representation.kind(), ClipboardKind::Binary);
+        assert_eq!(representation.text_value(), Some("hello"));
+        assert!(item.search_text().is_empty());
+    }
+
+    #[test]
+    fn generic_utf16_payloads_decode_without_becoming_searchable() {
+        let bytes = "hello"
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+        let representation = build_representation("public.data".to_string(), None, bytes);
+        let item = build_item(0, vec![representation.clone()]);
+
+        assert_eq!(representation.kind(), ClipboardKind::Binary);
+        assert_eq!(representation.text_value(), Some("hello"));
+        assert!(item.search_text().is_empty());
+    }
+
+    #[test]
+    fn binary_payloads_still_do_not_decode_lossily() {
+        let representation = build_representation(
+            "public.data".to_string(),
+            None,
+            vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a],
+        );
+
+        assert_eq!(representation.kind(), ClipboardKind::Binary);
+        assert_eq!(representation.text_value(), None);
     }
 }

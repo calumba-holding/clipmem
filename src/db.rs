@@ -6,8 +6,9 @@ mod tests;
 
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use clap::ValueEnum;
 use rusqlite::{Connection, OpenFlags, Row};
 use serde::Serialize;
@@ -15,6 +16,7 @@ use serde::Serialize;
 use crate::model::SearchHit;
 
 const SCHEMA: &str = include_str!("db/schema.sql");
+const CURRENT_SCHEMA_VERSION: i64 = 1;
 
 pub struct Database {
     pub(super) conn: Connection,
@@ -73,20 +75,20 @@ impl Database {
     /// or the connection cannot be configured and bootstrapped.
     pub fn open_or_init(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
-            anyhow::Context::with_context(std::fs::create_dir_all(parent), || {
+            Context::with_context(std::fs::create_dir_all(parent), || {
                 format!("failed to create {}", parent.display())
             })?;
             harden_path_permissions(parent, 0o700)?;
         }
 
-        let conn = open_connection(
+        let mut conn = open_connection(
             path,
             OpenFlags::SQLITE_OPEN_READ_WRITE
                 | OpenFlags::SQLITE_OPEN_CREATE
                 | OpenFlags::SQLITE_OPEN_URI
                 | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
-        bootstrap_connection(&conn)?;
+        prepare_connection(&mut conn)?;
         harden_path_permissions(path, 0o600)?;
 
         Ok(Self {
@@ -104,13 +106,13 @@ impl Database {
     /// Returns an error if the database file does not already exist, cannot be opened, or the
     /// connection cannot be configured.
     pub fn open_existing(path: &Path) -> Result<Self> {
-        let conn = open_connection(
+        let mut conn = open_connection(
             path,
             OpenFlags::SQLITE_OPEN_READ_WRITE
                 | OpenFlags::SQLITE_OPEN_URI
                 | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
-        configure_connection(&conn)?;
+        prepare_connection(&mut conn)?;
         if let Some(parent) = path.parent() {
             harden_path_permissions(parent, 0o700)?;
         }
@@ -124,8 +126,8 @@ impl Database {
 
     #[cfg(test)]
     pub(crate) fn open_in_memory() -> Result<Self> {
-        let conn = Connection::open_in_memory()?;
-        bootstrap_connection(&conn)?;
+        let mut conn = Connection::open_in_memory()?;
+        prepare_connection(&mut conn)?;
         Ok(Self {
             conn,
             path: PathBuf::from(":memory:"),
@@ -184,9 +186,9 @@ fn open_connection(path: &Path, flags: OpenFlags) -> Result<Connection> {
     })
 }
 
-fn bootstrap_connection(conn: &Connection) -> Result<()> {
-    anyhow::Context::context(configure_connection(conn), "configure database connection")?;
-    anyhow::Context::context(conn.execute_batch(SCHEMA), "apply database schema")?;
+fn prepare_connection(conn: &mut Connection) -> Result<()> {
+    Context::context(configure_connection(conn), "configure database connection")?;
+    Context::context(prepare_schema(conn), "prepare database schema")?;
     Ok(())
 }
 
@@ -210,12 +212,65 @@ fn configure_connection(conn: &Connection) -> Result<()> {
     configure_pragma(conn, "synchronous", "NORMAL")?;
     configure_pragma(conn, "foreign_keys", "ON")?;
     configure_pragma(conn, "temp_store", "MEMORY")?;
+    conn.busy_timeout(Duration::from_millis(1_500))
+        .context("configure SQLite busy timeout")?;
     Ok(())
 }
 
 fn configure_pragma(conn: &Connection, pragma: &str, value: &str) -> Result<()> {
-    anyhow::Context::with_context(conn.pragma_update(None, pragma, value), || {
+    Context::with_context(conn.pragma_update(None, pragma, value), || {
         format!("configure {pragma} pragma")
     })?;
     Ok(())
+}
+
+fn prepare_schema(conn: &mut Connection) -> Result<()> {
+    let tx = conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .context("begin schema transaction")?;
+
+    tx.execute_batch(SCHEMA).context("apply database schema")?;
+
+    let user_version: i64 = tx
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .context("read PRAGMA user_version")?;
+
+    match user_version {
+        0 => {
+            tx.execute(
+                "INSERT INTO snapshots_fts(snapshots_fts) VALUES ('rebuild')",
+                [],
+            )
+            .context("rebuild FTS5 index")?;
+            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+                .context("set PRAGMA user_version")?;
+        }
+        CURRENT_SCHEMA_VERSION => {}
+        version if version > CURRENT_SCHEMA_VERSION => {
+            bail!(
+                "database schema version {version} is newer than supported version {}",
+                CURRENT_SCHEMA_VERSION
+            );
+        }
+        version => {
+            bail!("unsupported database schema version {version}");
+        }
+    }
+
+    tx.commit().context("commit schema transaction")?;
+    Ok(())
+}
+
+#[cfg(test)]
+pub(crate) fn explain_query_plan(
+    conn: &Connection,
+    sql: &str,
+    params: &[&dyn rusqlite::ToSql],
+) -> Result<Vec<String>> {
+    let explain = format!("EXPLAIN QUERY PLAN {sql}");
+    let mut stmt = conn.prepare(&explain).context("prepare EXPLAIN QUERY PLAN")?;
+    let rows = stmt
+        .query_map(params, |row| row.get::<_, String>(3))
+        .context("execute EXPLAIN QUERY PLAN")?;
+    collect_rows(rows).context("collect EXPLAIN QUERY PLAN rows")
 }

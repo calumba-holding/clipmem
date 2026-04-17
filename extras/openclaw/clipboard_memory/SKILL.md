@@ -1,5 +1,5 @@
 ---
-name: clipboard-memory
+name: clipboard_memory
 description: Search the local clipboard archive captured by clipmem.
 metadata: {"openclaw":{"emoji":"📋","os":["darwin"],"requires":{"bins":["clipmem"]}}}
 ---
@@ -18,4 +18,5 @@ Notes:
 
 - `clipmem search` is lexical and works well for copied commands, code, URLs, errors, paths, notes, and prose.
 - `clipmem recent` returns recent unique clipboard states, grouped by content rather than by raw event count.
-- `clipmem get` includes the full stored text payloads that were recoverable at capture time.
+- `clipmem get` includes stored text payloads recovered for recognized text-like representations at capture time.
+- If a hit is image-, PDF-, or binary-only and has no `text_value`, report the metadata and explain that raw-byte recovery currently requires `clipmem export`.

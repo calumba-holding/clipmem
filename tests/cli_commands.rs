@@ -188,3 +188,75 @@ fn recent_command_rejects_zero_limit() {
 
     cleanup_db(&path);
 }
+
+#[test]
+fn export_command_writes_raw_representation_bytes() -> Result<()> {
+    let path = temp_db_path("export-bytes");
+    let output_path = std::env::temp_dir()
+        .join(format!("clipmem-export-{}-{}.bin", process::id(), 1));
+    let snapshot = build_snapshot(
+        CaptureContext::new(1)
+            .with_frontmost_app_name("Preview")
+            .with_frontmost_app_bundle_id("com.apple.Preview"),
+        vec![build_item(
+            0,
+            vec![build_representation(
+                "public.png".to_string(),
+                None,
+                vec![0x89, b'P', b'N', b'G'],
+            )],
+        )],
+    );
+    let ids = seed_database(&path, &[snapshot])?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "export",
+        &ids[0].to_string(),
+        "--item",
+        "0",
+        "--uti",
+        "public.png",
+        "--out",
+        output_path.to_str().expect("output path should be UTF-8"),
+    ]);
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be UTF-8");
+    let bytes = fs::read(&output_path)?;
+
+    assert!(output.status.success());
+    assert_eq!(bytes, vec![0x89, b'P', b'N', b'G']);
+    assert!(stdout.contains("snapshot="));
+    assert!(stdout.contains("uti=public.png"));
+
+    let _ = fs::remove_file(&output_path);
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn export_command_fails_for_unknown_representation() -> Result<()> {
+    let path = temp_db_path("export-missing");
+    let snapshot = text_snapshot(1, "git status");
+    let ids = seed_database(&path, &[snapshot])?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "export",
+        &ids[0].to_string(),
+        "--item",
+        "0",
+        "--uti",
+        "public.png",
+        "--out",
+        "/tmp/clipmem-missing.bin",
+    ]);
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be UTF-8");
+
+    assert!(!output.status.success());
+    assert!(stderr.contains("representation not found"));
+
+    cleanup_db(&path);
+    Ok(())
+}

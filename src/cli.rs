@@ -24,7 +24,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Continuously watch the clipboard and archive changes.
+    /// Continuously poll the clipboard and archive observed changes.
     Watch(WatchArgs),
     /// Capture the current clipboard state once.
     CaptureOnce(CaptureOnceArgs),
@@ -34,6 +34,8 @@ enum Command {
     Recent(RecentArgs),
     /// Show a stored snapshot in detail.
     Get(GetArgs),
+    /// Export one stored representation as raw bytes.
+    Export(ExportArgs),
     /// Print `SQLite` and FTS5 diagnostics.
     Doctor(DoctorArgs),
 }
@@ -133,6 +135,24 @@ struct GetArgs {
 }
 
 #[derive(Debug, Args)]
+struct ExportArgs {
+    /// Snapshot identifier.
+    snapshot_id: i64,
+
+    /// Item index inside the stored snapshot.
+    #[arg(long)]
+    item: usize,
+
+    /// Representation UTI to export.
+    #[arg(long)]
+    uti: String,
+
+    /// Destination path for the raw bytes.
+    #[arg(long)]
+    out: PathBuf,
+}
+
+#[derive(Debug, Args)]
 struct DoctorArgs {
     /// Emit diagnostics as JSON.
     #[arg(long, default_value_t = false)]
@@ -215,6 +235,31 @@ mod tests {
         let result = Cli::try_parse_from(["clipmem", "search", "--limit", "0", "git"]);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn export_command_parses_required_arguments() {
+        let cli = Cli::parse_from([
+            "clipmem",
+            "export",
+            "42",
+            "--item",
+            "1",
+            "--uti",
+            "public.png",
+            "--out",
+            "/tmp/clipmem.bin",
+        ]);
+
+        match cli.command {
+            Command::Export(args) => {
+                assert_eq!(args.snapshot_id, 42);
+                assert_eq!(args.item, 1);
+                assert_eq!(args.uti, "public.png");
+                assert_eq!(args.out, PathBuf::from("/tmp/clipmem.bin"));
+            }
+            other => panic!("expected export command, got {other:?}"),
+        }
     }
 
     #[test]

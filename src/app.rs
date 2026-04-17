@@ -30,20 +30,32 @@ impl Default for WatchState {
 /// # Errors
 ///
 /// Returns an error if storing the snapshot or its capture event fails.
+pub fn should_capture_change(
+    change_count: i64,
+    skip_initial: bool,
+    state: &mut WatchState,
+) -> bool {
+    if state.first_loop && skip_initial {
+        state.last_handled_change_count = Some(change_count);
+        state.first_loop = false;
+        return false;
+    }
+
+    state.first_loop = false;
+    state.last_handled_change_count != Some(change_count)
+}
+
+/// Persist one captured watch snapshot and mark its change count as handled.
+///
+/// # Errors
+///
+/// Returns an error if storing the snapshot or its capture event fails.
 pub fn process_watch_snapshot(
     db: &mut Database,
     snapshot: &ClipboardSnapshot,
-    skip_initial: bool,
     state: &mut WatchState,
 ) -> Result<Option<CaptureStoreResult>> {
-    if state.first_loop && skip_initial {
-        state.last_handled_change_count = Some(snapshot.change_count());
-        state.first_loop = false;
-        return Ok(None);
-    }
-    state.first_loop = false;
-
-    if state.last_handled_change_count == Some(snapshot.change_count()) {
+    if !should_capture_change(snapshot.change_count(), false, state) {
         return Ok(None);
     }
 
@@ -82,7 +94,9 @@ pub fn format_watch_capture_line(
 mod tests {
     use anyhow::Result;
 
-    use super::{format_watch_capture_line, process_watch_snapshot, WatchState};
+    use super::{
+        format_watch_capture_line, process_watch_snapshot, should_capture_change, WatchState,
+    };
     use crate::db::Database;
     use crate::model::{
         build_item, build_representation, build_snapshot, CaptureContext, CaptureStoreResult,
@@ -90,16 +104,16 @@ mod tests {
 
     #[test]
     fn skip_initial_marks_first_change_as_seen_without_storing() -> Result<()> {
-        let mut db = Database::open_in_memory()?;
+        let db = Database::open_in_memory()?;
         let mut state = WatchState::new();
         let snapshot = build_snapshot(
             CaptureContext::new(7).with_frontmost_app_name("Editor"),
             Vec::new(),
         );
 
-        let result = process_watch_snapshot(&mut db, &snapshot, true, &mut state)?;
+        let should_capture = should_capture_change(snapshot.change_count(), true, &mut state);
 
-        assert!(result.is_none());
+        assert!(!should_capture);
         assert!(db.recent(10, None)?.is_empty());
         Ok(())
     }
@@ -113,8 +127,8 @@ mod tests {
             Vec::new(),
         );
 
-        let first = process_watch_snapshot(&mut db, &snapshot, false, &mut state)?;
-        let second = process_watch_snapshot(&mut db, &snapshot, false, &mut state)?;
+        let first = process_watch_snapshot(&mut db, &snapshot, &mut state)?;
+        let second = process_watch_snapshot(&mut db, &snapshot, &mut state)?;
 
         assert!(first.is_some());
         assert!(second.is_none());
@@ -136,11 +150,11 @@ mod tests {
         );
 
         let first_store = anyhow::Context::context(
-            process_watch_snapshot(&mut db, &first, false, &mut state)?,
+            process_watch_snapshot(&mut db, &first, &mut state)?,
             "expected first watch snapshot to store",
         )?;
         let second_store = anyhow::Context::context(
-            process_watch_snapshot(&mut db, &second, false, &mut state)?,
+            process_watch_snapshot(&mut db, &second, &mut state)?,
             "expected second watch snapshot to store",
         )?;
         let details = db

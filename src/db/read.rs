@@ -255,6 +255,39 @@ impl Database {
             .context("collect literal search rows")
     }
 
+    /// Load one raw representation payload by snapshot id, item index, and UTI.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the lookup query fails.
+    pub fn find_representation_bytes(
+        &self,
+        snapshot_id: i64,
+        item_index: usize,
+        uti: &str,
+    ) -> Result<Option<ClipboardRepresentation>> {
+        let item_index = usize_to_i64(item_index)?;
+
+        rusqlite::OptionalExtension::optional(self.conn.query_row(
+            r"
+                SELECT uti, kind, raw_sha256, text_value, blob_value
+                FROM item_representations
+                WHERE snapshot_id = ?1 AND item_index = ?2 AND uti = ?3
+            ",
+            params![snapshot_id, item_index, uti],
+            |row| {
+                Ok(ClipboardRepresentation::new(
+                    row.get(0)?,
+                    row_enum(row, 1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        ))
+        .context("load representation bytes")
+    }
+
     fn load_snapshot_summary(&self, snapshot_id: i64) -> Result<Option<SnapshotDetails>> {
         let summary_sql = r"
             SELECT
@@ -463,6 +496,7 @@ fn invalid_fts_message(message: &str) -> bool {
     message.contains("fts5: syntax error")
         || message.contains("malformed match expression")
         || message.contains("unterminated string")
+        || message.contains("no such column:")
 }
 
 fn escape_like_pattern(query: &str) -> String {
@@ -513,6 +547,7 @@ mod tests {
     fn invalid_fts_messages_are_narrowly_classified() {
         assert!(invalid_fts_message("fts5: syntax error near \"%\""));
         assert!(invalid_fts_message("malformed MATCH expression"));
+        assert!(invalid_fts_message("no such column: https"));
         assert!(!invalid_fts_message("database disk image is malformed"));
     }
 

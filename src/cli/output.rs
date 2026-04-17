@@ -64,7 +64,7 @@ pub(super) fn render_hits_text(hits: &[SearchHit]) -> String {
             "[{}] {} · last seen {} · captures {} · {} · {} bytes · {} items",
             hit.snapshot_id(),
             hit.snapshot_kind(),
-            hit.last_observed_at(),
+            format_utc_timestamp(hit.last_observed_at()),
             hit.capture_count(),
             app,
             hit.total_bytes(),
@@ -108,8 +108,8 @@ pub(super) fn render_snapshot_text(snapshot: &SnapshotDetails) -> String {
     let _ = writeln!(
         out,
         "first seen: {} · last seen: {}",
-        snapshot.first_observed_at(),
-        snapshot.last_observed_at()
+        format_utc_timestamp(snapshot.first_observed_at()),
+        format_utc_timestamp(snapshot.last_observed_at())
     );
     let _ = writeln!(
         out,
@@ -169,7 +169,7 @@ pub(super) fn render_snapshot_text(snapshot: &SnapshotDetails) -> String {
                 out,
                 "  event {} · {} · change_count={} · {}",
                 event.event_id(),
-                event.observed_at(),
+                format_utc_timestamp(event.observed_at()),
                 event.change_count(),
                 source
             );
@@ -214,6 +214,18 @@ fn print_json<T: Serialize>(value: &T) -> Result<()> {
 
 fn push_blank_line(out: &mut String) {
     out.push('\n');
+}
+
+fn format_utc_timestamp(timestamp: &str) -> String {
+    if timestamp.ends_with('Z')
+        || timestamp.ends_with(" UTC")
+        || timestamp.contains('+')
+        || timestamp.rfind('-').is_some_and(|idx| idx > 9)
+    {
+        timestamp.to_string()
+    } else {
+        format!("{timestamp} UTC")
+    }
 }
 
 #[cfg(test)]
@@ -272,6 +284,7 @@ mod tests {
         )]);
 
         assert!(text.contains("[42] plain_text"));
+        assert!(text.contains("2026-04-16 18:00:00 UTC"));
         assert!(text.contains("preview: git status"));
         assert!(text.contains("match:   git ⟦status⟧"));
         assert!(text.contains("score:   0.125"));
@@ -311,9 +324,11 @@ mod tests {
         ));
 
         assert!(text.contains("snapshot 7"));
+        assert!(text.contains("first seen: 2026-04-16 10:00:00 UTC"));
+        assert!(text.contains("last seen: 2026-04-16 11:00:00 UTC"));
         assert!(text.contains("preview: git push"));
         assert!(text.contains("item 0 · kind=plain_text"));
-        assert!(text.contains("event 21"));
+        assert!(text.contains("event 21 · 2026-04-16 11:00:00 UTC"));
     }
 
     #[test]

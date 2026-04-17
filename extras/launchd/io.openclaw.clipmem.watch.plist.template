@@ -9,6 +9,7 @@
     <array>
       <string>{{CLIPMEM_BIN}}</string>
       <string>watch</string>
+      <string>--skip-initial</string>
       <string>--db</string>
       <string>{{CLIPMEM_DB_PATH}}</string>
       <string>--interval-ms</string>
@@ -19,9 +20,6 @@
     <true/>
     <key>KeepAlive</key>
     <true/>
-
-    <key>WorkingDirectory</key>
-    <string>{{WORKING_DIRECTORY}}</string>
 
     <key>StandardOutPath</key>
     <string>{{STDOUT_PATH}}</string>

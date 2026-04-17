@@ -4,20 +4,20 @@
   <img src="docs/clipmem-screenshot.png" alt="clipmem screenshot" width="600">
 </p>
 
-`clipmem` is a small Rust CLI for macOS that archives clipboard changes into SQLite, builds a searchable local clipboard history, and gives you a command that OpenClaw can call whenever it needs to recall something you copied.
+`clipmem` is a small Rust CLI for macOS that archives observed clipboard states into SQLite, builds a searchable local clipboard history, and gives you a command that OpenClaw can call whenever it needs to recall something you copied.
 
-It captures the current `NSPasteboard` contents, stores every representation it can read for every pasteboard item, deduplicates identical clipboard snapshots by SHA-256 fingerprint, and records each observation as its own event.
+It captures the current `NSPasteboard` contents, stores every representation it can read for every pasteboard item, deduplicates identical clipboard snapshots by SHA-256 fingerprint, and records each observed state as its own event.
 
 ## What it stores
 
-For each clipboard change, `clipmem` stores:
+For each observed clipboard state, `clipmem` stores:
 
 - the whole clipboard snapshot
 - each pasteboard item inside that snapshot
 - every representation type exposed by that item
 - raw bytes for every representation
-- decoded text when the representation is text-like
-- a searchable text projection that powers automatic FTS-or-literal lookup
+- decoded text when the representation is text-like, plus strict UTF-8/UTF-16 recovery for some byte-only payloads
+- a searchable text projection for recognized text-like representations that powers automatic FTS-or-literal lookup
 - the frontmost application at capture time as a best-effort source hint
 
 The database schema separates deduplicated `snapshots` from per-observation `capture_events`, so the same content copied ten times does not create ten full blob copies.
@@ -30,13 +30,14 @@ The local archive is treated as sensitive state: the tool and installer tighten 
 - Images, PDFs and opaque binary types are fully stored as blobs but are not OCR’d.
 - Default search is automatic: it uses SQLite FTS5 when that fits the query and falls back to literal substring matching for wildcard-like input, invalid FTS syntax, or zero FTS hits.
 - The watcher polls `NSPasteboard.changeCount` on a short interval.
+- The watcher is best-effort: if the clipboard changes multiple times between polls, intermediate states can be missed.
 - The frontmost app is recorded as a practical hint, not a guaranteed pasteboard owner.
 
 ## Project layout
 
 - `src/` – Rust source
 - `extras/launchd/` – LaunchAgent template
-- `extras/openclaw/clipboard-memory/` – OpenClaw skill stub
+- `extras/openclaw/clipboard_memory/` – OpenClaw skill stub
 - `scripts/install_launchagent.sh` – install and load the watcher as a user LaunchAgent
 - `scripts/uninstall_launchagent.sh` – remove the LaunchAgent
 - `scripts/install_openclaw_skill.sh` – copy the skill into `~/.openclaw/skills`
@@ -52,7 +53,7 @@ cargo build --release
 Or install the CLI into `~/.local/bin`:
 
 ```bash
-cargo install --path . --root ~/.local
+cargo install --path . --root ~/.local --force --locked
 ```
 
 That gives you:
@@ -73,6 +74,12 @@ Start the watcher in the foreground:
 
 ```bash
 clipmem watch --interval-ms 350
+```
+
+Skip storing the clipboard state that already exists when a watcher starts:
+
+```bash
+clipmem watch --interval-ms 350 --skip-initial
 ```
 
 Search the archive:
@@ -97,6 +104,12 @@ clipmem get 42
 clipmem get 42 --json
 ```
 
+Export a stored raw representation:
+
+```bash
+clipmem export 42 --item 0 --uti public.png --out ./clipboard.png
+```
+
 Check SQLite / FTS5 diagnostics:
 
 ```bash
@@ -116,6 +129,7 @@ By default that will:
 - install the Rust binary into `~/.local/bin`
 - create `~/Library/Application Support/clipmem`
 - write `~/Library/LaunchAgents/io.openclaw.clipmem.watch.plist`
+- configure the LaunchAgent to start with `--skip-initial`
 - load and kickstart the user LaunchAgent
 
 Useful environment variables for the script:
@@ -124,7 +138,7 @@ Useful environment variables for the script:
 - `CLIPMEM_DB_PATH` – defaults to `~/Library/Application Support/clipmem/clipmem.sqlite3`
 - `CLIPMEM_INTERVAL_MS` – defaults to `350`
 
-To remove it:
+To remove the LaunchAgent and plist:
 
 ```bash
 ./scripts/uninstall_launchagent.sh
@@ -141,13 +155,13 @@ Install the bundled skill stub:
 That copies:
 
 ```text
-extras/openclaw/clipboard-memory/SKILL.md
+extras/openclaw/clipboard_memory/SKILL.md
 ```
 
 into:
 
 ```text
-~/.openclaw/skills/clipboard-memory
+~/.openclaw/skills/clipboard_memory
 ```
 
 The skill tells OpenClaw to use:
@@ -155,6 +169,10 @@ The skill tells OpenClaw to use:
 - `clipmem search "<query>" --json`
 - `clipmem recent --hours 24 --json`
 - `clipmem get <snapshot-id> --json`
+
+OpenClaw must be able to run `clipmem` from its own environment, not just from your interactive shell. If you installed `clipmem` into `~/.local/bin`, make sure that directory is on the PATH seen by OpenClaw.
+
+After copying the skill, reload skills or restart OpenClaw if it does not appear immediately.
 
 ## Schema notes
 
@@ -168,9 +186,11 @@ The key tables are:
 
 ## Limitations worth knowing
 
-- Binary payloads are stored exactly, but only text-like payloads are indexed.
-- RTF and HTML text extraction is intentionally lightweight.
+- Binary payloads are stored exactly, but only recognized text-like payloads are indexed.
+- `clipmem get --json` intentionally omits raw blob bytes. Use `clipmem export` to recover stored binary payloads.
+- RTF and HTML text extraction is intentionally lightweight and best-effort.
 - Search is great for commands, code, URLs, notes, logs and copied prose. Use `--mode auto` for the default FTS-or-literal behavior, `--mode fts` for strict FTS5 queries, or `--mode literal` for exact substring matching. It is not semantic search.
+- Explicit `--mode fts` keeps SQLite FTS5 semantics. In automatic mode, punctuation-heavy inputs may fall back to literal search.
 - This project is written to be easy to extend: adding export commands, embeddings, OCR, source-app heuristics or richer HTML parsing is straightforward.
 
 ## Example OpenClaw prompts once installed

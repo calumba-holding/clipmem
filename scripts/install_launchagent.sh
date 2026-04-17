@@ -14,39 +14,47 @@ BIN_PATH="${BIN_DIR}/clipmem"
 APP_SUPPORT_DIR="$(dirname -- "${DB_PATH}")"
 LOG_DIR="${APP_SUPPORT_DIR}/logs"
 PLIST_PATH="$HOME/Library/LaunchAgents/io.openclaw.clipmem.watch.plist"
-TEMPLATE_PATH="${PROJECT_DIR}/extras/launchd/io.openclaw.clipmem.watch.plist.template"
 
 install -d -m 700 "$BIN_DIR" "$APP_SUPPORT_DIR" "$LOG_DIR" "$HOME/Library/LaunchAgents"
 
-cargo install --path "$PROJECT_DIR" --root "$INSTALL_ROOT"
+cargo install --path "$PROJECT_DIR" --root "$INSTALL_ROOT" --force --locked
 
 STDOUT_PATH="${LOG_DIR}/clipmem.stdout.log"
 STDERR_PATH="${LOG_DIR}/clipmem.stderr.log"
 touch "$STDOUT_PATH" "$STDERR_PATH"
 chmod 600 "$STDOUT_PATH" "$STDERR_PATH"
 
-python3 - "$TEMPLATE_PATH" "$PLIST_PATH" "$BIN_PATH" "$DB_PATH" "$INTERVAL_MS" "$PROJECT_DIR" "$STDOUT_PATH" "$STDERR_PATH" <<'PY'
-import pathlib
-import sys
+cat >"$PLIST_PATH" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>io.openclaw.clipmem.watch</string>
 
-template_path = pathlib.Path(sys.argv[1])
-out_path = pathlib.Path(sys.argv[2])
+    <key>ProgramArguments</key>
+    <array>
+      <string>${BIN_PATH}</string>
+      <string>watch</string>
+      <string>--skip-initial</string>
+      <string>--db</string>
+      <string>${DB_PATH}</string>
+      <string>--interval-ms</string>
+      <string>${INTERVAL_MS}</string>
+    </array>
 
-text = template_path.read_text()
-replacements = {
-    "{{CLIPMEM_BIN}}": sys.argv[3],
-    "{{CLIPMEM_DB_PATH}}": sys.argv[4],
-    "{{CLIPMEM_INTERVAL_MS}}": sys.argv[5],
-    "{{WORKING_DIRECTORY}}": sys.argv[6],
-    "{{STDOUT_PATH}}": sys.argv[7],
-    "{{STDERR_PATH}}": sys.argv[8],
-}
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
 
-for key, value in replacements.items():
-    text = text.replace(key, value)
-
-out_path.write_text(text)
-PY
+    <key>StandardOutPath</key>
+    <string>${STDOUT_PATH}</string>
+    <key>StandardErrorPath</key>
+    <string>${STDERR_PATH}</string>
+  </dict>
+</plist>
+EOF
 
 chmod 600 "$PLIST_PATH"
 

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
 use crate::model::{CaptureStoreResult, ClipboardItem, ClipboardSnapshot};
 
@@ -15,20 +15,11 @@ impl Database {
     pub fn store_capture(&mut self, snapshot: &ClipboardSnapshot) -> Result<CaptureStoreResult> {
         let tx = self
             .conn
-            .transaction()
+            .transaction_with_behavior(TransactionBehavior::Immediate)
             .context("begin capture transaction")?;
 
-        let existing_id: Option<i64> = rusqlite::OptionalExtension::optional(tx.query_row(
-            "SELECT id FROM snapshots WHERE sha256 = ?1",
-            [snapshot.fingerprint()],
-            |row| row.get(0),
-        ))
-        .context("lookup existing snapshot by fingerprint")?;
-
-        let snapshot_id = if let Some(id) = existing_id {
-            id
-        } else {
-            tx.execute(
+        let inserted_snapshot_id: Option<i64> = tx
+            .query_row(
                 "INSERT INTO snapshots (
                     sha256,
                     snapshot_kind,
@@ -36,7 +27,9 @@ impl Database {
                     search_text,
                     item_count,
                     total_bytes
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                ON CONFLICT(sha256) DO NOTHING
+                RETURNING id",
                 params![
                     snapshot.fingerprint(),
                     snapshot.snapshot_kind().as_str(),
@@ -45,16 +38,25 @@ impl Database {
                     usize_to_i64(snapshot.item_count())?,
                     usize_to_i64(snapshot.total_bytes())?,
                 ],
+                |row| row.get(0),
             )
+            .optional()
             .context("insert snapshot row")?;
-            let inserted_snapshot_id = tx.last_insert_rowid();
 
+        let snapshot_id = if let Some(id) = inserted_snapshot_id {
             for item in snapshot.items() {
-                insert_item(&tx, inserted_snapshot_id, item)
+                insert_item(&tx, id, item)
                     .with_context(|| format!("insert snapshot item {}", item.item_index()))?;
             }
 
-            inserted_snapshot_id
+            id
+        } else {
+            tx.query_row(
+                "SELECT id FROM snapshots WHERE sha256 = ?1",
+                [snapshot.fingerprint()],
+                |row| row.get(0),
+            )
+            .context("lookup existing snapshot by fingerprint")?
         };
 
         tx.execute(
@@ -79,7 +81,7 @@ impl Database {
         Ok(CaptureStoreResult::new(
             snapshot_id,
             event_id,
-            existing_id.is_none(),
+            inserted_snapshot_id.is_some(),
         ))
     }
 }

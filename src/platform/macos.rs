@@ -7,6 +7,13 @@ use crate::model::{
     ClipboardSnapshot,
 };
 
+pub fn current_change_count() -> Result<i64> {
+    autoreleasepool(|_| {
+        let pasteboard = NSPasteboard::generalPasteboard();
+        Ok(pasteboard.changeCount() as i64)
+    })
+}
+
 pub fn capture_snapshot() -> Result<ClipboardSnapshot> {
     autoreleasepool(|_| {
         let pasteboard = NSPasteboard::generalPasteboard();
