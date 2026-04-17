@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 description = "macOS clipboard memory backed by SQLite and searchable from OpenClaw"
 license = "MIT"
+repository = "https://github.com/tristanmanchester/clipmem"
+homepage = "https://github.com/tristanmanchester/clipmem"
+documentation = "https://docs.rs/clipmem"
+readme = "README.md"
+rust-version = "1.87"
 categories = ["command-line-utilities", "database"]
 keywords = ["clipboard", "sqlite", "macos", "cli", "search"]
 
@@ -19,3 +24,8 @@ sha2 = "0.10"
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.2"
 objc2-app-kit = { version = "0.3.2", features = ["NSPasteboard", "NSPasteboardItem", "NSWorkspace", "NSRunningApplication"] }
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
