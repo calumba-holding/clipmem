@@ -132,6 +132,7 @@ Start with the command that returns the least structure needed for the job:
 - `clipmem forget <snapshot-id>` — hard-delete one snapshot and its capture history.
 - `clipmem purge --older-than <duration> [--dry-run]` — prune old snapshots by `last_observed_at`.
 - `clipmem settings ...` — inspect or change persistent pause / retention / ignore-list policy.
+- `clipmem settings api-key-filter on` — skip clipboard snapshots that look like API keys or tokens.
 
 ### Common recipes
 
@@ -165,6 +166,7 @@ clipmem export 42 --item 0 --uti public.png --out ./clipboard.png --force
 clipmem forget 42
 clipmem purge --older-than 30d --dry-run
 clipmem settings pause on
+clipmem settings api-key-filter on
 clipmem settings ignore add com.apple.Passwords
 ```
 
@@ -224,13 +226,14 @@ Persistent capture policy lives in SQLite and is managed through `clipmem settin
 ```bash
 clipmem settings show --format json
 clipmem settings pause on
+clipmem settings api-key-filter on
 clipmem settings retention 30d
 clipmem settings retention forever
 clipmem settings ignore add com.apple.Passwords
 clipmem settings ignore list
 ```
 
-Ignore matching is exact, case-insensitive bundle-id matching. Retention ages snapshots by `last_observed_at`, not their original insertion time.
+Ignore matching is exact, case-insensitive bundle-id matching. Retention ages snapshots by `last_observed_at`, not their original insertion time. The API-key filter is opt-in and skips the entire snapshot before any preview text, search text, or blob payloads are written, but it is heuristic and tuned to avoid false positives rather than catch every possible secret.
 
 ### Search modes
 
@@ -423,6 +426,7 @@ For compatibility, `./scripts/install_openclaw_skill.sh` still exists as a thin 
 - **The database is not encrypted.** Rely on FileVault (or similar disk encryption) for at-rest protection.
 - Blob payloads are stored so `clipmem restore` can faithfully rehydrate images, RTF, URLs, file URLs, PDFs, and other clipboard representations.
 - You can pause capture persistently with `clipmem settings pause on`.
+- You can opt into a precision-biased secret guard with `clipmem settings api-key-filter on`; matching snapshots are skipped entirely instead of being redacted.
 - You can exclude exact bundle ids with `clipmem settings ignore add <bundle-id>`.
 - You can prune automatically with `clipmem settings retention <duration|forever>` or manually with `clipmem purge --older-than <duration>`.
 

@@ -2,10 +2,11 @@ use anyhow::{Context, Result};
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
 use crate::model::{CaptureStoreResult, ClipboardItem, ClipboardSnapshot};
+use crate::sensitive;
 
 use super::{
-    row_usize, usize_to_i64, CapturePolicy, CaptureSettings, Database, PurgeReport,
-    SnapshotDeletionReport,
+    row_usize, usize_to_i64, CapturePolicy, CaptureSettings, CaptureSkipReason,
+    CaptureStoreOutcome, Database, PurgeReport, SnapshotDeletionReport,
 };
 
 impl Database {
@@ -88,10 +89,27 @@ impl Database {
         ))
     }
 
+    pub(crate) fn store_capture_if_allowed(
+        &mut self,
+        snapshot: &ClipboardSnapshot,
+    ) -> Result<CaptureStoreOutcome> {
+        let settings = self.capture_settings()?;
+        if settings.api_key_filter_enabled()
+            && sensitive::should_skip_snapshot_for_api_key_filter(snapshot)
+        {
+            return Ok(CaptureStoreOutcome::Skipped(
+                CaptureSkipReason::ApiKeyFilter,
+            ));
+        }
+
+        self.store_capture(snapshot)
+            .map(CaptureStoreOutcome::Stored)
+    }
+
     pub(crate) fn capture_settings(&self) -> Result<CaptureSettings> {
         self.conn
             .query_row(
-                "SELECT paused, retention_seconds FROM clipmem_settings WHERE id = 1",
+                "SELECT paused, retention_seconds, api_key_filter_enabled FROM clipmem_settings WHERE id = 1",
                 [],
                 |row| {
                     let paused = row.get::<_, i64>(0)? != 0;
@@ -106,7 +124,12 @@ impl Database {
                                 Box::new(source),
                             )
                         })?;
-                    Ok(CaptureSettings::new(paused, retention_seconds))
+                    let api_key_filter_enabled = row.get::<_, i64>(2)? != 0;
+                    Ok(CaptureSettings::new(
+                        paused,
+                        retention_seconds,
+                        api_key_filter_enabled,
+                    ))
                 },
             )
             .context("load capture settings")
@@ -143,6 +166,16 @@ impl Database {
                 [retention_seconds],
             )
             .context("update retention setting")?;
+        self.capture_settings()
+    }
+
+    pub(crate) fn set_api_key_filter_enabled(&self, enabled: bool) -> Result<CaptureSettings> {
+        self.conn
+            .execute(
+                "UPDATE clipmem_settings SET api_key_filter_enabled = ?1 WHERE id = 1",
+                [if enabled { 1_i64 } else { 0_i64 }],
+            )
+            .context("update api key filter setting")?;
         self.capture_settings()
     }
 

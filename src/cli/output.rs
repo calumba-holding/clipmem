@@ -7,10 +7,10 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::db::SearchResults;
 use crate::model::{
-    CaptureStoreResult, ClipboardSnapshot, DoctorReport, FlattenedTextProjection, SearchHit,
-    SnapshotDetails, TextFragment, TimelineEvent,
+    DoctorReport, FlattenedTextProjection, SearchHit, SnapshotDetails, TextFragment, TimelineEvent,
 };
 
+use super::commands::CaptureOnceOutput;
 use super::OutputFormat;
 
 pub(super) const OUTPUT_SCHEMA_VERSION: u32 = 1;
@@ -667,29 +667,38 @@ pub(super) fn emit_recall_output(
     }
 }
 
-pub(super) fn render_capture_once_text(
-    store: &CaptureStoreResult,
-    snapshot: &ClipboardSnapshot,
-) -> String {
+pub(super) fn render_capture_once_text(output: &CaptureOnceOutput) -> String {
     let mut out = String::new();
-    let store_state = if store.inserted_new_snapshot() {
-        "new content"
-    } else {
-        "already known content"
-    };
-    let _ = writeln!(
-        out,
-        "stored snapshot {} via event {} ({store_state})",
-        store.snapshot_id(),
-        store.event_id()
-    );
-    let _ = writeln!(out, "kind: {}", snapshot.snapshot_kind());
-    let _ = writeln!(out, "bytes: {}", snapshot.total_bytes());
-    if let Some(app) = snapshot.frontmost_app_name() {
-        let _ = writeln!(out, "frontmost app: {app}");
-    }
-    if !snapshot.preview_text().is_empty() {
-        let _ = writeln!(out, "preview: {}", snapshot.preview_text());
+    match output {
+        CaptureOnceOutput::Stored(output) => {
+            let store_state = if output.store.inserted_new_snapshot() {
+                "new content"
+            } else {
+                "already known content"
+            };
+            let _ = writeln!(
+                out,
+                "stored snapshot {} via event {} ({store_state})",
+                output.store.snapshot_id(),
+                output.store.event_id()
+            );
+            let _ = writeln!(out, "kind: {}", output.snapshot.snapshot_kind());
+            let _ = writeln!(out, "bytes: {}", output.snapshot.total_bytes());
+            if let Some(app) = output.snapshot.frontmost_app_name() {
+                let _ = writeln!(out, "frontmost app: {app}");
+            }
+            if !output.snapshot.preview_text().is_empty() {
+                let _ = writeln!(out, "preview: {}", output.snapshot.preview_text());
+            }
+        }
+        CaptureOnceOutput::Skipped(output) => {
+            let _ = writeln!(out, "skipped capture reason={}", output.reason.as_str());
+            let _ = writeln!(out, "kind: {}", output.kind);
+            let _ = writeln!(out, "bytes: {}", output.total_bytes);
+            if let Some(app) = &output.frontmost_app_name {
+                let _ = writeln!(out, "frontmost app: {app}");
+            }
+        }
     }
 
     out
@@ -1546,6 +1555,7 @@ mod tests {
         CaptureStoreResult, DoctorReport, SearchHit, SnapshotDetails, SnapshotKind, TimelineEvent,
     };
 
+    use super::super::commands::{CaptureOnceOutput, CaptureOnceStoredOutput};
     use super::{
         render_capture_once_text, render_doctor_text, render_get_markdown, render_hits_text,
         render_list_markdown, render_list_toon, render_recall_markdown, render_recall_toon,
@@ -1556,9 +1566,9 @@ mod tests {
 
     #[test]
     fn render_capture_once_text_reports_summary_lines() {
-        let text = render_capture_once_text(
-            &CaptureStoreResult::new(9, 12, true),
-            &build_snapshot(
+        let text = render_capture_once_text(&CaptureOnceOutput::Stored(CaptureOnceStoredOutput {
+            store: CaptureStoreResult::new(9, 12, true),
+            snapshot: build_snapshot(
                 CaptureContext::new(3)
                     .with_frontmost_app_name("Terminal")
                     .with_frontmost_app_bundle_id("com.apple.Terminal"),
@@ -1571,11 +1581,29 @@ mod tests {
                     )],
                 )],
             ),
-        );
+        }));
 
         assert!(text.contains("stored snapshot 9 via event 12"));
         assert!(text.contains("kind: plain_text"));
         assert!(text.contains("preview: git status"));
+    }
+
+    #[test]
+    fn render_capture_once_text_skips_preview_for_filtered_content() {
+        let text = render_capture_once_text(&CaptureOnceOutput::Skipped(
+            super::super::commands::CaptureOnceSkippedOutput {
+                status: "skipped",
+                reason: crate::db::CaptureSkipReason::ApiKeyFilter,
+                kind: "plain_text".to_string(),
+                total_bytes: 48,
+                frontmost_app_name: Some("Terminal".to_string()),
+                frontmost_app_bundle_id: Some("com.apple.Terminal".to_string()),
+            },
+        ));
+
+        assert!(text.contains("skipped capture reason=api_key_filter"));
+        assert!(text.contains("kind: plain_text"));
+        assert!(!text.contains("preview:"));
     }
 
     #[test]

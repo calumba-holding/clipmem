@@ -620,7 +620,7 @@ fn setup_uses_direct_launchagent_provider_when_homebrew_is_not_detected() -> Res
     assert!(output.status.success(), "{}", stderr_text(&output));
     let stdout = stdout_text(&output);
     assert!(stdout.contains("provider: launchagent"));
-    assert!(stdout.contains("seeded_capture: false"));
+    assert!(stdout.contains("seed_capture: not_attempted"));
 
     let plist_path = home_dir.join("Library/LaunchAgents/io.openclaw.clipmem.watch.plist");
     assert!(plist_path.is_file());
@@ -1734,6 +1734,15 @@ fn settings_commands_persist_policy_and_support_json_views() -> Result<()> {
     ]);
     assert!(retention_output.status.success());
 
+    let api_key_filter_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "settings",
+        "api-key-filter",
+        "on",
+    ]);
+    assert!(api_key_filter_output.status.success());
+
     let add_output = run_cli(&[
         "--db",
         path.to_str().expect("db path should be UTF-8"),
@@ -1757,6 +1766,7 @@ fn settings_commands_persist_policy_and_support_json_views() -> Result<()> {
 
     assert!(show_output.status.success());
     assert_eq!(show_payload["paused"].as_bool(), Some(true));
+    assert_eq!(show_payload["api_key_filter_enabled"].as_bool(), Some(true));
     assert_eq!(
         show_payload["retention_seconds"].as_u64(),
         Some(30 * 24 * 60 * 60)
@@ -1884,6 +1894,15 @@ fn service_status_reports_capture_policy_in_text_and_json() -> Result<()> {
     ]);
     assert!(retention_output.status.success());
 
+    let api_key_filter_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "settings",
+        "api-key-filter",
+        "on",
+    ]);
+    assert!(api_key_filter_output.status.success());
+
     let ignore_output = run_cli(&[
         "--db",
         path.to_str().expect("db path should be UTF-8"),
@@ -1906,6 +1925,7 @@ fn service_status_reports_capture_policy_in_text_and_json() -> Result<()> {
 
     assert!(json_output.status.success());
     assert_eq!(json_payload["paused"].as_bool(), Some(true));
+    assert_eq!(json_payload["api_key_filter_enabled"].as_bool(), Some(true));
     assert_eq!(
         json_payload["retention_seconds"].as_u64(),
         Some(30 * 24 * 60 * 60)
@@ -1923,6 +1943,7 @@ fn service_status_reports_capture_policy_in_text_and_json() -> Result<()> {
 
     assert!(text_output.status.success());
     assert!(text.contains("paused: true"));
+    assert!(text.contains("api key filter: true"));
     assert!(text.contains("retention: 30d"));
     assert!(text.contains("ignored bundle ids: 1"));
 

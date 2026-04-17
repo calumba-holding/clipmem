@@ -7,7 +7,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::Serialize;
 
 use crate::cli::db_path::default_db_path;
-use crate::db::{CaptureSettings, Database};
+use crate::db::{CaptureSettings, CaptureSkipReason, CaptureStoreOutcome, Database};
 use crate::platform::capture_snapshot;
 
 const DIRECT_LABEL: &str = "io.openclaw.clipmem.watch";
@@ -71,6 +71,7 @@ pub(super) struct ServiceStatusReport {
     pub(super) recent_capture_at: Option<String>,
     pub(super) recent_capture_within_last_hour: Option<bool>,
     pub(super) paused: Option<bool>,
+    pub(super) api_key_filter_enabled: Option<bool>,
     pub(super) retention_seconds: Option<u64>,
     pub(super) retention: Option<String>,
     pub(super) ignored_bundle_id_count: Option<usize>,
@@ -91,8 +92,15 @@ pub(super) struct ServiceActionReport {
 
 #[derive(Debug, Clone)]
 pub(super) struct SetupReport {
-    pub(super) seeded_capture: bool,
+    pub(super) seed_capture: SeedCaptureOutcome,
     pub(super) action: ServiceActionReport,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SeedCaptureOutcome {
+    Stored,
+    Skipped(CaptureSkipReason),
+    NotAttempted,
 }
 
 #[derive(Debug, Clone)]
@@ -126,10 +134,10 @@ pub(super) fn setup(db_path: &Path) -> Result<SetupReport> {
     let status = status_report(db_path)?;
     let selection = select_provider(&context)?;
     ensure_no_conflict(&status)?;
-    let seeded_capture = seed_capture(db_path)?;
+    let seed_capture = seed_capture(db_path)?;
     let action = start_with_provider(&context, &selection)?;
     Ok(SetupReport {
-        seeded_capture,
+        seed_capture,
         action,
     })
 }
@@ -212,6 +220,7 @@ pub(super) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
         recent_capture_at,
         recent_capture_within_last_hour,
         paused,
+        api_key_filter_enabled,
         retention_seconds,
         retention,
         ignored_bundle_id_count,
@@ -224,16 +233,26 @@ pub(super) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
                     db.latest_capture_observed_at()?,
                     Some(db.has_capture_within_hours(SERVICE_FRESHNESS_HOURS)?),
                     Some(policy.settings().paused()),
+                    Some(policy.settings().api_key_filter_enabled()),
                     policy.settings().retention_seconds(),
                     Some(render_retention_value(policy.settings())),
                     Some(policy.ignored_bundle_id_count()),
                     None,
                 )
             }
-            Err(error) => (None, None, None, None, None, None, Some(error.to_string())),
+            Err(error) => (
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(error.to_string()),
+            ),
         }
     } else {
-        (None, None, None, None, None, None, None)
+        (None, None, None, None, None, None, None, None)
     };
     let stale = matches!(recent_capture_within_last_hour, Some(false))
         && !homebrew_status.running
@@ -267,6 +286,7 @@ pub(super) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
         recent_capture_at,
         recent_capture_within_last_hour,
         paused,
+        api_key_filter_enabled,
         retention_seconds,
         retention,
         ignored_bundle_id_count,
@@ -280,12 +300,12 @@ pub(super) fn render_setup_text(report: &SetupReport) -> String {
     let mut out = String::new();
     out.push_str("clipmem setup completed\n");
     out.push_str(&format!(
-        "provider: {}\nlabel: {}\nbinary: {}\ndatabase: {}\nseeded_capture: {}\n",
+        "provider: {}\nlabel: {}\nbinary: {}\ndatabase: {}\nseed_capture: {}\n",
         report.action.provider.as_str(),
         report.action.label,
         report.action.binary_path.display(),
         report.action.db_path.display(),
-        report.seeded_capture
+        render_seed_capture_outcome(report.seed_capture)
     ));
     out.push_str("\nNext steps:\n");
     out.push_str("  clipmem service status\n");
@@ -340,6 +360,11 @@ pub(super) fn render_service_status_text(report: &ServiceStatusReport) -> String
         out.push_str(&format!("paused: {paused}\n"));
     } else {
         out.push_str("paused: unknown\n");
+    }
+    if let Some(enabled) = report.api_key_filter_enabled {
+        out.push_str(&format!("api key filter: {enabled}\n"));
+    } else {
+        out.push_str("api key filter: unknown\n");
     }
     if let Some(retention) = &report.retention {
         out.push_str(&format!("retention: {retention}\n"));
@@ -476,6 +501,14 @@ fn render_retention_value(settings: &CaptureSettings) -> String {
         .unwrap_or_else(|| "forever".to_string())
 }
 
+fn render_seed_capture_outcome(outcome: SeedCaptureOutcome) -> &'static str {
+    match outcome {
+        SeedCaptureOutcome::Stored => "stored",
+        SeedCaptureOutcome::Skipped(CaptureSkipReason::ApiKeyFilter) => "skipped_api_key_filter",
+        SeedCaptureOutcome::NotAttempted => "not_attempted",
+    }
+}
+
 fn format_duration_compact(seconds: u64) -> String {
     let day = 24 * 60 * 60;
     let hour = 60 * 60;
@@ -606,16 +639,20 @@ fn uninstall_direct_provider(context: &ServiceContext) -> Result<ServiceActionRe
     })
 }
 
-fn seed_capture(db_path: &Path) -> Result<bool> {
+fn seed_capture(db_path: &Path) -> Result<SeedCaptureOutcome> {
     if env::var_os("CLIPMEM_TEST_SKIP_SETUP_CAPTURE_ONCE").as_deref() == Some("1".as_ref()) {
-        return Ok(false);
+        return Ok(SeedCaptureOutcome::NotAttempted);
     }
 
     let mut db = Database::open_or_init(db_path)?;
     let snapshot = capture_snapshot().context("setup clipboard read failed")?;
-    db.store_capture(&snapshot)
-        .context("setup database write failed")?;
-    Ok(true)
+    match db
+        .store_capture_if_allowed(&snapshot)
+        .context("setup database write failed")?
+    {
+        CaptureStoreOutcome::Stored(_) => Ok(SeedCaptureOutcome::Stored),
+        CaptureStoreOutcome::Skipped(reason) => Ok(SeedCaptureOutcome::Skipped(reason)),
+    }
 }
 
 fn launchctl_row(label: &str) -> Result<Option<LaunchctlRow>> {

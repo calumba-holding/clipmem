@@ -141,6 +141,7 @@ const SETTINGS_AFTER_HELP: &str = "\
 Examples:
   clipmem settings show
   clipmem settings pause on
+  clipmem settings api-key-filter on
   clipmem settings retention 30d
   clipmem settings retention forever
   clipmem settings ignore add com.apple.Passwords
@@ -881,6 +882,8 @@ enum SettingsCommand {
     Show(SettingsShowArgs),
     /// Persistently pause or resume capture.
     Pause(SettingsPauseArgs),
+    /// Enable or disable API-key-like clipboard filtering.
+    ApiKeyFilter(SettingsApiKeyFilterArgs),
     /// Set retention to a duration or `forever`.
     Retention(SettingsRetentionArgs),
     /// Manage ignored bundle identifiers.
@@ -896,6 +899,12 @@ struct SettingsShowArgs {
 #[derive(Debug, Args)]
 struct SettingsPauseArgs {
     /// `on` pauses capture, `off` resumes it.
+    state: PauseState,
+}
+
+#[derive(Debug, Args)]
+struct SettingsApiKeyFilterArgs {
+    /// `on` skips clipboard snapshots that look like API keys, `off` stores them normally.
     state: PauseState,
 }
 
@@ -1104,7 +1113,7 @@ fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
             SettingsCommand::Show(args) => {
                 args.output.resolved()?;
             }
-            SettingsCommand::Pause(_) => {}
+            SettingsCommand::Pause(_) | SettingsCommand::ApiKeyFilter(_) => {}
             SettingsCommand::Retention(_) => {}
             SettingsCommand::Ignore(args) => match &args.command {
                 SettingsIgnoreCommand::Add(_) | SettingsIgnoreCommand::Remove(_) => {}
@@ -1756,6 +1765,15 @@ mod tests {
             Command::Settings(args) => match args.command {
                 super::SettingsCommand::Pause(args) => assert!(args.state.is_paused()),
                 other => panic!("expected settings pause command, got {other:?}"),
+            },
+            other => panic!("expected settings command, got {other:?}"),
+        }
+
+        let filter_cli = Cli::parse_from(["clipmem", "settings", "api-key-filter", "on"]);
+        match filter_cli.command {
+            Command::Settings(args) => match args.command {
+                super::SettingsCommand::ApiKeyFilter(args) => assert!(args.state.is_paused()),
+                other => panic!("expected settings api-key-filter command, got {other:?}"),
             },
             other => panic!("expected settings command, got {other:?}"),
         }

@@ -264,6 +264,7 @@ fn capture_policy_persists_across_reopen() -> Result<()> {
     {
         let db = Database::open_or_init(&path)?;
         db.set_paused(true)?;
+        db.set_api_key_filter_enabled(true)?;
         db.set_retention_seconds(Some(30 * 24 * 60 * 60))?;
         assert!(db.add_ignored_bundle_id("Com.Apple.Terminal")?);
     }
@@ -272,6 +273,7 @@ fn capture_policy_persists_across_reopen() -> Result<()> {
     let policy = reopened.capture_policy()?;
 
     assert!(policy.settings().paused());
+    assert!(policy.settings().api_key_filter_enabled());
     assert_eq!(
         policy.settings().retention_seconds(),
         Some(30 * 24 * 60 * 60)
@@ -282,6 +284,38 @@ fn capture_policy_persists_across_reopen() -> Result<()> {
     );
 
     cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn store_capture_if_allowed_skips_api_key_like_snapshots_when_enabled() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    db.set_api_key_filter_enabled(true)?;
+
+    let outcome = db.store_capture_if_allowed(&fake_snapshot(
+        1,
+        "Authorization: Bearer 8JfA-2mQpV_4tLz9XnR6cH0wKdS7yBu3",
+    ))?;
+
+    assert!(matches!(
+        outcome,
+        super::CaptureStoreOutcome::Skipped(super::CaptureSkipReason::ApiKeyFilter)
+    ));
+    assert!(db.recent(10, &unfiltered())?.is_empty());
+    Ok(())
+}
+
+#[test]
+fn store_capture_if_allowed_stores_sensitive_text_when_filter_is_disabled() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+
+    let outcome = db.store_capture_if_allowed(&fake_snapshot(
+        1,
+        "Authorization: Bearer 8JfA-2mQpV_4tLz9XnR6cH0wKdS7yBu3",
+    ))?;
+
+    assert!(matches!(outcome, super::CaptureStoreOutcome::Stored(_)));
+    assert_eq!(db.recent(10, &unfiltered())?.len(), 1);
     Ok(())
 }
 
@@ -760,9 +794,15 @@ fn open_existing_migrates_legacy_database_and_rebuilds_fts() -> Result<()> {
         .query_row("PRAGMA user_version", [], |row| row.get(0))?;
     let results = db.search_auto("git", 10, &unfiltered())?;
 
-    assert_eq!(version, 7);
+    assert_eq!(version, 8);
+    let api_key_filter_enabled: i64 = db.conn.query_row(
+        "SELECT api_key_filter_enabled FROM clipmem_settings WHERE id = 1",
+        [],
+        |row| row.get(0),
+    )?;
     assert_eq!(results.mode_used(), SearchMode::Fts);
     assert_eq!(results.hits().len(), 1);
+    assert_eq!(api_key_filter_enabled, 0);
 
     std::fs::remove_file(&path)?;
     Ok(())
@@ -806,7 +846,7 @@ fn repeated_open_existing_is_idempotent_after_migration() -> Result<()> {
         .conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))?;
 
-    assert_eq!(version, 7);
+    assert_eq!(version, 8);
 
     std::fs::remove_file(&path)?;
     Ok(())

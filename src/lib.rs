@@ -5,6 +5,7 @@ pub(crate) mod cli;
 pub(crate) mod db;
 pub(crate) mod model;
 pub(crate) mod platform;
+pub(crate) mod sensitive;
 
 pub use crate::cli::{run, run_cli, run_from, CliError, CliExitCode};
 

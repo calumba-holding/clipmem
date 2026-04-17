@@ -73,7 +73,8 @@ CREATE TABLE IF NOT EXISTS snapshot_literal_cache (
 CREATE TABLE IF NOT EXISTS clipmem_settings (
     id                INTEGER PRIMARY KEY CHECK (id = 1),
     paused            INTEGER NOT NULL DEFAULT 0 CHECK (paused IN (0, 1)),
-    retention_seconds INTEGER CHECK (retention_seconds IS NULL OR retention_seconds >= 0)
+    retention_seconds INTEGER CHECK (retention_seconds IS NULL OR retention_seconds >= 0),
+    api_key_filter_enabled INTEGER NOT NULL DEFAULT 0 CHECK (api_key_filter_enabled IN (0, 1))
 );
 
 CREATE TABLE IF NOT EXISTS ignored_bundle_ids (

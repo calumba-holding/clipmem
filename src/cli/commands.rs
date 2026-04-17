@@ -10,13 +10,11 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::process::Command as ProcessCommand;
 
-use crate::app::{
-    format_watch_capture_line, mark_change_handled, process_watch_snapshot, WatchState,
-};
+use crate::app::{format_watch_capture_line, mark_change_handled, WatchState};
 use crate::db::{
-    CapturePolicy, CaptureSettings, Database, PurgeReport, RecentCursorState, RetrievalFilters,
-    SearchCursorState, SearchMode, SearchResults, SnapshotDeletionReport, TimelineCursorState,
-    TimelineSort,
+    CapturePolicy, CaptureSettings, CaptureSkipReason, CaptureStoreOutcome, Database, PurgeReport,
+    RecentCursorState, RetrievalFilters, SearchCursorState, SearchMode, SearchResults,
+    SnapshotDeletionReport, TimelineCursorState, TimelineSort,
 };
 use crate::model::{
     CaptureStoreResult, ClipboardSnapshot, FlattenedTextProjection, SearchHit, TimelineEvent,
@@ -34,15 +32,32 @@ use super::{
     AgentsArgs, CaptureOnceArgs, Command, DoctorArgs, ExportArgs, ForgetArgs, GetArgs,
     OpenClawArgs, OpenClawDoctorArgs, OpenClawInstallSkillArgs, OpenClawUninstallSkillArgs,
     OutputFormat, PurgeArgs, RecallArgs, RecentArgs, RestoreArgs, SearchArgs, ServiceArgs,
-    ServiceCommand, ServiceStatusArgs, SettingsArgs, SettingsCommand, SettingsIgnoreArgs,
-    SettingsIgnoreCommand, SettingsIgnoreListArgs, SettingsPauseArgs, SettingsRetentionArgs,
-    SettingsShowArgs, SetupArgs, TimelineArgs, WatchArgs,
+    ServiceCommand, ServiceStatusArgs, SettingsApiKeyFilterArgs, SettingsArgs, SettingsCommand,
+    SettingsIgnoreArgs, SettingsIgnoreCommand, SettingsIgnoreListArgs, SettingsPauseArgs,
+    SettingsRetentionArgs, SettingsShowArgs, SetupArgs, TimelineArgs, WatchArgs,
 };
 
 #[derive(Debug, Serialize)]
-struct CaptureOnceOutput {
-    store: CaptureStoreResult,
-    snapshot: ClipboardSnapshot,
+pub(super) struct CaptureOnceStoredOutput {
+    pub(super) store: CaptureStoreResult,
+    pub(super) snapshot: ClipboardSnapshot,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct CaptureOnceSkippedOutput {
+    pub(super) status: &'static str,
+    pub(super) reason: CaptureSkipReason,
+    pub(super) kind: String,
+    pub(super) total_bytes: usize,
+    pub(super) frontmost_app_name: Option<String>,
+    pub(super) frontmost_app_bundle_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub(super) enum CaptureOnceOutput {
+    Stored(CaptureOnceStoredOutput),
+    Skipped(CaptureOnceSkippedOutput),
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -56,6 +71,7 @@ struct RestoreOutput {
 #[derive(Debug, Clone, Serialize)]
 struct SettingsView {
     paused: bool,
+    api_key_filter_enabled: bool,
     retention_seconds: Option<u64>,
     retention: String,
     ignored_bundle_ids: Vec<String>,
@@ -99,6 +115,10 @@ struct TimelineCursorToken {
 enum RecallCandidateSource {
     Search,
     Recent,
+}
+
+fn capture_skip_reason_label(reason: CaptureSkipReason) -> &'static str {
+    reason.as_str()
 }
 
 #[derive(Debug, Clone)]
@@ -313,18 +333,33 @@ where
         mark_change_handled(snapshot.change_count(), state);
         return Ok(());
     }
-    let result = anyhow::Context::context(
-        process_watch_snapshot(db, &snapshot, state),
+    let outcome = anyhow::Context::context(
+        db.store_capture_if_allowed(&snapshot),
         "database write failed",
     )?;
-    if matches!(result, Some(_)) {
-        db.apply_retention_policy()
-            .context("apply retention policy failed")?;
-    }
-
-    if !args.quiet {
-        if let Some(result) = result {
-            println!("{}", format_watch_capture_line(&snapshot, &result));
+    match outcome {
+        CaptureStoreOutcome::Stored(result) => {
+            mark_change_handled(snapshot.change_count(), state);
+            db.apply_retention_policy()
+                .context("apply retention policy failed")?;
+            if !args.quiet {
+                println!("{}", format_watch_capture_line(&snapshot, &result));
+            }
+        }
+        CaptureStoreOutcome::Skipped(reason) => {
+            mark_change_handled(snapshot.change_count(), state);
+            if !args.quiet {
+                println!(
+                    "skipped capture reason={} kind={} bytes={} source={}",
+                    capture_skip_reason_label(reason),
+                    snapshot.snapshot_kind(),
+                    snapshot.total_bytes(),
+                    snapshot
+                        .frontmost_app_name()
+                        .or(snapshot.frontmost_app_bundle_id())
+                        .unwrap_or("unknown app")
+                );
+            }
         }
     }
 
@@ -335,16 +370,27 @@ fn capture_once(db_path: &Path, args: &CaptureOnceArgs) -> Result<()> {
     let mut db = open_or_init_db(db_path)?;
     let snapshot =
         anyhow::Context::context(capture_snapshot(), "capture-once clipboard read failed")?;
-    let store = anyhow::Context::context(
-        db.store_capture(&snapshot),
+    let payload = match anyhow::Context::context(
+        db.store_capture_if_allowed(&snapshot),
         "capture-once database write failed",
-    )?;
-    db.apply_retention_policy()
-        .context("apply retention policy failed")?;
-    let payload = CaptureOnceOutput { store, snapshot };
-    emit_json_or_text(args.json, &payload, |output| {
-        render_capture_once_text(&output.store, &output.snapshot)
-    })?;
+    )? {
+        CaptureStoreOutcome::Stored(store) => {
+            db.apply_retention_policy()
+                .context("apply retention policy failed")?;
+            CaptureOnceOutput::Stored(CaptureOnceStoredOutput { store, snapshot })
+        }
+        CaptureStoreOutcome::Skipped(reason) => {
+            CaptureOnceOutput::Skipped(CaptureOnceSkippedOutput {
+                status: "skipped",
+                reason,
+                kind: snapshot.snapshot_kind().as_str().to_string(),
+                total_bytes: snapshot.total_bytes(),
+                frontmost_app_name: snapshot.frontmost_app_name().map(str::to_string),
+                frontmost_app_bundle_id: snapshot.frontmost_app_bundle_id().map(str::to_string),
+            })
+        }
+    };
+    emit_json_or_text(args.json, &payload, render_capture_once_text)?;
 
     Ok(())
 }
@@ -725,6 +771,7 @@ fn settings(db_path: &Path, args: &SettingsArgs) -> Result<()> {
     match &args.command {
         SettingsCommand::Show(args) => settings_show(db_path, args),
         SettingsCommand::Pause(args) => settings_pause(db_path, args),
+        SettingsCommand::ApiKeyFilter(args) => settings_api_key_filter(db_path, args),
         SettingsCommand::Retention(args) => settings_retention(db_path, args),
         SettingsCommand::Ignore(args) => settings_ignore(db_path, args),
     }
@@ -745,6 +792,14 @@ fn settings_show(db_path: &Path, args: &SettingsShowArgs) -> Result<()> {
 fn settings_pause(db_path: &Path, args: &SettingsPauseArgs) -> Result<()> {
     let db = open_or_init_db(db_path)?;
     let settings = db.set_paused(args.state.is_paused())?;
+    let view = settings_view(CapturePolicy::new(settings, db.list_ignored_bundle_ids()?));
+    emit_json_or_text(false, &view, render_settings_view_text)?;
+    Ok(())
+}
+
+fn settings_api_key_filter(db_path: &Path, args: &SettingsApiKeyFilterArgs) -> Result<()> {
+    let db = open_or_init_db(db_path)?;
+    let settings = db.set_api_key_filter_enabled(args.state.is_paused())?;
     let view = settings_view(CapturePolicy::new(settings, db.list_ignored_bundle_ids()?));
     emit_json_or_text(false, &view, render_settings_view_text)?;
     Ok(())
@@ -917,6 +972,7 @@ fn require_text_or_json(format: OutputFormat, command_name: &str) -> Result<Outp
 fn settings_view(policy: CapturePolicy) -> SettingsView {
     SettingsView {
         paused: policy.settings().paused(),
+        api_key_filter_enabled: policy.settings().api_key_filter_enabled(),
         retention_seconds: policy.settings().retention_seconds(),
         retention: render_retention_value(policy.settings()),
         ignored_bundle_ids: policy.ignored_bundle_ids().to_vec(),
@@ -962,6 +1018,10 @@ fn render_purge_text(report: &PurgeReport) -> String {
 fn render_settings_view_text(view: &SettingsView) -> String {
     let mut out = String::new();
     out.push_str(&format!("paused: {}\n", view.paused));
+    out.push_str(&format!(
+        "api key filter: {}\n",
+        view.api_key_filter_enabled
+    ));
     out.push_str(&format!("retention: {}\n", view.retention));
     out.push_str(&format!(
         "ignored bundle ids: {}\n",
@@ -2523,6 +2583,64 @@ mod tests {
         assert!(second.is_ok());
         assert!(db
             .search_auto("ignored", 10, &unfiltered())
+            .unwrap()
+            .hits()
+            .is_empty());
+        cleanup_db(&path);
+    }
+
+    #[test]
+    fn watch_iteration_skips_api_key_like_content_and_does_not_backfill_later() {
+        let path = temp_db_path("watch-api-key-filter");
+        let mut db = Database::open_or_init(&path).expect("test database should open");
+        db.set_api_key_filter_enabled(true)
+            .expect("api key filter setting should persist");
+        let args = WatchArgs {
+            interval_ms: 350,
+            quiet: true,
+            skip_initial: false,
+        };
+        let mut state = WatchState::new();
+        let capture_calls = Cell::new(0);
+
+        let first = run_watch_iteration_with_capture(
+            &mut db,
+            &args,
+            &mut state,
+            || Ok(11),
+            || {
+                capture_calls.set(capture_calls.get() + 1);
+                Ok(build_snapshot(
+                    CaptureContext::new(11)
+                        .with_frontmost_app_name("Terminal")
+                        .with_frontmost_app_bundle_id("com.apple.Terminal"),
+                    vec![build_item(
+                        0,
+                        vec![build_representation(
+                            "public.utf8-plain-text".to_string(),
+                            None,
+                            b"Authorization: Bearer 8JfA-2mQpV_4tLz9XnR6cH0wKdS7yBu3".to_vec(),
+                        )],
+                    )],
+                ))
+            },
+        );
+
+        assert!(first.is_ok());
+        assert_eq!(capture_calls.get(), 1);
+        assert!(db.recent(10, &unfiltered()).unwrap().is_empty());
+
+        let second = run_watch_iteration_with_capture(
+            &mut db,
+            &args,
+            &mut state,
+            || Ok(11),
+            || panic!("filtered change count should have been marked handled"),
+        );
+
+        assert!(second.is_ok());
+        assert!(db
+            .search_auto("Authorization", 10, &unfiltered())
             .unwrap()
             .hits()
             .is_empty());

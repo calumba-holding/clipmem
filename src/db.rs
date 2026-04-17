@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::model::SearchHit;
 
 const SCHEMA: &str = include_str!("db/schema.sql");
-const CURRENT_SCHEMA_VERSION: i64 = 7;
+const CURRENT_SCHEMA_VERSION: i64 = 8;
 const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
 
 pub struct Database {
@@ -72,12 +72,25 @@ pub struct RetrievalFilters {
 pub(crate) struct CaptureSettings {
     paused: bool,
     retention_seconds: Option<u64>,
+    api_key_filter_enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
 pub(crate) struct CapturePolicy {
     settings: CaptureSettings,
     ignored_bundle_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum CaptureSkipReason {
+    ApiKeyFilter,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum CaptureStoreOutcome {
+    Stored(crate::model::CaptureStoreResult),
+    Skipped(CaptureSkipReason),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -379,10 +392,15 @@ impl RetrievalFilters {
 
 impl CaptureSettings {
     #[must_use]
-    pub(crate) fn new(paused: bool, retention_seconds: Option<u64>) -> Self {
+    pub(crate) fn new(
+        paused: bool,
+        retention_seconds: Option<u64>,
+        api_key_filter_enabled: bool,
+    ) -> Self {
         Self {
             paused,
             retention_seconds,
+            api_key_filter_enabled,
         }
     }
 
@@ -394,6 +412,11 @@ impl CaptureSettings {
     #[must_use]
     pub(crate) fn retention_seconds(&self) -> Option<u64> {
         self.retention_seconds
+    }
+
+    #[must_use]
+    pub(crate) fn api_key_filter_enabled(&self) -> bool {
+        self.api_key_filter_enabled
     }
 }
 
@@ -419,6 +442,15 @@ impl CapturePolicy {
     #[must_use]
     pub(crate) fn ignored_bundle_id_count(&self) -> usize {
         self.ignored_bundle_ids.len()
+    }
+}
+
+impl CaptureSkipReason {
+    #[must_use]
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::ApiKeyFilter => "api_key_filter",
+        }
     }
 }
 
@@ -741,6 +773,7 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             rebuild_snapshot_event_filter_cache(&tx)?;
             rebuild_snapshot_literal_cache(&tx)?;
             rebuild_snapshot_file_url_fts(&tx)?;
+            ensure_api_key_filter_setting_column(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -755,6 +788,7 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             rebuild_snapshot_event_filter_cache(&tx)?;
             rebuild_snapshot_literal_cache(&tx)?;
             rebuild_snapshot_file_url_fts(&tx)?;
+            ensure_api_key_filter_setting_column(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -768,6 +802,7 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             rebuild_snapshot_event_filter_cache(&tx)?;
             rebuild_snapshot_literal_cache(&tx)?;
             rebuild_snapshot_file_url_fts(&tx)?;
+            ensure_api_key_filter_setting_column(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -780,6 +815,7 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             rebuild_snapshot_event_filter_cache(&tx)?;
             rebuild_snapshot_literal_cache(&tx)?;
             rebuild_snapshot_file_url_fts(&tx)?;
+            ensure_api_key_filter_setting_column(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -791,6 +827,7 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             }
             rebuild_snapshot_literal_cache(&tx)?;
             rebuild_snapshot_file_url_fts(&tx)?;
+            ensure_api_key_filter_setting_column(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -801,6 +838,7 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
                 );
             }
             rebuild_snapshot_file_url_fts(&tx)?;
+            ensure_api_key_filter_setting_column(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -810,6 +848,17 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
                     "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
                 );
             }
+            ensure_api_key_filter_setting_column(&tx)?;
+            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+                .context("set PRAGMA user_version")?;
+        }
+        7 => {
+            if legacy_prerelease_schema_detected(&tx)? {
+                bail!(
+                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
+                );
+            }
+            ensure_api_key_filter_setting_column(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -832,12 +881,36 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
     }
 
     tx.execute(
-        "INSERT OR IGNORE INTO clipmem_settings (id, paused, retention_seconds) VALUES (1, 0, NULL)",
+        "INSERT OR IGNORE INTO clipmem_settings (id, paused, retention_seconds, api_key_filter_enabled) VALUES (1, 0, NULL, 0)",
         [],
     )
     .context("seed clipmem settings row")?;
 
     tx.commit().context("commit schema transaction")?;
+    Ok(())
+}
+
+fn ensure_api_key_filter_setting_column(conn: &Connection) -> Result<()> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(clipmem_settings)")
+        .context("prepare clipmem_settings table info query")?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .context("query clipmem_settings columns")?;
+    let columns = collect_rows(rows).context("collect clipmem_settings columns")?;
+
+    if columns
+        .iter()
+        .any(|column| column == "api_key_filter_enabled")
+    {
+        return Ok(());
+    }
+
+    conn.execute(
+        "ALTER TABLE clipmem_settings ADD COLUMN api_key_filter_enabled INTEGER NOT NULL DEFAULT 0 CHECK (api_key_filter_enabled IN (0, 1))",
+        [],
+    )
+    .context("add api_key_filter_enabled column")?;
     Ok(())
 }
 
