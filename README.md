@@ -137,6 +137,7 @@ clipmem recall "Terminal stuff" --prefer-app terminal --format toon
 
 # Recent unique items from one app
 clipmem recent --hours 24 --app safari --format md
+clipmem recent --hours 24 --format toon
 
 # Paginated chronological history
 clipmem timeline --hours 24 --limit 25 --format json
@@ -225,6 +226,8 @@ Supported formats, by command:
 
 `--json` on `search`, `recent`, `timeline`, `get`, `capture-once`, and `doctor` is a compatibility alias for `--format json`.
 
+`--format toon` is a compact skim view, not a near-lossless mirror of the JSON payload. TOON keeps scalar columns that are easy for agents and humans to scan quickly; if you need URLs, file paths, text fragments, representation UTIs, or other richer fields, use `--format json` or `clipmem get`.
+
 ### JSON envelope
 
 `search`, `recent`, `timeline`, and `recall` return a stable top-level envelope:
@@ -253,6 +256,16 @@ Supported formats, by command:
 - `matched_fields`
 
 The full nested `items[].representations[]` structure is still present on `get` for deep inspection and export workflows.
+
+### TOON skim output
+
+TOON is intentionally narrower than JSON:
+
+- `search` / `recent` rows keep scalar identifiers, timestamps, app info, `display_text`, counts, bytes, score, and `why_matched`.
+- `timeline` rows keep scalar event metadata plus `display_text`.
+- `recall` keeps scalar best-match metadata and candidate rows, but does not inline heavyweight fields as JSON strings.
+
+Use `--format json` when you need `urls`, `file_paths`, `text_fragments`, `best_text_uti`, `html_text`, `rtf_text`, `matched_fields`, or any nested representation detail.
 
 ### Script-friendly by design
 
@@ -387,7 +400,7 @@ brew uninstall clipmem 2>/dev/null || true
 - RTF and HTML text extraction is intentionally lightweight.
 - Search is great for commands, code, URLs, notes, logs, and copied prose. It is not semantic search. `--mode auto` is the default; use `--mode fts` for strict FTS5 queries or `--mode literal` for exact substring matching.
 - `clipmem get --format json` omits raw blob bytes (flattened text fields are included). Use `clipmem export` to recover binary payloads.
-- `--format toon` is only supported for flattened output (`search`, `recent`, `timeline`, `recall`), not for nested `get` detail.
+- `--format toon` is only supported for skim output (`search`, `recent`, `timeline`, `recall`), not for nested `get` detail. It intentionally omits heavyweight fields instead of embedding them as JSON blobs.
 
 ## How it works
 

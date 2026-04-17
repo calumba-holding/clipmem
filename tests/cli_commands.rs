@@ -1558,18 +1558,57 @@ fn toon_output_is_available_for_flattened_list_commands() -> Result<()> {
     let path = temp_db_path("recent-toon");
     seed_database(&path, &[text_snapshot(1, "git status")])?;
 
-    let output = run_cli(&[
+    let recent_output = run_cli(&[
         "--db",
         path.to_str().expect("db path should be UTF-8"),
         "recent",
         "--format",
         "toon",
     ]);
-    let stdout = stdout_text(&output);
+    let recent_stdout = stdout_text(&recent_output);
 
-    assert!(output.status.success());
-    assert!(stdout.contains("results[#1\t]{snapshot_id"));
-    assert!(stdout.contains("git status"));
+    assert!(recent_output.status.success());
+    assert!(recent_stdout.contains(
+        "results[#1\t]{snapshot_id\tevent_id\tobserved_at\tfirst_seen_at\tlast_seen_at\tkind\tapp_name\tapp_bundle_id\tdisplay_text\tcapture_count\titem_count\ttotal_bytes\tscore\twhy_matched}:"
+    ));
+    assert!(recent_stdout.contains("git status"));
+    assert!(!recent_stdout.contains("sha256"));
+    assert!(!recent_stdout.contains("text_fragments"));
+    assert!(!recent_stdout.contains("matched_fields"));
+
+    let search_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "search",
+        "git",
+        "--format",
+        "toon",
+    ]);
+    let search_stdout = stdout_text(&search_output);
+
+    assert!(search_output.status.success());
+    assert!(search_stdout.contains(
+        "results[#1\t]{snapshot_id\tevent_id\tobserved_at\tfirst_seen_at\tlast_seen_at\tkind\tapp_name\tapp_bundle_id\tdisplay_text\tcapture_count\titem_count\ttotal_bytes\tscore\twhy_matched}:"
+    ));
+    assert!(!search_stdout.contains("sha256"));
+    assert!(!search_stdout.contains("urls"));
+
+    let timeline_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "timeline",
+        "--format",
+        "toon",
+    ]);
+    let timeline_stdout = stdout_text(&timeline_output);
+
+    assert!(timeline_output.status.success());
+    assert!(timeline_stdout.contains(
+        "results[#1\t]{event_id\tsnapshot_id\tobserved_at\tchange_count\tkind\tapp_name\tapp_bundle_id\tdisplay_text\titem_count\ttotal_bytes}:"
+    ));
+    assert!(timeline_stdout.contains("git status"));
+    assert!(!timeline_stdout.contains("sha256"));
+    assert!(!timeline_stdout.contains("file_paths"));
 
     cleanup_db(&path);
     Ok(())
@@ -2117,8 +2156,13 @@ fn recall_toon_output_is_flattened() -> Result<()> {
     let stdout = stdout_text(&output);
 
     assert!(output.status.success());
-    assert!(stdout.contains("best_candidate[#1"));
-    assert!(stdout.contains("alternatives[#0"));
+    assert!(stdout.contains(
+        "best_candidate[#1\t]{snapshot_id\tevent_id\tobserved_at\tfirst_seen_at\tlast_seen_at\tkind\tapp_name\tapp_bundle_id\tdisplay_text\tcapture_count\titem_count\ttotal_bytes\tscore\twhy_matched}:"
+    ));
+    assert!(stdout.contains("alternatives[#0\t]{snapshot_id\tevent_id\tobserved_at\tfirst_seen_at\tlast_seen_at\tkind\tapp_name\tapp_bundle_id\tdisplay_text\tcapture_count\titem_count\ttotal_bytes\tscore\twhy_matched}:"));
+    assert!(!stdout.contains("matched_fields"));
+    assert!(!stdout.contains("snippet\t"));
+    assert!(!stdout.contains("sha256"));
 
     cleanup_db(&path);
     Ok(())

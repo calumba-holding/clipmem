@@ -179,6 +179,257 @@ pub(super) struct RecallOutputRow {
     pub(super) snippet: String,
 }
 
+struct ToonSnapshotRowProjection {
+    snapshot_id: i64,
+    event_id: i64,
+    observed_at: String,
+    first_seen_at: String,
+    last_seen_at: String,
+    kind: String,
+    app_name: Option<String>,
+    app_bundle_id: Option<String>,
+    display_text: String,
+    capture_count: usize,
+    item_count: usize,
+    total_bytes: usize,
+    score: Option<f64>,
+    why_matched: Option<String>,
+}
+
+impl ToonSnapshotRowProjection {
+    const FIELDS: [&'static str; 14] = [
+        "snapshot_id",
+        "event_id",
+        "observed_at",
+        "first_seen_at",
+        "last_seen_at",
+        "kind",
+        "app_name",
+        "app_bundle_id",
+        "display_text",
+        "capture_count",
+        "item_count",
+        "total_bytes",
+        "score",
+        "why_matched",
+    ];
+
+    fn from_row(row: &SnapshotListRow) -> Self {
+        Self {
+            snapshot_id: row.snapshot_id,
+            event_id: row.event_id,
+            observed_at: row.observed_at.clone(),
+            first_seen_at: row.first_seen_at.clone(),
+            last_seen_at: row.last_seen_at.clone(),
+            kind: row.kind.clone(),
+            app_name: row.app_name.clone(),
+            app_bundle_id: row.app_bundle_id.clone(),
+            display_text: first_non_empty_text(&[
+                row.best_text.as_str(),
+                row.preview_text.as_str(),
+                row.text_summary.as_str(),
+            ]),
+            capture_count: row.capture_count,
+            item_count: row.item_count,
+            total_bytes: row.total_bytes,
+            score: row.score,
+            why_matched: row.why_matched.clone(),
+        }
+    }
+
+    fn values(&self) -> Vec<Value> {
+        vec![
+            Value::from(self.snapshot_id),
+            Value::from(self.event_id),
+            Value::String(self.observed_at.clone()),
+            Value::String(self.first_seen_at.clone()),
+            Value::String(self.last_seen_at.clone()),
+            Value::String(self.kind.clone()),
+            self.app_name
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+            self.app_bundle_id
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+            Value::String(self.display_text.clone()),
+            Value::from(self.capture_count as u64),
+            Value::from(self.item_count as u64),
+            Value::from(self.total_bytes as u64),
+            self.score.map(Value::from).unwrap_or(Value::Null),
+            self.why_matched
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+        ]
+    }
+}
+
+struct ToonTimelineRowProjection {
+    event_id: i64,
+    snapshot_id: i64,
+    observed_at: String,
+    change_count: i64,
+    kind: String,
+    app_name: Option<String>,
+    app_bundle_id: Option<String>,
+    display_text: String,
+    item_count: usize,
+    total_bytes: usize,
+}
+
+impl ToonTimelineRowProjection {
+    const FIELDS: [&'static str; 10] = [
+        "event_id",
+        "snapshot_id",
+        "observed_at",
+        "change_count",
+        "kind",
+        "app_name",
+        "app_bundle_id",
+        "display_text",
+        "item_count",
+        "total_bytes",
+    ];
+
+    fn from_row(row: &TimelineListRow) -> Self {
+        Self {
+            event_id: row.event_id,
+            snapshot_id: row.snapshot_id,
+            observed_at: row.observed_at.clone(),
+            change_count: row.change_count,
+            kind: row.kind.clone(),
+            app_name: row.app_name.clone(),
+            app_bundle_id: row.app_bundle_id.clone(),
+            display_text: first_non_empty_text(&[
+                row.best_text.as_str(),
+                row.preview_text.as_str(),
+                row.text_summary.as_str(),
+            ]),
+            item_count: row.item_count,
+            total_bytes: row.total_bytes,
+        }
+    }
+
+    fn values(&self) -> Vec<Value> {
+        vec![
+            Value::from(self.event_id),
+            Value::from(self.snapshot_id),
+            Value::String(self.observed_at.clone()),
+            Value::from(self.change_count),
+            Value::String(self.kind.clone()),
+            self.app_name
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+            self.app_bundle_id
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+            Value::String(self.display_text.clone()),
+            Value::from(self.item_count as u64),
+            Value::from(self.total_bytes as u64),
+        ]
+    }
+}
+
+struct ToonRecallRowProjection {
+    snapshot_id: i64,
+    event_id: i64,
+    observed_at: String,
+    first_seen_at: String,
+    last_seen_at: String,
+    kind: String,
+    app_name: Option<String>,
+    app_bundle_id: Option<String>,
+    display_text: String,
+    capture_count: usize,
+    item_count: usize,
+    total_bytes: usize,
+    score: Option<f64>,
+    why_matched: Option<String>,
+}
+
+impl ToonRecallRowProjection {
+    const FIELDS: [&'static str; 14] = [
+        "snapshot_id",
+        "event_id",
+        "observed_at",
+        "first_seen_at",
+        "last_seen_at",
+        "kind",
+        "app_name",
+        "app_bundle_id",
+        "display_text",
+        "capture_count",
+        "item_count",
+        "total_bytes",
+        "score",
+        "why_matched",
+    ];
+
+    fn from_row(row: &RecallOutputRow) -> Self {
+        Self {
+            snapshot_id: row.snapshot_id,
+            event_id: row.event_id,
+            observed_at: row.observed_at.clone(),
+            first_seen_at: row.first_seen_at.clone(),
+            last_seen_at: row.last_seen_at.clone(),
+            kind: row.kind.clone(),
+            app_name: row.app_name.clone(),
+            app_bundle_id: row.app_bundle_id.clone(),
+            display_text: first_non_empty_text(&[
+                row.snippet.as_str(),
+                row.best_text.as_str(),
+                row.preview_text.as_str(),
+                row.text_summary.as_str(),
+            ]),
+            capture_count: row.capture_count,
+            item_count: row.item_count,
+            total_bytes: row.total_bytes,
+            score: row.score,
+            why_matched: row.why_matched.clone(),
+        }
+    }
+
+    fn values(&self) -> Vec<Value> {
+        vec![
+            Value::from(self.snapshot_id),
+            Value::from(self.event_id),
+            Value::String(self.observed_at.clone()),
+            Value::String(self.first_seen_at.clone()),
+            Value::String(self.last_seen_at.clone()),
+            Value::String(self.kind.clone()),
+            self.app_name
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+            self.app_bundle_id
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+            Value::String(self.display_text.clone()),
+            Value::from(self.capture_count as u64),
+            Value::from(self.item_count as u64),
+            Value::from(self.total_bytes as u64),
+            self.score.map(Value::from).unwrap_or(Value::Null),
+            self.why_matched
+                .clone()
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+        ]
+    }
+}
+
+fn first_non_empty_text(candidates: &[&str]) -> String {
+    candidates
+        .iter()
+        .find(|candidate| !candidate.trim().is_empty())
+        .map(|candidate| (*candidate).to_string())
+        .unwrap_or_default()
+}
+
 impl SnapshotListRow {
     #[must_use]
     pub(super) fn from_hit(
@@ -930,85 +1181,41 @@ fn render_recall_markdown(envelope: &RecallEnvelope) -> String {
 
 fn render_list_toon(envelope: &ListEnvelope) -> String {
     let mut out = String::new();
-    let _ = writeln!(out, "schema_version: {}", envelope.schema_version);
-    let _ = writeln!(
-        out,
-        "command: {}",
-        encode_toon_scalar(&Value::String(envelope.command.to_string()))
+    render_toon_entry(
+        &mut out,
+        "schema_version",
+        &Value::from(envelope.schema_version as u64),
+        0,
     );
-    let _ = writeln!(
-        out,
-        "generated_at: {}",
-        encode_toon_scalar(&Value::String(envelope.generated_at.clone()))
+    render_toon_entry(
+        &mut out,
+        "command",
+        &Value::String(envelope.command.to_string()),
+        0,
     );
-    let _ = writeln!(out, "applied_filters:");
-    render_toon_object(&mut out, &envelope.applied_filters, 2);
-    let _ = writeln!(
-        out,
-        "truncated: {}",
-        encode_toon_scalar(&Value::Bool(envelope.truncated))
+    render_toon_entry(
+        &mut out,
+        "generated_at",
+        &Value::String(envelope.generated_at.clone()),
+        0,
     );
-    let _ = writeln!(
-        out,
-        "next_cursor: {}",
-        encode_toon_scalar(
-            &envelope
-                .next_cursor
-                .as_ref()
-                .map(|value| Value::String(value.clone()))
-                .unwrap_or(Value::Null),
-        )
+    render_toon_entry(&mut out, "applied_filters", &envelope.applied_filters, 0);
+    render_toon_entry(&mut out, "truncated", &Value::Bool(envelope.truncated), 0);
+    render_toon_entry(
+        &mut out,
+        "next_cursor",
+        &envelope
+            .next_cursor
+            .as_ref()
+            .map(|value| Value::String(value.clone()))
+            .unwrap_or(Value::Null),
+        0,
     );
 
     let fields = if envelope.command == "timeline" {
-        vec![
-            "event_id",
-            "snapshot_id",
-            "observed_at",
-            "change_count",
-            "kind",
-            "app_name",
-            "app_bundle_id",
-            "best_text",
-            "best_text_uti",
-            "text_fragments",
-            "urls",
-            "file_paths",
-            "html_text",
-            "rtf_text",
-            "text_summary",
-            "preview_text",
-            "total_bytes",
-            "sha256",
-            "item_count",
-        ]
+        ToonTimelineRowProjection::FIELDS.as_slice()
     } else {
-        vec![
-            "snapshot_id",
-            "event_id",
-            "sha256",
-            "kind",
-            "observed_at",
-            "first_seen_at",
-            "last_seen_at",
-            "app_name",
-            "app_bundle_id",
-            "best_text",
-            "best_text_uti",
-            "text_fragments",
-            "urls",
-            "file_paths",
-            "html_text",
-            "rtf_text",
-            "text_summary",
-            "preview_text",
-            "item_count",
-            "total_bytes",
-            "capture_count",
-            "score",
-            "why_matched",
-            "matched_fields",
-        ]
+        ToonSnapshotRowProjection::FIELDS.as_slice()
     };
     let _ = writeln!(
         out,
@@ -1019,96 +1226,8 @@ fn render_list_toon(envelope: &ListEnvelope) -> String {
 
     for row in &envelope.results {
         let values = match row {
-            ListRow::Snapshot(row) => vec![
-                Value::from(row.snapshot_id),
-                Value::from(row.event_id),
-                Value::String(row.sha256.clone()),
-                Value::String(row.kind.clone()),
-                Value::String(row.observed_at.clone()),
-                Value::String(row.first_seen_at.clone()),
-                Value::String(row.last_seen_at.clone()),
-                row.app_name
-                    .clone()
-                    .map(Value::String)
-                    .unwrap_or(Value::Null),
-                row.app_bundle_id
-                    .clone()
-                    .map(Value::String)
-                    .unwrap_or(Value::Null),
-                Value::String(row.best_text.clone()),
-                row.best_text_uti
-                    .clone()
-                    .map(Value::String)
-                    .unwrap_or(Value::Null),
-                serde_json::to_value(&row.text_fragments).unwrap_or(Value::Null),
-                Value::String(
-                    serde_json::to_string(&row.urls).unwrap_or_else(|_| "[]".to_string()),
-                ),
-                Value::String(
-                    serde_json::to_string(&row.file_paths).unwrap_or_else(|_| "[]".to_string()),
-                ),
-                row.html_text
-                    .clone()
-                    .map(Value::String)
-                    .unwrap_or(Value::Null),
-                row.rtf_text
-                    .clone()
-                    .map(Value::String)
-                    .unwrap_or(Value::Null),
-                Value::String(row.text_summary.clone()),
-                Value::String(row.preview_text.clone()),
-                Value::from(row.item_count as u64),
-                Value::from(row.total_bytes as u64),
-                Value::from(row.capture_count as u64),
-                row.score.map(Value::from).unwrap_or(Value::Null),
-                row.why_matched
-                    .clone()
-                    .map(Value::String)
-                    .unwrap_or(Value::Null),
-                Value::String(
-                    serde_json::to_string(&row.matched_fields).unwrap_or_else(|_| "[]".to_string()),
-                ),
-            ],
-            ListRow::Timeline(row) => vec![
-                Value::from(row.event_id),
-                Value::from(row.snapshot_id),
-                Value::String(row.observed_at.clone()),
-                Value::from(row.change_count),
-                Value::String(row.kind.clone()),
-                row.app_name
-                    .clone()
-                    .map(Value::String)
-                    .unwrap_or(Value::Null),
-                row.app_bundle_id
-                    .clone()
-                    .map(Value::String)
-                    .unwrap_or(Value::Null),
-                Value::String(row.best_text.clone()),
-                row.best_text_uti
-                    .clone()
-                    .map(Value::String)
-                    .unwrap_or(Value::Null),
-                serde_json::to_value(&row.text_fragments).unwrap_or(Value::Null),
-                Value::String(
-                    serde_json::to_string(&row.urls).unwrap_or_else(|_| "[]".to_string()),
-                ),
-                Value::String(
-                    serde_json::to_string(&row.file_paths).unwrap_or_else(|_| "[]".to_string()),
-                ),
-                row.html_text
-                    .clone()
-                    .map(Value::String)
-                    .unwrap_or(Value::Null),
-                row.rtf_text
-                    .clone()
-                    .map(Value::String)
-                    .unwrap_or(Value::Null),
-                Value::String(row.text_summary.clone()),
-                Value::String(row.preview_text.clone()),
-                Value::from(row.total_bytes as u64),
-                Value::String(row.sha256.clone()),
-                Value::from(row.item_count as u64),
-            ],
+            ListRow::Snapshot(row) => ToonSnapshotRowProjection::from_row(row).values(),
+            ListRow::Timeline(row) => ToonTimelineRowProjection::from_row(row).values(),
         };
         let encoded = values
             .iter()
@@ -1123,55 +1242,59 @@ fn render_list_toon(envelope: &ListEnvelope) -> String {
 
 fn render_recall_toon(envelope: &RecallEnvelope) -> String {
     let mut out = String::new();
-    let _ = writeln!(out, "schema_version: {}", envelope.schema_version);
-    let _ = writeln!(out, "command: recall");
-    let _ = writeln!(
-        out,
-        "generated_at: {}",
-        encode_toon_scalar(&Value::String(envelope.generated_at.clone()))
+    render_toon_entry(
+        &mut out,
+        "schema_version",
+        &Value::from(envelope.schema_version as u64),
+        0,
     );
-    let _ = writeln!(
-        out,
-        "query: {}",
-        encode_toon_scalar(
-            &envelope
-                .query
-                .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null),
-        )
+    render_toon_entry(&mut out, "command", &Value::String("recall".to_string()), 0);
+    render_toon_entry(
+        &mut out,
+        "generated_at",
+        &Value::String(envelope.generated_at.clone()),
+        0,
     );
-    let _ = writeln!(
-        out,
-        "best_match_confidence: {}",
-        encode_toon_scalar(
-            &serde_json::to_value(&envelope.best_match_confidence).unwrap_or(Value::Null)
-        )
+    render_toon_entry(
+        &mut out,
+        "query",
+        &envelope
+            .query
+            .clone()
+            .map(Value::String)
+            .unwrap_or(Value::Null),
+        0,
     );
-    let _ = writeln!(
-        out,
-        "best_match_score: {}",
-        encode_toon_scalar(
-            &envelope
-                .best_match_score
-                .map(Value::from)
-                .unwrap_or(Value::Null),
-        )
+    render_toon_entry(
+        &mut out,
+        "best_match_confidence",
+        &serde_json::to_value(&envelope.best_match_confidence).unwrap_or(Value::Null),
+        0,
     );
-    let _ = writeln!(
-        out,
-        "why_selected: {}",
-        encode_toon_scalar(&Value::String(envelope.why_selected.clone()))
+    render_toon_entry(
+        &mut out,
+        "best_match_score",
+        &envelope
+            .best_match_score
+            .map(Value::from)
+            .unwrap_or(Value::Null),
+        0,
+    );
+    render_toon_entry(
+        &mut out,
+        "why_selected",
+        &Value::String(envelope.why_selected.clone()),
+        0,
     );
     if let Some(quoted_text) = &envelope.quoted_text {
-        let _ = writeln!(
-            out,
-            "quoted_text: {}",
-            encode_toon_scalar(&Value::String(quoted_text.clone()))
+        render_toon_entry(
+            &mut out,
+            "quoted_text",
+            &Value::String(quoted_text.clone()),
+            0,
         );
     }
-    let _ = writeln!(out, "applied_filters:");
-    render_toon_object(&mut out, &envelope.applied_filters, 2);
+    render_toon_entry(&mut out, "applied_filters", &envelope.applied_filters, 0);
 
     render_recall_rows_toon(
         &mut out,
@@ -1184,84 +1307,14 @@ fn render_recall_toon(envelope: &RecallEnvelope) -> String {
 }
 
 fn render_recall_rows_toon(out: &mut String, key: &str, rows: &[RecallOutputRow]) {
-    let fields = [
-        "snapshot_id",
-        "event_id",
-        "sha256",
-        "kind",
-        "observed_at",
-        "first_seen_at",
-        "last_seen_at",
-        "app_name",
-        "app_bundle_id",
-        "best_text",
-        "best_text_uti",
-        "text_fragments",
-        "urls",
-        "file_paths",
-        "html_text",
-        "rtf_text",
-        "text_summary",
-        "preview_text",
-        "item_count",
-        "total_bytes",
-        "capture_count",
-        "score",
-        "why_matched",
-        "matched_fields",
-        "snippet",
-    ];
-    let _ = writeln!(out, "{key}[#{}\t]{{{}}}:", rows.len(), fields.join("\t"));
+    let _ = writeln!(
+        out,
+        "{key}[#{}\t]{{{}}}:",
+        rows.len(),
+        ToonRecallRowProjection::FIELDS.join("\t")
+    );
     for row in rows {
-        let values = vec![
-            Value::from(row.snapshot_id),
-            Value::from(row.event_id),
-            Value::String(row.sha256.clone()),
-            Value::String(row.kind.clone()),
-            Value::String(row.observed_at.clone()),
-            Value::String(row.first_seen_at.clone()),
-            Value::String(row.last_seen_at.clone()),
-            row.app_name
-                .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null),
-            row.app_bundle_id
-                .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null),
-            Value::String(row.best_text.clone()),
-            row.best_text_uti
-                .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null),
-            serde_json::to_value(&row.text_fragments).unwrap_or(Value::Null),
-            Value::String(serde_json::to_string(&row.urls).unwrap_or_else(|_| "[]".to_string())),
-            Value::String(
-                serde_json::to_string(&row.file_paths).unwrap_or_else(|_| "[]".to_string()),
-            ),
-            row.html_text
-                .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null),
-            row.rtf_text
-                .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null),
-            Value::String(row.text_summary.clone()),
-            Value::String(row.preview_text.clone()),
-            Value::from(row.item_count as u64),
-            Value::from(row.total_bytes as u64),
-            Value::from(row.capture_count as u64),
-            row.score.map(Value::from).unwrap_or(Value::Null),
-            row.why_matched
-                .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null),
-            Value::String(
-                serde_json::to_string(&row.matched_fields).unwrap_or_else(|_| "[]".to_string()),
-            ),
-            Value::String(row.snippet.clone()),
-        ];
+        let values = ToonRecallRowProjection::from_row(row).values();
         let encoded = values
             .iter()
             .map(encode_toon_scalar)
@@ -1271,22 +1324,107 @@ fn render_recall_rows_toon(out: &mut String, key: &str, rows: &[RecallOutputRow]
     }
 }
 
-fn render_toon_object(out: &mut String, value: &Value, indent: usize) {
-    let Some(object) = value.as_object() else {
+fn render_toon_entry(out: &mut String, key: &str, value: &Value, indent: usize) {
+    let padding = " ".repeat(indent);
+    match value {
+        Value::Object(object) => {
+            let _ = writeln!(out, "{padding}{key}:");
+            render_toon_object_entries(out, object, indent + 2);
+        }
+        Value::Array(array) => render_toon_array(out, Some(key), array, indent),
+        _ => {
+            let _ = writeln!(out, "{padding}{key}: {}", encode_toon_scalar(value));
+        }
+    }
+}
+
+fn render_toon_object_entries(
+    out: &mut String,
+    object: &serde_json::Map<String, Value>,
+    indent: usize,
+) {
+    for (key, value) in object {
+        render_toon_entry(out, key, value, indent);
+    }
+}
+
+fn render_toon_array(out: &mut String, key: Option<&str>, values: &[Value], indent: usize) {
+    let padding = " ".repeat(indent);
+    let key_prefix = key
+        .map(|name| format!("{padding}{name}"))
+        .unwrap_or(padding);
+
+    if values.iter().all(Value::is_null)
+        || values
+            .iter()
+            .all(|value| !matches!(value, Value::Array(_) | Value::Object(_)))
+    {
+        if values.is_empty() {
+            let _ = writeln!(out, "{key_prefix}[#0\t]:");
+            return;
+        }
+
+        let encoded = values
+            .iter()
+            .map(encode_toon_scalar)
+            .collect::<Vec<_>>()
+            .join("\t");
+        let _ = writeln!(out, "{key_prefix}[#{}\t]: {encoded}", values.len());
+        return;
+    }
+
+    let _ = writeln!(out, "{key_prefix}[#{}]:", values.len());
+    for value in values {
+        render_toon_list_item(out, value, indent + 2);
+    }
+}
+
+fn render_toon_list_item(out: &mut String, value: &Value, indent: usize) {
+    let padding = " ".repeat(indent);
+    match value {
+        Value::Object(object) => render_toon_object_list_item(out, object, indent),
+        Value::Array(array) => {
+            let _ = writeln!(out, "{padding}-");
+            render_toon_array(out, None, array, indent + 2);
+        }
+        _ => {
+            let _ = writeln!(out, "{padding}- {}", encode_toon_scalar(value));
+        }
+    }
+}
+
+fn render_toon_object_list_item(
+    out: &mut String,
+    object: &serde_json::Map<String, Value>,
+    indent: usize,
+) {
+    let padding = " ".repeat(indent);
+    let mut entries = object.iter();
+    let Some((first_key, first_value)) = entries.next() else {
+        let _ = writeln!(out, "{padding}-");
         return;
     };
 
-    for (key, value) in object {
-        let padding = " ".repeat(indent);
-        match value {
-            Value::Object(_) => {
-                let _ = writeln!(out, "{padding}{key}:");
-                render_toon_object(out, value, indent + 2);
-            }
-            other => {
-                let _ = writeln!(out, "{padding}{key}: {}", encode_toon_scalar(other));
-            }
+    match first_value {
+        Value::Object(nested) => {
+            let _ = writeln!(out, "{padding}- {first_key}:");
+            render_toon_object_entries(out, nested, indent + 4);
         }
+        Value::Array(array) => {
+            let _ = writeln!(out, "{padding}- {first_key}:");
+            render_toon_array(out, None, array, indent + 4);
+        }
+        _ => {
+            let _ = writeln!(
+                out,
+                "{padding}- {first_key}: {}",
+                encode_toon_scalar(first_value)
+            );
+        }
+    }
+
+    for (key, value) in entries {
+        render_toon_entry(out, key, value, indent + 2);
     }
 }
 
@@ -1297,7 +1435,7 @@ fn encode_toon_scalar(value: &Value) -> String {
         Value::Number(number) => number.to_string(),
         Value::String(text) => encode_toon_string(text),
         Value::Array(_) | Value::Object(_) => {
-            encode_toon_string(&serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()))
+            unreachable!("encode_toon_scalar only accepts primitive TOON values")
         }
     }
 }
@@ -1412,7 +1550,7 @@ mod tests {
         render_list_markdown, render_list_toon, render_recall_markdown, render_recall_toon,
         render_search_results_text, render_snapshot_text, render_timeline_text, GetEnvelope,
         ListEnvelope, ListRow, RecallEnvelope, RecallMatchConfidence, RecallOutputRow,
-        SnapshotListRow, OUTPUT_SCHEMA_VERSION,
+        SnapshotListRow, TimelineListRow, OUTPUT_SCHEMA_VERSION,
     };
 
     #[test]
@@ -1613,6 +1751,16 @@ mod tests {
                 "query": "git",
                 "requested_mode": "auto",
                 "mode_used": "literal",
+                "apps": ["Terminal", "Safari"],
+                "window": {
+                    "hours": 24,
+                },
+                "flags": [
+                    {
+                        "name": "prefer_recent",
+                        "enabled": true,
+                    }
+                ],
                 "limit": 10,
                 "cursor": null,
             }),
@@ -1624,8 +1772,17 @@ mod tests {
         let toon = render_list_toon(&envelope);
 
         assert!(markdown.contains("| snapshot_id | kind | observed_at |"));
-        assert!(toon.contains("results[#1\t]{snapshot_id"));
+        assert!(toon.contains(
+            "results[#1\t]{snapshot_id\tevent_id\tobserved_at\tfirst_seen_at\tlast_seen_at\tkind\tapp_name\tapp_bundle_id\tdisplay_text\tcapture_count\titem_count\ttotal_bytes\tscore\twhy_matched}:"
+        ));
         assert!(toon.contains("git status"));
+        assert!(!toon.contains("sha256"));
+        assert!(!toon.contains("text_fragments"));
+        assert!(toon.contains("apps[#2\t]: Terminal\tSafari"));
+        assert!(toon.contains("window:"));
+        assert!(toon.contains("hours: 24"));
+        assert!(toon.contains("flags[#1]:"));
+        assert!(toon.contains("name: prefer_recent"));
     }
 
     #[test]
@@ -1693,7 +1850,7 @@ mod tests {
                 last_seen_at: "2026-04-17T10:00:00Z".to_string(),
                 app_name: Some("Terminal".to_string()),
                 app_bundle_id: Some("com.apple.Terminal".to_string()),
-                best_text: "git status".to_string(),
+                best_text: "".to_string(),
                 best_text_uti: Some("public.utf8-plain-text".to_string()),
                 text_fragments: Vec::new(),
                 urls: vec!["https://example.com".to_string()],
@@ -1708,7 +1865,7 @@ mod tests {
                 score: Some(0.1),
                 why_matched: Some("git status".to_string()),
                 matched_fields: vec!["best_text".to_string(), "search_text".to_string()],
-                snippet: "git status".to_string(),
+                snippet: "quoted snippet".to_string(),
             },
             alternatives: vec![RecallOutputRow {
                 snapshot_id: 3,
@@ -1735,7 +1892,7 @@ mod tests {
                 score: None,
                 why_matched: None,
                 matched_fields: Vec::new(),
-                snippet: "git commit".to_string(),
+                snippet: String::new(),
             }],
             best_match_confidence: RecallMatchConfidence::High,
             best_match_score: Some(0.91),
@@ -1749,7 +1906,56 @@ mod tests {
         assert!(markdown.contains("# Best Match"));
         assert!(markdown.contains("## Alternatives"));
         assert!(markdown.contains("> git status"));
-        assert!(toon.contains("best_candidate[#1"));
-        assert!(toon.contains("alternatives[#1"));
+        assert!(toon.contains(
+            "best_candidate[#1\t]{snapshot_id\tevent_id\tobserved_at\tfirst_seen_at\tlast_seen_at\tkind\tapp_name\tapp_bundle_id\tdisplay_text\tcapture_count\titem_count\ttotal_bytes\tscore\twhy_matched}:"
+        ));
+        assert!(toon.contains("alternatives[#1\t]{snapshot_id\tevent_id\tobserved_at\tfirst_seen_at\tlast_seen_at\tkind\tapp_name\tapp_bundle_id\tdisplay_text\tcapture_count\titem_count\ttotal_bytes\tscore\twhy_matched}:"));
+        assert!(toon.contains("quoted snippet"));
+        assert!(toon.contains("git commit"));
+        assert!(!toon.contains("\tsnippet}:"));
+        assert!(!toon.contains("matched_fields"));
+        assert!(!toon.contains("sha256"));
+    }
+
+    #[test]
+    fn timeline_toon_uses_scalar_projection_display_text_fallback() {
+        let envelope = ListEnvelope {
+            schema_version: OUTPUT_SCHEMA_VERSION,
+            command: "timeline",
+            generated_at: "2026-04-17T10:00:00Z".to_string(),
+            applied_filters: json!({ "hours": 24 }),
+            truncated: false,
+            next_cursor: None,
+            results: vec![ListRow::Timeline(TimelineListRow {
+                event_id: 9,
+                snapshot_id: 3,
+                observed_at: "2026-04-17T10:00:00Z".to_string(),
+                change_count: 2,
+                kind: "plain_text".to_string(),
+                app_name: Some("Terminal".to_string()),
+                app_bundle_id: Some("com.apple.Terminal".to_string()),
+                best_text: String::new(),
+                best_text_uti: None,
+                text_fragments: Vec::new(),
+                urls: Vec::new(),
+                file_paths: Vec::new(),
+                html_text: None,
+                rtf_text: None,
+                text_summary: "git summary".to_string(),
+                preview_text: "git preview".to_string(),
+                total_bytes: 42,
+                sha256: "abc123".to_string(),
+                item_count: 1,
+            })],
+        };
+
+        let toon = render_list_toon(&envelope);
+
+        assert!(toon.contains(
+            "results[#1\t]{event_id\tsnapshot_id\tobserved_at\tchange_count\tkind\tapp_name\tapp_bundle_id\tdisplay_text\titem_count\ttotal_bytes}:"
+        ));
+        assert!(toon.contains("git preview"));
+        assert!(!toon.contains("best_text_uti"));
+        assert!(!toon.contains("sha256"));
     }
 }
