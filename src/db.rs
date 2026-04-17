@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::model::SearchHit;
 
 const SCHEMA: &str = include_str!("db/schema.sql");
-const CURRENT_SCHEMA_VERSION: i64 = 1;
+const CURRENT_SCHEMA_VERSION: i64 = 2;
 const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
 
 pub struct Database {
@@ -557,6 +557,17 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
                 [],
             )
             .context("rebuild FTS5 index")?;
+            rebuild_snapshot_stats(&tx)?;
+            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+                .context("set PRAGMA user_version")?;
+        }
+        1 => {
+            if legacy_prerelease_schema_detected(&tx)? {
+                bail!(
+                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
+                );
+            }
+            rebuild_snapshot_stats(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -566,6 +577,7 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
                     "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
                 );
             }
+            rebuild_snapshot_stats(&tx)?;
         }
         version if version > CURRENT_SCHEMA_VERSION => {
             bail!(
@@ -579,6 +591,54 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
     }
 
     tx.commit().context("commit schema transaction")?;
+    Ok(())
+}
+
+fn rebuild_snapshot_stats(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM snapshot_stats", [])
+        .context("clear snapshot stats")?;
+    conn.execute_batch(
+        r"
+        INSERT INTO snapshot_stats (
+            snapshot_id,
+            capture_count,
+            first_observed_at,
+            last_observed_at,
+            last_event_id,
+            last_frontmost_app_bundle_id,
+            last_frontmost_app_name
+        )
+        SELECT
+            ce.snapshot_id,
+            COUNT(*) AS capture_count,
+            MIN(ce.observed_at) AS first_observed_at,
+            MAX(ce.observed_at) AS last_observed_at,
+            (
+                SELECT latest.id
+                FROM capture_events latest
+                WHERE latest.snapshot_id = ce.snapshot_id
+                ORDER BY latest.observed_at DESC, latest.id DESC
+                LIMIT 1
+            ) AS last_event_id,
+            (
+                SELECT latest.frontmost_app_bundle_id
+                FROM capture_events latest
+                WHERE latest.snapshot_id = ce.snapshot_id
+                ORDER BY latest.observed_at DESC, latest.id DESC
+                LIMIT 1
+            ) AS last_frontmost_app_bundle_id,
+            (
+                SELECT latest.frontmost_app_name
+                FROM capture_events latest
+                WHERE latest.snapshot_id = ce.snapshot_id
+                ORDER BY latest.observed_at DESC, latest.id DESC
+                LIMIT 1
+            ) AS last_frontmost_app_name
+        FROM capture_events ce
+        GROUP BY ce.snapshot_id;
+        ",
+    )
+    .context("rebuild snapshot stats")?;
     Ok(())
 }
 

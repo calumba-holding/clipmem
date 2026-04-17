@@ -43,6 +43,16 @@ CREATE TABLE IF NOT EXISTS capture_events (
     frontmost_app_name     TEXT
 );
 
+CREATE TABLE IF NOT EXISTS snapshot_stats (
+    snapshot_id                 INTEGER PRIMARY KEY REFERENCES snapshots(id) ON DELETE CASCADE,
+    capture_count               INTEGER NOT NULL CHECK (capture_count >= 0),
+    first_observed_at           TEXT NOT NULL,
+    last_observed_at            TEXT NOT NULL,
+    last_event_id               INTEGER NOT NULL,
+    last_frontmost_app_bundle_id TEXT,
+    last_frontmost_app_name     TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_capture_events_snapshot_id
     ON capture_events(snapshot_id);
 
@@ -51,6 +61,9 @@ CREATE INDEX IF NOT EXISTS idx_capture_events_snapshot_observed_id
 
 CREATE INDEX IF NOT EXISTS idx_capture_events_observed_id
     ON capture_events(observed_at DESC, id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_snapshot_stats_last_observed_snapshot
+    ON snapshot_stats(last_observed_at DESC, snapshot_id DESC);
 
 CREATE INDEX IF NOT EXISTS idx_snapshot_items_snapshot_id
     ON snapshot_items(snapshot_id, item_index);
@@ -78,4 +91,148 @@ CREATE TRIGGER IF NOT EXISTS snapshots_au AFTER UPDATE ON snapshots BEGIN
     VALUES ('delete', old.id, old.search_text, old.preview_text);
     INSERT INTO snapshots_fts(rowid, search_text, preview_text)
     VALUES (new.id, new.search_text, new.preview_text);
+END;
+
+CREATE TRIGGER IF NOT EXISTS capture_events_ai AFTER INSERT ON capture_events BEGIN
+    INSERT INTO snapshot_stats (
+        snapshot_id,
+        capture_count,
+        first_observed_at,
+        last_observed_at,
+        last_event_id,
+        last_frontmost_app_bundle_id,
+        last_frontmost_app_name
+    ) VALUES (
+        new.snapshot_id,
+        1,
+        new.observed_at,
+        new.observed_at,
+        new.id,
+        new.frontmost_app_bundle_id,
+        new.frontmost_app_name
+    )
+    ON CONFLICT(snapshot_id) DO UPDATE SET
+        capture_count = snapshot_stats.capture_count + 1,
+        first_observed_at = MIN(snapshot_stats.first_observed_at, new.observed_at),
+        last_observed_at = CASE
+            WHEN new.observed_at > snapshot_stats.last_observed_at
+                OR (
+                    new.observed_at = snapshot_stats.last_observed_at
+                    AND new.id > snapshot_stats.last_event_id
+                )
+                THEN new.observed_at
+            ELSE snapshot_stats.last_observed_at
+        END,
+        last_event_id = CASE
+            WHEN new.observed_at > snapshot_stats.last_observed_at
+                OR (
+                    new.observed_at = snapshot_stats.last_observed_at
+                    AND new.id > snapshot_stats.last_event_id
+                )
+                THEN new.id
+            ELSE snapshot_stats.last_event_id
+        END,
+        last_frontmost_app_bundle_id = CASE
+            WHEN new.observed_at > snapshot_stats.last_observed_at
+                OR (
+                    new.observed_at = snapshot_stats.last_observed_at
+                    AND new.id > snapshot_stats.last_event_id
+                )
+                THEN new.frontmost_app_bundle_id
+            ELSE snapshot_stats.last_frontmost_app_bundle_id
+        END,
+        last_frontmost_app_name = CASE
+            WHEN new.observed_at > snapshot_stats.last_observed_at
+                OR (
+                    new.observed_at = snapshot_stats.last_observed_at
+                    AND new.id > snapshot_stats.last_event_id
+                )
+                THEN new.frontmost_app_name
+            ELSE snapshot_stats.last_frontmost_app_name
+        END;
+END;
+
+CREATE TRIGGER IF NOT EXISTS capture_events_au
+AFTER UPDATE OF observed_at, frontmost_app_bundle_id, frontmost_app_name ON capture_events BEGIN
+    DELETE FROM snapshot_stats WHERE snapshot_id = old.snapshot_id;
+    INSERT INTO snapshot_stats (
+        snapshot_id,
+        capture_count,
+        first_observed_at,
+        last_observed_at,
+        last_event_id,
+        last_frontmost_app_bundle_id,
+        last_frontmost_app_name
+    )
+    SELECT
+        ce.snapshot_id,
+        COUNT(*) AS capture_count,
+        MIN(ce.observed_at) AS first_observed_at,
+        MAX(ce.observed_at) AS last_observed_at,
+        (
+            SELECT latest.id
+            FROM capture_events latest
+            WHERE latest.snapshot_id = ce.snapshot_id
+            ORDER BY latest.observed_at DESC, latest.id DESC
+            LIMIT 1
+        ) AS last_event_id,
+        (
+            SELECT latest.frontmost_app_bundle_id
+            FROM capture_events latest
+            WHERE latest.snapshot_id = ce.snapshot_id
+            ORDER BY latest.observed_at DESC, latest.id DESC
+            LIMIT 1
+        ) AS last_frontmost_app_bundle_id,
+        (
+            SELECT latest.frontmost_app_name
+            FROM capture_events latest
+            WHERE latest.snapshot_id = ce.snapshot_id
+            ORDER BY latest.observed_at DESC, latest.id DESC
+            LIMIT 1
+        ) AS last_frontmost_app_name
+    FROM capture_events ce
+    WHERE ce.snapshot_id = new.snapshot_id
+    GROUP BY ce.snapshot_id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS capture_events_ad AFTER DELETE ON capture_events BEGIN
+    DELETE FROM snapshot_stats WHERE snapshot_id = old.snapshot_id;
+    INSERT INTO snapshot_stats (
+        snapshot_id,
+        capture_count,
+        first_observed_at,
+        last_observed_at,
+        last_event_id,
+        last_frontmost_app_bundle_id,
+        last_frontmost_app_name
+    )
+    SELECT
+        ce.snapshot_id,
+        COUNT(*) AS capture_count,
+        MIN(ce.observed_at) AS first_observed_at,
+        MAX(ce.observed_at) AS last_observed_at,
+        (
+            SELECT latest.id
+            FROM capture_events latest
+            WHERE latest.snapshot_id = ce.snapshot_id
+            ORDER BY latest.observed_at DESC, latest.id DESC
+            LIMIT 1
+        ) AS last_event_id,
+        (
+            SELECT latest.frontmost_app_bundle_id
+            FROM capture_events latest
+            WHERE latest.snapshot_id = ce.snapshot_id
+            ORDER BY latest.observed_at DESC, latest.id DESC
+            LIMIT 1
+        ) AS last_frontmost_app_bundle_id,
+        (
+            SELECT latest.frontmost_app_name
+            FROM capture_events latest
+            WHERE latest.snapshot_id = ce.snapshot_id
+            ORDER BY latest.observed_at DESC, latest.id DESC
+            LIMIT 1
+        ) AS last_frontmost_app_name
+    FROM capture_events ce
+    WHERE ce.snapshot_id = old.snapshot_id
+    GROUP BY ce.snapshot_id;
 END;

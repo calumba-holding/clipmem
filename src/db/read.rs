@@ -24,34 +24,7 @@ struct QueryAnalysis {
     path_tail: Option<String>,
 }
 const LIST_QUERY_CTES: &str = r"
-    WITH event_summary AS (
-        SELECT
-            snapshot_id,
-            COUNT(*) AS capture_count,
-            MIN(observed_at) AS first_observed_at,
-            MAX(observed_at) AS last_observed_at
-        FROM capture_events
-        GROUP BY snapshot_id
-    ),
-    latest_event AS (
-        SELECT
-            snapshot_id,
-            id AS event_id,
-            observed_at,
-            frontmost_app_name,
-            frontmost_app_bundle_id
-        FROM (
-            SELECT
-                ce.*,
-                ROW_NUMBER() OVER (
-                    PARTITION BY ce.snapshot_id
-                    ORDER BY ce.observed_at DESC, ce.id DESC
-                ) AS row_number
-            FROM capture_events ce
-        )
-        WHERE row_number = 1
-    ),
-    url_values AS (
+    WITH url_values AS (
         SELECT
             snapshot_id,
             GROUP_CONCAT(text_value, char(31)) AS urls
@@ -179,7 +152,7 @@ impl Database {
     ) -> Result<Page<SearchHit>> {
         let limit = sanitise_limit(limit);
         let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
-        let sql = recent_query();
+        let sql = recent_query(event_filters_active(filters));
         let app_like = app_like_pattern(filters);
         let bundle_id = filters.bundle_id().map(|value| value.to_ascii_lowercase());
         let kind = filters.kind().map(|value| value.as_str());
@@ -419,7 +392,7 @@ impl Database {
         let limit = sanitise_limit(limit);
         let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
         let analysis = analyze_query(query);
-        let sql = fts_query();
+        let sql = fts_query(event_filters_active(filters));
         let app_like = app_like_pattern(filters);
         let bundle_id = filters.bundle_id().map(|value| value.to_ascii_lowercase());
         let kind = filters.kind().map(|value| value.as_str());
@@ -490,7 +463,7 @@ impl Database {
         let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
         let analysis = analyze_query(query);
         let like = format!("%{}%", escape_like_pattern(&analysis.trimmed));
-        let sql = literal_query();
+        let sql = literal_query(event_filters_active(filters));
         let app_like = app_like_pattern(filters);
         let bundle_id = filters.bundle_id().map(|value| value.to_ascii_lowercase());
         let kind = filters.kind().map(|value| value.as_str());
@@ -740,14 +713,10 @@ impl Database {
     }
 }
 
-fn recent_query() -> String {
+fn recent_query(include_matching_events: bool) -> String {
     format!(
         "{LIST_QUERY_CTES}
-         , matching_events AS (
-             SELECT DISTINCT ce.snapshot_id
-             FROM capture_events ce
-             WHERE {event_filter_clause}
-         )
+         {matching_events_cte}
          SELECT
              base.snapshot_id,
              base.event_id,
@@ -770,30 +739,30 @@ fn recent_query() -> String {
          FROM (
              SELECT
                  s.id AS snapshot_id,
-                 le.event_id AS event_id,
+                 ss.last_event_id AS event_id,
                  s.sha256 AS sha256,
                  s.snapshot_kind AS snapshot_kind,
                  s.preview_text AS preview_text,
                  s.search_text AS search_text,
                  NULL AS why_matched,
                  '' AS matched_fields,
-                 es.capture_count AS capture_count,
-                 es.first_observed_at AS first_observed_at,
-                 es.last_observed_at AS last_observed_at,
-                 le.frontmost_app_name AS last_frontmost_app_name,
-                 le.frontmost_app_bundle_id AS last_frontmost_app_bundle_id,
+                 ss.capture_count AS capture_count,
+                 ss.first_observed_at AS first_observed_at,
+                 ss.last_observed_at AS last_observed_at,
+                 ss.last_frontmost_app_name AS last_frontmost_app_name,
+                 ss.last_frontmost_app_bundle_id AS last_frontmost_app_bundle_id,
                  COALESCE(uv.urls, '') AS urls,
                  COALESCE(fv.file_urls, '') AS file_urls,
                  s.total_bytes AS total_bytes,
                  s.item_count AS item_count,
                  NULL AS score
              FROM snapshots s
-             JOIN event_summary es ON es.snapshot_id = s.id
-             JOIN latest_event le ON le.snapshot_id = s.id
-             JOIN matching_events me ON me.snapshot_id = s.id
+             JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+             {matching_events_join}
              LEFT JOIN url_values uv ON uv.snapshot_id = s.id
              LEFT JOIN file_url_values fv ON fv.snapshot_id = s.id
              WHERE {snapshot_filter_clause}
+               AND {event_filter_bind_clause}
          ) base
          WHERE (
              :cursor_last_seen_at IS NULL
@@ -802,7 +771,9 @@ fn recent_query() -> String {
          )
          ORDER BY base.last_observed_at DESC, base.snapshot_id DESC
          LIMIT :limit",
-        event_filter_clause = event_filter_clause("ce"),
+        matching_events_cte = matching_events_cte(include_matching_events),
+        matching_events_join = matching_events_join(include_matching_events),
+        event_filter_bind_clause = event_filter_bind_clause(),
         snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
     )
 }
@@ -882,14 +853,10 @@ fn timeline_query(sort: TimelineSort) -> String {
     )
 }
 
-fn literal_query() -> String {
+fn literal_query(include_matching_events: bool) -> String {
     format!(
         "{LIST_QUERY_CTES}
-         , matching_events AS (
-             SELECT DISTINCT ce.snapshot_id
-             FROM capture_events ce
-             WHERE {event_filter_clause}
-         )
+         {matching_events_cte}
          SELECT
              base.snapshot_id,
              base.event_id,
@@ -912,7 +879,7 @@ fn literal_query() -> String {
          FROM (
              SELECT
                  s.id AS snapshot_id,
-                 le.event_id AS event_id,
+                 ss.last_event_id AS event_id,
                  s.sha256 AS sha256,
                  s.snapshot_kind AS snapshot_kind,
                  s.preview_text AS preview_text,
@@ -920,13 +887,13 @@ fn literal_query() -> String {
                  CASE
                      WHEN lower(COALESCE(uv.urls, '')) = :query_lower THEN 'Exact URL match'
                      WHEN :path_tail_like IS NOT NULL AND lower(COALESCE(fv.file_urls, '')) LIKE :path_tail_like ESCAPE '\\' THEN 'Path fragment match in file paths'
-                     WHEN lower(COALESCE(le.frontmost_app_bundle_id, '')) = :query_lower THEN 'Bundle ID match'
+                     WHEN lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) = :query_lower THEN 'Bundle ID match'
                      WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\\' THEN 'Exact phrase match in best text'
                      WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) = :query_lower THEN 'Exact text match in best text'
                      WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :prefix_like ESCAPE '\\' THEN 'Prefix match in best text'
                      WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :like ESCAPE '\\' THEN 'Literal text match in best text'
                      WHEN lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\\' THEN 'Literal search-text match'
-                     WHEN lower(COALESCE(le.frontmost_app_name, '')) LIKE :like ESCAPE '\\' THEN 'App name match'
+                     WHEN lower(COALESCE(ss.last_frontmost_app_name, '')) LIKE :like ESCAPE '\\' THEN 'App name match'
                      ELSE 'Literal field match'
                  END AS why_matched,
                  TRIM(
@@ -935,15 +902,15 @@ fn literal_query() -> String {
                      CASE WHEN lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\\' THEN 'search_text' || char(30) ELSE '' END ||
                      CASE WHEN lower(COALESCE(uv.urls, '')) LIKE :like ESCAPE '\\' OR lower(COALESCE(uv.urls, '')) = :query_lower THEN 'urls' || char(30) ELSE '' END ||
                      CASE WHEN :path_tail_like IS NOT NULL AND lower(COALESCE(fv.file_urls, '')) LIKE :path_tail_like ESCAPE '\\' THEN 'file_paths' || char(30) ELSE '' END ||
-                     CASE WHEN lower(COALESCE(le.frontmost_app_name, '')) LIKE :like ESCAPE '\\' THEN 'app_name' || char(30) ELSE '' END ||
-                     CASE WHEN lower(COALESCE(le.frontmost_app_bundle_id, '')) LIKE :like ESCAPE '\\' OR lower(COALESCE(le.frontmost_app_bundle_id, '')) = :query_lower THEN 'app_bundle_id' || char(30) ELSE '' END,
+                     CASE WHEN lower(COALESCE(ss.last_frontmost_app_name, '')) LIKE :like ESCAPE '\\' THEN 'app_name' || char(30) ELSE '' END ||
+                     CASE WHEN lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) LIKE :like ESCAPE '\\' OR lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) = :query_lower THEN 'app_bundle_id' || char(30) ELSE '' END,
                      char(30)
                  ) AS matched_fields,
-                 es.capture_count AS capture_count,
-                 es.first_observed_at AS first_observed_at,
-                 es.last_observed_at AS last_observed_at,
-                 le.frontmost_app_name AS last_frontmost_app_name,
-                 le.frontmost_app_bundle_id AS last_frontmost_app_bundle_id,
+                 ss.capture_count AS capture_count,
+                 ss.first_observed_at AS first_observed_at,
+                 ss.last_observed_at AS last_observed_at,
+                 ss.last_frontmost_app_name AS last_frontmost_app_name,
+                 ss.last_frontmost_app_bundle_id AS last_frontmost_app_bundle_id,
                  COALESCE(uv.urls, '') AS urls,
                  COALESCE(fv.file_urls, '') AS file_urls,
                  s.total_bytes AS total_bytes,
@@ -951,36 +918,36 @@ fn literal_query() -> String {
                  (
                      CASE WHEN lower(COALESCE(uv.urls, '')) = :query_lower THEN 1.16 ELSE 0 END +
                      CASE WHEN :path_tail_like IS NOT NULL AND lower(COALESCE(fv.file_urls, '')) LIKE :path_tail_like ESCAPE '\\' THEN 1.12 ELSE 0 END +
-                     CASE WHEN lower(COALESCE(le.frontmost_app_bundle_id, '')) = :query_lower THEN 1.08 ELSE 0 END +
+                     CASE WHEN lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) = :query_lower THEN 1.08 ELSE 0 END +
                      CASE WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\\' THEN 0.98 ELSE 0 END +
                      CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) = :query_lower THEN 0.96 ELSE 0 END +
                      CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :prefix_like ESCAPE '\\' THEN 0.88 ELSE 0 END +
                      CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :like ESCAPE '\\' THEN 0.78 ELSE 0 END +
                      CASE WHEN lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\\' THEN 0.72 ELSE 0 END +
                      CASE WHEN lower(COALESCE(uv.urls, '')) LIKE :like ESCAPE '\\' THEN 0.9 ELSE 0 END +
-                     CASE WHEN lower(COALESCE(le.frontmost_app_bundle_id, '')) LIKE :like ESCAPE '\\' THEN 0.84 ELSE 0 END +
-                     CASE WHEN lower(COALESCE(le.frontmost_app_name, '')) LIKE :like ESCAPE '\\' THEN 0.7 ELSE 0 END +
+                     CASE WHEN lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) LIKE :like ESCAPE '\\' THEN 0.84 ELSE 0 END +
+                     CASE WHEN lower(COALESCE(ss.last_frontmost_app_name, '')) LIKE :like ESCAPE '\\' THEN 0.7 ELSE 0 END +
                      CASE
-                         WHEN datetime(es.last_observed_at) >= datetime('now', '-24 hours') THEN 0.05
-                         WHEN datetime(es.last_observed_at) >= datetime('now', '-7 days') THEN 0.02
+                         WHEN datetime(ss.last_observed_at) >= datetime('now', '-24 hours') THEN 0.05
+                         WHEN datetime(ss.last_observed_at) >= datetime('now', '-7 days') THEN 0.02
                          ELSE 0
                      END
                  ) AS score
              FROM snapshots s
-             JOIN event_summary es ON es.snapshot_id = s.id
-             JOIN latest_event le ON le.snapshot_id = s.id
-             JOIN matching_events me ON me.snapshot_id = s.id
+             JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+             {matching_events_join}
              LEFT JOIN url_values uv ON uv.snapshot_id = s.id
              LEFT JOIN file_url_values fv ON fv.snapshot_id = s.id
              WHERE (
                     lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\\'
                  OR lower(COALESCE(s.preview_text, '')) LIKE :like ESCAPE '\\'
                  OR lower(COALESCE(uv.urls, '')) LIKE :like ESCAPE '\\'
-                 OR lower(COALESCE(le.frontmost_app_name, '')) LIKE :like ESCAPE '\\'
-                 OR lower(COALESCE(le.frontmost_app_bundle_id, '')) LIKE :like ESCAPE '\\'
+                 OR lower(COALESCE(ss.last_frontmost_app_name, '')) LIKE :like ESCAPE '\\'
+                 OR lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) LIKE :like ESCAPE '\\'
                  OR (:path_tail_like IS NOT NULL AND lower(COALESCE(fv.file_urls, '')) LIKE :path_tail_like ESCAPE '\\')
                )
                AND {snapshot_filter_clause}
+               AND {event_filter_bind_clause}
          ) base
          WHERE (
              :cursor_score IS NULL
@@ -995,23 +962,21 @@ fn literal_query() -> String {
          )
          ORDER BY base.score DESC, base.last_observed_at DESC, base.snapshot_id DESC
          LIMIT :limit",
-        event_filter_clause = event_filter_clause("ce"),
+        matching_events_cte = matching_events_cte(include_matching_events),
+        matching_events_join = matching_events_join(include_matching_events),
+        event_filter_bind_clause = event_filter_bind_clause(),
         snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
     )
 }
 
-fn fts_query() -> String {
+fn fts_query(include_matching_events: bool) -> String {
     format!(
         "{LIST_QUERY_CTES}
-         , matching_events AS (
-             SELECT DISTINCT ce.snapshot_id
-             FROM capture_events ce
-             WHERE {event_filter_clause}
-         )
+         {matching_events_cte}
          , search_rows AS (
              SELECT
                  s.id AS snapshot_id,
-                 le.event_id AS event_id,
+                 ss.last_event_id AS event_id,
                  s.sha256 AS sha256,
                  s.snapshot_kind AS snapshot_kind,
                  s.preview_text AS preview_text,
@@ -1023,7 +988,7 @@ fn fts_query() -> String {
                          THEN 'Exact text match in best text'
                      WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :query_lower || '%') ESCAPE '\\'
                          THEN 'Phrase match in best text'
-                     ELSE COALESCE(snippet(snapshots_fts, 0, '⟦', '⟧', ' … ', 24), s.preview_text)
+                     ELSE NULL
                  END AS why_matched,
                  CASE
                      WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\\'
@@ -1032,11 +997,11 @@ fn fts_query() -> String {
                          THEN 'best_text' || char(30) || 'search_text'
                      ELSE 'search_text'
                  END AS matched_fields,
-                 es.capture_count AS capture_count,
-                 es.first_observed_at AS first_observed_at,
-                 es.last_observed_at AS last_observed_at,
-                 le.frontmost_app_name AS last_frontmost_app_name,
-                 le.frontmost_app_bundle_id AS last_frontmost_app_bundle_id,
+                 ss.capture_count AS capture_count,
+                 ss.first_observed_at AS first_observed_at,
+                 ss.last_observed_at AS last_observed_at,
+                 ss.last_frontmost_app_name AS last_frontmost_app_name,
+                 ss.last_frontmost_app_bundle_id AS last_frontmost_app_bundle_id,
                  COALESCE(uv.urls, '') AS urls,
                  COALESCE(fv.file_urls, '') AS file_urls,
                  s.total_bytes AS total_bytes,
@@ -1051,53 +1016,114 @@ fn fts_query() -> String {
                  ) AS score
              FROM snapshots_fts
              JOIN snapshots s ON s.id = snapshots_fts.rowid
-             JOIN event_summary es ON es.snapshot_id = s.id
-             JOIN latest_event le ON le.snapshot_id = s.id
-             JOIN matching_events me ON me.snapshot_id = s.id
+             JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+             {matching_events_join}
              LEFT JOIN url_values uv ON uv.snapshot_id = s.id
              LEFT JOIN file_url_values fv ON fv.snapshot_id = s.id
              WHERE snapshots_fts MATCH :query
                AND {snapshot_filter_clause}
+               AND {event_filter_bind_clause}
          )
-         SELECT
-             search_rows.snapshot_id,
-             search_rows.event_id,
-             search_rows.sha256,
-             search_rows.snapshot_kind,
-             search_rows.preview_text,
-             search_rows.search_text,
-             search_rows.why_matched,
-             search_rows.matched_fields,
-             search_rows.capture_count,
-             search_rows.first_observed_at,
-             search_rows.last_observed_at,
-             search_rows.last_frontmost_app_name,
-             search_rows.last_frontmost_app_bundle_id,
-             search_rows.urls,
-             search_rows.file_urls,
-             search_rows.total_bytes,
-             search_rows.item_count,
-             search_rows.score
-         FROM search_rows
-         WHERE (
-             :cursor_score IS NULL
-             OR search_rows.score > :cursor_score
-             OR (
-                 search_rows.score = :cursor_score
-                 AND (
-                     search_rows.last_observed_at < :cursor_last_seen_at
-                     OR (
-                         search_rows.last_observed_at = :cursor_last_seen_at
-                         AND search_rows.snapshot_id < :cursor_snapshot_id
+         , ranked_rows AS (
+             SELECT
+                 search_rows.snapshot_id,
+                 search_rows.event_id,
+                 search_rows.sha256,
+                 search_rows.snapshot_kind,
+                 search_rows.preview_text,
+                 search_rows.search_text,
+                 search_rows.why_matched,
+                 search_rows.matched_fields,
+                 search_rows.capture_count,
+                 search_rows.first_observed_at,
+                 search_rows.last_observed_at,
+                 search_rows.last_frontmost_app_name,
+                 search_rows.last_frontmost_app_bundle_id,
+                 search_rows.urls,
+                 search_rows.file_urls,
+                 search_rows.total_bytes,
+                 search_rows.item_count,
+                 search_rows.score
+             FROM search_rows
+             WHERE (
+                 :cursor_score IS NULL
+                 OR search_rows.score > :cursor_score
+                 OR (
+                     search_rows.score = :cursor_score
+                     AND (
+                         search_rows.last_observed_at < :cursor_last_seen_at
+                         OR (
+                             search_rows.last_observed_at = :cursor_last_seen_at
+                             AND search_rows.snapshot_id < :cursor_snapshot_id
+                         )
                      )
                  )
              )
+             ORDER BY search_rows.score ASC, search_rows.last_observed_at DESC, search_rows.snapshot_id DESC
+             LIMIT :limit
          )
-         ORDER BY search_rows.score ASC, search_rows.last_observed_at DESC, search_rows.snapshot_id DESC
-         LIMIT :limit",
-        event_filter_clause = event_filter_clause("ce"),
+         SELECT
+             ranked_rows.snapshot_id,
+             ranked_rows.event_id,
+             ranked_rows.sha256,
+             ranked_rows.snapshot_kind,
+             ranked_rows.preview_text,
+             ranked_rows.search_text,
+             COALESCE(
+                 ranked_rows.why_matched,
+                 snippet(snapshots_fts, 0, '⟦', '⟧', ' … ', 24),
+                 ranked_rows.preview_text
+             ) AS why_matched,
+             ranked_rows.matched_fields,
+             ranked_rows.capture_count,
+             ranked_rows.first_observed_at,
+             ranked_rows.last_observed_at,
+             ranked_rows.last_frontmost_app_name,
+             ranked_rows.last_frontmost_app_bundle_id,
+             ranked_rows.urls,
+             ranked_rows.file_urls,
+             ranked_rows.total_bytes,
+             ranked_rows.item_count,
+             ranked_rows.score
+         FROM ranked_rows
+         JOIN snapshots_fts ON snapshots_fts.rowid = ranked_rows.snapshot_id
+         ORDER BY ranked_rows.score ASC, ranked_rows.last_observed_at DESC, ranked_rows.snapshot_id DESC",
+        matching_events_cte = matching_events_cte(include_matching_events),
+        matching_events_join = matching_events_join(include_matching_events),
+        event_filter_bind_clause = event_filter_bind_clause(),
         snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
     )
+}
+
+fn matching_events_cte(include_matching_events: bool) -> String {
+    if include_matching_events {
+        format!(
+            ", matching_events AS (
+                 SELECT DISTINCT ce.snapshot_id
+                 FROM capture_events ce
+                 WHERE {}
+             )",
+            event_filter_clause("ce")
+        )
+    } else {
+        String::new()
+    }
+}
+
+fn matching_events_join(include_matching_events: bool) -> &'static str {
+    if include_matching_events {
+        "JOIN matching_events me ON me.snapshot_id = s.id"
+    } else {
+        ""
+    }
+}
+
+fn event_filters_active(filters: &RetrievalFilters) -> bool {
+    filters.since().is_some()
+        || filters.until().is_some()
+        || filters.hours().is_some()
+        || filters.app().is_some()
+        || filters.bundle_id().is_some()
 }
 
 fn event_filter_clause(alias: &str) -> String {
@@ -1107,6 +1133,13 @@ fn event_filter_clause(alias: &str) -> String {
          AND (:app_like IS NULL OR ({alias}.frontmost_app_name IS NOT NULL AND lower({alias}.frontmost_app_name) LIKE :app_like ESCAPE '\\'))
          AND (:bundle_id IS NULL OR ({alias}.frontmost_app_bundle_id IS NOT NULL AND lower({alias}.frontmost_app_bundle_id) = :bundle_id))"
     )
+}
+
+fn event_filter_bind_clause() -> &'static str {
+    "(:since IS NULL OR 1)
+     AND (:until IS NULL OR 1)
+     AND (:app_like IS NULL OR 1)
+     AND (:bundle_id IS NULL OR 1)"
 }
 
 fn snapshot_filter_clause(snapshot_alias: &str, snapshot_id_expr: &str) -> String {
