@@ -212,6 +212,23 @@ fn write_executable(path: &Path, content: &str) -> Result<()> {
     Ok(())
 }
 
+fn write_openclaw_skill_package(skill_dir: &Path) -> Result<()> {
+    fs::create_dir_all(skill_dir.join("references"))?;
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        include_str!("../extras/openclaw/clipboard_memory/SKILL.md"),
+    )?;
+    fs::write(
+        skill_dir.join("references/commands.md"),
+        include_str!("../extras/openclaw/clipboard_memory/references/commands.md"),
+    )?;
+    fs::write(
+        skill_dir.join("references/troubleshooting.md"),
+        include_str!("../extras/openclaw/clipboard_memory/references/troubleshooting.md"),
+    )?;
+    Ok(())
+}
+
 #[test]
 fn search_command_prints_literal_results_in_text_mode() -> Result<()> {
     let path = temp_db_path("search-text");
@@ -788,6 +805,8 @@ fn agents_openclaw_install_print_and_uninstall_skill_work() -> Result<()> {
     );
     assert!(install.status.success());
     assert!(install_dir.join("SKILL.md").is_file());
+    assert!(install_dir.join("references/commands.md").is_file());
+    assert!(install_dir.join("references/troubleshooting.md").is_file());
 
     let printed = run_cli_with_env(
         &["agents", "openclaw", "print-skill"],
@@ -817,11 +836,7 @@ fn agents_openclaw_doctor_reports_missing_clipmem_with_next_steps() -> Result<()
     let workspace_dir = test_dir.join("workspace");
     let skill_dir = workspace_dir.join("skills").join("clipboard_memory");
     fs::create_dir_all(&bin_dir)?;
-    fs::create_dir_all(&skill_dir)?;
-    fs::write(
-        skill_dir.join("SKILL.md"),
-        include_str!("../extras/openclaw/clipboard_memory/SKILL.md"),
-    )?;
+    write_openclaw_skill_package(&skill_dir)?;
 
     let openclaw_path = bin_dir.join("openclaw");
     write_executable(
@@ -842,6 +857,51 @@ fn agents_openclaw_doctor_reports_missing_clipmem_with_next_steps() -> Result<()
     assert!(stdout.contains("brew install tristanmanchester/tap/clipmem"));
 
     let _ = fs::remove_dir_all(&test_dir);
+    Ok(())
+}
+
+#[test]
+fn agents_openclaw_doctor_fails_when_reference_file_is_missing() -> Result<()> {
+    let test_dir = temp_test_dir("openclaw-doctor-missing-reference");
+    let bin_dir = test_dir.join("bin");
+    let workspace_dir = test_dir.join("workspace");
+    let skill_dir = workspace_dir.join("skills").join("clipboard_memory");
+    fs::create_dir_all(&bin_dir)?;
+    write_openclaw_skill_package(&skill_dir)?;
+    fs::remove_file(skill_dir.join("references/troubleshooting.md"))?;
+
+    let openclaw_path = bin_dir.join("openclaw");
+    write_executable(
+        &openclaw_path,
+        &format!(
+            "#!/bin/sh\nif [ \"$1\" = \"config\" ] && [ \"$2\" = \"get\" ] && [ \"$3\" = \"agents.defaults.workspace\" ]; then\n  printf '%s\\n' '{}'\n  exit 0\nfi\nif [ \"$1\" = \"sandbox\" ] && [ \"$2\" = \"explain\" ]; then\n  printf 'sandbox disabled\\n'\n  exit 0\nfi\nexit 1\n",
+            workspace_dir.display()
+        ),
+    )?;
+
+    let clipmem_link = bin_dir.join("clipmem");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_clipmem"), &clipmem_link)?;
+
+    let output = run_cli_with_env(
+        &["agents", "openclaw", "doctor"],
+        &[("PATH", bin_dir.to_str().unwrap()), ("HOME", test_dir.to_str().unwrap())],
+    );
+    assert!(!output.status.success());
+    let stdout = stdout_text(&output);
+    assert!(stdout.contains("[FAIL] SKILL.md metadata"));
+    assert!(stdout.contains("referenced file is missing"));
+
+    let _ = fs::remove_dir_all(&test_dir);
+    Ok(())
+}
+
+#[test]
+fn portable_skill_package_is_present() -> Result<()> {
+    let portable_root = Path::new("extras/agent-skills/clipboard-memory");
+    assert!(portable_root.join("SKILL.md").is_file());
+    assert!(portable_root.join("references/commands.md").is_file());
+    assert!(portable_root.join("references/troubleshooting.md").is_file());
     Ok(())
 }
 

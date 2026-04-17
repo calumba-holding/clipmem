@@ -93,15 +93,23 @@ const OPENCLAW_SKILL_NAME: &str = "clipboard_memory";
 const OPENCLAW_SHARED_ROOT: &str = ".openclaw/skills";
 const OPENCLAW_WORKSPACE_ROOT: &str = ".openclaw/workspace";
 
-#[derive(Debug, Clone)]
-struct OpenClawInstallEntry {
-    id: &'static str,
-    kind: &'static str,
-    label: &'static str,
-    bins: &'static [&'static str],
-    formula: Option<&'static str>,
-    tap: Option<&'static str>,
-    package: Option<&'static str>,
+const OPENCLAW_SKILL_MD: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/openclaw/clipboard_memory/SKILL.md"
+));
+const OPENCLAW_COMMANDS_REF: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/openclaw/clipboard_memory/references/commands.md"
+));
+const OPENCLAW_TROUBLESHOOTING_REF: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/openclaw/clipboard_memory/references/troubleshooting.md"
+));
+
+#[derive(Debug, Clone, Copy)]
+struct PackagedOpenClawFile {
+    relative_path: &'static str,
+    contents: &'static str,
 }
 
 #[derive(Debug, Clone)]
@@ -559,14 +567,10 @@ fn openclaw_install_skill(args: &OpenClawInstallSkillArgs) -> Result<()> {
         }
     }
 
-    std::fs::create_dir_all(&target_dir)
-        .with_context(|| format!("failed to create {}", target_dir.display()))?;
-    let skill_path = target_dir.join("SKILL.md");
-    std::fs::write(&skill_path, packaged_openclaw_skill())
-        .with_context(|| format!("failed to write {}", skill_path.display()))?;
+    install_openclaw_package(&target_dir)?;
 
     println!("Installed OpenClaw skill into {}", target_dir.display());
-    println!("Skill file: {}", skill_path.display());
+    println!("Skill file: {}", target_dir.join("SKILL.md").display());
     println!("Reload OpenClaw skills or restart OpenClaw if the skill does not appear immediately.");
     Ok(())
 }
@@ -620,71 +624,41 @@ fn open_or_init_db(path: &Path) -> Result<Database> {
 }
 
 fn packaged_openclaw_skill() -> String {
-    let metadata = json!({
-        "openclaw": {
-            "emoji": "📋",
-            "os": ["darwin"],
-            "requires": {
-                "bins": ["clipmem"]
-            },
-            "install": openclaw_install_entries_json(),
-        }
-    });
-
-    format!(
-        "---\nname: {name}\ndescription: Search the local clipboard archive captured by clipmem.\nmetadata: {metadata}\n---\n\nUse this skill when the user asks you to remember, find, search, or recover something they copied earlier on this Mac.\n\nPreferred flow:\n\n1. Run `clipmem recall \"<query>\" --format json --limit 5`.\n2. If there is no query, or the request is more about “what did I copy recently?”, run `clipmem recall --prefer-recent --hours 24 --format json --limit 5`.\n3. Use `best_candidate.best_text`, `best_candidate.urls`, `best_candidate.file_paths`, and `why_selected` from the recall output first.\n4. When a `snapshot_id` needs deeper nested detail, run `clipmem get <snapshot_id> --format json`.\n5. Quote or summarise the surfaced recall text directly from the JSON output before falling back to nested representations.\n\nNotes:\n\n- `clipmem recall` is the primary retrieval command. It chooses one best candidate, ranks alternatives, and falls back to recent clipboard items when query matches are weak.\n- `clipmem search` is still available for direct lexical lookup when you want raw ranked matches.\n- `clipmem recent` is for recent unique clipboard states deduplicated by snapshot.\n- `clipmem timeline` is for the true chronological capture-event history, including repeated copies of the same content.\n- `clipmem get` includes stored text payloads recovered for recognized text-like representations at capture time.\n- If a hit is image-, PDF-, or binary-only and has no `text_value`, report the metadata and explain that raw-byte recovery currently requires `clipmem export`.\n",
-        name = OPENCLAW_SKILL_NAME,
-        metadata = serde_json::to_string(&metadata).unwrap_or_else(|_| "{}".to_string()),
-    )
+    OPENCLAW_SKILL_MD.to_string()
 }
 
-fn openclaw_install_entries() -> Vec<OpenClawInstallEntry> {
-    vec![
-        OpenClawInstallEntry {
-            id: "brew",
-            kind: "brew",
-            label: "Install clipmem (brew)",
-            bins: &["clipmem"],
-            formula: Some("clipmem"),
-            tap: Some("tristanmanchester/tap"),
-            package: None,
+fn packaged_openclaw_files() -> &'static [PackagedOpenClawFile] {
+    &[
+        PackagedOpenClawFile {
+            relative_path: "SKILL.md",
+            contents: OPENCLAW_SKILL_MD,
         },
-        OpenClawInstallEntry {
-            id: "cargo",
-            kind: "cargo",
-            label: "Install clipmem (cargo)",
-            bins: &["clipmem"],
-            formula: None,
-            tap: None,
-            package: Some("clipmem"),
+        PackagedOpenClawFile {
+            relative_path: "references/commands.md",
+            contents: OPENCLAW_COMMANDS_REF,
+        },
+        PackagedOpenClawFile {
+            relative_path: "references/troubleshooting.md",
+            contents: OPENCLAW_TROUBLESHOOTING_REF,
         },
     ]
 }
 
-fn openclaw_install_entries_json() -> Vec<serde_json::Value> {
-    openclaw_install_entries()
-        .into_iter()
-        .map(|entry| {
-            let mut value = json!({
-                "id": entry.id,
-                "kind": entry.kind,
-                "label": entry.label,
-                "bins": entry.bins,
-            });
-            if let Some(object) = value.as_object_mut() {
-                if let Some(formula) = entry.formula {
-                    object.insert("formula".to_string(), json!(formula));
-                }
-                if let Some(tap) = entry.tap {
-                    object.insert("tap".to_string(), json!(tap));
-                }
-                if let Some(package) = entry.package {
-                    object.insert("package".to_string(), json!(package));
-                }
-            }
-            value
-        })
-        .collect()
+fn install_openclaw_package(target_dir: &Path) -> Result<()> {
+    std::fs::create_dir_all(target_dir)
+        .with_context(|| format!("failed to create {}", target_dir.display()))?;
+
+    for file in packaged_openclaw_files() {
+        let path = target_dir.join(file.relative_path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
+        std::fs::write(&path, file.contents)
+            .with_context(|| format!("failed to write {}", path.display()))?;
+    }
+
+    Ok(())
 }
 
 fn resolve_openclaw_skill_dir(dest: Option<&Path>, shared: bool) -> Result<PathBuf> {
@@ -786,11 +760,15 @@ fn build_openclaw_doctor_report(args: &OpenClawDoctorArgs) -> Result<OpenClawDoc
 
     let skill_path = target_dir.join("SKILL.md");
     if skill_path.is_file() {
-        match validate_openclaw_skill_file(&skill_path) {
+        match validate_openclaw_skill_dir(&target_dir) {
             Ok(()) => checks.push(OpenClawDoctorCheck {
                 status: OpenClawDoctorStatus::Ok,
                 label: "SKILL.md metadata".to_string(),
-                detail: format!("Validated {}", skill_path.display()),
+                detail: format!(
+                    "Validated {} and referenced package files under {}",
+                    skill_path.display(),
+                    target_dir.display()
+                ),
                 next_steps: Vec::new(),
             }),
             Err(error) => checks.push(OpenClawDoctorCheck {
@@ -902,6 +880,25 @@ fn validate_openclaw_skill_file(path: &Path) -> Result<()> {
     validate_openclaw_skill_content(&content)
 }
 
+fn validate_openclaw_skill_dir(path: &Path) -> Result<()> {
+    let skill_path = path.join("SKILL.md");
+    validate_openclaw_skill_file(&skill_path)?;
+
+    let content = std::fs::read_to_string(&skill_path)
+        .with_context(|| format!("failed to read {}", skill_path.display()))?;
+    for relative_reference in referenced_markdown_files(&content) {
+        let reference_path = path.join(&relative_reference);
+        if !reference_path.is_file() {
+            return Err(anyhow!(
+                "referenced file is missing: {}",
+                reference_path.display()
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 fn validate_openclaw_skill_content(content: &str) -> Result<()> {
     let mut lines = content.lines();
     if lines.next() != Some("---") {
@@ -964,7 +961,49 @@ fn validate_openclaw_skill_content(content: &str) -> Result<()> {
         .ok_or_else(|| anyhow!("metadata.openclaw.install must be an array"))?;
     validate_openclaw_install_entries(install)?;
 
+    let references = referenced_markdown_files(content);
+    if !references
+        .iter()
+        .any(|reference| reference == Path::new("references/commands.md"))
+    {
+        return Err(anyhow!(
+            "skill content must reference `references/commands.md`"
+        ));
+    }
+    if !references
+        .iter()
+        .any(|reference| reference == Path::new("references/troubleshooting.md"))
+    {
+        return Err(anyhow!(
+            "skill content must reference `references/troubleshooting.md`"
+        ));
+    }
+
     Ok(())
+}
+
+fn referenced_markdown_files(content: &str) -> Vec<PathBuf> {
+    let mut references = Vec::new();
+
+    for line in content.lines() {
+        let mut remainder = line;
+        while let Some(start) = remainder.find("(references/") {
+            let after_start = &remainder[start + 1..];
+            let Some(end) = after_start.find(')') else {
+                break;
+            };
+            let candidate = &after_start[..end];
+            if candidate.ends_with(".md") {
+                let path = PathBuf::from(candidate);
+                if !references.iter().any(|existing| existing == &path) {
+                    references.push(path);
+                }
+            }
+            remainder = &after_start[end + 1..];
+        }
+    }
+
+    references
 }
 
 fn validate_openclaw_install_entries(entries: &[serde_json::Value]) -> Result<()> {
@@ -1555,9 +1594,9 @@ mod tests {
 
     use super::{
         encode_recent_cursor, encode_search_cursor, parse_recent_cursor, parse_search_cursor,
-        packaged_openclaw_skill, query_search_results, run_watch_iteration_with_capture,
-        validate_openclaw_skill_content, SearchArgs, SearchMode, SearchResults, WatchArgs,
-        WatchState,
+        packaged_openclaw_files, packaged_openclaw_skill, query_search_results,
+        referenced_markdown_files, run_watch_iteration_with_capture, validate_openclaw_skill_content,
+        SearchArgs, SearchMode, SearchResults, WatchArgs, WatchState,
     };
     use crate::db::{Database, RetrievalFilters};
     use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
@@ -1842,11 +1881,32 @@ mod tests {
         validate_openclaw_skill_content(&content).expect("packaged skill should validate");
         assert!(content.contains("\"openclaw\""));
         assert!(content.contains("\"requires\":{\"bins\":[\"clipmem\"]}"));
-        assert!(content.contains("\"id\":\"brew\""));
-        assert!(content.contains("\"tap\":\"tristanmanchester/tap\""));
-        assert!(content.contains("\"formula\":\"clipmem\""));
-        assert!(content.contains("\"id\":\"cargo\""));
-        assert!(content.contains("\"package\":\"clipmem\""));
         assert!(content.contains("clipmem recall"));
+        assert!(content.contains("clipmem timeline"));
+        assert!(content.contains("references/commands.md"));
+        assert!(content.contains("references/troubleshooting.md"));
+        assert!(content.contains("what was that command I copied?"));
+    }
+
+    #[test]
+    fn packaged_openclaw_package_embeds_reference_files() {
+        let files = packaged_openclaw_files();
+        assert_eq!(files.len(), 3);
+        assert!(files.iter().any(|file| file.relative_path == "SKILL.md"));
+        assert!(files
+            .iter()
+            .any(|file| file.relative_path == "references/commands.md"));
+        assert!(files
+            .iter()
+            .any(|file| file.relative_path == "references/troubleshooting.md"));
+    }
+
+    #[test]
+    fn packaged_openclaw_skill_references_relative_markdown_files() {
+        let references = referenced_markdown_files(&packaged_openclaw_skill());
+        assert!(references.iter().any(|path| path == &PathBuf::from("references/commands.md")));
+        assert!(references
+            .iter()
+            .any(|path| path == &PathBuf::from("references/troubleshooting.md")));
     }
 }

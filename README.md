@@ -37,7 +37,8 @@ The local archive is treated as sensitive state: the tool and installer tighten 
 
 - `src/` – Rust source
 - `extras/launchd/` – LaunchAgent template
-- `extras/openclaw/clipboard_memory/` – packaged OpenClaw skill content
+- `extras/openclaw/clipboard_memory/` – packaged OpenClaw-native skill content
+- `extras/agent-skills/clipboard-memory/` – portable skill package for non-OpenClaw runtimes
 - `scripts/install_launchagent.sh` – install and load the watcher as a user LaunchAgent
 - `scripts/uninstall_launchagent.sh` – remove the LaunchAgent
 - `scripts/install_openclaw_skill.sh` – compatibility wrapper around `clipmem agents openclaw install-skill`
@@ -345,17 +346,34 @@ clipmem agents openclaw uninstall-skill
 - `SKILL.md` frontmatter validity
 - `metadata.openclaw.requires.bins`
 - `metadata.openclaw.install`
+- referenced files under `references/`
 - sandbox visibility guidance via `openclaw sandbox explain` when available
 
 The packaged skill tells OpenClaw to use:
 
 - `clipmem recall "<query>" --format json`
 - `clipmem recall --prefer-recent --hours 24 --format json`
+- `clipmem timeline ... --format json` when chronology matters
+- `clipmem search ... --format json` when direct lexical matching matters
 - `clipmem get <snapshot-id> --format json` when deeper nested detail is needed
+
+The installed OpenClaw package includes:
+
+```text
+SKILL.md
+references/commands.md
+references/troubleshooting.md
+```
 
 OpenClaw must be able to run `clipmem` from its own environment, not just from your interactive shell. If you installed `clipmem` into `~/.local/bin`, make sure that directory is on the PATH seen by OpenClaw. If sandboxing is active, the binary may also need to be available inside the sandbox image or container.
 
 For compatibility, `./scripts/install_openclaw_skill.sh` still exists. It is now a thin wrapper around `clipmem agents openclaw install-skill --shared --force`, so the script preserves the older shared-install behavior while the binary defaults to the workspace-local install.
+
+## Skill Packaging
+
+- `extras/openclaw/clipboard_memory/` is the OpenClaw-native package. `clipmem agents openclaw install-skill` installs this package and its `references/` files.
+- `extras/agent-skills/clipboard-memory/` is the portable package for more generic agent-skill runtimes.
+- The repo package files are the canonical source of truth for the installed OpenClaw skill; the binary installer prints and installs from that packaged content.
 
 ## Schema notes
 

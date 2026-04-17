@@ -1,24 +1,43 @@
 ---
 name: clipboard_memory
-description: Search the local clipboard archive captured by clipmem.
+description: Recover copied text, commands, URLs, and clipboard items from this Mac with clipmem.
 metadata: {"openclaw":{"emoji":"📋","os":["darwin"],"requires":{"bins":["clipmem"]},"install":[{"id":"brew","kind":"brew","label":"Install clipmem (brew)","bins":["clipmem"],"formula":"clipmem","tap":"tristanmanchester/tap"},{"id":"cargo","kind":"cargo","label":"Install clipmem (cargo)","bins":["clipmem"],"package":"clipmem"}]}}
 ---
 
-Use this skill when the user asks you to remember, find, search, or recover something they copied earlier on this Mac.
+Recover what the user copied on this Mac before reaching for generic search.
 
-Preferred flow:
+Use this skill when the user asks things like:
 
-1. Run `clipmem recall "<query>" --format json --limit 5`.
-2. If there is no query, or the request is more about “what did I copy recently?”, run `clipmem recall --prefer-recent --hours 24 --format json --limit 5`.
-3. Use `best_candidate.best_text`, `best_candidate.urls`, `best_candidate.file_paths`, and `why_selected` from the recall output first.
-4. When a `snapshot_id` needs deeper nested detail, run `clipmem get <snapshot_id> --format json`.
-5. Quote or summarise the surfaced recall text directly from the JSON output before falling back to nested representations.
+- "what was that command I copied?"
+- "show me things I copied from Safari today"
+- "find the URL I copied yesterday"
+- "give me the exact text, not just a summary"
+- "what did I copy earlier?"
+- "find that snippet, link, note, or path I copied"
 
-Notes:
+Do not use this skill for:
 
-- `clipmem recall` is the primary retrieval command. It chooses one best candidate, ranks alternatives, and falls back to recent clipboard items when query matches are weak.
-- `clipmem search` is still available for direct lexical lookup when you want raw ranked matches.
-- `clipmem recent` is for recent unique clipboard states deduplicated by snapshot.
-- `clipmem timeline` is for the true chronological capture-event history, including repeated copies of the same content.
-- `clipmem get` includes stored text payloads recovered for recognized text-like representations at capture time.
-- If a hit is image-, PDF-, or binary-only and has no `text_value`, report the metadata and explain that raw-byte recovery currently requires `clipmem export`.
+- general web search or current-events lookups
+- searching the repository itself
+- files or messages the user never copied into the clipboard
+
+Use commands in this order:
+
+1. Start with `clipmem recall ... --format json`.
+2. Use `clipmem timeline` for true chronological history, or `clipmem search` for direct lexical lookup.
+3. Use `clipmem get <snapshot_id> --format json` only when you need exact nested detail or provenance.
+
+Near misses:
+
+- `clipmem recent` shows recent unique clipboard states; `clipmem timeline` shows every capture event in order.
+- `clipmem recall` is answer-first; `clipmem get` is forensic detail.
+
+Quick examples:
+
+- Command: `clipmem recall "that command I copied" --format json`
+- Safari today: `clipmem recall --prefer-recent --app safari --hours 24 --format json`
+- URL from yesterday: `clipmem recall "url" --hours 48 --format json`
+- Exact text: `clipmem recall "<query>" --format json --quote --full`
+
+Detailed command guidance: [references/commands.md](references/commands.md)
+Troubleshooting: [references/troubleshooting.md](references/troubleshooting.md)
