@@ -23,31 +23,6 @@ struct QueryAnalysis {
     literal_preferred: bool,
     path_tail: Option<String>,
 }
-const LIST_QUERY_CTES: &str = r"
-    WITH url_values AS (
-        SELECT
-            snapshot_id,
-            GROUP_CONCAT(text_value, char(31)) AS urls
-        FROM (
-            SELECT DISTINCT snapshot_id, text_value
-            FROM item_representations
-            WHERE kind = 'url' AND text_value IS NOT NULL AND text_value != ''
-        )
-        GROUP BY snapshot_id
-    ),
-    file_url_values AS (
-        SELECT
-            snapshot_id,
-            GROUP_CONCAT(text_value, char(31)) AS file_urls
-        FROM (
-            SELECT DISTINCT snapshot_id, text_value
-            FROM item_representations
-            WHERE kind = 'file_url' AND text_value IS NOT NULL AND text_value != ''
-        )
-        GROUP BY snapshot_id
-    )
-";
-
 impl Database {
     pub(crate) fn latest_capture_observed_at(&self) -> Result<Option<String>> {
         let observed_at = self
@@ -242,8 +217,7 @@ impl Database {
         filters: &RetrievalFilters,
     ) -> Result<bool> {
         let sql = format!(
-            "{LIST_QUERY_CTES}
-             SELECT EXISTS(
+            "SELECT EXISTS(
                  SELECT 1
                  FROM snapshots s
                  WHERE s.id = :snapshot_id
@@ -715,8 +689,7 @@ impl Database {
 
 fn recent_query(include_matching_events: bool) -> String {
     format!(
-        "{LIST_QUERY_CTES}
-         {matching_events_cte}
+        "{matching_events_cte}
          SELECT
              base.snapshot_id,
              base.event_id,
@@ -751,16 +724,15 @@ fn recent_query(include_matching_events: bool) -> String {
                  ss.last_observed_at AS last_observed_at,
                  ss.last_frontmost_app_name AS last_frontmost_app_name,
                  ss.last_frontmost_app_bundle_id AS last_frontmost_app_bundle_id,
-                 COALESCE(uv.urls, '') AS urls,
-                 COALESCE(fv.file_urls, '') AS file_urls,
+                 COALESCE(sp.urls, '') AS urls,
+                 COALESCE(sp.file_urls, '') AS file_urls,
                  s.total_bytes AS total_bytes,
                  s.item_count AS item_count,
                  NULL AS score
              FROM snapshots s
              JOIN snapshot_stats ss ON ss.snapshot_id = s.id
              {matching_events_join}
-             LEFT JOIN url_values uv ON uv.snapshot_id = s.id
-             LEFT JOIN file_url_values fv ON fv.snapshot_id = s.id
+             LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
              WHERE {snapshot_filter_clause}
                AND {event_filter_bind_clause}
          ) base
@@ -802,28 +774,6 @@ fn timeline_query(sort: TimelineSort) -> String {
 
     format!(
         r"
-         WITH url_values AS (
-             SELECT
-                 snapshot_id,
-                 GROUP_CONCAT(text_value, char(31)) AS urls
-             FROM (
-                 SELECT DISTINCT snapshot_id, text_value
-                 FROM item_representations
-                 WHERE kind = 'url' AND text_value IS NOT NULL AND text_value != ''
-             )
-             GROUP BY snapshot_id
-         ),
-         file_url_values AS (
-             SELECT
-                 snapshot_id,
-                 GROUP_CONCAT(text_value, char(31)) AS file_urls
-             FROM (
-                 SELECT DISTINCT snapshot_id, text_value
-                 FROM item_representations
-                 WHERE kind = 'file_url' AND text_value IS NOT NULL AND text_value != ''
-             )
-             GROUP BY snapshot_id
-         )
          SELECT
              ce.id AS event_id,
              ce.snapshot_id AS snapshot_id,
@@ -835,14 +785,13 @@ fn timeline_query(sort: TimelineSort) -> String {
              s.preview_text AS preview_text,
              ce.frontmost_app_name AS frontmost_app_name,
              ce.frontmost_app_bundle_id AS frontmost_app_bundle_id,
-             COALESCE(uv.urls, '') AS urls,
-             COALESCE(fv.file_urls, '') AS file_urls,
+             COALESCE(sp.urls, '') AS urls,
+             COALESCE(sp.file_urls, '') AS file_urls,
              s.total_bytes AS total_bytes,
              s.item_count AS item_count
          FROM capture_events ce
          JOIN snapshots s ON s.id = ce.snapshot_id
-         LEFT JOIN url_values uv ON uv.snapshot_id = ce.snapshot_id
-         LEFT JOIN file_url_values fv ON fv.snapshot_id = ce.snapshot_id
+         LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = ce.snapshot_id
          WHERE {event_filter_clause}
            AND {snapshot_filter_clause}
            AND {cursor_predicate}
@@ -855,8 +804,7 @@ fn timeline_query(sort: TimelineSort) -> String {
 
 fn literal_query(include_matching_events: bool) -> String {
     format!(
-        "{LIST_QUERY_CTES}
-         {matching_events_cte}
+        "{matching_events_cte}
          SELECT
              base.snapshot_id,
              base.event_id,
@@ -885,8 +833,8 @@ fn literal_query(include_matching_events: bool) -> String {
                  s.preview_text AS preview_text,
                  s.search_text AS search_text,
                  CASE
-                     WHEN lower(COALESCE(uv.urls, '')) = :query_lower THEN 'Exact URL match'
-                     WHEN :path_tail_like IS NOT NULL AND lower(COALESCE(fv.file_urls, '')) LIKE :path_tail_like ESCAPE '\\' THEN 'Path fragment match in file paths'
+                     WHEN lower(COALESCE(sp.urls, '')) = :query_lower THEN 'Exact URL match'
+                     WHEN :path_tail_like IS NOT NULL AND lower(COALESCE(sp.file_urls, '')) LIKE :path_tail_like ESCAPE '\\' THEN 'Path fragment match in file paths'
                      WHEN lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) = :query_lower THEN 'Bundle ID match'
                      WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\\' THEN 'Exact phrase match in best text'
                      WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) = :query_lower THEN 'Exact text match in best text'
@@ -900,8 +848,8 @@ fn literal_query(include_matching_events: bool) -> String {
                      CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), '')) LIKE :like ESCAPE '\\' THEN 'best_text' || char(30) ELSE '' END ||
                      CASE WHEN lower(COALESCE(s.preview_text, '')) LIKE :like ESCAPE '\\' THEN 'preview_text' || char(30) ELSE '' END ||
                      CASE WHEN lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\\' THEN 'search_text' || char(30) ELSE '' END ||
-                     CASE WHEN lower(COALESCE(uv.urls, '')) LIKE :like ESCAPE '\\' OR lower(COALESCE(uv.urls, '')) = :query_lower THEN 'urls' || char(30) ELSE '' END ||
-                     CASE WHEN :path_tail_like IS NOT NULL AND lower(COALESCE(fv.file_urls, '')) LIKE :path_tail_like ESCAPE '\\' THEN 'file_paths' || char(30) ELSE '' END ||
+                     CASE WHEN lower(COALESCE(sp.urls, '')) LIKE :like ESCAPE '\\' OR lower(COALESCE(sp.urls, '')) = :query_lower THEN 'urls' || char(30) ELSE '' END ||
+                     CASE WHEN :path_tail_like IS NOT NULL AND lower(COALESCE(sp.file_urls, '')) LIKE :path_tail_like ESCAPE '\\' THEN 'file_paths' || char(30) ELSE '' END ||
                      CASE WHEN lower(COALESCE(ss.last_frontmost_app_name, '')) LIKE :like ESCAPE '\\' THEN 'app_name' || char(30) ELSE '' END ||
                      CASE WHEN lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) LIKE :like ESCAPE '\\' OR lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) = :query_lower THEN 'app_bundle_id' || char(30) ELSE '' END,
                      char(30)
@@ -911,20 +859,20 @@ fn literal_query(include_matching_events: bool) -> String {
                  ss.last_observed_at AS last_observed_at,
                  ss.last_frontmost_app_name AS last_frontmost_app_name,
                  ss.last_frontmost_app_bundle_id AS last_frontmost_app_bundle_id,
-                 COALESCE(uv.urls, '') AS urls,
-                 COALESCE(fv.file_urls, '') AS file_urls,
+                 COALESCE(sp.urls, '') AS urls,
+                 COALESCE(sp.file_urls, '') AS file_urls,
                  s.total_bytes AS total_bytes,
                  s.item_count AS item_count,
                  (
-                     CASE WHEN lower(COALESCE(uv.urls, '')) = :query_lower THEN 1.16 ELSE 0 END +
-                     CASE WHEN :path_tail_like IS NOT NULL AND lower(COALESCE(fv.file_urls, '')) LIKE :path_tail_like ESCAPE '\\' THEN 1.12 ELSE 0 END +
+                     CASE WHEN lower(COALESCE(sp.urls, '')) = :query_lower THEN 1.16 ELSE 0 END +
+                     CASE WHEN :path_tail_like IS NOT NULL AND lower(COALESCE(sp.file_urls, '')) LIKE :path_tail_like ESCAPE '\\' THEN 1.12 ELSE 0 END +
                      CASE WHEN lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) = :query_lower THEN 1.08 ELSE 0 END +
                      CASE WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\\' THEN 0.98 ELSE 0 END +
                      CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) = :query_lower THEN 0.96 ELSE 0 END +
                      CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :prefix_like ESCAPE '\\' THEN 0.88 ELSE 0 END +
                      CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :like ESCAPE '\\' THEN 0.78 ELSE 0 END +
                      CASE WHEN lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\\' THEN 0.72 ELSE 0 END +
-                     CASE WHEN lower(COALESCE(uv.urls, '')) LIKE :like ESCAPE '\\' THEN 0.9 ELSE 0 END +
+                     CASE WHEN lower(COALESCE(sp.urls, '')) LIKE :like ESCAPE '\\' THEN 0.9 ELSE 0 END +
                      CASE WHEN lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) LIKE :like ESCAPE '\\' THEN 0.84 ELSE 0 END +
                      CASE WHEN lower(COALESCE(ss.last_frontmost_app_name, '')) LIKE :like ESCAPE '\\' THEN 0.7 ELSE 0 END +
                      CASE
@@ -936,15 +884,14 @@ fn literal_query(include_matching_events: bool) -> String {
              FROM snapshots s
              JOIN snapshot_stats ss ON ss.snapshot_id = s.id
              {matching_events_join}
-             LEFT JOIN url_values uv ON uv.snapshot_id = s.id
-             LEFT JOIN file_url_values fv ON fv.snapshot_id = s.id
+             LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
              WHERE (
                     lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\\'
                  OR lower(COALESCE(s.preview_text, '')) LIKE :like ESCAPE '\\'
-                 OR lower(COALESCE(uv.urls, '')) LIKE :like ESCAPE '\\'
+                 OR lower(COALESCE(sp.urls, '')) LIKE :like ESCAPE '\\'
                  OR lower(COALESCE(ss.last_frontmost_app_name, '')) LIKE :like ESCAPE '\\'
                  OR lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) LIKE :like ESCAPE '\\'
-                 OR (:path_tail_like IS NOT NULL AND lower(COALESCE(fv.file_urls, '')) LIKE :path_tail_like ESCAPE '\\')
+                 OR (:path_tail_like IS NOT NULL AND lower(COALESCE(sp.file_urls, '')) LIKE :path_tail_like ESCAPE '\\')
                )
                AND {snapshot_filter_clause}
                AND {event_filter_bind_clause}
@@ -971,8 +918,8 @@ fn literal_query(include_matching_events: bool) -> String {
 
 fn fts_query(include_matching_events: bool) -> String {
     format!(
-        "{LIST_QUERY_CTES}
-         , search_rows AS (
+        "
+         WITH search_rows AS (
              SELECT
                  s.id AS snapshot_id,
                  ss.last_event_id AS event_id,
@@ -1001,8 +948,8 @@ fn fts_query(include_matching_events: bool) -> String {
                  ss.last_observed_at AS last_observed_at,
                  ss.last_frontmost_app_name AS last_frontmost_app_name,
                  ss.last_frontmost_app_bundle_id AS last_frontmost_app_bundle_id,
-                 COALESCE(uv.urls, '') AS urls,
-                 COALESCE(fv.file_urls, '') AS file_urls,
+                 COALESCE(sp.urls, '') AS urls,
+                 COALESCE(sp.file_urls, '') AS file_urls,
                  s.total_bytes AS total_bytes,
                  s.item_count AS item_count,
                  (
@@ -1016,8 +963,7 @@ fn fts_query(include_matching_events: bool) -> String {
              FROM snapshots_fts
              JOIN snapshots s ON s.id = snapshots_fts.rowid
              JOIN snapshot_stats ss ON ss.snapshot_id = s.id
-             LEFT JOIN url_values uv ON uv.snapshot_id = s.id
-             LEFT JOIN file_url_values fv ON fv.snapshot_id = s.id
+             LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
              WHERE snapshots_fts MATCH :query
                AND {snapshot_filter_clause}
                AND {event_filter_where_clause}
@@ -1094,7 +1040,7 @@ fn fts_query(include_matching_events: bool) -> String {
 fn matching_events_cte(include_matching_events: bool) -> String {
     if include_matching_events {
         format!(
-            ", matching_events AS (
+            "WITH matching_events AS (
                  SELECT DISTINCT ce.snapshot_id
                  FROM capture_events ce
                  WHERE {}

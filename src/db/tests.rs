@@ -631,7 +631,7 @@ fn open_existing_migrates_legacy_database_and_rebuilds_fts() -> Result<()> {
         .query_row("PRAGMA user_version", [], |row| row.get(0))?;
     let results = db.search_auto("git", 10, &unfiltered())?;
 
-    assert_eq!(version, 2);
+    assert_eq!(version, 3);
     assert_eq!(results.mode_used(), SearchMode::Fts);
     assert_eq!(results.hits().len(), 1);
 
@@ -677,7 +677,7 @@ fn repeated_open_existing_is_idempotent_after_migration() -> Result<()> {
         .conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))?;
 
-    assert_eq!(version, 2);
+    assert_eq!(version, 3);
 
     std::fs::remove_file(&path)?;
     Ok(())

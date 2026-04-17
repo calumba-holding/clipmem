@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::model::SearchHit;
 
 const SCHEMA: &str = include_str!("db/schema.sql");
-const CURRENT_SCHEMA_VERSION: i64 = 2;
+const CURRENT_SCHEMA_VERSION: i64 = 3;
 const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
 
 pub struct Database {
@@ -558,6 +558,7 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             )
             .context("rebuild FTS5 index")?;
             rebuild_snapshot_stats(&tx)?;
+            rebuild_snapshot_projection_cache(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -568,6 +569,17 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
                 );
             }
             rebuild_snapshot_stats(&tx)?;
+            rebuild_snapshot_projection_cache(&tx)?;
+            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+                .context("set PRAGMA user_version")?;
+        }
+        2 => {
+            if legacy_prerelease_schema_detected(&tx)? {
+                bail!(
+                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
+                );
+            }
+            rebuild_snapshot_projection_cache(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -578,6 +590,7 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
                 );
             }
             rebuild_snapshot_stats(&tx)?;
+            rebuild_snapshot_projection_cache(&tx)?;
         }
         version if version > CURRENT_SCHEMA_VERSION => {
             bail!(
@@ -639,6 +652,49 @@ fn rebuild_snapshot_stats(conn: &Connection) -> Result<()> {
         ",
     )
     .context("rebuild snapshot stats")?;
+    Ok(())
+}
+
+fn rebuild_snapshot_projection_cache(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM snapshot_projection_cache", [])
+        .context("clear snapshot projection cache")?;
+    conn.execute_batch(
+        r"
+        WITH url_values AS (
+            SELECT
+                snapshot_id,
+                GROUP_CONCAT(text_value, char(31)) AS urls
+            FROM (
+                SELECT DISTINCT snapshot_id, text_value
+                FROM item_representations
+                WHERE kind = 'url' AND text_value IS NOT NULL AND text_value != ''
+                ORDER BY text_value
+            )
+            GROUP BY snapshot_id
+        ),
+        file_url_values AS (
+            SELECT
+                snapshot_id,
+                GROUP_CONCAT(text_value, char(31)) AS file_urls
+            FROM (
+                SELECT DISTINCT snapshot_id, text_value
+                FROM item_representations
+                WHERE kind = 'file_url' AND text_value IS NOT NULL AND text_value != ''
+                ORDER BY text_value
+            )
+            GROUP BY snapshot_id
+        )
+        INSERT INTO snapshot_projection_cache (snapshot_id, urls, file_urls)
+        SELECT
+            s.id,
+            COALESCE(uv.urls, ''),
+            COALESCE(fv.file_urls, '')
+        FROM snapshots s
+        LEFT JOIN url_values uv ON uv.snapshot_id = s.id
+        LEFT JOIN file_url_values fv ON fv.snapshot_id = s.id;
+        ",
+    )
+    .context("rebuild snapshot projection cache")?;
     Ok(())
 }
 

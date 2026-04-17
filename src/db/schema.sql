@@ -53,6 +53,12 @@ CREATE TABLE IF NOT EXISTS snapshot_stats (
     last_frontmost_app_name     TEXT
 );
 
+CREATE TABLE IF NOT EXISTS snapshot_projection_cache (
+    snapshot_id INTEGER PRIMARY KEY REFERENCES snapshots(id) ON DELETE CASCADE,
+    urls        TEXT NOT NULL DEFAULT '',
+    file_urls   TEXT NOT NULL DEFAULT ''
+);
+
 CREATE INDEX IF NOT EXISTS idx_capture_events_snapshot_id
     ON capture_events(snapshot_id);
 
@@ -235,4 +241,127 @@ CREATE TRIGGER IF NOT EXISTS capture_events_ad AFTER DELETE ON capture_events BE
     FROM capture_events ce
     WHERE ce.snapshot_id = old.snapshot_id
     GROUP BY ce.snapshot_id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS item_representations_ai AFTER INSERT ON item_representations BEGIN
+    INSERT INTO snapshot_projection_cache (snapshot_id, urls, file_urls)
+    VALUES (new.snapshot_id, '', '')
+    ON CONFLICT(snapshot_id) DO NOTHING;
+    UPDATE snapshot_projection_cache
+    SET
+        urls = COALESCE((
+            SELECT GROUP_CONCAT(text_value, char(31))
+            FROM (
+                SELECT DISTINCT text_value
+                FROM item_representations
+                WHERE snapshot_id = new.snapshot_id
+                  AND kind = 'url'
+                  AND text_value IS NOT NULL
+                  AND text_value != ''
+                ORDER BY text_value
+            )
+        ), ''),
+        file_urls = COALESCE((
+            SELECT GROUP_CONCAT(text_value, char(31))
+            FROM (
+                SELECT DISTINCT text_value
+                FROM item_representations
+                WHERE snapshot_id = new.snapshot_id
+                  AND kind = 'file_url'
+                  AND text_value IS NOT NULL
+                  AND text_value != ''
+                ORDER BY text_value
+            )
+        ), '')
+    WHERE snapshot_id = new.snapshot_id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS item_representations_au AFTER UPDATE ON item_representations BEGIN
+    INSERT INTO snapshot_projection_cache (snapshot_id, urls, file_urls)
+    VALUES (new.snapshot_id, '', '')
+    ON CONFLICT(snapshot_id) DO NOTHING;
+    UPDATE snapshot_projection_cache
+    SET
+        urls = COALESCE((
+            SELECT GROUP_CONCAT(text_value, char(31))
+            FROM (
+                SELECT DISTINCT text_value
+                FROM item_representations
+                WHERE snapshot_id = old.snapshot_id
+                  AND kind = 'url'
+                  AND text_value IS NOT NULL
+                  AND text_value != ''
+                ORDER BY text_value
+            )
+        ), ''),
+        file_urls = COALESCE((
+            SELECT GROUP_CONCAT(text_value, char(31))
+            FROM (
+                SELECT DISTINCT text_value
+                FROM item_representations
+                WHERE snapshot_id = old.snapshot_id
+                  AND kind = 'file_url'
+                  AND text_value IS NOT NULL
+                  AND text_value != ''
+                ORDER BY text_value
+            )
+        ), '')
+    WHERE snapshot_id = old.snapshot_id;
+    UPDATE snapshot_projection_cache
+    SET
+        urls = COALESCE((
+            SELECT GROUP_CONCAT(text_value, char(31))
+            FROM (
+                SELECT DISTINCT text_value
+                FROM item_representations
+                WHERE snapshot_id = new.snapshot_id
+                  AND kind = 'url'
+                  AND text_value IS NOT NULL
+                  AND text_value != ''
+                ORDER BY text_value
+            )
+        ), ''),
+        file_urls = COALESCE((
+            SELECT GROUP_CONCAT(text_value, char(31))
+            FROM (
+                SELECT DISTINCT text_value
+                FROM item_representations
+                WHERE snapshot_id = new.snapshot_id
+                  AND kind = 'file_url'
+                  AND text_value IS NOT NULL
+                  AND text_value != ''
+                ORDER BY text_value
+            )
+        ), '')
+    WHERE snapshot_id = new.snapshot_id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS item_representations_ad AFTER DELETE ON item_representations BEGIN
+    UPDATE snapshot_projection_cache
+    SET
+        urls = COALESCE((
+            SELECT GROUP_CONCAT(text_value, char(31))
+            FROM (
+                SELECT DISTINCT text_value
+                FROM item_representations
+                WHERE snapshot_id = old.snapshot_id
+                  AND kind = 'url'
+                  AND text_value IS NOT NULL
+                  AND text_value != ''
+                ORDER BY text_value
+            )
+        ), ''),
+        file_urls = COALESCE((
+            SELECT GROUP_CONCAT(text_value, char(31))
+            FROM (
+                SELECT DISTINCT text_value
+                FROM item_representations
+                WHERE snapshot_id = old.snapshot_id
+                  AND kind = 'file_url'
+                  AND text_value IS NOT NULL
+                  AND text_value != ''
+                ORDER BY text_value
+            )
+        ), '')
+    WHERE snapshot_id = old.snapshot_id;
 END;
