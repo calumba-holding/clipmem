@@ -1426,8 +1426,6 @@ fn fts_query(use_snapshot_event_cache: bool, has_temporal_event_filters: bool) -
                  ss.last_observed_at AS last_observed_at,
                  ss.last_frontmost_app_name AS last_frontmost_app_name,
                  ss.last_frontmost_app_bundle_id AS last_frontmost_app_bundle_id,
-                 COALESCE(sp.urls, '') AS urls,
-                 COALESCE(sp.file_urls, '') AS file_urls,
                  s.total_bytes AS total_bytes,
                  s.item_count AS item_count,
                  (
@@ -1441,7 +1439,6 @@ fn fts_query(use_snapshot_event_cache: bool, has_temporal_event_filters: bool) -
              FROM snapshots_fts
              JOIN snapshots s ON s.id = snapshots_fts.rowid
              JOIN snapshot_stats ss ON ss.snapshot_id = s.id
-             LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
              LEFT JOIN snapshot_event_filter_cache se ON se.snapshot_id = s.id
              WHERE snapshots_fts MATCH :query
                AND {snapshot_filter_clause}
@@ -1462,8 +1459,6 @@ fn fts_query(use_snapshot_event_cache: bool, has_temporal_event_filters: bool) -
                  search_rows.last_observed_at,
                  search_rows.last_frontmost_app_name,
                  search_rows.last_frontmost_app_bundle_id,
-                 search_rows.urls,
-                 search_rows.file_urls,
                  search_rows.total_bytes,
                  search_rows.item_count,
                  search_rows.score
@@ -1503,13 +1498,14 @@ fn fts_query(use_snapshot_event_cache: bool, has_temporal_event_filters: bool) -
              ranked_rows.last_observed_at,
              ranked_rows.last_frontmost_app_name,
              ranked_rows.last_frontmost_app_bundle_id,
-             ranked_rows.urls,
-             ranked_rows.file_urls,
+             COALESCE(sp.urls, '') AS urls,
+             COALESCE(sp.file_urls, '') AS file_urls,
              ranked_rows.total_bytes,
              ranked_rows.item_count,
              ranked_rows.score
          FROM ranked_rows
          JOIN snapshots_fts ON snapshots_fts.rowid = ranked_rows.snapshot_id
+         LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = ranked_rows.snapshot_id
          ORDER BY ranked_rows.score ASC, ranked_rows.last_observed_at DESC, ranked_rows.snapshot_id DESC",
         event_filter_where_clause = event_filter_where_clause(
             "s.id",
