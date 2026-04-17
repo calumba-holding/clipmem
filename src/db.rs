@@ -804,8 +804,11 @@ fn rebuild_snapshot_literal_cache(conn: &Connection) -> Result<()> {
 }
 
 fn rebuild_snapshot_file_url_fts(conn: &Connection) -> Result<()> {
-    conn.execute("INSERT INTO snapshot_file_url_fts(snapshot_file_url_fts) VALUES ('rebuild')", [])
-        .context("rebuild snapshot file-url FTS")?;
+    conn.execute(
+        "INSERT INTO snapshot_file_url_fts(snapshot_file_url_fts) VALUES ('rebuild')",
+        [],
+    )
+    .context("rebuild snapshot file-url FTS")?;
     Ok(())
 }
 

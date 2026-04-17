@@ -1957,10 +1957,7 @@ fn escape_like_pattern(query: &str) -> String {
 }
 
 fn literal_fts_match_query(analysis: &QueryAnalysis) -> Option<String> {
-    let candidate = analysis
-        .path_fragment
-        .as_deref()
-        .unwrap_or(&analysis.lower);
+    let candidate = analysis.path_fragment.as_deref().unwrap_or(&analysis.lower);
 
     if candidate.chars().count() < 3 {
         return None;
@@ -1990,7 +1987,10 @@ fn literal_token_match_query(analysis: &QueryAnalysis) -> Option<String> {
         return None;
     }
 
-    if analysis.trimmed.contains('%') || analysis.trimmed.contains('_') || analysis.trimmed.contains('\\') {
+    if analysis.trimmed.contains('%')
+        || analysis.trimmed.contains('_')
+        || analysis.trimmed.contains('\\')
+    {
         return None;
     }
 
@@ -1998,8 +1998,7 @@ fn literal_token_match_query(analysis: &QueryAnalysis) -> Option<String> {
         .lower
         .split(|ch: char| !ch.is_ascii_alphanumeric())
         .filter(|token| {
-            !token.is_empty()
-                && (token.len() >= 2 || token.chars().all(|ch| ch.is_ascii_digit()))
+            !token.is_empty() && (token.len() >= 2 || token.chars().all(|ch| ch.is_ascii_digit()))
         })
         .map(|token| format!("\"{token}\""))
         .collect::<Vec<_>>();
@@ -2084,7 +2083,9 @@ mod tests {
             Some("\"/tmp/repo/42/cargo.toml\"")
         );
         assert_eq!(
-            analyze_query("~/path/with/slashes").path_fragment.as_deref(),
+            analyze_query("~/path/with/slashes")
+                .path_fragment
+                .as_deref(),
             Some("path/with/slashes")
         );
         assert_eq!(

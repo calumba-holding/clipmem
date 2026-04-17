@@ -70,11 +70,7 @@ fn unfiltered() -> RetrievalFilters {
     RetrievalFilters::default()
 }
 
-fn seed_large_archive(
-    db: &mut Database,
-    snapshot_count: usize,
-    event_count: usize,
-) -> Result<()> {
+fn seed_large_archive(db: &mut Database, snapshot_count: usize, event_count: usize) -> Result<()> {
     let tx = db
         .conn
         .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
@@ -141,12 +137,8 @@ fn seed_large_archive(
             );
             let fingerprint = format!("{:064x}", snapshot_number);
 
-            insert_snapshot.execute(params![
-                fingerprint,
-                preview_text,
-                search_text,
-                created_at,
-            ])?;
+            insert_snapshot
+                .execute(params![fingerprint, preview_text, search_text, created_at,])?;
 
             let snapshot_id = tx.last_insert_rowid();
             insert_item.execute(params![snapshot_id, preview_text, search_text])?;
@@ -324,7 +316,10 @@ fn search_literal_matches_file_url_paths() -> Result<()> {
     let hits = db.search_literal("/tmp/repo/42/Cargo.toml", 10, &unfiltered())?;
 
     assert_eq!(hits.hits().len(), 1);
-    assert_eq!(hits.hits()[0].preview_text(), "file:///tmp/repo/42/Cargo.toml");
+    assert_eq!(
+        hits.hits()[0].preview_text(),
+        "file:///tmp/repo/42/Cargo.toml"
+    );
     Ok(())
 }
 
