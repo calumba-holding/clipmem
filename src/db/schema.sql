@@ -98,6 +98,13 @@ CREATE VIRTUAL TABLE IF NOT EXISTS snapshots_literal_fts USING fts5(
     tokenize='trigram'
 );
 
+CREATE VIRTUAL TABLE IF NOT EXISTS snapshot_file_url_fts USING fts5(
+    file_urls,
+    content='snapshot_projection_cache',
+    content_rowid='snapshot_id',
+    tokenize='trigram'
+);
+
 CREATE TRIGGER IF NOT EXISTS snapshots_ai AFTER INSERT ON snapshots BEGIN
     INSERT INTO snapshots_fts(rowid, search_text, preview_text)
     VALUES (new.id, new.search_text, new.preview_text);
@@ -153,6 +160,26 @@ END;
 CREATE TRIGGER IF NOT EXISTS snapshot_literal_cache_ad
 AFTER DELETE ON snapshot_literal_cache BEGIN
     DELETE FROM snapshots_literal_fts WHERE rowid = old.snapshot_id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS snapshot_projection_cache_ai
+AFTER INSERT ON snapshot_projection_cache BEGIN
+    INSERT INTO snapshot_file_url_fts(rowid, file_urls)
+    VALUES (new.snapshot_id, new.file_urls);
+END;
+
+CREATE TRIGGER IF NOT EXISTS snapshot_projection_cache_au
+AFTER UPDATE ON snapshot_projection_cache BEGIN
+    INSERT INTO snapshot_file_url_fts(snapshot_file_url_fts, rowid, file_urls)
+    VALUES ('delete', old.snapshot_id, old.file_urls);
+    INSERT INTO snapshot_file_url_fts(rowid, file_urls)
+    VALUES (new.snapshot_id, new.file_urls);
+END;
+
+CREATE TRIGGER IF NOT EXISTS snapshot_projection_cache_ad
+AFTER DELETE ON snapshot_projection_cache BEGIN
+    INSERT INTO snapshot_file_url_fts(snapshot_file_url_fts, rowid, file_urls)
+    VALUES ('delete', old.snapshot_id, old.file_urls);
 END;
 
 CREATE TRIGGER IF NOT EXISTS capture_events_ai AFTER INSERT ON capture_events BEGIN

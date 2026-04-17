@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::model::SearchHit;
 
 const SCHEMA: &str = include_str!("db/schema.sql");
-const CURRENT_SCHEMA_VERSION: i64 = 5;
+const CURRENT_SCHEMA_VERSION: i64 = 6;
 const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
 
 pub struct Database {
@@ -561,6 +561,7 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             rebuild_snapshot_projection_cache(&tx)?;
             rebuild_snapshot_event_filter_cache(&tx)?;
             rebuild_snapshot_literal_cache(&tx)?;
+            rebuild_snapshot_file_url_fts(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -574,6 +575,7 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             rebuild_snapshot_projection_cache(&tx)?;
             rebuild_snapshot_event_filter_cache(&tx)?;
             rebuild_snapshot_literal_cache(&tx)?;
+            rebuild_snapshot_file_url_fts(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -586,6 +588,7 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             rebuild_snapshot_projection_cache(&tx)?;
             rebuild_snapshot_event_filter_cache(&tx)?;
             rebuild_snapshot_literal_cache(&tx)?;
+            rebuild_snapshot_file_url_fts(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -597,6 +600,7 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             }
             rebuild_snapshot_event_filter_cache(&tx)?;
             rebuild_snapshot_literal_cache(&tx)?;
+            rebuild_snapshot_file_url_fts(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -607,6 +611,17 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
                 );
             }
             rebuild_snapshot_literal_cache(&tx)?;
+            rebuild_snapshot_file_url_fts(&tx)?;
+            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+                .context("set PRAGMA user_version")?;
+        }
+        5 => {
+            if legacy_prerelease_schema_detected(&tx)? {
+                bail!(
+                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
+                );
+            }
+            rebuild_snapshot_file_url_fts(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -785,6 +800,12 @@ fn rebuild_snapshot_literal_cache(conn: &Connection) -> Result<()> {
         ",
     )
     .context("rebuild snapshot literal cache")?;
+    Ok(())
+}
+
+fn rebuild_snapshot_file_url_fts(conn: &Connection) -> Result<()> {
+    conn.execute("INSERT INTO snapshot_file_url_fts(snapshot_file_url_fts) VALUES ('rebuild')", [])
+        .context("rebuild snapshot file-url FTS")?;
     Ok(())
 }
 

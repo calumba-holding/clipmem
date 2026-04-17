@@ -14,6 +14,93 @@ use super::{
 
 const LIST_VALUE_SEPARATOR: char = '\u{1f}';
 const MATCHED_FIELDS_SEPARATOR: char = '\u{1e}';
+const FAST_FILE_PATH_LITERAL_QUERY: &str = r"
+    SELECT
+        s.id AS snapshot_id,
+        ss.last_event_id AS event_id,
+        s.sha256 AS sha256,
+        s.snapshot_kind AS snapshot_kind,
+        s.preview_text AS preview_text,
+        s.search_text AS search_text,
+        'Path fragment match in file paths' AS why_matched,
+        'file_paths' AS matched_fields,
+        ss.capture_count AS capture_count,
+        ss.first_observed_at AS first_observed_at,
+        ss.last_observed_at AS last_observed_at,
+        ss.last_frontmost_app_name AS last_frontmost_app_name,
+        ss.last_frontmost_app_bundle_id AS last_frontmost_app_bundle_id,
+        COALESCE(sp.urls, '') AS urls,
+        COALESCE(sp.file_urls, '') AS file_urls,
+        s.total_bytes AS total_bytes,
+        s.item_count AS item_count,
+        (
+            1.12 +
+            CASE
+                WHEN datetime(ss.last_observed_at) >= datetime('now', '-24 hours') THEN 0.05
+                WHEN datetime(ss.last_observed_at) >= datetime('now', '-7 days') THEN 0.02
+                ELSE 0
+            END
+        ) AS score
+    FROM snapshot_file_url_fts
+    JOIN snapshots s ON s.id = snapshot_file_url_fts.rowid
+    JOIN snapshot_stats ss ON ss.snapshot_id = snapshot_file_url_fts.rowid
+    JOIN snapshot_projection_cache sp ON sp.snapshot_id = snapshot_file_url_fts.rowid
+    WHERE snapshot_file_url_fts MATCH :literal_match
+    ORDER BY score DESC, ss.last_observed_at DESC, s.id DESC
+    LIMIT :limit
+";
+const FAST_TEXT_LITERAL_QUERY: &str = r"
+    SELECT
+        s.id AS snapshot_id,
+        ss.last_event_id AS event_id,
+        s.sha256 AS sha256,
+        s.snapshot_kind AS snapshot_kind,
+        s.preview_text AS preview_text,
+        s.search_text AS search_text,
+        CASE
+            WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\' THEN 'Exact phrase match in best text'
+            WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) = :query_lower THEN 'Exact text match in best text'
+            WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :prefix_like ESCAPE '\' THEN 'Prefix match in best text'
+            ELSE 'Literal text match in best text'
+        END AS why_matched,
+        CASE
+            WHEN lower(COALESCE(NULLIF(s.preview_text, ''), '')) LIKE :like ESCAPE '\' THEN 'best_text'
+            WHEN lower(COALESCE(s.preview_text, '')) LIKE :like ESCAPE '\' THEN 'preview_text'
+            ELSE 'search_text'
+        END AS matched_fields,
+        ss.capture_count AS capture_count,
+        ss.first_observed_at AS first_observed_at,
+        ss.last_observed_at AS last_observed_at,
+        ss.last_frontmost_app_name AS last_frontmost_app_name,
+        ss.last_frontmost_app_bundle_id AS last_frontmost_app_bundle_id,
+        COALESCE(sp.urls, '') AS urls,
+        COALESCE(sp.file_urls, '') AS file_urls,
+        s.total_bytes AS total_bytes,
+        s.item_count AS item_count,
+        (
+            CASE WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\' THEN 0.98 ELSE 0 END +
+            CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) = :query_lower THEN 0.96 ELSE 0 END +
+            CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :prefix_like ESCAPE '\' THEN 0.88 ELSE 0 END +
+            CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :like ESCAPE '\' THEN 0.78 ELSE 0 END +
+            CASE WHEN lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\' THEN 0.72 ELSE 0 END +
+            CASE
+                WHEN datetime(ss.last_observed_at) >= datetime('now', '-24 hours') THEN 0.05
+                WHEN datetime(ss.last_observed_at) >= datetime('now', '-7 days') THEN 0.02
+                ELSE 0
+            END
+        ) AS score
+    FROM snapshots_fts
+    JOIN snapshots s ON s.id = snapshots_fts.rowid
+    JOIN snapshot_stats ss ON ss.snapshot_id = snapshots_fts.rowid
+    LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = snapshots_fts.rowid
+    WHERE snapshots_fts MATCH :token_match
+      AND (
+          lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\'
+          OR lower(COALESCE(s.preview_text, '')) LIKE :like ESCAPE '\'
+      )
+    ORDER BY score DESC, ss.last_observed_at DESC, s.id DESC
+    LIMIT :limit
+";
 
 #[derive(Debug, Clone)]
 struct QueryAnalysis {
@@ -21,7 +108,7 @@ struct QueryAnalysis {
     lower: String,
     exact_phrase: Option<String>,
     literal_preferred: bool,
-    path_tail: Option<String>,
+    path_fragment: Option<String>,
 }
 impl Database {
     pub(crate) fn latest_capture_observed_at(&self) -> Result<Option<String>> {
@@ -440,6 +527,23 @@ impl Database {
         let limit = sanitise_limit(limit);
         let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
         let analysis = analyze_query(query);
+        if let Some(path_fragment) = analysis.path_fragment.as_deref() {
+            let results =
+                self.search_file_path_literal_page(path_fragment, limit, filters, cursor)?;
+            if cursor.is_some() || !results.hits().is_empty() {
+                return Ok(results);
+            }
+        }
+        if cursor.is_none() && *filters == RetrievalFilters::default() {
+            if let Some(token_match) = literal_token_match_query(&analysis) {
+                let results =
+                    self.search_unfiltered_text_literal_page(&analysis, &token_match, limit)?;
+                if !results.hits().is_empty() {
+                    return Ok(results);
+                }
+            }
+        }
+
         let like = format!("%{}%", escape_like_pattern(&analysis.trimmed));
         let include_matching_events = requires_matching_events(filters);
         let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
@@ -459,8 +563,8 @@ impl Database {
             .prepare(&sql)
             .context("prepare literal search query")?;
         let prefix_like = format!("{}%", escape_like_pattern(&analysis.lower));
-        let path_tail_like = analysis
-            .path_tail
+        let path_fragment_like = analysis
+            .path_fragment
             .as_ref()
             .map(|value| format!("%{}%", escape_like_pattern(value)));
         let min_bytes = filters.min_bytes().map(usize_to_i64).transpose()?;
@@ -472,7 +576,7 @@ impl Database {
                     ":like" : like,
                     ":prefix_like" : prefix_like.as_str(),
                     ":literal_match" : literal_match,
-                    ":path_tail_like" : path_tail_like.as_deref(),
+                    ":path_fragment_like" : path_fragment_like.as_deref(),
                     ":exact_phrase_lower" : analysis.exact_phrase.as_deref(),
                     ":since" : since.as_deref(),
                     ":until" : filters.until(),
@@ -499,7 +603,7 @@ impl Database {
                     ":query_lower" : analysis.lower.as_str(),
                     ":like" : like,
                     ":prefix_like" : prefix_like.as_str(),
-                    ":path_tail_like" : path_tail_like.as_deref(),
+                    ":path_fragment_like" : path_fragment_like.as_deref(),
                     ":exact_phrase_lower" : analysis.exact_phrase.as_deref(),
                     ":since" : since.as_deref(),
                     ":until" : filters.until(),
@@ -530,6 +634,169 @@ impl Database {
                 SearchResults::new(SearchMode::Literal, page.into_items(), has_more)
             })
             .context("collect literal search rows")
+    }
+
+    fn search_file_path_literal_page(
+        &self,
+        path_fragment: &str,
+        limit: usize,
+        filters: &RetrievalFilters,
+        cursor: Option<&SearchCursorState>,
+    ) -> Result<SearchResults> {
+        let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
+        let include_matching_events = requires_matching_events(filters);
+        let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
+        let literal_match = if path_fragment.chars().count() >= 3 {
+            Some(format!("\"{}\"", path_fragment.replace('"', "\"\"")))
+        } else {
+            None
+        };
+        if cursor.is_none() && *filters == RetrievalFilters::default() {
+            if let Some(literal_match) = literal_match.as_deref() {
+                return self.search_unfiltered_file_path_literal_page(literal_match, limit);
+            }
+        }
+        let sql = file_path_literal_query(
+            include_matching_events,
+            use_snapshot_event_cache,
+            literal_match.is_some(),
+        );
+        let app_like = app_like_pattern(filters);
+        let bundle_id = filters.bundle_id().map(|value| value.to_ascii_lowercase());
+        let kind = filters.kind().map(|value| value.as_str());
+        let since = effective_since_param(filters)?;
+        let min_bytes = filters.min_bytes().map(usize_to_i64).transpose()?;
+        let max_bytes = filters.max_bytes().map(usize_to_i64).transpose()?;
+        let path_like = format!("%{}%", escape_like_pattern(path_fragment));
+
+        let mut stmt = self
+            .conn
+            .prepare(&sql)
+            .context("prepare file-path literal search query")?;
+        let rows = if let Some(literal_match) = literal_match.as_deref() {
+            stmt.query_map(
+                named_params! {
+                    ":literal_match" : literal_match,
+                    ":path_fragment" : path_fragment,
+                    ":path_like" : path_like.as_str(),
+                    ":since" : since.as_deref(),
+                    ":until" : filters.until(),
+                    ":app_like" : app_like.as_deref(),
+                    ":bundle_id" : bundle_id.as_deref(),
+                    ":kind" : kind,
+                    ":has_text" : filters.has_text(),
+                    ":has_url" : filters.has_url(),
+                    ":has_file_url" : filters.has_file_url(),
+                    ":has_image" : filters.has_image(),
+                    ":has_pdf" : filters.has_pdf(),
+                    ":min_bytes" : min_bytes,
+                    ":max_bytes" : max_bytes,
+                    ":cursor_score" : cursor.and_then(SearchCursorState::score),
+                    ":cursor_last_seen_at" : cursor.map(SearchCursorState::last_seen_at),
+                    ":cursor_snapshot_id" : cursor.map(SearchCursorState::snapshot_id),
+                    ":limit" : fetch_limit,
+                },
+                map_scored_search_hit_row,
+            )
+        } else {
+            stmt.query_map(
+                named_params! {
+                    ":path_fragment" : path_fragment,
+                    ":path_like" : path_like.as_str(),
+                    ":since" : since.as_deref(),
+                    ":until" : filters.until(),
+                    ":app_like" : app_like.as_deref(),
+                    ":bundle_id" : bundle_id.as_deref(),
+                    ":kind" : kind,
+                    ":has_text" : filters.has_text(),
+                    ":has_url" : filters.has_url(),
+                    ":has_file_url" : filters.has_file_url(),
+                    ":has_image" : filters.has_image(),
+                    ":has_pdf" : filters.has_pdf(),
+                    ":min_bytes" : min_bytes,
+                    ":max_bytes" : max_bytes,
+                    ":cursor_score" : cursor.and_then(SearchCursorState::score),
+                    ":cursor_last_seen_at" : cursor.map(SearchCursorState::last_seen_at),
+                    ":cursor_snapshot_id" : cursor.map(SearchCursorState::snapshot_id),
+                    ":limit" : fetch_limit,
+                },
+                map_scored_search_hit_row,
+            )
+        }
+        .context("execute file-path literal search query")?;
+
+        collect_rows(rows)
+            .map(|hits| paginate_rows(hits, limit))
+            .map(|page| {
+                let has_more = page.has_more();
+                SearchResults::new(SearchMode::Literal, page.into_items(), has_more)
+            })
+            .context("collect file-path literal search rows")
+    }
+
+    fn search_unfiltered_file_path_literal_page(
+        &self,
+        literal_match: &str,
+        limit: usize,
+    ) -> Result<SearchResults> {
+        let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
+        let mut stmt = self
+            .conn
+            .prepare(FAST_FILE_PATH_LITERAL_QUERY)
+            .context("prepare unfiltered file-path literal search query")?;
+        let rows = stmt
+            .query_map(
+                named_params! {
+                    ":literal_match" : literal_match,
+                    ":limit" : fetch_limit,
+                },
+                map_scored_search_hit_row,
+            )
+            .context("execute unfiltered file-path literal search query")?;
+
+        collect_rows(rows)
+            .map(|hits| paginate_rows(hits, limit))
+            .map(|page| {
+                let has_more = page.has_more();
+                SearchResults::new(SearchMode::Literal, page.into_items(), has_more)
+            })
+            .context("collect unfiltered file-path literal search rows")
+    }
+
+    fn search_unfiltered_text_literal_page(
+        &self,
+        analysis: &QueryAnalysis,
+        token_match: &str,
+        limit: usize,
+    ) -> Result<SearchResults> {
+        let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
+        let like = format!("%{}%", escape_like_pattern(&analysis.trimmed));
+        let prefix_like = format!("{}%", escape_like_pattern(&analysis.lower));
+        let mut stmt = self
+            .conn
+            .prepare(FAST_TEXT_LITERAL_QUERY)
+            .context("prepare unfiltered text literal search query")?;
+        let rows = stmt
+            .query_map(
+                named_params! {
+                    ":token_match" : token_match,
+                    ":query_lower" : analysis.lower.as_str(),
+                    ":like" : like.as_str(),
+                    ":prefix_like" : prefix_like.as_str(),
+                    ":exact_phrase_lower" : analysis.exact_phrase.as_deref(),
+                    ":limit" : fetch_limit,
+                },
+                map_scored_search_hit_row,
+            )
+            .context("execute unfiltered text literal search query")?;
+
+        collect_rows(rows)
+            .map(|hits| paginate_rows(hits, limit))
+            .map(|page| {
+                let has_more = page.has_more();
+                SearchResults::new(SearchMode::Literal, page.into_items(), has_more)
+            })
+            .context("collect unfiltered text literal search rows")
     }
 
     /// Load one raw representation payload by snapshot id, item index, and UTI.
@@ -916,7 +1183,7 @@ fn literal_query(
                  s.search_text AS search_text,
                  CASE
                      WHEN lower(COALESCE(sp.urls, '')) = :query_lower THEN 'Exact URL match'
-                     WHEN :path_tail_like IS NOT NULL AND lower(COALESCE(sp.file_urls, '')) LIKE :path_tail_like ESCAPE '\\' THEN 'Path fragment match in file paths'
+                     WHEN :path_fragment_like IS NOT NULL AND lower(COALESCE(sp.file_urls, '')) LIKE :path_fragment_like ESCAPE '\\' THEN 'Path fragment match in file paths'
                      WHEN lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) = :query_lower THEN 'Bundle ID match'
                      WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\\' THEN 'Exact phrase match in best text'
                      WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) = :query_lower THEN 'Exact text match in best text'
@@ -931,7 +1198,7 @@ fn literal_query(
                      CASE WHEN lower(COALESCE(s.preview_text, '')) LIKE :like ESCAPE '\\' THEN 'preview_text' || char(30) ELSE '' END ||
                      CASE WHEN lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\\' THEN 'search_text' || char(30) ELSE '' END ||
                      CASE WHEN lower(COALESCE(sp.urls, '')) LIKE :like ESCAPE '\\' OR lower(COALESCE(sp.urls, '')) = :query_lower THEN 'urls' || char(30) ELSE '' END ||
-                     CASE WHEN :path_tail_like IS NOT NULL AND lower(COALESCE(sp.file_urls, '')) LIKE :path_tail_like ESCAPE '\\' THEN 'file_paths' || char(30) ELSE '' END ||
+                     CASE WHEN :path_fragment_like IS NOT NULL AND lower(COALESCE(sp.file_urls, '')) LIKE :path_fragment_like ESCAPE '\\' THEN 'file_paths' || char(30) ELSE '' END ||
                      CASE WHEN lower(COALESCE(ss.last_frontmost_app_name, '')) LIKE :like ESCAPE '\\' THEN 'app_name' || char(30) ELSE '' END ||
                      CASE WHEN lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) LIKE :like ESCAPE '\\' OR lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) = :query_lower THEN 'app_bundle_id' || char(30) ELSE '' END,
                      char(30)
@@ -947,7 +1214,7 @@ fn literal_query(
                  s.item_count AS item_count,
                  (
                      CASE WHEN lower(COALESCE(sp.urls, '')) = :query_lower THEN 1.16 ELSE 0 END +
-                     CASE WHEN :path_tail_like IS NOT NULL AND lower(COALESCE(sp.file_urls, '')) LIKE :path_tail_like ESCAPE '\\' THEN 1.12 ELSE 0 END +
+                     CASE WHEN :path_fragment_like IS NOT NULL AND lower(COALESCE(sp.file_urls, '')) LIKE :path_fragment_like ESCAPE '\\' THEN 1.12 ELSE 0 END +
                      CASE WHEN lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) = :query_lower THEN 1.08 ELSE 0 END +
                      CASE WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\\' THEN 0.98 ELSE 0 END +
                      CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) = :query_lower THEN 0.96 ELSE 0 END +
@@ -975,7 +1242,7 @@ fn literal_query(
                  OR lower(COALESCE(sp.urls, '')) LIKE :like ESCAPE '\\'
                  OR lower(COALESCE(ss.last_frontmost_app_name, '')) LIKE :like ESCAPE '\\'
                  OR lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) LIKE :like ESCAPE '\\'
-                 OR (:path_tail_like IS NOT NULL AND lower(COALESCE(sp.file_urls, '')) LIKE :path_tail_like ESCAPE '\\')
+                 OR (:path_fragment_like IS NOT NULL AND lower(COALESCE(sp.file_urls, '')) LIKE :path_fragment_like ESCAPE '\\')
                )
                AND {snapshot_filter_clause}
                AND {base_event_filter_clause}
@@ -1002,6 +1269,128 @@ fn literal_query(
             use_snapshot_event_cache,
         ),
         snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
+    )
+}
+
+fn file_path_literal_query(
+    include_matching_events: bool,
+    use_snapshot_event_cache: bool,
+    use_literal_fts: bool,
+) -> String {
+    let mut ctes = Vec::new();
+    let path_candidates_join = if use_literal_fts {
+        ctes.push(
+            "path_candidates AS (
+                 SELECT rowid AS snapshot_id
+                 FROM snapshot_file_url_fts
+                 WHERE snapshot_file_url_fts MATCH :literal_match
+             )"
+            .to_string(),
+        );
+        "JOIN path_candidates pc ON pc.snapshot_id = s.id"
+    } else {
+        ""
+    };
+    if include_matching_events {
+        ctes.push(format!(
+            "matching_events AS (
+                 SELECT DISTINCT ce.snapshot_id
+                 FROM capture_events ce
+                 WHERE {}
+             )",
+            event_filter_clause("ce")
+        ));
+    }
+    let with_clause = if ctes.is_empty() {
+        String::new()
+    } else {
+        format!("WITH {}", ctes.join(", "))
+    };
+
+    format!(
+        "{with_clause}
+         SELECT
+             base.snapshot_id,
+             base.event_id,
+             base.sha256,
+             base.snapshot_kind,
+             base.preview_text,
+             base.search_text,
+             base.why_matched,
+             base.matched_fields,
+             base.capture_count,
+             base.first_observed_at,
+             base.last_observed_at,
+             base.last_frontmost_app_name,
+             base.last_frontmost_app_bundle_id,
+             base.urls,
+             base.file_urls,
+             base.total_bytes,
+             base.item_count,
+             base.score
+         FROM (
+             SELECT
+                 s.id AS snapshot_id,
+                 ss.last_event_id AS event_id,
+                 s.sha256 AS sha256,
+                 s.snapshot_kind AS snapshot_kind,
+                 s.preview_text AS preview_text,
+                 s.search_text AS search_text,
+                 'Path fragment match in file paths' AS why_matched,
+                 'file_paths' AS matched_fields,
+                 ss.capture_count AS capture_count,
+                 ss.first_observed_at AS first_observed_at,
+                 ss.last_observed_at AS last_observed_at,
+                 ss.last_frontmost_app_name AS last_frontmost_app_name,
+                 ss.last_frontmost_app_bundle_id AS last_frontmost_app_bundle_id,
+                 COALESCE(sp.urls, '') AS urls,
+                 COALESCE(sp.file_urls, '') AS file_urls,
+                 s.total_bytes AS total_bytes,
+                 s.item_count AS item_count,
+                 (
+                     CASE
+                         WHEN instr(lower(COALESCE(sp.file_urls, '')), :path_fragment) > 0
+                             THEN 1.12
+                         ELSE 0
+                     END +
+                     CASE
+                         WHEN datetime(ss.last_observed_at) >= datetime('now', '-24 hours') THEN 0.05
+                         WHEN datetime(ss.last_observed_at) >= datetime('now', '-7 days') THEN 0.02
+                         ELSE 0
+                     END
+                 ) AS score
+             FROM snapshots s
+             {path_candidates_join}
+             JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+             {matching_events_join}
+             JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
+             LEFT JOIN snapshot_event_filter_cache se ON se.snapshot_id = s.id
+             WHERE lower(COALESCE(sp.file_urls, '')) LIKE :path_like ESCAPE '\\'
+               AND {snapshot_filter_clause}
+               AND {base_event_filter_clause}
+         ) base
+         WHERE (
+             :cursor_score IS NULL
+             OR base.score < :cursor_score
+             OR (
+                 base.score = :cursor_score
+                 AND (
+                     base.last_observed_at < :cursor_last_seen_at
+                     OR (base.last_observed_at = :cursor_last_seen_at AND base.snapshot_id < :cursor_snapshot_id)
+                 )
+             )
+         )
+         ORDER BY base.score DESC, base.last_observed_at DESC, base.snapshot_id DESC
+         LIMIT :limit",
+        with_clause = with_clause,
+        path_candidates_join = path_candidates_join,
+        matching_events_join = matching_events_join(include_matching_events),
+        snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
+        base_event_filter_clause = base_event_filter_clause(
+            "se",
+            include_matching_events,
+            use_snapshot_event_cache,
+        ),
     )
 }
 
@@ -1497,7 +1886,12 @@ fn analyze_query(query: &str) -> QueryAnalysis {
         || trimmed.starts_with("./")
         || trimmed.starts_with("../")
         || trimmed.contains('\\');
-    let is_bundle_id_like = lower.contains('.') && !lower.contains(' ') && !is_url_like;
+    let is_bundle_id_like = lower.contains('.')
+        && !lower.contains(' ')
+        && !is_url_like
+        && !lower.contains('/')
+        && !lower.contains('\\')
+        && !lower.starts_with("~/");
     let punctuation_heavy =
         trimmed.contains(':') || trimmed.contains('/') || trimmed.contains('\\');
     let shell_fragment = trimmed.contains(" -")
@@ -1514,17 +1908,30 @@ fn analyze_query(query: &str) -> QueryAnalysis {
         || is_bundle_id_like
         || punctuation_heavy
         || shell_fragment;
-    let path_tail = trimmed
-        .strip_prefix("~/")
-        .map(|value| value.trim_start_matches('/').to_ascii_lowercase())
-        .filter(|value| !value.is_empty());
+    let path_fragment = if let Some(value) = trimmed.strip_prefix("~/") {
+        Some(value.trim_start_matches('/').to_ascii_lowercase())
+    } else if lower.starts_with("file://") {
+        Some(normalise_file_path(&trimmed).to_ascii_lowercase())
+    } else if trimmed.starts_with('/') || trimmed.starts_with("./") || trimmed.starts_with("../") {
+        Some(lower.clone())
+    } else if trimmed.contains('\\')
+        && (trimmed.starts_with(".\\")
+            || trimmed.starts_with("..\\")
+            || trimmed.starts_with('\\')
+            || trimmed.contains(":\\"))
+    {
+        Some(lower.clone())
+    } else {
+        None
+    }
+    .filter(|value| !value.is_empty());
 
     QueryAnalysis {
         trimmed,
         lower,
         exact_phrase,
         literal_preferred,
-        path_tail,
+        path_fragment,
     }
 }
 
@@ -1554,7 +1961,10 @@ fn escape_like_pattern(query: &str) -> String {
 }
 
 fn literal_fts_match_query(analysis: &QueryAnalysis) -> Option<String> {
-    let candidate = analysis.path_tail.as_deref().unwrap_or(&analysis.lower);
+    let candidate = analysis
+        .path_fragment
+        .as_deref()
+        .unwrap_or(&analysis.lower);
 
     if candidate.chars().count() < 3 {
         return None;
@@ -1571,6 +1981,40 @@ fn literal_fts_match_query(analysis: &QueryAnalysis) -> Option<String> {
     Some(format!("\"{}\"", candidate.replace('"', "\"\"")))
 }
 
+fn literal_token_match_query(analysis: &QueryAnalysis) -> Option<String> {
+    let is_url_like =
+        analysis.lower.starts_with("http://") || analysis.lower.starts_with("https://");
+    let is_bundle_id_like = analysis.lower.contains('.')
+        && !analysis.lower.contains(' ')
+        && !is_url_like
+        && !analysis.lower.contains('/')
+        && !analysis.lower.contains('\\')
+        && !analysis.lower.starts_with("~/");
+    if is_url_like || is_bundle_id_like {
+        return None;
+    }
+
+    if analysis.trimmed.contains('%') || analysis.trimmed.contains('_') || analysis.trimmed.contains('\\') {
+        return None;
+    }
+
+    let tokens = analysis
+        .lower
+        .split(|ch: char| !ch.is_ascii_alphanumeric())
+        .filter(|token| {
+            !token.is_empty()
+                && (token.len() >= 2 || token.chars().all(|ch| ch.is_ascii_digit()))
+        })
+        .map(|token| format!("\"{token}\""))
+        .collect::<Vec<_>>();
+
+    if tokens.len() < 2 {
+        None
+    } else {
+        Some(tokens.join(" AND "))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
@@ -1579,7 +2023,8 @@ mod tests {
     use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
 
     use super::{
-        analyze_query, invalid_fts_message, literal_fts_match_query, normalise_file_path,
+        analyze_query, invalid_fts_message, literal_fts_match_query, literal_token_match_query,
+        normalise_file_path,
     };
 
     fn fake_snapshot(change_count: i64, text: &str) -> crate::model::ClipboardSnapshot {
@@ -1641,6 +2086,20 @@ mod tests {
         assert_eq!(
             literal_fts_match_query(&analyze_query("/tmp/repo/42/Cargo.toml")).as_deref(),
             Some("\"/tmp/repo/42/cargo.toml\"")
+        );
+        assert_eq!(
+            analyze_query("~/path/with/slashes").path_fragment.as_deref(),
+            Some("path/with/slashes")
+        );
+        assert_eq!(
+            analyze_query("file:///tmp/repo/42/Cargo.toml")
+                .path_fragment
+                .as_deref(),
+            Some("/tmp/repo/42/cargo.toml")
+        );
+        assert_eq!(
+            literal_token_match_query(&analyze_query("/tmp/repo/42/Cargo.toml")).as_deref(),
+            Some("\"tmp\" AND \"repo\" AND \"42\" AND \"cargo\" AND \"toml\"")
         );
     }
 
