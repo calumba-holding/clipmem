@@ -10,7 +10,7 @@
 
 A searchable, local-only clipboard history for macOS, with a JSON-first CLI designed so agents — OpenClaw and others — can recall things you've copied.
 
-`clipmem` watches the macOS system clipboard (`NSPasteboard`), archives every observed state into a local SQLite database, and exposes a handful of retrieval commands (`recall`, `recent`, `timeline`, `search`, `get`, `export`) that return either human-readable text or structured JSON.
+`clipmem` watches the macOS system clipboard (`NSPasteboard`), archives every observed state into a local SQLite database, and exposes retrieval, restore, deletion, and policy commands (`recall`, `recent`, `timeline`, `search`, `get`, `restore`, `export`, `forget`, `purge`, `settings`) that return either human-readable text or structured JSON.
 
 ## Contents
 
@@ -19,6 +19,7 @@ A searchable, local-only clipboard history for macOS, with a JSON-first CLI desi
 - [Quick start](#quick-start)
 - [Run in the background (LaunchAgent)](#run-in-the-background-launchagent)
 - [Recalling and searching](#recalling-and-searching)
+- [Restore, Deletion, and Policy](#restore-deletion-and-policy)
 - [Output formats](#output-formats)
 - [Using with OpenClaw](#using-with-openclaw)
 - [Privacy](#privacy)
@@ -74,6 +75,7 @@ Check service state or run the watcher in the foreground if you want to debug in
 ```bash
 clipmem service status
 clipmem watch --interval-ms 350
+clipmem settings show
 ```
 
 Recall what you copied, or list recent items:
@@ -125,7 +127,11 @@ Start with the command that returns the least structure needed for the job:
 - `clipmem timeline` — chronological capture events, including repeated copies of the same content.
 - `clipmem search` — direct lexical matching over stored text.
 - `clipmem get <snapshot-id>` — nested item/representation detail for a single snapshot.
+- `clipmem restore <snapshot-id>` — restore the full stored snapshot back onto the clipboard.
 - `clipmem export <snapshot-id> --item <n> --uti <uti> --out <path> [--force]` — raw bytes for binary payloads.
+- `clipmem forget <snapshot-id>` — hard-delete one snapshot and its capture history.
+- `clipmem purge --older-than <duration> [--dry-run]` — prune old snapshots by `last_observed_at`.
+- `clipmem settings ...` — inspect or change persistent pause / retention / ignore-list policy.
 
 ### Common recipes
 
@@ -150,9 +156,16 @@ clipmem search --mode fts "\"launchctl\" AND bootstrap"
 
 # Detail + raw bytes
 clipmem get 42 --format json
+clipmem restore 42
 clipmem export 42 --item 0 --uti public.png --out ./clipboard.png
 # Replace an existing regular file explicitly
 clipmem export 42 --item 0 --uti public.png --out ./clipboard.png --force
+
+# Deletion and policy
+clipmem forget 42
+clipmem purge --older-than 30d --dry-run
+clipmem settings pause on
+clipmem settings ignore add com.apple.Passwords
 ```
 
 ### Shared retrieval filters
@@ -190,6 +203,35 @@ clipmem search "git status" --format json --limit 10 --cursor "<next_cursor>"
 
 Cursors are opaque and tied to the active query, mode, and filters.
 
+## Restore, Deletion, and Policy
+
+`clipmem` stores the full per-item representation set, not just best text. That lets `restore` put a stored snapshot back onto the macOS clipboard as a whole snapshot instead of approximating it as plain text:
+
+```bash
+clipmem restore 42
+```
+
+You can also remove data without wiping the whole archive:
+
+```bash
+clipmem forget 42
+clipmem purge --older-than 30d --dry-run
+clipmem purge --older-than 30d
+```
+
+Persistent capture policy lives in SQLite and is managed through `clipmem settings`:
+
+```bash
+clipmem settings show --format json
+clipmem settings pause on
+clipmem settings retention 30d
+clipmem settings retention forever
+clipmem settings ignore add com.apple.Passwords
+clipmem settings ignore list
+```
+
+Ignore matching is exact, case-insensitive bundle-id matching. Retention ages snapshots by `last_observed_at`, not their original insertion time.
+
 ### Search modes
 
 `search` and `recall` accept `--mode auto|fts|literal`. Auto mode picks FTS or literal per query — you rarely need to override. It prefers literal matching for URLs, paths, bundle ids, dotted identifiers, and shell-like fragments (more reliable for punctuation-heavy clipboard data); plain-text queries can still use FTS first.
@@ -223,6 +265,8 @@ Supported formats, by command:
 
 - `search`, `recent`, `timeline`, `get`: `text` (default), `json`, `jsonl`, `md`, `toon` (*not* `toon` for `get`, which returns nested detail).
 - `recall`: `md` (default), `json`, `toon`.
+- `restore`: text summary only.
+- `settings show`, `settings ignore list`, and `service status`: `text` by default, `json` when requested.
 - `capture-once` and `doctor`: `--json` only (alias for structured output).
 - `export`: writes raw bytes to `--out`; creates a new file by default, accepts `--force` only for replacing an existing regular file, and has no `--format`.
 
@@ -328,7 +372,11 @@ clipmem agents openclaw uninstall-skill
 ```text
 SKILL.md
 references/commands.md
+references/json-schema.md
+references/examples.md
+references/setup-check.md
 references/troubleshooting.md
+scripts/check-setup.sh
 ```
 
 The packaged skill points OpenClaw at the JSON-first retrieval commands:
@@ -373,7 +421,10 @@ For compatibility, `./scripts/install_openclaw_skill.sh` still exists as a thin 
 - The database lives at `~/Library/Application Support/clipmem/clipmem.sqlite3`. Logs are in the same directory under `logs/`.
 - Permissions: directory `0700`, database and logs `0600` — enforced at runtime in `src/db.rs::harden_path_permissions` and by the managed service setup flow.
 - **The database is not encrypted.** Rely on FileVault (or similar disk encryption) for at-rest protection.
-- There is **no automatic retention or pruning**. The archive grows until you delete it. See [Uninstall / Full cleanup](#uninstall--full-cleanup) to wipe.
+- Blob payloads are stored so `clipmem restore` can faithfully rehydrate images, RTF, URLs, file URLs, PDFs, and other clipboard representations.
+- You can pause capture persistently with `clipmem settings pause on`.
+- You can exclude exact bundle ids with `clipmem settings ignore add <bundle-id>`.
+- You can prune automatically with `clipmem settings retention <duration|forever>` or manually with `clipmem purge --older-than <duration>`.
 
 ## Uninstall / Full cleanup
 
@@ -402,6 +453,7 @@ brew uninstall clipmem 2>/dev/null || true
 - RTF and HTML text extraction is intentionally lightweight.
 - Search is great for commands, code, URLs, notes, logs, and copied prose. It is not semantic search. `--mode auto` is the default; use `--mode fts` for strict FTS5 queries or `--mode literal` for exact substring matching.
 - `clipmem get --format json` omits raw blob bytes (flattened text fields are included). Use `clipmem export` to recover binary payloads.
+- `clipmem restore` is macOS-only and writes the stored snapshot back to the live system clipboard.
 - `--format toon` is only supported for skim output (`search`, `recent`, `timeline`, `recall`), not for nested `get` detail. It intentionally omits heavyweight fields instead of embedding them as JSON blobs.
 
 ## How it works

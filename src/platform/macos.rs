@@ -1,11 +1,14 @@
 use anyhow::Result;
 use objc2::rc::autoreleasepool;
+use objc2::runtime::ProtocolObject;
 use objc2_app_kit::{NSPasteboard, NSPasteboardItem, NSWorkspace};
+use objc2_foundation::{NSArray, NSData, NSString};
 
 use crate::model::{
     build_item, build_representation, build_snapshot, CaptureContext, ClipboardItem,
     ClipboardSnapshot,
 };
+use crate::platform::{RestorePlanItem, RestorePlanRepresentation, RestoreReport};
 
 pub fn current_change_count() -> Result<i64> {
     autoreleasepool(|_| {
@@ -40,6 +43,58 @@ pub fn capture_snapshot() -> Result<ClipboardSnapshot> {
     })
 }
 
+pub(crate) fn restore_items(items: &[ClipboardItem]) -> Result<RestoreReport> {
+    let plan = build_restore_plan(items);
+
+    autoreleasepool(|_| {
+        let pasteboard = NSPasteboard::generalPasteboard();
+        pasteboard.clearContents();
+
+        let pasteboard_items = plan
+            .iter()
+            .map(build_pasteboard_item)
+            .collect::<Result<Vec<_>>>()?;
+        let writers = pasteboard_items
+            .into_iter()
+            .map(ProtocolObject::from_retained)
+            .collect::<Vec<_>>();
+        let array = NSArray::from_retained_slice(&writers);
+        let wrote = pasteboard.writeObjects(&array);
+        if !wrote {
+            anyhow::bail!("failed to write restored pasteboard items");
+        }
+
+        Ok(RestoreReport::new(
+            plan.len(),
+            plan.iter().map(|item| item.representations().len()).sum(),
+            plan.iter()
+                .flat_map(RestorePlanItem::representations)
+                .map(|representation| representation.bytes().len())
+                .sum(),
+        ))
+    })
+}
+
+pub(crate) fn build_restore_plan(items: &[ClipboardItem]) -> Vec<RestorePlanItem> {
+    items
+        .iter()
+        .map(|item| {
+            RestorePlanItem::new(
+                item.item_index(),
+                item.representations()
+                    .iter()
+                    .map(|representation| {
+                        RestorePlanRepresentation::new(
+                            representation.uti().to_string(),
+                            representation.raw_bytes().to_vec(),
+                        )
+                    })
+                    .collect(),
+            )
+        })
+        .collect()
+}
+
 fn current_frontmost_app() -> (Option<String>, Option<String>) {
     let workspace = NSWorkspace::sharedWorkspace();
     if let Some(app) = workspace.frontmostApplication() {
@@ -70,6 +125,24 @@ fn read_item(item_index: usize, item: &NSPasteboardItem) -> ClipboardItem {
     build_item(item_index, representations)
 }
 
+fn build_pasteboard_item(item: &RestorePlanItem) -> Result<objc2::rc::Retained<NSPasteboardItem>> {
+    let pasteboard_item = NSPasteboardItem::new();
+    for representation in item.representations() {
+        let data = NSData::with_bytes(representation.bytes());
+        let uti = NSString::from_str(representation.uti());
+        let wrote = pasteboard_item.setData_forType(&data, &uti);
+        if !wrote {
+            anyhow::bail!(
+                "failed to restore item {} representation {}",
+                item.item_index(),
+                representation.uti()
+            );
+        }
+    }
+
+    Ok(pasteboard_item)
+}
+
 fn representation_bytes(raw_data: Option<Vec<u8>>, string_value: Option<&str>) -> Vec<u8> {
     match (raw_data, string_value) {
         (Some(data), _) => data,
@@ -82,7 +155,8 @@ fn representation_bytes(raw_data: Option<Vec<u8>>, string_value: Option<&str>) -
 mod tests {
     use crate::model::ClipboardKind;
 
-    use super::{build_representation, representation_bytes};
+    use super::{build_representation, build_restore_plan, representation_bytes};
+    use crate::model::build_item;
 
     #[test]
     fn raw_string_bytes_fill_in_when_pasteboard_data_is_missing() {
@@ -113,5 +187,33 @@ mod tests {
         assert_eq!(representation.kind(), ClipboardKind::Image);
         assert_eq!(representation.text_value(), None);
         assert!(!representation.is_text());
+    }
+
+    #[test]
+    fn restore_plan_preserves_representation_set() {
+        let items = vec![build_item(
+            0,
+            vec![
+                build_representation(
+                    "public.utf8-plain-text".to_string(),
+                    Some("hello".to_string()),
+                    b"hello".to_vec(),
+                ),
+                build_representation(
+                    "public.html".to_string(),
+                    Some("<b>hello</b>".to_string()),
+                    b"<b>hello</b>".to_vec(),
+                ),
+            ],
+        )];
+
+        let plan = build_restore_plan(&items);
+
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan[0].representations().len(), 2);
+        assert_eq!(plan[0].representations()[0].uti(), "public.utf8-plain-text");
+        assert_eq!(plan[0].representations()[0].bytes(), b"hello");
+        assert_eq!(plan[0].representations()[1].uti(), "public.html");
+        assert_eq!(plan[0].representations()[1].bytes(), b"<b>hello</b>");
     }
 }

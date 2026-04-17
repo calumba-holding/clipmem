@@ -36,13 +36,17 @@ pub fn should_capture_change(
     state: &mut WatchState,
 ) -> bool {
     if state.first_loop && skip_initial {
-        state.last_handled_change_count = Some(change_count);
-        state.first_loop = false;
+        mark_change_handled(change_count, state);
         return false;
     }
 
     state.first_loop = false;
     state.last_handled_change_count != Some(change_count)
+}
+
+pub fn mark_change_handled(change_count: i64, state: &mut WatchState) {
+    state.last_handled_change_count = Some(change_count);
+    state.first_loop = false;
 }
 
 /// Persist one captured watch snapshot and mark its change count as handled.
@@ -60,7 +64,7 @@ pub fn process_watch_snapshot(
     }
 
     let result = db.store_capture(snapshot)?;
-    state.last_handled_change_count = Some(snapshot.change_count());
+    mark_change_handled(snapshot.change_count(), state);
     Ok(Some(result))
 }
 

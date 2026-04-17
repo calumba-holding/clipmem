@@ -2,8 +2,6 @@
 
 Prose mirror of `scripts/check-setup.sh`. Use this when your runtime can't execute shell scripts directly. Byte-identical across skill packages.
 
-The executable script also supports `--json` for structured agent-readable output and `--help` for usage.
-
 Run these commands in order. Stop at the first failure and repair before querying.
 
 ## 1. Binary present
@@ -58,4 +56,4 @@ Expect every check to report `[OK]`. `[FAIL]` lines include remediation steps.
 | FTS query errors | `fts5_create_virtual_table_ok: false` — switch to `--mode literal` |
 | Sandboxed agent can't see the archive | PATH or file-access scope; rerun `openclaw sandbox explain` |
 
-`scripts/check-setup.sh --json` reports the same checks in a structured object and preserves the categorised exit codes: `0` healthy, `1` watcher stale, `2` binary missing, `3` doctor or service-status failure.
+See `scripts/check-setup.sh` for the executable version with categorised exit codes (0 healthy, 1 watcher stale, 2 binary missing, 3 doctor failed).

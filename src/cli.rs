@@ -112,6 +112,40 @@ Notes:
   - Symlink destinations are never allowed.
   - Success output is written to stdout; failures are written to stderr only.";
 
+const RESTORE_AFTER_HELP: &str = "\
+Examples:
+  clipmem restore 42
+
+Notes:
+  - Restores every stored item and representation for the snapshot back onto the macOS clipboard.
+  - The active watcher may record the restored clipboard state as a fresh capture event.";
+
+const FORGET_AFTER_HELP: &str = "\
+Examples:
+  clipmem forget 42
+
+Notes:
+  - Forget irreversibly deletes the snapshot content row, all child representations, and all capture events for that snapshot id.
+  - This is a hard delete; there is no recycle bin.";
+
+const PURGE_AFTER_HELP: &str = "\
+Examples:
+  clipmem purge --older-than 30d
+  clipmem purge --older-than 12h --dry-run
+
+Notes:
+  - Purge ages snapshots by `last_observed_at`, not the original snapshot creation time.
+  - Duration grammar is a single integer plus one unit: `Nd`, `Nh`, or `Nm`.";
+
+const SETTINGS_AFTER_HELP: &str = "\
+Examples:
+  clipmem settings show
+  clipmem settings pause on
+  clipmem settings retention 30d
+  clipmem settings retention forever
+  clipmem settings ignore add com.apple.Passwords
+  clipmem settings ignore list --format json";
+
 const DOCTOR_AFTER_HELP: &str = "\
 Examples:
   clipmem doctor
@@ -269,6 +303,24 @@ pub(super) enum RecallOutputFormat {
     Toon,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct DurationValue {
+    raw: String,
+    seconds: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum RetentionValue {
+    Forever,
+    Duration(DurationValue),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(super) enum PauseState {
+    On,
+    Off,
+}
+
 #[derive(Debug, Clone, Args)]
 pub(super) struct OutputArgs {
     /// Output format: `text` for terminal use, `json` for stable parsing, `jsonl` for pipelines, `md` for compact review, and `toon` for flat list output only (default: text).
@@ -311,6 +363,40 @@ impl RecallOutputArgs {
     }
 }
 
+impl DurationValue {
+    #[must_use]
+    pub(super) fn new(raw: String, seconds: u64) -> Self {
+        Self { raw, seconds }
+    }
+
+    #[must_use]
+    pub(super) fn raw(&self) -> &str {
+        &self.raw
+    }
+
+    #[must_use]
+    pub(super) fn seconds(&self) -> u64 {
+        self.seconds
+    }
+}
+
+impl RetentionValue {
+    #[must_use]
+    pub(super) fn retention_seconds(&self) -> Option<u64> {
+        match self {
+            Self::Forever => None,
+            Self::Duration(duration) => Some(duration.seconds()),
+        }
+    }
+}
+
+impl PauseState {
+    #[must_use]
+    pub(super) fn is_paused(self) -> bool {
+        matches!(self, Self::On)
+    }
+}
+
 #[derive(Debug, Parser)]
 #[command(name = "clipmem")]
 #[command(version)]
@@ -350,6 +436,14 @@ enum Command {
     Get(GetArgs),
     /// Export one stored representation as raw bytes.
     Export(ExportArgs),
+    /// Restore a stored snapshot back onto the clipboard.
+    Restore(RestoreArgs),
+    /// Irreversibly delete one stored snapshot and its capture history.
+    Forget(ForgetArgs),
+    /// Delete stored snapshots older than a duration.
+    Purge(PurgeArgs),
+    /// View and update persistent capture policy.
+    Settings(SettingsArgs),
     /// Print `SQLite` and FTS5 diagnostics.
     Doctor(DoctorArgs),
 }
@@ -487,6 +581,54 @@ fn parse_nonnegative_bytes(value: &str) -> Result<usize, LimitParseError> {
     value
         .parse::<usize>()
         .map_err(|_| LimitParseError(format!("invalid integer value '{value}'")))
+}
+
+fn parse_duration_value(value: &str) -> Result<DurationValue, LimitParseError> {
+    let trimmed = value.trim();
+    if trimmed.len() < 2 {
+        return Err(LimitParseError(format!(
+            "invalid duration '{value}'; expected <integer><unit> like 30d, 12h, or 15m"
+        )));
+    }
+
+    let (amount, unit) = trimmed.split_at(trimmed.len() - 1);
+    let amount = amount.parse::<u64>().map_err(|_| {
+        LimitParseError(format!(
+            "invalid duration '{value}'; expected an integer amount before the unit"
+        ))
+    })?;
+    if amount == 0 {
+        return Err(LimitParseError(
+            "duration must be greater than zero".to_string(),
+        ));
+    }
+
+    let seconds = match unit.to_ascii_lowercase().as_str() {
+        "d" => amount.saturating_mul(24 * 60 * 60),
+        "h" => amount.saturating_mul(60 * 60),
+        "m" => amount.saturating_mul(60),
+        _ => {
+            return Err(LimitParseError(format!(
+                "invalid duration unit '{unit}'; expected d, h, or m"
+            )))
+        }
+    };
+
+    if seconds == u64::MAX {
+        return Err(LimitParseError(format!(
+            "duration '{value}' exceeds supported range"
+        )));
+    }
+
+    Ok(DurationValue::new(trimmed.to_string(), seconds))
+}
+
+fn parse_retention_value(value: &str) -> Result<RetentionValue, LimitParseError> {
+    if value.trim().eq_ignore_ascii_case("forever") {
+        Ok(RetentionValue::Forever)
+    } else {
+        parse_duration_value(value).map(RetentionValue::Duration)
+    }
 }
 
 #[derive(Debug, Clone, Args)]
@@ -701,6 +843,98 @@ struct ExportArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(after_help = RESTORE_AFTER_HELP)]
+struct RestoreArgs {
+    /// Snapshot identifier.
+    snapshot_id: i64,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = FORGET_AFTER_HELP)]
+struct ForgetArgs {
+    /// Snapshot identifier.
+    snapshot_id: i64,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = PURGE_AFTER_HELP)]
+struct PurgeArgs {
+    /// Delete snapshots whose last observation is older than this duration (`Nd`, `Nh`, `Nm`).
+    #[arg(long, value_parser = parse_duration_value)]
+    older_than: DurationValue,
+
+    /// Report what would be deleted without deleting anything.
+    #[arg(long, default_value_t = false)]
+    dry_run: bool,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = SETTINGS_AFTER_HELP)]
+struct SettingsArgs {
+    #[command(subcommand)]
+    command: SettingsCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum SettingsCommand {
+    /// Show the current capture policy.
+    Show(SettingsShowArgs),
+    /// Persistently pause or resume capture.
+    Pause(SettingsPauseArgs),
+    /// Set retention to a duration or `forever`.
+    Retention(SettingsRetentionArgs),
+    /// Manage ignored bundle identifiers.
+    Ignore(SettingsIgnoreArgs),
+}
+
+#[derive(Debug, Args)]
+struct SettingsShowArgs {
+    #[command(flatten)]
+    output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
+struct SettingsPauseArgs {
+    /// `on` pauses capture, `off` resumes it.
+    state: PauseState,
+}
+
+#[derive(Debug, Args)]
+struct SettingsRetentionArgs {
+    /// Retain snapshots for this duration, or `forever` to disable automatic pruning.
+    #[arg(value_parser = parse_retention_value)]
+    value: RetentionValue,
+}
+
+#[derive(Debug, Args)]
+struct SettingsIgnoreArgs {
+    #[command(subcommand)]
+    command: SettingsIgnoreCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum SettingsIgnoreCommand {
+    /// Add a bundle identifier to the ignore list.
+    Add(SettingsIgnoreBundleArgs),
+    /// Remove a bundle identifier from the ignore list.
+    Remove(SettingsIgnoreBundleArgs),
+    /// List ignored bundle identifiers.
+    List(SettingsIgnoreListArgs),
+}
+
+#[derive(Debug, Args)]
+struct SettingsIgnoreBundleArgs {
+    /// Bundle identifier to add or remove.
+    bundle_id: String,
+}
+
+#[derive(Debug, Args)]
+struct SettingsIgnoreListArgs {
+    #[command(flatten)]
+    output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
 #[command(after_help = DOCTOR_AFTER_HELP)]
 struct DoctorArgs {
     /// Emit diagnostics as JSON.
@@ -863,6 +1097,22 @@ fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
         Command::Export(args) => {
             args.filters.normalized()?;
         }
+        Command::Restore(_) => {}
+        Command::Forget(_) => {}
+        Command::Purge(_) => {}
+        Command::Settings(args) => match &args.command {
+            SettingsCommand::Show(args) => {
+                args.output.resolved()?;
+            }
+            SettingsCommand::Pause(_) => {}
+            SettingsCommand::Retention(_) => {}
+            SettingsCommand::Ignore(args) => match &args.command {
+                SettingsIgnoreCommand::Add(_) | SettingsIgnoreCommand::Remove(_) => {}
+                SettingsIgnoreCommand::List(args) => {
+                    args.output.resolved()?;
+                }
+            },
+        },
         Command::Watch(_) | Command::CaptureOnce(_) | Command::Doctor(_) => {}
     }
 
@@ -1013,13 +1263,16 @@ fn is_unsupported_format_error(_error: &anyhow::Error, message: &str) -> bool {
 
 fn is_platform_error(error: &anyhow::Error, message: &str) -> bool {
     message.contains("clipboard capture is only supported on macOS")
+        || message.contains("clipboard restore is only supported on macOS")
         || message.contains("setup and service commands are only supported on macOS")
         || message.contains("capture failed")
         || message.contains("capture-once clipboard read failed")
+        || message.contains("restore failed")
         || message.contains("read clipboard change count failed")
         || error.chain().any(|cause| {
             let cause = cause.to_string();
             cause.contains("clipboard capture is only supported on macOS")
+                || cause.contains("clipboard restore is only supported on macOS")
         })
 }
 
@@ -1045,6 +1298,7 @@ mod tests {
 
     use super::{
         classify_command_error, Cli, CliExitCode, Command, OutputFormat, RecallOutputFormat,
+        RetentionValue,
     };
 
     #[test]
@@ -1457,6 +1711,110 @@ mod tests {
             }
             other => panic!("expected export command, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn restore_forget_and_purge_commands_parse_expected_arguments() {
+        let restore_cli = Cli::parse_from(["clipmem", "restore", "42"]);
+        match restore_cli.command {
+            Command::Restore(args) => assert_eq!(args.snapshot_id, 42),
+            other => panic!("expected restore command, got {other:?}"),
+        }
+
+        let forget_cli = Cli::parse_from(["clipmem", "forget", "42"]);
+        match forget_cli.command {
+            Command::Forget(args) => assert_eq!(args.snapshot_id, 42),
+            other => panic!("expected forget command, got {other:?}"),
+        }
+
+        let purge_cli = Cli::parse_from(["clipmem", "purge", "--older-than", "30d", "--dry-run"]);
+        match purge_cli.command {
+            Command::Purge(args) => {
+                assert_eq!(args.older_than.raw(), "30d");
+                assert_eq!(args.older_than.seconds(), 30 * 24 * 60 * 60);
+                assert!(args.dry_run);
+            }
+            other => panic!("expected purge command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn settings_commands_parse_policy_variants() {
+        let show_cli = Cli::parse_from(["clipmem", "settings", "show", "--format", "json"]);
+        match show_cli.command {
+            Command::Settings(args) => match args.command {
+                super::SettingsCommand::Show(args) => {
+                    assert_eq!(args.output.resolved().unwrap(), OutputFormat::Json);
+                }
+                other => panic!("expected settings show command, got {other:?}"),
+            },
+            other => panic!("expected settings command, got {other:?}"),
+        }
+
+        let pause_cli = Cli::parse_from(["clipmem", "settings", "pause", "on"]);
+        match pause_cli.command {
+            Command::Settings(args) => match args.command {
+                super::SettingsCommand::Pause(args) => assert!(args.state.is_paused()),
+                other => panic!("expected settings pause command, got {other:?}"),
+            },
+            other => panic!("expected settings command, got {other:?}"),
+        }
+
+        let retention_cli = Cli::parse_from(["clipmem", "settings", "retention", "forever"]);
+        match retention_cli.command {
+            Command::Settings(args) => match args.command {
+                super::SettingsCommand::Retention(args) => {
+                    assert!(matches!(args.value, RetentionValue::Forever));
+                    assert_eq!(args.value.retention_seconds(), None);
+                }
+                other => panic!("expected settings retention command, got {other:?}"),
+            },
+            other => panic!("expected settings command, got {other:?}"),
+        }
+
+        let ignore_cli =
+            Cli::parse_from(["clipmem", "settings", "ignore", "add", "com.apple.Terminal"]);
+        match ignore_cli.command {
+            Command::Settings(args) => match args.command {
+                super::SettingsCommand::Ignore(args) => match args.command {
+                    super::SettingsIgnoreCommand::Add(args) => {
+                        assert_eq!(args.bundle_id, "com.apple.Terminal");
+                    }
+                    other => panic!("expected settings ignore add command, got {other:?}"),
+                },
+                other => panic!("expected settings ignore command, got {other:?}"),
+            },
+            other => panic!("expected settings command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn duration_parser_accepts_single_unit_values_and_rejects_invalid_ones() {
+        let days_cli = Cli::parse_from(["clipmem", "purge", "--older-than", "30d"]);
+        match days_cli.command {
+            Command::Purge(args) => assert_eq!(args.older_than.seconds(), 30 * 24 * 60 * 60),
+            other => panic!("expected purge command, got {other:?}"),
+        }
+
+        let hours_cli = Cli::parse_from(["clipmem", "purge", "--older-than", "12h"]);
+        match hours_cli.command {
+            Command::Purge(args) => assert_eq!(args.older_than.seconds(), 12 * 60 * 60),
+            other => panic!("expected purge command, got {other:?}"),
+        }
+
+        let minutes_cli = Cli::parse_from(["clipmem", "purge", "--older-than", "15m"]);
+        match minutes_cli.command {
+            Command::Purge(args) => assert_eq!(args.older_than.seconds(), 15 * 60),
+            other => panic!("expected purge command, got {other:?}"),
+        }
+
+        let compound = super::run_from(["clipmem", "purge", "--older-than", "1h30m"])
+            .expect_err("compound durations should fail");
+        assert!(compound.to_string().contains("expected an integer amount"));
+
+        let zero = super::run_from(["clipmem", "purge", "--older-than", "0d"])
+            .expect_err("zero durations should fail");
+        assert!(zero.to_string().contains("greater than zero"));
     }
 
     #[test]

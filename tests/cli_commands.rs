@@ -1713,6 +1713,224 @@ fn get_rejects_toon_output() -> Result<()> {
 }
 
 #[test]
+fn settings_commands_persist_policy_and_support_json_views() -> Result<()> {
+    let path = temp_db_path("settings-policy");
+
+    let pause_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "settings",
+        "pause",
+        "on",
+    ]);
+    assert!(pause_output.status.success());
+
+    let retention_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "settings",
+        "retention",
+        "30d",
+    ]);
+    assert!(retention_output.status.success());
+
+    let add_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "settings",
+        "ignore",
+        "add",
+        "Com.Apple.Terminal",
+    ]);
+    assert!(add_output.status.success());
+
+    let show_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "settings",
+        "show",
+        "--format",
+        "json",
+    ]);
+    let show_payload: Value =
+        serde_json::from_slice(&show_output.stdout).expect("settings show JSON should parse");
+
+    assert!(show_output.status.success());
+    assert_eq!(show_payload["paused"].as_bool(), Some(true));
+    assert_eq!(
+        show_payload["retention_seconds"].as_u64(),
+        Some(30 * 24 * 60 * 60)
+    );
+    assert_eq!(show_payload["retention"].as_str(), Some("30d"));
+    assert_eq!(
+        show_payload["ignored_bundle_ids"][0].as_str(),
+        Some("com.apple.terminal")
+    );
+
+    let list_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "settings",
+        "ignore",
+        "list",
+        "--format",
+        "json",
+    ]);
+    let list_payload: Value =
+        serde_json::from_slice(&list_output.stdout).expect("ignore list JSON should parse");
+
+    assert!(list_output.status.success());
+    assert_eq!(
+        list_payload["ignored_bundle_ids"][0].as_str(),
+        Some("com.apple.terminal")
+    );
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn forget_command_hard_deletes_snapshot() -> Result<()> {
+    let path = temp_db_path("forget-snapshot");
+    let ids = seed_database(&path, &[text_snapshot(1, "temporary clipboard text")])?;
+
+    let forget_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "forget",
+        &ids[0].to_string(),
+    ]);
+    let stdout = stdout_text(&forget_output);
+
+    assert!(forget_output.status.success());
+    assert!(stdout.contains(&format!("forgot snapshot={}", ids[0])));
+
+    let db = Database::open_existing(&path)?;
+    assert!(db.find_snapshot(ids[0], 10)?.is_none());
+    assert!(db
+        .search_auto("temporary clipboard", 10, &Default::default())?
+        .hits()
+        .is_empty());
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn purge_command_reports_dry_run_then_deletes_old_snapshots() -> Result<()> {
+    let path = temp_db_path("purge-snapshots");
+    let events = seed_events(
+        &path,
+        &[
+            text_snapshot(1, "expired snapshot"),
+            text_snapshot(2, "fresh snapshot"),
+        ],
+    )?;
+    set_event_observed_at(&path, events[0].1, "2000-01-01 00:00:00")?;
+
+    let dry_run = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "purge",
+        "--older-than",
+        "30d",
+        "--dry-run",
+    ]);
+    let dry_run_stdout = stdout_text(&dry_run);
+
+    assert!(dry_run.status.success());
+    assert!(dry_run_stdout.contains("purge dry-run older_than=30d snapshots=1"));
+
+    let delete = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "purge",
+        "--older-than",
+        "30d",
+    ]);
+    let delete_stdout = stdout_text(&delete);
+
+    assert!(delete.status.success());
+    assert!(delete_stdout.contains("purged older_than=30d snapshots=1"));
+
+    let db = Database::open_existing(&path)?;
+    assert!(db.find_snapshot(events[0].0, 10)?.is_none());
+    assert!(db.find_snapshot(events[1].0, 10)?.is_some());
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+#[cfg(target_os = "macos")]
+fn service_status_reports_capture_policy_in_text_and_json() -> Result<()> {
+    let path = temp_db_path("service-status-policy");
+
+    let pause_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "settings",
+        "pause",
+        "on",
+    ]);
+    assert!(pause_output.status.success());
+
+    let retention_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "settings",
+        "retention",
+        "30d",
+    ]);
+    assert!(retention_output.status.success());
+
+    let ignore_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "settings",
+        "ignore",
+        "add",
+        "com.apple.Terminal",
+    ]);
+    assert!(ignore_output.status.success());
+
+    let json_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "service",
+        "status",
+        "--json",
+    ]);
+    let json_payload: Value =
+        serde_json::from_slice(&json_output.stdout).expect("service status JSON should parse");
+
+    assert!(json_output.status.success());
+    assert_eq!(json_payload["paused"].as_bool(), Some(true));
+    assert_eq!(
+        json_payload["retention_seconds"].as_u64(),
+        Some(30 * 24 * 60 * 60)
+    );
+    assert_eq!(json_payload["retention"].as_str(), Some("30d"));
+    assert_eq!(json_payload["ignored_bundle_id_count"].as_u64(), Some(1));
+
+    let text_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "service",
+        "status",
+    ]);
+    let text = stdout_text(&text_output);
+
+    assert!(text_output.status.success());
+    assert!(text.contains("paused: true"));
+    assert!(text.contains("retention: 30d"));
+    assert!(text.contains("ignored bundle ids: 1"));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
 fn agents_openclaw_install_print_and_uninstall_skill_work() -> Result<()> {
     let test_dir = temp_test_dir("openclaw-install");
     let bin_dir = test_dir.join("bin");

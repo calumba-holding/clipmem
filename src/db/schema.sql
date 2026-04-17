@@ -70,6 +70,16 @@ CREATE TABLE IF NOT EXISTS snapshot_literal_cache (
     haystack    TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS clipmem_settings (
+    id                INTEGER PRIMARY KEY CHECK (id = 1),
+    paused            INTEGER NOT NULL DEFAULT 0 CHECK (paused IN (0, 1)),
+    retention_seconds INTEGER CHECK (retention_seconds IS NULL OR retention_seconds >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS ignored_bundle_ids (
+    bundle_id TEXT PRIMARY KEY
+);
+
 CREATE INDEX IF NOT EXISTS idx_capture_events_snapshot_id
     ON capture_events(snapshot_id);
 

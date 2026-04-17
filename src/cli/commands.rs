@@ -10,34 +10,60 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::process::Command as ProcessCommand;
 
-use crate::app::{format_watch_capture_line, process_watch_snapshot, WatchState};
+use crate::app::{
+    format_watch_capture_line, mark_change_handled, process_watch_snapshot, WatchState,
+};
 use crate::db::{
-    Database, RecentCursorState, RetrievalFilters, SearchCursorState, SearchMode, SearchResults,
-    TimelineCursorState, TimelineSort,
+    CapturePolicy, CaptureSettings, Database, PurgeReport, RecentCursorState, RetrievalFilters,
+    SearchCursorState, SearchMode, SearchResults, SnapshotDeletionReport, TimelineCursorState,
+    TimelineSort,
 };
 use crate::model::{
     CaptureStoreResult, ClipboardSnapshot, FlattenedTextProjection, SearchHit, TimelineEvent,
 };
-use crate::platform::{capture_snapshot, current_change_count};
+use crate::platform::{capture_snapshot, current_change_count, restore_items};
 
 use super::output::{
     emit_get_output, emit_json_or_text, emit_list_output, emit_recall_output, generated_at_now,
     render_capture_once_text, render_doctor_text, render_hits_text, render_search_results_text,
     render_snapshot_text, render_timeline_text, GetEnvelope, ListEnvelope, ListRow, RecallEnvelope,
-    RecallMatchConfidence, RecallOutputRow, OUTPUT_SCHEMA_VERSION,
+    RecallMatchConfidence, RecallOutputRow, UnsupportedFormatError, OUTPUT_SCHEMA_VERSION,
 };
 use super::service::{render_service_action_text, render_service_status_text, render_setup_text};
 use super::{
-    AgentsArgs, CaptureOnceArgs, Command, DoctorArgs, ExportArgs, GetArgs, OpenClawArgs,
-    OpenClawDoctorArgs, OpenClawInstallSkillArgs, OpenClawUninstallSkillArgs, OutputFormat,
-    RecallArgs, RecentArgs, SearchArgs, ServiceArgs, ServiceCommand, ServiceStatusArgs, SetupArgs,
-    TimelineArgs, WatchArgs,
+    AgentsArgs, CaptureOnceArgs, Command, DoctorArgs, ExportArgs, ForgetArgs, GetArgs,
+    OpenClawArgs, OpenClawDoctorArgs, OpenClawInstallSkillArgs, OpenClawUninstallSkillArgs,
+    OutputFormat, PurgeArgs, RecallArgs, RecentArgs, RestoreArgs, SearchArgs, ServiceArgs,
+    ServiceCommand, ServiceStatusArgs, SettingsArgs, SettingsCommand, SettingsIgnoreArgs,
+    SettingsIgnoreCommand, SettingsIgnoreListArgs, SettingsPauseArgs, SettingsRetentionArgs,
+    SettingsShowArgs, SetupArgs, TimelineArgs, WatchArgs,
 };
 
 #[derive(Debug, Serialize)]
 struct CaptureOnceOutput {
     store: CaptureStoreResult,
     snapshot: ClipboardSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct RestoreOutput {
+    snapshot_id: i64,
+    item_count: usize,
+    representation_count: usize,
+    total_bytes: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct SettingsView {
+    paused: bool,
+    retention_seconds: Option<u64>,
+    retention: String,
+    ignored_bundle_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct SettingsIgnoreListOutput {
+    ignored_bundle_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,6 +191,10 @@ pub(super) fn run_command(command: Command, db_path: &Path) -> Result<()> {
         Command::Recall(args) => recall(db_path, &args),
         Command::Get(args) => show_snapshot(db_path, &args),
         Command::Export(args) => export_snapshot_bytes(db_path, &args),
+        Command::Restore(args) => restore_snapshot(db_path, &args),
+        Command::Forget(args) => forget_snapshot(db_path, &args),
+        Command::Purge(args) => purge_snapshots(db_path, &args),
+        Command::Settings(args) => settings(db_path, &args),
         Command::Doctor(args) => doctor(db_path, &args),
     }
 }
@@ -269,10 +299,28 @@ where
     }
 
     let snapshot = anyhow::Context::context(capture_snapshot_fn(), "capture failed")?;
+    let settings = db
+        .capture_settings()
+        .context("load capture settings failed")?;
+    if settings.paused() {
+        mark_change_handled(snapshot.change_count(), state);
+        return Ok(());
+    }
+    if db
+        .bundle_id_is_ignored(snapshot.frontmost_app_bundle_id())
+        .context("load ignored bundle ids failed")?
+    {
+        mark_change_handled(snapshot.change_count(), state);
+        return Ok(());
+    }
     let result = anyhow::Context::context(
         process_watch_snapshot(db, &snapshot, state),
         "database write failed",
     )?;
+    if matches!(result, Some(_)) {
+        db.apply_retention_policy()
+            .context("apply retention policy failed")?;
+    }
 
     if !args.quiet {
         if let Some(result) = result {
@@ -291,6 +339,8 @@ fn capture_once(db_path: &Path, args: &CaptureOnceArgs) -> Result<()> {
         db.store_capture(&snapshot),
         "capture-once database write failed",
     )?;
+    db.apply_retention_policy()
+        .context("apply retention policy failed")?;
     let payload = CaptureOnceOutput { store, snapshot };
     emit_json_or_text(args.json, &payload, |output| {
         render_capture_once_text(&output.store, &output.snapshot)
@@ -631,6 +681,125 @@ fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -> Result<()> {
     Ok(())
 }
 
+fn restore_snapshot(db_path: &Path, args: &RestoreArgs) -> Result<()> {
+    let db = open_existing_db(db_path)?;
+    let snapshot = anyhow::Context::with_context(db.find_snapshot(args.snapshot_id, 1), || {
+        format!("restore failed for snapshot {}", args.snapshot_id)
+    })?
+    .ok_or_else(|| anyhow!("snapshot {} was not found", args.snapshot_id))?;
+    let report = anyhow::Context::context(restore_items(snapshot.items()), "restore failed")?;
+    let output = RestoreOutput {
+        snapshot_id: args.snapshot_id,
+        item_count: report.item_count(),
+        representation_count: report.representation_count(),
+        total_bytes: report.total_bytes(),
+    };
+    emit_json_or_text(false, &output, render_restore_text)?;
+
+    Ok(())
+}
+
+fn forget_snapshot(db_path: &Path, args: &ForgetArgs) -> Result<()> {
+    let mut db = open_existing_db(db_path)?;
+    let report = anyhow::Context::with_context(db.forget_snapshot(args.snapshot_id), || {
+        format!("forget failed for snapshot {}", args.snapshot_id)
+    })?
+    .ok_or_else(|| anyhow!("snapshot {} was not found", args.snapshot_id))?;
+    emit_json_or_text(false, &report, render_forget_text)?;
+
+    Ok(())
+}
+
+fn purge_snapshots(db_path: &Path, args: &PurgeArgs) -> Result<()> {
+    let mut db = open_existing_db(db_path)?;
+    let report = anyhow::Context::with_context(
+        db.purge_snapshots_older_than(args.older_than.seconds(), args.dry_run),
+        || format!("purge failed for duration {}", args.older_than.raw()),
+    )?;
+    emit_json_or_text(false, &report, render_purge_text)?;
+
+    Ok(())
+}
+
+fn settings(db_path: &Path, args: &SettingsArgs) -> Result<()> {
+    match &args.command {
+        SettingsCommand::Show(args) => settings_show(db_path, args),
+        SettingsCommand::Pause(args) => settings_pause(db_path, args),
+        SettingsCommand::Retention(args) => settings_retention(db_path, args),
+        SettingsCommand::Ignore(args) => settings_ignore(db_path, args),
+    }
+}
+
+fn settings_show(db_path: &Path, args: &SettingsShowArgs) -> Result<()> {
+    let format = require_text_or_json(args.output.resolved()?, "settings show")?;
+    let db = open_or_init_db(db_path)?;
+    let view = settings_view(db.capture_policy()?);
+    emit_json_or_text(
+        matches!(format, OutputFormat::Json),
+        &view,
+        render_settings_view_text,
+    )?;
+    Ok(())
+}
+
+fn settings_pause(db_path: &Path, args: &SettingsPauseArgs) -> Result<()> {
+    let db = open_or_init_db(db_path)?;
+    let settings = db.set_paused(args.state.is_paused())?;
+    let view = settings_view(CapturePolicy::new(settings, db.list_ignored_bundle_ids()?));
+    emit_json_or_text(false, &view, render_settings_view_text)?;
+    Ok(())
+}
+
+fn settings_retention(db_path: &Path, args: &SettingsRetentionArgs) -> Result<()> {
+    let db = open_or_init_db(db_path)?;
+    let settings = db.set_retention_seconds(args.value.retention_seconds())?;
+    let view = settings_view(CapturePolicy::new(settings, db.list_ignored_bundle_ids()?));
+    emit_json_or_text(false, &view, render_settings_view_text)?;
+    Ok(())
+}
+
+fn settings_ignore(db_path: &Path, args: &SettingsIgnoreArgs) -> Result<()> {
+    match &args.command {
+        SettingsIgnoreCommand::Add(args) => settings_ignore_add(db_path, &args.bundle_id),
+        SettingsIgnoreCommand::Remove(args) => settings_ignore_remove(db_path, &args.bundle_id),
+        SettingsIgnoreCommand::List(args) => settings_ignore_list(db_path, args),
+    }
+}
+
+fn settings_ignore_add(db_path: &Path, bundle_id: &str) -> Result<()> {
+    let db = open_or_init_db(db_path)?;
+    db.add_ignored_bundle_id(bundle_id)?;
+    let output = SettingsIgnoreListOutput {
+        ignored_bundle_ids: db.list_ignored_bundle_ids()?,
+    };
+    emit_json_or_text(false, &output, render_settings_ignore_list_text)?;
+    Ok(())
+}
+
+fn settings_ignore_remove(db_path: &Path, bundle_id: &str) -> Result<()> {
+    let db = open_or_init_db(db_path)?;
+    db.remove_ignored_bundle_id(bundle_id)?;
+    let output = SettingsIgnoreListOutput {
+        ignored_bundle_ids: db.list_ignored_bundle_ids()?,
+    };
+    emit_json_or_text(false, &output, render_settings_ignore_list_text)?;
+    Ok(())
+}
+
+fn settings_ignore_list(db_path: &Path, args: &SettingsIgnoreListArgs) -> Result<()> {
+    let format = require_text_or_json(args.output.resolved()?, "settings ignore list")?;
+    let db = open_or_init_db(db_path)?;
+    let output = SettingsIgnoreListOutput {
+        ignored_bundle_ids: db.list_ignored_bundle_ids()?,
+    };
+    emit_json_or_text(
+        matches!(format, OutputFormat::Json),
+        &output,
+        render_settings_ignore_list_text,
+    )?;
+    Ok(())
+}
+
 fn create_export_destination(path: &Path, force: bool) -> Result<File> {
     match std::fs::symlink_metadata(path) {
         Ok(metadata) => {
@@ -732,6 +901,111 @@ fn doctor(db_path: &Path, args: &DoctorArgs) -> Result<()> {
     emit_json_or_text(args.json, &report, render_doctor_text)?;
 
     Ok(())
+}
+
+fn require_text_or_json(format: OutputFormat, command_name: &str) -> Result<OutputFormat> {
+    match format {
+        OutputFormat::Text | OutputFormat::Json => Ok(format),
+        other => Err(UnsupportedFormatError::new(format!(
+            "{command_name} only supports `text` and `json` output, got `{}`",
+            other.as_str()
+        ))
+        .into()),
+    }
+}
+
+fn settings_view(policy: CapturePolicy) -> SettingsView {
+    SettingsView {
+        paused: policy.settings().paused(),
+        retention_seconds: policy.settings().retention_seconds(),
+        retention: render_retention_value(policy.settings()),
+        ignored_bundle_ids: policy.ignored_bundle_ids().to_vec(),
+    }
+}
+
+fn render_restore_text(output: &RestoreOutput) -> String {
+    format!(
+        "restored snapshot={} items={} representations={} bytes={}\n",
+        output.snapshot_id, output.item_count, output.representation_count, output.total_bytes
+    )
+}
+
+fn render_forget_text(report: &SnapshotDeletionReport) -> String {
+    format!(
+        "forgot snapshot={} items={} representations={} capture_events={} bytes={}\n",
+        report.snapshot_id(),
+        report.item_count(),
+        report.representation_count(),
+        report.capture_event_count(),
+        report.total_bytes()
+    )
+}
+
+fn render_purge_text(report: &PurgeReport) -> String {
+    let action = if report.dry_run() {
+        "purge dry-run"
+    } else {
+        "purged"
+    };
+    format!(
+        "{} older_than={} snapshots={} items={} representations={} capture_events={} bytes={}\n",
+        action,
+        format_duration_compact(report.older_than_seconds()),
+        report.snapshot_count(),
+        report.item_count(),
+        report.representation_count(),
+        report.capture_event_count(),
+        report.total_bytes()
+    )
+}
+
+fn render_settings_view_text(view: &SettingsView) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("paused: {}\n", view.paused));
+    out.push_str(&format!("retention: {}\n", view.retention));
+    out.push_str(&format!(
+        "ignored bundle ids: {}\n",
+        view.ignored_bundle_ids.len()
+    ));
+    for bundle_id in &view.ignored_bundle_ids {
+        out.push_str(&format!("  - {bundle_id}\n"));
+    }
+    out
+}
+
+fn render_settings_ignore_list_text(output: &SettingsIgnoreListOutput) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "ignored bundle ids: {}\n",
+        output.ignored_bundle_ids.len()
+    ));
+    for bundle_id in &output.ignored_bundle_ids {
+        out.push_str(&format!("  - {bundle_id}\n"));
+    }
+    out
+}
+
+pub(super) fn render_retention_value(settings: &CaptureSettings) -> String {
+    settings
+        .retention_seconds()
+        .map(format_duration_compact)
+        .unwrap_or_else(|| "forever".to_string())
+}
+
+fn format_duration_compact(seconds: u64) -> String {
+    let day = 24 * 60 * 60;
+    let hour = 60 * 60;
+    let minute = 60;
+
+    if seconds % day == 0 {
+        format!("{}d", seconds / day)
+    } else if seconds % hour == 0 {
+        format!("{}h", seconds / hour)
+    } else if seconds % minute == 0 {
+        format!("{}m", seconds / minute)
+    } else {
+        format!("{seconds}s")
+    }
 }
 
 fn open_existing_db(path: &Path) -> Result<Database> {
@@ -2140,6 +2414,186 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(capture_calls.get(), 1);
+        assert_eq!(db.recent(10, &unfiltered()).unwrap().len(), 1);
+
+        cleanup_db(&path);
+    }
+
+    #[test]
+    fn watch_iteration_skips_paused_changes_and_marks_them_handled() {
+        let path = temp_db_path("watch-paused");
+        let mut db = Database::open_or_init(&path).expect("test database should open");
+        db.set_paused(true).expect("pause setting should persist");
+        let args = WatchArgs {
+            interval_ms: 350,
+            quiet: true,
+            skip_initial: false,
+        };
+        let mut state = WatchState::new();
+        let capture_calls = Cell::new(0);
+
+        let first = run_watch_iteration_with_capture(
+            &mut db,
+            &args,
+            &mut state,
+            || Ok(5),
+            || {
+                capture_calls.set(capture_calls.get() + 1);
+                Ok(build_snapshot(
+                    CaptureContext::new(5)
+                        .with_frontmost_app_name("Terminal")
+                        .with_frontmost_app_bundle_id("com.apple.Terminal"),
+                    vec![build_item(
+                        0,
+                        vec![build_representation(
+                            "public.utf8-plain-text".to_string(),
+                            None,
+                            b"git status".to_vec(),
+                        )],
+                    )],
+                ))
+            },
+        );
+
+        assert!(first.is_ok());
+        assert_eq!(capture_calls.get(), 1);
+        assert!(db.recent(10, &unfiltered()).unwrap().is_empty());
+
+        let second = run_watch_iteration_with_capture(
+            &mut db,
+            &args,
+            &mut state,
+            || Ok(5),
+            || panic!("paused change count should have been marked handled"),
+        );
+
+        assert!(second.is_ok());
+        cleanup_db(&path);
+    }
+
+    #[test]
+    fn watch_iteration_skips_ignored_bundle_ids_and_does_not_backfill_later() {
+        let path = temp_db_path("watch-ignore-bundle");
+        let mut db = Database::open_or_init(&path).expect("test database should open");
+        db.add_ignored_bundle_id("com.apple.terminal")
+            .expect("ignore list insert should succeed");
+        let args = WatchArgs {
+            interval_ms: 350,
+            quiet: true,
+            skip_initial: false,
+        };
+        let mut state = WatchState::new();
+        let capture_calls = Cell::new(0);
+
+        let first = run_watch_iteration_with_capture(
+            &mut db,
+            &args,
+            &mut state,
+            || Ok(9),
+            || {
+                capture_calls.set(capture_calls.get() + 1);
+                Ok(build_snapshot(
+                    CaptureContext::new(9)
+                        .with_frontmost_app_name("Terminal")
+                        .with_frontmost_app_bundle_id("com.apple.Terminal"),
+                    vec![build_item(
+                        0,
+                        vec![build_representation(
+                            "public.utf8-plain-text".to_string(),
+                            None,
+                            b"ignored clipboard".to_vec(),
+                        )],
+                    )],
+                ))
+            },
+        );
+
+        assert!(first.is_ok());
+        assert_eq!(capture_calls.get(), 1);
+        assert!(db.recent(10, &unfiltered()).unwrap().is_empty());
+
+        let second = run_watch_iteration_with_capture(
+            &mut db,
+            &args,
+            &mut state,
+            || Ok(9),
+            || panic!("ignored change count should have been marked handled"),
+        );
+
+        assert!(second.is_ok());
+        assert!(db
+            .search_auto("ignored", 10, &unfiltered())
+            .unwrap()
+            .hits()
+            .is_empty());
+        cleanup_db(&path);
+    }
+
+    #[test]
+    fn watch_iteration_applies_retention_after_successful_store() {
+        let path = temp_db_path("watch-retention");
+        let mut db = Database::open_or_init(&path).expect("test database should open");
+        let old = db
+            .store_capture(&build_snapshot(
+                CaptureContext::new(1)
+                    .with_frontmost_app_name("Notes")
+                    .with_frontmost_app_bundle_id("com.apple.Notes"),
+                vec![build_item(
+                    0,
+                    vec![build_representation(
+                        "public.utf8-plain-text".to_string(),
+                        None,
+                        b"expired clipboard".to_vec(),
+                    )],
+                )],
+            ))
+            .expect("seed snapshot should store");
+        db.conn
+            .execute(
+                "UPDATE capture_events SET observed_at = '2000-01-01 00:00:00' WHERE id = ?1",
+                [old.event_id()],
+            )
+            .expect("event timestamp should update");
+        db.set_retention_seconds(Some(24 * 60 * 60))
+            .expect("retention setting should persist");
+
+        let args = WatchArgs {
+            interval_ms: 350,
+            quiet: true,
+            skip_initial: false,
+        };
+        let mut state = WatchState::new();
+
+        let result = run_watch_iteration_with_capture(
+            &mut db,
+            &args,
+            &mut state,
+            || Ok(2),
+            || {
+                Ok(build_snapshot(
+                    CaptureContext::new(2)
+                        .with_frontmost_app_name("Terminal")
+                        .with_frontmost_app_bundle_id("com.apple.Terminal"),
+                    vec![build_item(
+                        0,
+                        vec![build_representation(
+                            "public.utf8-plain-text".to_string(),
+                            None,
+                            b"fresh clipboard".to_vec(),
+                        )],
+                    )],
+                ))
+            },
+        );
+
+        assert!(result.is_ok());
+        assert!(db
+            .search_auto("expired", 10, &unfiltered())
+            .unwrap()
+            .hits()
+            .is_empty());
+        let fresh_hits = db.search_auto("fresh", 10, &unfiltered()).unwrap();
+        assert_eq!(fresh_hits.hits().len(), 1);
         assert_eq!(db.recent(10, &unfiltered()).unwrap().len(), 1);
 
         cleanup_db(&path);

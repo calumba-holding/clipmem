@@ -7,7 +7,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::Serialize;
 
 use crate::cli::db_path::default_db_path;
-use crate::db::Database;
+use crate::db::{CaptureSettings, Database};
 use crate::platform::capture_snapshot;
 
 const DIRECT_LABEL: &str = "io.openclaw.clipmem.watch";
@@ -70,6 +70,10 @@ pub(super) struct ServiceStatusReport {
     pub(super) db_exists: bool,
     pub(super) recent_capture_at: Option<String>,
     pub(super) recent_capture_within_last_hour: Option<bool>,
+    pub(super) paused: Option<bool>,
+    pub(super) retention_seconds: Option<u64>,
+    pub(super) retention: Option<String>,
+    pub(super) ignored_bundle_id_count: Option<usize>,
     pub(super) stale: bool,
     pub(super) db_error: Option<String>,
     pub(super) notes: Vec<String>,
@@ -204,17 +208,32 @@ pub(super) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
     let selection = select_provider(&context)?;
 
     let db_exists = context.db_path.is_file();
-    let (recent_capture_at, recent_capture_within_last_hour, db_error) = if db_exists {
+    let (
+        recent_capture_at,
+        recent_capture_within_last_hour,
+        paused,
+        retention_seconds,
+        retention,
+        ignored_bundle_id_count,
+        db_error,
+    ) = if db_exists {
         match Database::open_existing(&context.db_path) {
-            Ok(db) => (
-                db.latest_capture_observed_at()?,
-                Some(db.has_capture_within_hours(SERVICE_FRESHNESS_HOURS)?),
-                None,
-            ),
-            Err(error) => (None, None, Some(error.to_string())),
+            Ok(db) => {
+                let policy = db.capture_policy()?;
+                (
+                    db.latest_capture_observed_at()?,
+                    Some(db.has_capture_within_hours(SERVICE_FRESHNESS_HOURS)?),
+                    Some(policy.settings().paused()),
+                    policy.settings().retention_seconds(),
+                    Some(render_retention_value(policy.settings())),
+                    Some(policy.ignored_bundle_id_count()),
+                    None,
+                )
+            }
+            Err(error) => (None, None, None, None, None, None, Some(error.to_string())),
         }
     } else {
-        (None, None, None)
+        (None, None, None, None, None, None, None)
     };
     let stale = matches!(recent_capture_within_last_hour, Some(false))
         && !homebrew_status.running
@@ -247,6 +266,10 @@ pub(super) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
         db_exists,
         recent_capture_at,
         recent_capture_within_last_hour,
+        paused,
+        retention_seconds,
+        retention,
+        ignored_bundle_id_count,
         stale,
         db_error,
         notes,
@@ -312,6 +335,21 @@ pub(super) fn render_service_status_text(report: &ServiceStatusReport) -> String
         out.push_str(&format!("capture within last hour: {fresh}\n"));
     } else {
         out.push_str("capture within last hour: unknown\n");
+    }
+    if let Some(paused) = report.paused {
+        out.push_str(&format!("paused: {paused}\n"));
+    } else {
+        out.push_str("paused: unknown\n");
+    }
+    if let Some(retention) = &report.retention {
+        out.push_str(&format!("retention: {retention}\n"));
+    } else {
+        out.push_str("retention: unknown\n");
+    }
+    if let Some(count) = report.ignored_bundle_id_count {
+        out.push_str(&format!("ignored bundle ids: {count}\n"));
+    } else {
+        out.push_str("ignored bundle ids: unknown\n");
     }
     out.push_str(&format!("stale: {}\n", report.stale));
     if let Some(db_error) = &report.db_error {
@@ -429,6 +467,29 @@ fn ensure_no_conflict(status: &ServiceStatusReport) -> Result<()> {
 
 fn conflict_message() -> String {
     "Both the Homebrew service and the direct LaunchAgent are installed. Remove one first with `brew services stop clipmem` or `clipmem service uninstall`.".to_string()
+}
+
+fn render_retention_value(settings: &CaptureSettings) -> String {
+    settings
+        .retention_seconds()
+        .map(format_duration_compact)
+        .unwrap_or_else(|| "forever".to_string())
+}
+
+fn format_duration_compact(seconds: u64) -> String {
+    let day = 24 * 60 * 60;
+    let hour = 60 * 60;
+    let minute = 60;
+
+    if seconds % day == 0 {
+        format!("{}d", seconds / day)
+    } else if seconds % hour == 0 {
+        format!("{}h", seconds / hour)
+    } else if seconds % minute == 0 {
+        format!("{}m", seconds / minute)
+    } else {
+        format!("{seconds}s")
+    }
 }
 
 fn start_with_provider(

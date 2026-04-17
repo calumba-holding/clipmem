@@ -258,6 +258,114 @@ fn search_like_treats_percent_as_literal() -> Result<()> {
 }
 
 #[test]
+fn capture_policy_persists_across_reopen() -> Result<()> {
+    let path = temp_db_path("capture-policy-persistence");
+
+    {
+        let db = Database::open_or_init(&path)?;
+        db.set_paused(true)?;
+        db.set_retention_seconds(Some(30 * 24 * 60 * 60))?;
+        assert!(db.add_ignored_bundle_id("Com.Apple.Terminal")?);
+    }
+
+    let reopened = Database::open_existing(&path)?;
+    let policy = reopened.capture_policy()?;
+
+    assert!(policy.settings().paused());
+    assert_eq!(
+        policy.settings().retention_seconds(),
+        Some(30 * 24 * 60 * 60)
+    );
+    assert_eq!(
+        policy.ignored_bundle_ids(),
+        &["com.apple.terminal".to_string()]
+    );
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn forget_snapshot_cascades_and_removes_search_visibility() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let stored = db.store_capture(&fake_snapshot(1, "git status"))?;
+
+    let report = db
+        .forget_snapshot(stored.snapshot_id())?
+        .expect("stored snapshot should be forgettable");
+
+    assert_eq!(report.snapshot_id(), stored.snapshot_id());
+    assert_eq!(report.item_count(), 1);
+    assert_eq!(report.representation_count(), 1);
+    assert_eq!(report.capture_event_count(), 1);
+    assert_eq!(report.total_bytes(), "git status".len());
+    assert!(db.find_snapshot(stored.snapshot_id(), 10)?.is_none());
+    assert!(db.search_auto("git", 10, &unfiltered())?.hits().is_empty());
+
+    let snapshot_count: i64 = db
+        .conn
+        .query_row("SELECT COUNT(*) FROM snapshots", [], |row| row.get(0))?;
+    let item_count: i64 = db
+        .conn
+        .query_row("SELECT COUNT(*) FROM snapshot_items", [], |row| row.get(0))?;
+    let representation_count: i64 =
+        db.conn
+            .query_row("SELECT COUNT(*) FROM item_representations", [], |row| {
+                row.get(0)
+            })?;
+    let event_count: i64 = db
+        .conn
+        .query_row("SELECT COUNT(*) FROM capture_events", [], |row| row.get(0))?;
+
+    assert_eq!(snapshot_count, 0);
+    assert_eq!(item_count, 0);
+    assert_eq!(representation_count, 0);
+    assert_eq!(event_count, 0);
+    Ok(())
+}
+
+#[test]
+fn purge_uses_last_observed_at_and_dry_run_does_not_delete() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+
+    let old = db.store_capture(&fake_snapshot(1, "old clipboard entry"))?;
+    let fresh = db.store_capture(&fake_snapshot(2, "fresh clipboard entry"))?;
+
+    set_event_observed_at(&db, old.event_id(), "2000-01-01 00:00:00")?;
+    db.conn.execute(
+        "UPDATE snapshots SET created_at = '2000-01-01 00:00:00' WHERE id = ?1",
+        [fresh.snapshot_id()],
+    )?;
+
+    let dry_run = db.purge_snapshots_older_than(30 * 24 * 60 * 60, true)?;
+    assert!(dry_run.dry_run());
+    assert_eq!(dry_run.snapshot_count(), 1);
+    assert_eq!(dry_run.item_count(), 1);
+    assert_eq!(dry_run.representation_count(), 1);
+    assert_eq!(dry_run.capture_event_count(), 1);
+    assert!(db.find_snapshot(old.snapshot_id(), 10)?.is_some());
+    assert!(db.find_snapshot(fresh.snapshot_id(), 10)?.is_some());
+
+    let deleted = db.purge_snapshots_older_than(30 * 24 * 60 * 60, false)?;
+    assert!(!deleted.dry_run());
+    assert_eq!(deleted.snapshot_count(), 1);
+    assert!(db.find_snapshot(old.snapshot_id(), 10)?.is_none());
+    assert!(db.find_snapshot(fresh.snapshot_id(), 10)?.is_some());
+    assert!(db
+        .search_auto("old clipboard", 10, &unfiltered())?
+        .hits()
+        .is_empty());
+    assert_eq!(
+        db.search_auto("fresh clipboard", 10, &unfiltered())?
+            .hits()
+            .len(),
+        1
+    );
+
+    Ok(())
+}
+
+#[test]
 fn search_like_treats_underscore_as_literal() -> Result<()> {
     let mut db = Database::open_in_memory()?;
 
@@ -652,7 +760,7 @@ fn open_existing_migrates_legacy_database_and_rebuilds_fts() -> Result<()> {
         .query_row("PRAGMA user_version", [], |row| row.get(0))?;
     let results = db.search_auto("git", 10, &unfiltered())?;
 
-    assert_eq!(version, 6);
+    assert_eq!(version, 7);
     assert_eq!(results.mode_used(), SearchMode::Fts);
     assert_eq!(results.hits().len(), 1);
 
@@ -698,7 +806,7 @@ fn repeated_open_existing_is_idempotent_after_migration() -> Result<()> {
         .conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))?;
 
-    assert_eq!(version, 6);
+    assert_eq!(version, 7);
 
     std::fs::remove_file(&path)?;
     Ok(())

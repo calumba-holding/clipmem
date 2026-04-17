@@ -691,6 +691,7 @@ pub(super) fn render_capture_once_text(
     if !snapshot.preview_text().is_empty() {
         let _ = writeln!(out, "preview: {}", snapshot.preview_text());
     }
+
     out
 }
 

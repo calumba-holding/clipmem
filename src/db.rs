@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::model::SearchHit;
 
 const SCHEMA: &str = include_str!("db/schema.sql");
-const CURRENT_SCHEMA_VERSION: i64 = 6;
+const CURRENT_SCHEMA_VERSION: i64 = 7;
 const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
 
 pub struct Database {
@@ -66,6 +66,38 @@ pub struct RetrievalFilters {
     has_pdf: bool,
     min_bytes: Option<usize>,
     max_bytes: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub(crate) struct CaptureSettings {
+    paused: bool,
+    retention_seconds: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
+pub(crate) struct CapturePolicy {
+    settings: CaptureSettings,
+    ignored_bundle_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct SnapshotDeletionReport {
+    snapshot_id: i64,
+    item_count: usize,
+    representation_count: usize,
+    capture_event_count: usize,
+    total_bytes: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct PurgeReport {
+    older_than_seconds: u64,
+    dry_run: bool,
+    snapshot_count: usize,
+    item_count: usize,
+    representation_count: usize,
+    capture_event_count: usize,
+    total_bytes: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -342,6 +374,153 @@ impl RetrievalFilters {
     #[must_use]
     pub fn max_bytes(&self) -> Option<usize> {
         self.max_bytes
+    }
+}
+
+impl CaptureSettings {
+    #[must_use]
+    pub(crate) fn new(paused: bool, retention_seconds: Option<u64>) -> Self {
+        Self {
+            paused,
+            retention_seconds,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn paused(&self) -> bool {
+        self.paused
+    }
+
+    #[must_use]
+    pub(crate) fn retention_seconds(&self) -> Option<u64> {
+        self.retention_seconds
+    }
+}
+
+impl CapturePolicy {
+    #[must_use]
+    pub(crate) fn new(settings: CaptureSettings, ignored_bundle_ids: Vec<String>) -> Self {
+        Self {
+            settings,
+            ignored_bundle_ids,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn settings(&self) -> &CaptureSettings {
+        &self.settings
+    }
+
+    #[must_use]
+    pub(crate) fn ignored_bundle_ids(&self) -> &[String] {
+        &self.ignored_bundle_ids
+    }
+
+    #[must_use]
+    pub(crate) fn ignored_bundle_id_count(&self) -> usize {
+        self.ignored_bundle_ids.len()
+    }
+}
+
+impl SnapshotDeletionReport {
+    #[must_use]
+    pub(crate) fn new(
+        snapshot_id: i64,
+        item_count: usize,
+        representation_count: usize,
+        capture_event_count: usize,
+        total_bytes: usize,
+    ) -> Self {
+        Self {
+            snapshot_id,
+            item_count,
+            representation_count,
+            capture_event_count,
+            total_bytes,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn snapshot_id(&self) -> i64 {
+        self.snapshot_id
+    }
+
+    #[must_use]
+    pub(crate) fn item_count(&self) -> usize {
+        self.item_count
+    }
+
+    #[must_use]
+    pub(crate) fn representation_count(&self) -> usize {
+        self.representation_count
+    }
+
+    #[must_use]
+    pub(crate) fn capture_event_count(&self) -> usize {
+        self.capture_event_count
+    }
+
+    #[must_use]
+    pub(crate) fn total_bytes(&self) -> usize {
+        self.total_bytes
+    }
+}
+
+impl PurgeReport {
+    #[must_use]
+    pub(crate) fn new(
+        older_than_seconds: u64,
+        dry_run: bool,
+        snapshot_count: usize,
+        item_count: usize,
+        representation_count: usize,
+        capture_event_count: usize,
+        total_bytes: usize,
+    ) -> Self {
+        Self {
+            older_than_seconds,
+            dry_run,
+            snapshot_count,
+            item_count,
+            representation_count,
+            capture_event_count,
+            total_bytes,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn older_than_seconds(&self) -> u64 {
+        self.older_than_seconds
+    }
+
+    #[must_use]
+    pub(crate) fn dry_run(&self) -> bool {
+        self.dry_run
+    }
+
+    #[must_use]
+    pub(crate) fn snapshot_count(&self) -> usize {
+        self.snapshot_count
+    }
+
+    #[must_use]
+    pub(crate) fn item_count(&self) -> usize {
+        self.item_count
+    }
+
+    #[must_use]
+    pub(crate) fn representation_count(&self) -> usize {
+        self.representation_count
+    }
+
+    #[must_use]
+    pub(crate) fn capture_event_count(&self) -> usize {
+        self.capture_event_count
+    }
+
+    #[must_use]
+    pub(crate) fn total_bytes(&self) -> usize {
+        self.total_bytes
     }
 }
 
@@ -625,6 +804,15 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
+        6 => {
+            if legacy_prerelease_schema_detected(&tx)? {
+                bail!(
+                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
+                );
+            }
+            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+                .context("set PRAGMA user_version")?;
+        }
         CURRENT_SCHEMA_VERSION => {
             if legacy_prerelease_schema_detected(&tx)? {
                 bail!(
@@ -642,6 +830,12 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             bail!("unsupported database schema version {version}");
         }
     }
+
+    tx.execute(
+        "INSERT OR IGNORE INTO clipmem_settings (id, paused, retention_seconds) VALUES (1, 0, NULL)",
+        [],
+    )
+    .context("seed clipmem settings row")?;
 
     tx.commit().context("commit schema transaction")?;
     Ok(())

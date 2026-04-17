@@ -105,9 +105,10 @@ clipmem get 901 --format json
 ```bash
 # 3. export raw bytes
 clipmem export 901 --item 0 --uti public.png --out ./clipboard.png
+clipmem export 901 --item 0 --uti public.png --out ./clipboard.png --force
 ```
 
-`export` writes binary content to `--out` and exits 0 on success. There is no `--format` on `export`.
+`export` writes binary content to `--out` and exits 0 on success. It creates a new file by default; pass `--force` only to replace an existing regular file. There is no `--format` on `export`.
 
 ---
 
@@ -130,7 +131,8 @@ clipmem search "launchctl bootstrap" --mode literal --format json --limit 25
 ```
 
 ```bash
-clipmem search "launchctl bootstrap" --mode literal --format json --limit 25       --cursor "eyJvZmZzZXQiOjI1LCJxdWVyeSI6Imxhdw..."
+clipmem search "launchctl bootstrap" --mode literal --format json --limit 25 \
+  --cursor "eyJvZmZzZXQiOjI1LCJxdWVyeSI6Imxhdw..."
 ```
 
 Stop paginating when `truncated` is `false` or `next_cursor` is `null`.
@@ -156,7 +158,7 @@ clipmem recall "the SQL migration" --quote --full --format json
 Don't assume the archive is wrong; the watcher may have stopped.
 
 ```bash
-scripts/check-setup.sh --json
+./scripts/check-setup.sh
 # or, inline
 clipmem doctor --json
 clipmem service status --json

@@ -13,7 +13,11 @@ Pick the narrowest command that answers the question. Always pass `--format json
 3. `clipmem recent --hours <N> --format json` — deduplicated recent snapshots. Use for "recent unique things".
 4. `clipmem search "<query>" --format json` — direct lexical / FTS match. Use when you need precise substring hits.
 5. `clipmem get <snapshot_id> --format json` — nested item/representation detail for a snapshot you already have.
-6. `clipmem export <snapshot_id> --item <n> --uti <uti> --out <path>` — raw bytes for binary/image/PDF payloads.
+6. `clipmem restore <snapshot_id>` — restore the full stored representation set for a snapshot back onto the macOS clipboard.
+7. `clipmem export <snapshot_id> --item <n> --uti <uti> --out <path> [--force]` — raw bytes for binary/image/PDF payloads.
+8. `clipmem forget <snapshot_id>` — hard-delete one snapshot and its capture history.
+9. `clipmem purge --older-than <duration> [--dry-run]` — prune by `last_observed_at`.
+10. `clipmem settings show --format json` — inspect persistent pause / retention / ignore-list policy.
 
 ---
 
@@ -26,7 +30,14 @@ Pick the narrowest command that answers the question. Always pass `--format json
 | `recent` | `text` | yes | Recent unique snapshots (deduplicated) |
 | `timeline` | `text` | yes | Chronological capture events (not deduped) |
 | `get <SNAPSHOT_ID>` | `text` | **no** | Nested detail for one snapshot |
+| `restore <SNAPSHOT_ID>` | text | — | Restore a stored snapshot back onto the clipboard |
 | `export <SNAPSHOT_ID>` | — (raw bytes) | — | Write one representation to disk |
+| `forget <SNAPSHOT_ID>` | text | — | Hard-delete one snapshot and its capture history |
+| `purge` | text | — | Delete old snapshots by `last_observed_at` |
+| `settings show` | `text` | **no** | Show persistent pause / retention / ignore-list policy |
+| `settings pause` | text | — | Persistently pause or resume capture |
+| `settings retention` | text | — | Set retention to a duration or `forever` |
+| `settings ignore add/remove/list` | text (`list` also supports `json`) | **no** | Manage ignored bundle identifiers |
 | `capture-once` | — | — | Single clipboard capture (setup / ad-hoc) |
 | `watch` | — | — | Background daemon; usually a LaunchAgent |
 | `setup` | — | — | Seed one capture and start background capture |
@@ -149,17 +160,41 @@ clipmem recall --prefer-recent --hours 24 --format json --limit 5
 
 ---
 
-## `get` and `export`
+## `get`, `restore`, and `export`
 
 ```bash
 clipmem get <snapshot_id> --format json        # nested representation detail
 clipmem get <snapshot_id> --events <N>         # include last N capture events (default 10)
-clipmem export <snapshot_id> --item <index> --uti <uti> --out <path>
+clipmem restore <snapshot_id>                  # restore the whole snapshot to the clipboard
+clipmem export <snapshot_id> --item <index> --uti <uti> --out <path> [--force]
 ```
 
 `get --format json` flattens the common text fields on the root snapshot so agents don't have to walk the representation tree. `get` does **not** support `--format toon`.
 
-`export` writes raw bytes to `--out`. There is no `--format` flag. Required arguments: `--item` (0-based), `--uti` (e.g. `public.png`, `public.utf8-plain-text`, `com.adobe.pdf`), `--out`. Inspect `items[].representations[].uti` and `size_bytes` in a prior `get --format json` to choose the right combination.
+`restore` is macOS-only and writes the full stored item/UTI/raw-byte set back onto the general pasteboard. This is a whole-snapshot restore, not a text-only approximation.
+
+`export` writes raw bytes to `--out`. There is no `--format` flag. By default it creates a new file and refuses to replace an existing destination; pass `--force` only to replace an existing regular file. Symlink destinations are rejected. Required arguments: `--item` (0-based), `--uti` (e.g. `public.png`, `public.utf8-plain-text`, `com.adobe.pdf`), `--out`. Inspect `items[].representations[].uti` and `size_bytes` in a prior `get --format json` to choose the right combination.
+
+---
+
+## `forget`, `purge`, and `settings`
+
+```bash
+clipmem forget <snapshot_id>
+clipmem purge --older-than 30d [--dry-run]
+clipmem settings show [--format json]
+clipmem settings pause on|off
+clipmem settings retention <duration|forever>
+clipmem settings ignore add <bundle_id>
+clipmem settings ignore remove <bundle_id>
+clipmem settings ignore list [--format json]
+```
+
+`forget` is a hard delete. It removes the snapshot row, all child items/representations, and all capture events for that snapshot id via foreign-key cascades.
+
+`purge` computes age from `snapshot_stats.last_observed_at`, not `snapshots.created_at`. Duration grammar is a single integer plus one unit: `Nd`, `Nh`, or `Nm`.
+
+`settings` is the persistent capture-policy entrypoint. Ignore matching is exact, case-insensitive bundle-id matching only.
 
 ---
 
