@@ -649,6 +649,57 @@ fn setup_uses_direct_launchagent_provider_when_homebrew_is_not_detected() -> Res
 
 #[cfg(target_os = "macos")]
 #[test]
+fn setup_ignores_path_poisoning_when_persisting_service_binary() -> Result<()> {
+    let test_dir = temp_test_dir("service-setup-path-poisoning");
+    let home_dir = test_dir.join("home");
+    let bin_dir = test_dir.join("bin");
+    let state_dir = test_dir.join("state");
+    fs::create_dir_all(&home_dir)?;
+    fs::create_dir_all(&bin_dir)?;
+    fs::create_dir_all(&state_dir)?;
+    write_stateful_launchctl_stub(&bin_dir, &state_dir)?;
+    write_executable(&bin_dir.join("id"), "#!/bin/sh\nprintf '501\\n'\n")?;
+    write_executable(
+        &bin_dir.join("clipmem"),
+        "#!/bin/sh\nprintf 'poisoned clipmem should not run\\n' >&2\nexit 99\n",
+    )?;
+
+    let db_path = home_dir
+        .join("Library/Application Support/clipmem/clipmem.sqlite3")
+        .display()
+        .to_string();
+    let trusted_binary = env!("CARGO_BIN_EXE_clipmem").to_string();
+    let path_value = format!("{}:/usr/bin:/bin", bin_dir.display());
+    let envs = vec![
+        ("HOME".to_string(), home_dir.display().to_string()),
+        ("PATH".to_string(), path_value),
+        (
+            "CLIPMEM_TEST_SKIP_SETUP_CAPTURE_ONCE".to_string(),
+            "1".to_string(),
+        ),
+    ];
+
+    let output = run_cli_with_owned_env(&["--db", &db_path, "setup"], &envs);
+    assert!(output.status.success(), "{}", stderr_text(&output));
+
+    let plist_path = home_dir.join("Library/LaunchAgents/io.openclaw.clipmem.watch.plist");
+    assert!(plist_path.is_file());
+    let plist = fs::read_to_string(&plist_path)?;
+    assert!(plist.contains(&trusted_binary));
+    assert!(!plist.contains(&bin_dir.join("clipmem").display().to_string()));
+
+    let status = run_cli_with_owned_env(&["--db", &db_path, "service", "status", "--json"], &envs);
+    assert!(status.status.success(), "{}", stderr_text(&status));
+    let payload: Value = serde_json::from_slice(&status.stdout)?;
+    assert_eq!(payload["binary_path"], trusted_binary);
+    assert_eq!(payload["preferred_provider"], "launchagent");
+
+    let _ = fs::remove_dir_all(&test_dir);
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+#[test]
 fn setup_prefers_homebrew_provider_when_homebrew_binary_and_services_are_available() -> Result<()> {
     let test_dir = temp_test_dir("service-setup-homebrew");
     let home_dir = test_dir.join("home");

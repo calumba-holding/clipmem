@@ -357,7 +357,7 @@ fn ensure_supported() -> Result<()> {
 
 fn build_context(db_path: &Path) -> Result<ServiceContext> {
     let home = home_dir()?;
-    let binary_path = active_binary_path()?;
+    let binary_path = trusted_binary_path()?;
     let direct_plist_path = home
         .join("Library/LaunchAgents")
         .join(format!("{DIRECT_LABEL}.plist"));
@@ -372,14 +372,7 @@ fn build_context(db_path: &Path) -> Result<ServiceContext> {
     })?;
     let log_dir = app_support_dir.join("logs");
     let brew_path = find_executable("brew");
-    let homebrew_prefix = if is_homebrew_binary_path(&binary_path) {
-        binary_path
-            .parent()
-            .and_then(Path::parent)
-            .map(Path::to_path_buf)
-    } else {
-        None
-    };
+    let homebrew_prefix = homebrew_prefix_for_binary(&binary_path);
 
     Ok(ServiceContext {
         binary_path,
@@ -397,7 +390,7 @@ fn build_context(db_path: &Path) -> Result<ServiceContext> {
 fn select_provider(context: &ServiceContext) -> Result<ProviderSelection> {
     let mut notes = Vec::new();
     if let Some(brew_path) = &context.brew_path {
-        if is_homebrew_binary_path(&context.binary_path) {
+        if context.homebrew_prefix.is_some() {
             if brew_services_available(brew_path) {
                 return Ok(ProviderSelection {
                     provider: ServiceProvider::Homebrew,
@@ -803,12 +796,9 @@ fn brew_services_available(brew_path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn active_binary_path() -> Result<PathBuf> {
+fn trusted_binary_path() -> Result<PathBuf> {
     if let Some(path) = env::var_os("CLIPMEM_TEST_ACTIVE_BINARY") {
         return Ok(PathBuf::from(path));
-    }
-    if let Some(path) = find_executable("clipmem") {
-        return Ok(path);
     }
 
     env::current_exe().context("resolve current executable path")
@@ -822,12 +812,79 @@ fn find_executable(name: &str) -> Option<PathBuf> {
     })
 }
 
-fn is_homebrew_binary_path(path: &Path) -> bool {
-    path == Path::new("/opt/homebrew/bin/clipmem") || path == Path::new("/usr/local/bin/clipmem")
+fn homebrew_prefix_for_binary(path: &Path) -> Option<PathBuf> {
+    for prefix in ["/opt/homebrew", "/usr/local"] {
+        let prefix = Path::new(prefix);
+        if path == prefix.join("bin/clipmem") {
+            return Some(prefix.to_path_buf());
+        }
+
+        let Ok(relative_path) = path.strip_prefix(prefix) else {
+            continue;
+        };
+        let parts: Vec<_> = relative_path.iter().collect();
+        if parts.len() == 5
+            && parts[0] == "Cellar"
+            && parts[1] == "clipmem"
+            && !parts[2].is_empty()
+            && parts[3] == "bin"
+            && parts[4] == "clipmem"
+        {
+            return Some(prefix.to_path_buf());
+        }
+    }
+
+    None
 }
 
 fn home_dir() -> Result<PathBuf> {
     env::var_os("HOME")
         .map(PathBuf::from)
         .ok_or_else(|| anyhow!("HOME is not set"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::homebrew_prefix_for_binary;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn homebrew_prefix_matches_opt_homebrew_wrapper_path() {
+        assert_eq!(
+            homebrew_prefix_for_binary(Path::new("/opt/homebrew/bin/clipmem")),
+            Some(PathBuf::from("/opt/homebrew"))
+        );
+    }
+
+    #[test]
+    fn homebrew_prefix_matches_usr_local_wrapper_path() {
+        assert_eq!(
+            homebrew_prefix_for_binary(Path::new("/usr/local/bin/clipmem")),
+            Some(PathBuf::from("/usr/local"))
+        );
+    }
+
+    #[test]
+    fn homebrew_prefix_matches_opt_homebrew_cellar_path() {
+        assert_eq!(
+            homebrew_prefix_for_binary(Path::new("/opt/homebrew/Cellar/clipmem/1.2.3/bin/clipmem")),
+            Some(PathBuf::from("/opt/homebrew"))
+        );
+    }
+
+    #[test]
+    fn homebrew_prefix_matches_usr_local_cellar_path() {
+        assert_eq!(
+            homebrew_prefix_for_binary(Path::new("/usr/local/Cellar/clipmem/1.2.3/bin/clipmem")),
+            Some(PathBuf::from("/usr/local"))
+        );
+    }
+
+    #[test]
+    fn homebrew_prefix_rejects_non_homebrew_paths() {
+        assert_eq!(
+            homebrew_prefix_for_binary(Path::new("/Users/tristan/.cargo/bin/clipmem")),
+            None
+        );
+    }
 }
