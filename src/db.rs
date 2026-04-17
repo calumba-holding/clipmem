@@ -65,6 +65,8 @@ impl SearchMode {
 impl Database {
     /// Open the archive database at `path`, creating parent directories and schema state as needed.
     ///
+    /// This method also hardens parent-directory and database-file permissions after opening.
+    ///
     /// # Errors
     ///
     /// Returns an error if the parent directory cannot be created, the database cannot be opened,
@@ -85,9 +87,7 @@ impl Database {
                 | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
         bootstrap_connection(&conn)?;
-        if path.exists() {
-            harden_path_permissions(path, 0o600)?;
-        }
+        harden_path_permissions(path, 0o600)?;
 
         Ok(Self {
             conn,
@@ -96,6 +96,8 @@ impl Database {
     }
 
     /// Open an existing archive database without creating parent directories or schema state.
+    ///
+    /// This method also hardens parent-directory and database-file permissions after opening.
     ///
     /// # Errors
     ///
@@ -112,9 +114,7 @@ impl Database {
         if let Some(parent) = path.parent() {
             harden_path_permissions(parent, 0o700)?;
         }
-        if path.exists() {
-            harden_path_permissions(path, 0o600)?;
-        }
+        harden_path_permissions(path, 0o600)?;
 
         Ok(Self {
             conn,

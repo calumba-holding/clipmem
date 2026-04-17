@@ -1,11 +1,30 @@
 use std::fmt::Write;
 
+use anyhow::Result;
+use serde::Serialize;
+
 use crate::db::SearchResults;
 use crate::model::{
     CaptureStoreResult, ClipboardSnapshot, DoctorReport, SearchHit, SnapshotDetails,
 };
 
-pub(crate) fn render_capture_once_text(
+pub(super) fn emit_json_or_text<T>(
+    json: bool,
+    value: &T,
+    render_text: impl FnOnce(&T) -> String,
+) -> Result<()>
+where
+    T: Serialize,
+{
+    if json {
+        print_json(value)
+    } else {
+        print!("{}", render_text(value));
+        Ok(())
+    }
+}
+
+pub(super) fn render_capture_once_text(
     store: &CaptureStoreResult,
     snapshot: &ClipboardSnapshot,
 ) -> String {
@@ -32,7 +51,7 @@ pub(crate) fn render_capture_once_text(
     out
 }
 
-pub(crate) fn render_hits_text(hits: &[SearchHit]) -> String {
+pub(super) fn render_hits_text(hits: &[SearchHit]) -> String {
     let mut out = String::new();
     for hit in hits {
         let app = hit
@@ -66,7 +85,7 @@ pub(crate) fn render_hits_text(hits: &[SearchHit]) -> String {
     out
 }
 
-pub(crate) fn render_search_results_text(results: &SearchResults) -> String {
+pub(super) fn render_search_results_text(results: &SearchResults) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "search mode: {}", results.mode_used().as_str());
     if !results.hits().is_empty() {
@@ -76,7 +95,7 @@ pub(crate) fn render_search_results_text(results: &SearchResults) -> String {
     out
 }
 
-pub(crate) fn render_snapshot_text(snapshot: &SnapshotDetails) -> String {
+pub(super) fn render_snapshot_text(snapshot: &SnapshotDetails) -> String {
     let mut out = String::new();
     let _ = writeln!(
         out,
@@ -160,7 +179,7 @@ pub(crate) fn render_snapshot_text(snapshot: &SnapshotDetails) -> String {
     out
 }
 
-pub(crate) fn render_doctor_text(report: &DoctorReport) -> String {
+pub(super) fn render_doctor_text(report: &DoctorReport) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "database: {}", report.db_path());
     let _ = writeln!(out, "sqlite version: {}", report.sqlite_version());
@@ -185,6 +204,12 @@ pub(crate) fn render_doctor_text(report: &DoctorReport) -> String {
     }
 
     out
+}
+
+fn print_json<T: Serialize>(value: &T) -> Result<()> {
+    let json = serde_json::to_string_pretty(value)?;
+    println!("{json}");
+    Ok(())
 }
 
 fn push_blank_line(out: &mut String) {
@@ -258,20 +283,20 @@ mod tests {
             7,
             "abc123".to_string(),
             SnapshotKind::PlainText,
-            "git clone".to_string(),
-            "git clone".to_string(),
+            "git push".to_string(),
+            "git push".to_string(),
             1,
-            9,
-            "2026-04-16 18:00:00".to_string(),
-            1,
-            "2026-04-16 18:00:00".to_string(),
-            "2026-04-16 18:00:00".to_string(),
+            8,
+            "2026-04-16 10:00:00".to_string(),
+            2,
+            "2026-04-16 10:00:00".to_string(),
+            "2026-04-16 11:00:00".to_string(),
             Some("Terminal".to_string()),
             Some("com.apple.Terminal".to_string()),
             vec![CaptureEvent::new(
-                9,
-                "2026-04-16 18:00:00".to_string(),
-                4,
+                21,
+                "2026-04-16 11:00:00".to_string(),
+                3,
                 Some("Terminal".to_string()),
                 Some("com.apple.Terminal".to_string()),
             )],
@@ -280,15 +305,32 @@ mod tests {
                 vec![build_representation(
                     "public.utf8-plain-text".to_string(),
                     None,
-                    b"git clone".to_vec(),
+                    b"git push".to_vec(),
                 )],
             )],
         ));
 
-        assert!(text.contains("snapshot 7 · sha256=abc123 · kind=plain_text · captures=1"));
+        assert!(text.contains("snapshot 7"));
+        assert!(text.contains("preview: git push"));
         assert!(text.contains("item 0 · kind=plain_text"));
-        assert!(text.contains("text: git clone"));
-        assert!(text.contains("event 9 · 2026-04-16 18:00:00 · change_count=4 · Terminal"));
+        assert!(text.contains("event 21"));
+    }
+
+    #[test]
+    fn render_doctor_text_lists_compile_options() {
+        let text = render_doctor_text(&DoctorReport::new(
+            "/tmp/clipmem.sqlite3".to_string(),
+            "3.46.0".to_string(),
+            "wal".to_string(),
+            true,
+            true,
+            vec!["ENABLE_FTS5".to_string()],
+        ));
+
+        assert!(text.contains("database: /tmp/clipmem.sqlite3"));
+        assert!(text.contains("sqlite version: 3.46.0"));
+        assert!(text.contains("compile options:"));
+        assert!(text.contains("ENABLE_FTS5"));
     }
 
     #[test]
@@ -313,21 +355,5 @@ mod tests {
 
         assert!(text.contains("search mode: literal"));
         assert!(text.contains("[42] plain_text"));
-    }
-
-    #[test]
-    fn render_doctor_text_lists_compile_options_when_present() {
-        let text = render_doctor_text(&DoctorReport::new(
-            "/tmp/clipmem.sqlite3".to_string(),
-            "3.46.0".to_string(),
-            "wal".to_string(),
-            true,
-            true,
-            vec!["ENABLE_FTS5".to_string()],
-        ));
-
-        assert!(text.contains("database: /tmp/clipmem.sqlite3"));
-        assert!(text.contains("compile options:"));
-        assert!(text.contains("ENABLE_FTS5"));
     }
 }

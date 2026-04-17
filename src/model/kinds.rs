@@ -202,3 +202,32 @@ impl fmt::Display for ParseDomainValueError {
 }
 
 impl Error for ParseDomainValueError {}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use super::{ClipboardKind, SnapshotKind};
+
+    #[test]
+    fn clipboard_kind_round_trips_through_strings() {
+        assert_eq!(
+            ClipboardKind::from_str(ClipboardKind::Html.as_str()).expect("kind should parse"),
+            ClipboardKind::Html
+        );
+        assert!(ClipboardKind::Html.is_textual());
+        assert!(ClipboardKind::Image.priority() > ClipboardKind::Url.priority());
+    }
+
+    #[test]
+    fn snapshot_kind_parses_and_maps_from_clipboard_kind() {
+        assert_eq!(
+            SnapshotKind::from(ClipboardKind::PlainText),
+            SnapshotKind::PlainText
+        );
+        assert_eq!(
+            SnapshotKind::from_str("mixed").expect("snapshot kind should parse"),
+            SnapshotKind::Mixed
+        );
+    }
+}

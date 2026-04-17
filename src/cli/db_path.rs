@@ -2,7 +2,7 @@ use std::env;
 use std::path::PathBuf;
 
 #[must_use]
-pub fn default_db_path() -> PathBuf {
+pub(super) fn default_db_path() -> PathBuf {
     if cfg!(target_os = "macos") {
         expand_tilde("~/Library/Application Support/clipmem/clipmem.sqlite3")
     } else {

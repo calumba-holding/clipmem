@@ -4,8 +4,8 @@ use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use clipmem::db::{Database, SearchMode};
-use clipmem::model::{
+use clipmem::archive::{Database, SearchMode};
+use clipmem::capture::{
     build_item, build_representation, build_snapshot, CaptureContext, ClipboardKind,
     ClipboardSnapshot, SnapshotKind,
 };

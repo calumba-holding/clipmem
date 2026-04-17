@@ -5,8 +5,8 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
-use clipmem::db::Database;
-use clipmem::model::{
+use clipmem::archive::Database;
+use clipmem::capture::{
     build_item, build_representation, build_snapshot, CaptureContext, ClipboardSnapshot,
 };
 use serde_json::Value;

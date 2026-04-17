@@ -61,17 +61,15 @@ impl Database {
         let limit = sanitise_limit(limit);
 
         if requires_literal_like_search(query) {
-            return self
-                .search_literal(query, limit)
-                .map(|hits| SearchResults::new(SearchMode::Literal, hits));
+            return self.search_literal(query, limit);
         }
 
-        let hits = match self.search_fts(query, limit) {
-            Ok(hits) => (SearchMode::Fts, hits),
+        let results = match self.search_fts(query, limit) {
+            Ok(results) => results,
             Err(error) => {
                 if let Some(sqlite_error) = error.downcast_ref::<SqlError>() {
                     if is_invalid_fts_query(sqlite_error) {
-                        (SearchMode::Literal, self.search_literal(query, limit)?)
+                        self.search_literal(query, limit)?
                     } else {
                         return Err(error);
                     }
@@ -81,13 +79,10 @@ impl Database {
             }
         };
 
-        let (mode_used, hits) = hits;
-
-        if hits.is_empty() {
+        if results.hits().is_empty() {
             self.search_literal(query, limit)
-                .map(|hits| SearchResults::new(SearchMode::Literal, hits))
         } else {
-            Ok(SearchResults::new(mode_used, hits))
+            Ok(results)
         }
     }
 
@@ -201,7 +196,7 @@ impl Database {
     /// # Errors
     ///
     /// Returns an error if the FTS query cannot be prepared or executed.
-    pub fn search_fts(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>> {
+    pub fn search_fts(&self, query: &str, limit: usize) -> Result<SearchResults> {
         let limit = usize_to_i64(sanitise_limit(limit))?;
         let sql = search_hit_query(
             "COALESCE(snippet(snapshots_fts, 0, '⟦', '⟧', ' … ', 24), s.preview_text)",
@@ -223,7 +218,9 @@ impl Database {
             .query_map(params![query, limit], |row| map_search_hit_row(row, true))
             .context("execute FTS search query")?;
 
-        collect_rows(rows).context("collect FTS search rows")
+        collect_rows(rows)
+            .map(|hits| SearchResults::new(SearchMode::Fts, hits))
+            .context("collect FTS search rows")
     }
 
     /// Search stored snapshots with literal `LIKE` matching semantics.
@@ -231,7 +228,7 @@ impl Database {
     /// # Errors
     ///
     /// Returns an error if the literal query cannot be prepared or executed.
-    pub fn search_literal(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>> {
+    pub fn search_literal(&self, query: &str, limit: usize) -> Result<SearchResults> {
         let limit = usize_to_i64(sanitise_limit(limit))?;
         let like = format!("%{}%", escape_like_pattern(query));
         let sql = search_hit_query(
@@ -253,7 +250,9 @@ impl Database {
             .query_map(params![like, limit], |row| map_search_hit_row(row, false))
             .context("execute literal search query")?;
 
-        collect_rows(rows).context("collect literal search rows")
+        collect_rows(rows)
+            .map(|hits| SearchResults::new(SearchMode::Literal, hits))
+            .context("collect literal search rows")
     }
 
     fn load_snapshot_summary(&self, snapshot_id: i64) -> Result<Option<SnapshotDetails>> {

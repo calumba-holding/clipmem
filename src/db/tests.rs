@@ -83,6 +83,7 @@ fn search_like_treats_percent_as_literal() -> Result<()> {
 
     let hits = db.search_literal("50%", 10)?;
     let previews: Vec<_> = hits
+        .hits()
         .iter()
         .map(crate::model::SearchHit::preview_text)
         .collect();
@@ -101,6 +102,7 @@ fn search_like_treats_underscore_as_literal() -> Result<()> {
 
     let hits = db.search_literal("config_test", 10)?;
     let previews: Vec<_> = hits
+        .hits()
         .iter()
         .map(crate::model::SearchHit::preview_text)
         .collect();
@@ -118,6 +120,7 @@ fn search_like_treats_escape_character_as_literal() -> Result<()> {
 
     let hits = db.search_literal(r"logs\2024", 10)?;
     let previews: Vec<_> = hits
+        .hits()
         .iter()
         .map(crate::model::SearchHit::preview_text)
         .collect();
