@@ -130,8 +130,7 @@ clipmem search "launchctl bootstrap" --mode literal --format json --limit 25
 ```
 
 ```bash
-clipmem search "launchctl bootstrap" --mode literal --format json --limit 25 \
-  --cursor "eyJvZmZzZXQiOjI1LCJxdWVyeSI6Imxhdw..."
+clipmem search "launchctl bootstrap" --mode literal --format json --limit 25       --cursor "eyJvZmZzZXQiOjI1LCJxdWVyeSI6Imxhdw..."
 ```
 
 Stop paginating when `truncated` is `false` or `next_cursor` is `null`.
@@ -157,7 +156,7 @@ clipmem recall "the SQL migration" --quote --full --format json
 Don't assume the archive is wrong; the watcher may have stopped.
 
 ```bash
-./scripts/check-setup.sh
+scripts/check-setup.sh --json
 # or, inline
 clipmem doctor --json
 clipmem service status --json

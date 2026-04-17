@@ -1,0 +1,16 @@
+[
+  {"query": "what was that command I copied earlier today from Terminal?", "should_trigger": true},
+  {"query": "paste back the SQL migration I had in my clipboard yesterday", "should_trigger": true},
+  {"query": "show me the URL I copied from Safari last night", "should_trigger": true},
+  {"query": "find the path I copied from Finder before I restarted", "should_trigger": true},
+  {"query": "what did I copy from Xcode today, in order?", "should_trigger": true},
+  {"query": "recover the PDF I copied last week", "should_trigger": true},
+  {"query": "show my recent unique clipboard items", "should_trigger": true},
+  {"query": "search this repo for launchctl bootstrap", "should_trigger": false},
+  {"query": "find the PDF in Downloads", "should_trigger": false},
+  {"query": "what's the latest Safari release?", "should_trigger": false},
+  {"query": "look up that Stack Overflow page on the web", "should_trigger": false},
+  {"query": "search my browser history for the tab I had open", "should_trigger": false},
+  {"query": "show me files I edited yesterday", "should_trigger": false},
+  {"query": "write a shell command to search clipboard history", "should_trigger": false}
+]

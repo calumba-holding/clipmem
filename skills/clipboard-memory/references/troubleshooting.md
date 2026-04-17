@@ -2,7 +2,7 @@
 
 Diagnose before reinterpreting. Most "nothing found" outcomes are a stale watcher or a mismatched filter, not a true miss.
 
-Start by running [`scripts/check-setup.sh`](../scripts/check-setup.sh) or the prose in [setup-check.md](setup-check.md).
+Start by running [`scripts/check-setup.sh`](../scripts/check-setup.sh) — preferably `scripts/check-setup.sh --json` when you want structured diagnostics — or the prose in [setup-check.md](setup-check.md).
 
 ---
 
@@ -13,12 +13,14 @@ Do these in order, stopping when the result improves:
 1. **Widen the time window.** `--hours 72`, or drop `--hours` entirely.
 2. **Remove source filters.** The user's memory of which app doesn't always match what `clipmem` recorded as the frontmost process.
 3. **Switch to `timeline`.** If the user said "today" or "yesterday", chronological order + filters often finds things `recall`'s ranker misses.
-4. **Switch to `search`.** For exact phrases or punctuation-heavy strings, try `--mode literal`.
-5. **Loosen content shape.** Drop `--kind`, `--has-url`, `--has-text` flags — they may be excluding the right snapshot.
+4. **Switch to `recent`.** If the user wants unique items rather than every event, deduplication can reduce noise.
+5. **Switch to `search`.** For exact phrases or punctuation-heavy strings, try `--mode literal`.
+6. **Loosen content shape.** Drop `--kind`, `--has-url`, `--has-text` flags — they may be excluding the right snapshot.
 
 ```bash
 clipmem recall "<query>" --hours 72 --format json
 clipmem timeline --hours 72 --format json --limit 25
+clipmem recent --hours 72 --format json --limit 25
 clipmem search "<query>" --mode literal --format json
 ```
 

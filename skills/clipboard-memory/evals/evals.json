@@ -1,0 +1,55 @@
+{
+  "skill_name": "clipboard-memory",
+  "evals": [
+    {
+      "id": "recover-safari-url-yesterday",
+      "prompt": "What was the URL I copied from Safari yesterday? Give me the exact link and when I copied it.",
+      "expected_output": "The recovered URL verbatim plus provenance such as time and app, or a short list of plausible candidates if confidence is low.",
+      "assertions": [
+        "The response returns the exact recovered URL rather than a paraphrase",
+        "The response includes provenance such as observed time or app name",
+        "If confidence is low, the response offers multiple plausible candidates instead of pretending certainty"
+      ]
+    },
+    {
+      "id": "timeline-xcode-today",
+      "prompt": "Show me everything I copied from Xcode today, in order.",
+      "expected_output": "A chronological list of clipboard events from Xcode within the requested time window.",
+      "assertions": [
+        "The response is chronological rather than ranked by relevance",
+        "The response is scoped to the requested source app and time window",
+        "The response preserves event-level ordering rather than collapsing duplicates"
+      ]
+    },
+    {
+      "id": "exact-sql-not-summary",
+      "prompt": "Give me the exact SQL I copied earlier, not a summary.",
+      "expected_output": "The copied SQL verbatim, or a short list of candidate SQL snippets if the top match is low-confidence.",
+      "assertions": [
+        "The response returns verbatim recovered text rather than paraphrasing it",
+        "The response avoids summarising code or SQL unless the user asked for a summary",
+        "If confidence is low, the response says so clearly"
+      ]
+    },
+    {
+      "id": "recover-image",
+      "prompt": "Recover the image I copied from my screenshot tool this morning.",
+      "expected_output": "A truthful explanation that the item is binary if no text projection exists, plus a raw export path or export action.",
+      "assertions": [
+        "The response does not hallucinate text for a binary-only clipboard item",
+        "The response explains that raw export is required when no text projection exists",
+        "The response includes enough metadata to identify the recovered snapshot"
+      ]
+    },
+    {
+      "id": "diagnose-empty-results",
+      "prompt": "It says nothing was copied today, but that seems wrong.",
+      "expected_output": "A setup diagnosis path that checks watcher freshness before concluding there are no results.",
+      "assertions": [
+        "The response checks setup health before declaring a miss",
+        "The response suggests or runs the watcher/service diagnosis path",
+        "The response distinguishes a stale watcher from a genuine no-match result"
+      ]
+    }
+  ]
+}
