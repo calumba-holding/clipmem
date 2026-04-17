@@ -13,7 +13,7 @@ Pick the narrowest command that answers the question. Always pass `--format json
 3. `clipmem recent --hours <N> --format json` — deduplicated recent snapshots. Use for "recent unique things".
 4. `clipmem search "<query>" --format json` — direct lexical / FTS match. Use when you need precise substring hits.
 5. `clipmem get <snapshot_id> --format json` — nested item/representation detail for a snapshot you already have.
-6. `clipmem export <snapshot_id> --item <n> --uti <uti> --out <path>` — raw bytes for binary/image/PDF payloads.
+6. `clipmem export <snapshot_id> --item <n> --uti <uti> --out <path> [--force]` — raw bytes for binary/image/PDF payloads.
 
 ---
 
@@ -154,12 +154,12 @@ clipmem recall --prefer-recent --hours 24 --format json --limit 5
 ```bash
 clipmem get <snapshot_id> --format json        # nested representation detail
 clipmem get <snapshot_id> --events <N>         # include last N capture events (default 10)
-clipmem export <snapshot_id> --item <index> --uti <uti> --out <path>
+clipmem export <snapshot_id> --item <index> --uti <uti> --out <path> [--force]
 ```
 
 `get --format json` flattens the common text fields on the root snapshot so agents don't have to walk the representation tree. `get` does **not** support `--format toon`.
 
-`export` writes raw bytes to `--out`. There is no `--format` flag. Required arguments: `--item` (0-based), `--uti` (e.g. `public.png`, `public.utf8-plain-text`, `com.adobe.pdf`), `--out`. Inspect `items[].representations[].uti` and `size_bytes` in a prior `get --format json` to choose the right combination.
+`export` writes raw bytes to `--out`. There is no `--format` flag. By default it creates a new file and refuses to replace an existing destination; pass `--force` only to replace an existing regular file. Symlink destinations are rejected. Required arguments: `--item` (0-based), `--uti` (e.g. `public.png`, `public.utf8-plain-text`, `com.adobe.pdf`), `--out`. Inspect `items[].representations[].uti` and `size_bytes` in a prior `get --format json` to choose the right combination.
 
 ---
 

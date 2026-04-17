@@ -105,9 +105,10 @@ clipmem get 901 --format json
 ```bash
 # 3. export raw bytes
 clipmem export 901 --item 0 --uti public.png --out ./clipboard.png
+clipmem export 901 --item 0 --uti public.png --out ./clipboard.png --force
 ```
 
-`export` writes binary content to `--out` and exits 0 on success. There is no `--format` on `export`.
+`export` writes binary content to `--out` and exits 0 on success. It creates a new file by default; pass `--force` only to replace an existing regular file. There is no `--format` on `export`.
 
 ---
 

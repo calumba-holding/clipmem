@@ -104,9 +104,12 @@ const EXPORT_AFTER_HELP: &str = "\
 Examples:
   clipmem export 42 --item 0 --uti public.png --out ./clipboard.png
   clipmem export 42 --item 0 --uti public.utf8-plain-text --out ./clipboard.txt --app terminal
+  clipmem export 42 --item 0 --uti public.png --out ./clipboard.png --force
 
 Notes:
-  - `export` writes raw representation bytes to `--out`.
+  - `export` creates a new file at `--out` by default and refuses to replace an existing path.
+  - Pass `--force` to replace an existing regular file.
+  - Symlink destinations are never allowed.
   - Success output is written to stdout; failures are written to stderr only.";
 
 const DOCTOR_AFTER_HELP: &str = "\
@@ -689,6 +692,10 @@ struct ExportArgs {
     #[arg(long)]
     out: PathBuf,
 
+    /// Replace an existing regular file at the destination path.
+    #[arg(long, default_value_t = false)]
+    force: bool,
+
     #[command(flatten)]
     filters: RetrievalFilterArgs,
 }
@@ -977,6 +984,9 @@ fn is_invalid_argument_error(error: &anyhow::Error, message: &str) -> bool {
         || message.contains("cursor is for command")
         || message.contains("cursor mode")
         || message.contains("invalid cursor")
+        || message.contains("already exists (pass --force to replace it)")
+        || message.contains("symbolic link")
+        || message.contains("not a regular file")
 }
 
 fn is_not_found_error(error: &anyhow::Error, message: &str) -> bool {
@@ -1348,6 +1358,7 @@ mod tests {
                 assert_eq!(args.item, 1);
                 assert_eq!(args.uti, "public.url");
                 assert_eq!(args.out, PathBuf::from("/tmp/clipmem.url"));
+                assert!(!args.force);
                 assert_eq!(args.filters.since.as_deref(), Some("2026-04-16T09:00:00Z"));
                 assert_eq!(args.filters.hours, Some(24));
                 assert_eq!(args.filters.app.as_deref(), Some("safari"));
@@ -1433,6 +1444,7 @@ mod tests {
             "public.png",
             "--out",
             "/tmp/clipmem.bin",
+            "--force",
         ]);
 
         match cli.command {
@@ -1441,6 +1453,7 @@ mod tests {
                 assert_eq!(args.item, 1);
                 assert_eq!(args.uti, "public.png");
                 assert_eq!(args.out, PathBuf::from("/tmp/clipmem.bin"));
+                assert!(args.force);
             }
             other => panic!("expected export command, got {other:?}"),
         }

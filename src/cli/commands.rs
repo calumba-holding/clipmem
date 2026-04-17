@@ -1,3 +1,4 @@
+use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
@@ -611,10 +612,11 @@ fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -> Result<()> {
         })?;
     }
 
-    anyhow::Context::with_context(
-        std::fs::write(&args.out, representation.raw_bytes()),
-        || format!("failed to write {}", args.out.display()),
-    )?;
+    let mut output = create_export_destination(&args.out, args.force)?;
+    use std::io::Write as _;
+    anyhow::Context::with_context(output.write_all(representation.raw_bytes()), || {
+        format!("failed to write export file {}", args.out.display())
+    })?;
 
     println!(
         "exported snapshot={} item={} uti={} bytes={} sha256={} out={}",
@@ -627,6 +629,45 @@ fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -> Result<()> {
     );
 
     Ok(())
+}
+
+fn create_export_destination(path: &Path, force: bool) -> Result<File> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            let file_type = metadata.file_type();
+            if file_type.is_symlink() {
+                return Err(anyhow!(
+                    "export destination {} is a symbolic link; choose a regular file path instead",
+                    path.display()
+                ));
+            }
+            if !metadata.is_file() {
+                return Err(anyhow!(
+                    "export destination {} is not a regular file",
+                    path.display()
+                ));
+            }
+            if !force {
+                return Err(anyhow!(
+                    "export destination {} already exists (pass --force to replace it)",
+                    path.display()
+                ));
+            }
+
+            std::fs::remove_file(path)
+                .with_context(|| format!("failed to replace {}", path.display()))?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(error).with_context(|| format!("failed to inspect {}", path.display()));
+        }
+    }
+
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .with_context(|| format!("failed to create export file {}", path.display()))
 }
 
 fn openclaw_install_skill(args: &OpenClawInstallSkillArgs) -> Result<()> {

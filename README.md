@@ -125,7 +125,7 @@ Start with the command that returns the least structure needed for the job:
 - `clipmem timeline` — chronological capture events, including repeated copies of the same content.
 - `clipmem search` — direct lexical matching over stored text.
 - `clipmem get <snapshot-id>` — nested item/representation detail for a single snapshot.
-- `clipmem export <snapshot-id> --item <n> --uti <uti> --out <path>` — raw bytes for binary payloads.
+- `clipmem export <snapshot-id> --item <n> --uti <uti> --out <path> [--force]` — raw bytes for binary payloads.
 
 ### Common recipes
 
@@ -151,6 +151,8 @@ clipmem search --mode fts "\"launchctl\" AND bootstrap"
 # Detail + raw bytes
 clipmem get 42 --format json
 clipmem export 42 --item 0 --uti public.png --out ./clipboard.png
+# Replace an existing regular file explicitly
+clipmem export 42 --item 0 --uti public.png --out ./clipboard.png --force
 ```
 
 ### Shared retrieval filters
@@ -222,7 +224,7 @@ Supported formats, by command:
 - `search`, `recent`, `timeline`, `get`: `text` (default), `json`, `jsonl`, `md`, `toon` (*not* `toon` for `get`, which returns nested detail).
 - `recall`: `md` (default), `json`, `toon`.
 - `capture-once` and `doctor`: `--json` only (alias for structured output).
-- `export`: writes raw bytes to `--out`; no `--format`.
+- `export`: writes raw bytes to `--out`; creates a new file by default, accepts `--force` only for replacing an existing regular file, and has no `--format`.
 
 `--json` on `search`, `recent`, `timeline`, `get`, `capture-once`, and `doctor` is a compatibility alias for `--format json`.
 

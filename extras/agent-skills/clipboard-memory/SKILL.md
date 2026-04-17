@@ -46,7 +46,7 @@ Always pick the narrowest command that answers the question, and always pass `--
 2. **`clipmem timeline`** — chronological capture events (one row per copy), including repeated copies of the same content. Use for "today", "yesterday", "in order", or "every time".
 3. **`clipmem search`** — direct lexical / FTS matching. Use when you need precise substring hits or the user gave you an exact phrase.
 4. **`clipmem get <snapshot_id>`** — nested item/representation detail for a single snapshot already in hand.
-5. **`clipmem export <snapshot_id> --item <n> --uti <uti> --out <path>`** — raw bytes. Use when the stored content is binary/image/PDF and `best_text` is empty or partial.
+5. **`clipmem export <snapshot_id> --item <n> --uti <uti> --out <path> [--force]`** — raw bytes. Use when the stored content is binary/image/PDF and `best_text` is empty or partial. Prefer a fresh output path; use `--force` only to replace an existing regular file.
 
 The full flag reference, JSON envelope, and kind values live in [references/commands.md](references/commands.md), [references/json-schema.md](references/json-schema.md), and [references/examples.md](references/examples.md).
 
@@ -95,6 +95,7 @@ clipmem timeline --hours 24 --limit 25 --cursor "<next_cursor>" --format json
 # recover an image
 clipmem get 42 --format json
 clipmem export 42 --item 0 --uti public.png --out ./clipboard.png
+clipmem export 42 --item 0 --uti public.png --out ./clipboard.png --force
 ```
 
 ## Reading the response

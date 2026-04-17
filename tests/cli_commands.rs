@@ -23,6 +23,17 @@ fn temp_db_path(test_name: &str) -> PathBuf {
         .join(format!("{test_name}-{}-{timestamp}.sqlite3", process::id()))
 }
 
+fn temp_artifact_path(test_name: &str, suffix: &str) -> PathBuf {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be after unix epoch")
+        .as_nanos();
+
+    std::env::temp_dir()
+        .join("clipmem-cli-tests")
+        .join(format!("{test_name}-{}-{timestamp}{suffix}", process::id()))
+}
+
 fn cleanup_db(path: &Path) {
     for suffix in ["", "-shm", "-wal"] {
         let candidate = if suffix.is_empty() {
@@ -31,6 +42,20 @@ fn cleanup_db(path: &Path) {
             PathBuf::from(format!("{}{suffix}", path.display()))
         };
         let _ = fs::remove_file(candidate);
+    }
+
+    if let Some(parent) = path.parent() {
+        let _ = fs::remove_dir(parent);
+    }
+}
+
+fn cleanup_temp_artifact(path: &Path) {
+    if let Ok(metadata) = fs::symlink_metadata(path) {
+        if metadata.is_dir() && !metadata.file_type().is_symlink() {
+            let _ = fs::remove_dir_all(path);
+        } else {
+            let _ = fs::remove_file(path);
+        }
     }
 
     if let Some(parent) = path.parent() {
@@ -2420,8 +2445,7 @@ fn recent_command_rejects_zero_limit() {
 #[test]
 fn export_command_writes_raw_representation_bytes() -> Result<()> {
     let path = temp_db_path("export-bytes");
-    let output_path =
-        std::env::temp_dir().join(format!("clipmem-export-{}-{}.bin", process::id(), 1));
+    let output_path = temp_artifact_path("export-bytes", ".bin");
     let snapshot = build_snapshot(
         CaptureContext::new(1)
             .with_frontmost_app_name("Preview")
@@ -2457,7 +2481,173 @@ fn export_command_writes_raw_representation_bytes() -> Result<()> {
     assert!(stdout.contains("snapshot="));
     assert!(stdout.contains("uti=public.png"));
 
-    let _ = fs::remove_file(&output_path);
+    cleanup_temp_artifact(&output_path);
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn export_command_rejects_existing_file_without_force() -> Result<()> {
+    let path = temp_db_path("export-existing");
+    let output_path = temp_artifact_path("export-existing", ".txt");
+    let snapshot = text_snapshot(1, "updated");
+    let ids = seed_database(&path, &[snapshot])?;
+    fs::create_dir_all(
+        output_path
+            .parent()
+            .expect("temp artifact path should have a parent"),
+    )?;
+    fs::write(&output_path, b"original")?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "export",
+        &ids[0].to_string(),
+        "--item",
+        "0",
+        "--uti",
+        "public.utf8-plain-text",
+        "--out",
+        output_path.to_str().expect("output path should be UTF-8"),
+    ]);
+    let stderr = stderr_text(&output);
+    let bytes = fs::read(&output_path)?;
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr.contains("already exists"));
+    assert!(stderr.contains("--force"));
+    assert_eq!(bytes, b"original");
+
+    cleanup_temp_artifact(&output_path);
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn export_command_overwrites_existing_file_with_force() -> Result<()> {
+    let path = temp_db_path("export-force");
+    let output_path = temp_artifact_path("export-force", ".txt");
+    let snapshot = text_snapshot(1, "updated");
+    let ids = seed_database(&path, &[snapshot])?;
+    fs::create_dir_all(
+        output_path
+            .parent()
+            .expect("temp artifact path should have a parent"),
+    )?;
+    fs::write(&output_path, b"original")?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "export",
+        &ids[0].to_string(),
+        "--item",
+        "0",
+        "--uti",
+        "public.utf8-plain-text",
+        "--out",
+        output_path.to_str().expect("output path should be UTF-8"),
+        "--force",
+    ]);
+    let stdout = stdout_text(&output);
+    let bytes = fs::read(&output_path)?;
+
+    assert!(output.status.success());
+    assert_eq!(bytes, b"updated");
+    assert!(stdout.contains("snapshot="));
+
+    cleanup_temp_artifact(&output_path);
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn export_command_rejects_directory_destination_without_partial_file() -> Result<()> {
+    let path = temp_db_path("export-directory");
+    let output_dir = temp_artifact_path("export-directory", "");
+    let snapshot = text_snapshot(1, "updated");
+    let ids = seed_database(&path, &[snapshot])?;
+    fs::create_dir_all(&output_dir)?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "export",
+        &ids[0].to_string(),
+        "--item",
+        "0",
+        "--uti",
+        "public.utf8-plain-text",
+        "--out",
+        output_dir.to_str().expect("output path should be UTF-8"),
+    ]);
+    let stderr = stderr_text(&output);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr.contains("not a regular file"));
+    assert!(fs::read_dir(&output_dir)?.next().is_none());
+
+    cleanup_temp_artifact(&output_dir);
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+#[cfg(unix)]
+fn export_command_rejects_symlink_destination_even_with_force() -> Result<()> {
+    let path = temp_db_path("export-symlink");
+    let link_path = temp_artifact_path("export-symlink", ".txt");
+    let victim_path = temp_artifact_path("export-symlink-victim", ".txt");
+    let snapshot = text_snapshot(1, "updated");
+    let ids = seed_database(&path, &[snapshot])?;
+    fs::create_dir_all(
+        link_path
+            .parent()
+            .expect("temp artifact path should have a parent"),
+    )?;
+    fs::write(&victim_path, b"victim")?;
+    std::os::unix::fs::symlink(&victim_path, &link_path)?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "export",
+        &ids[0].to_string(),
+        "--item",
+        "0",
+        "--uti",
+        "public.utf8-plain-text",
+        "--out",
+        link_path.to_str().expect("output path should be UTF-8"),
+    ]);
+    let stderr = stderr_text(&output);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr.contains("symbolic link"));
+    assert_eq!(fs::read(&victim_path)?, b"victim");
+
+    let forced_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "export",
+        &ids[0].to_string(),
+        "--item",
+        "0",
+        "--uti",
+        "public.utf8-plain-text",
+        "--out",
+        link_path.to_str().expect("output path should be UTF-8"),
+        "--force",
+    ]);
+    let forced_stderr = stderr_text(&forced_output);
+
+    assert_eq!(forced_output.status.code(), Some(2));
+    assert!(forced_stderr.contains("symbolic link"));
+    assert_eq!(fs::read(&victim_path)?, b"victim");
+
+    cleanup_temp_artifact(&link_path);
+    cleanup_temp_artifact(&victim_path);
     cleanup_db(&path);
     Ok(())
 }
