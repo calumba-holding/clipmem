@@ -972,7 +972,6 @@ fn literal_query(include_matching_events: bool) -> String {
 fn fts_query(include_matching_events: bool) -> String {
     format!(
         "{LIST_QUERY_CTES}
-         {matching_events_cte}
          , search_rows AS (
              SELECT
                  s.id AS snapshot_id,
@@ -1017,12 +1016,11 @@ fn fts_query(include_matching_events: bool) -> String {
              FROM snapshots_fts
              JOIN snapshots s ON s.id = snapshots_fts.rowid
              JOIN snapshot_stats ss ON ss.snapshot_id = s.id
-             {matching_events_join}
              LEFT JOIN url_values uv ON uv.snapshot_id = s.id
              LEFT JOIN file_url_values fv ON fv.snapshot_id = s.id
              WHERE snapshots_fts MATCH :query
                AND {snapshot_filter_clause}
-               AND {event_filter_bind_clause}
+               AND {event_filter_where_clause}
          )
          , ranked_rows AS (
              SELECT
@@ -1088,9 +1086,7 @@ fn fts_query(include_matching_events: bool) -> String {
          FROM ranked_rows
          JOIN snapshots_fts ON snapshots_fts.rowid = ranked_rows.snapshot_id
          ORDER BY ranked_rows.score ASC, ranked_rows.last_observed_at DESC, ranked_rows.snapshot_id DESC",
-        matching_events_cte = matching_events_cte(include_matching_events),
-        matching_events_join = matching_events_join(include_matching_events),
-        event_filter_bind_clause = event_filter_bind_clause(),
+        event_filter_where_clause = event_filter_where_clause("s.id", include_matching_events),
         snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
     )
 }
@@ -1140,6 +1136,22 @@ fn event_filter_bind_clause() -> &'static str {
      AND (:until IS NULL OR 1)
      AND (:app_like IS NULL OR 1)
      AND (:bundle_id IS NULL OR 1)"
+}
+
+fn event_filter_where_clause(snapshot_id_expr: &str, include_matching_events: bool) -> String {
+    if include_matching_events {
+        format!(
+            "EXISTS (
+                 SELECT 1
+                 FROM capture_events ce
+                 WHERE ce.snapshot_id = {snapshot_id_expr}
+                   AND {}
+             )",
+            event_filter_clause("ce")
+        )
+    } else {
+        event_filter_bind_clause().to_string()
+    }
 }
 
 fn snapshot_filter_clause(snapshot_alias: &str, snapshot_id_expr: &str) -> String {

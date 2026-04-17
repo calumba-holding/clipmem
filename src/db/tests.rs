@@ -756,6 +756,51 @@ fn latest_event_query_uses_compound_capture_events_index() -> Result<()> {
 fn profile_large_retrieval_queries() -> Result<()> {
     let mut db = Database::open_in_memory()?;
     seed_large_archive(&mut db, 5_000, 100_000)?;
+    let app_filtered = RetrievalFilters::new(
+        None,
+        None,
+        None,
+        Some("terminal".to_string()),
+        None,
+        None,
+        false,
+        false,
+        false,
+        false,
+        false,
+        None,
+        None,
+    );
+    let bundle_filtered = RetrievalFilters::new(
+        None,
+        None,
+        None,
+        None,
+        Some("com.apple.Terminal".to_string()),
+        None,
+        false,
+        false,
+        false,
+        false,
+        false,
+        None,
+        None,
+    );
+    let recent_hours = RetrievalFilters::new(
+        None,
+        None,
+        Some(24),
+        None,
+        None,
+        None,
+        false,
+        false,
+        false,
+        false,
+        false,
+        None,
+        None,
+    );
 
     let started = Instant::now();
     let recent = db.recent_page(20, &unfiltered(), None)?;
@@ -773,16 +818,40 @@ fn profile_large_retrieval_queries() -> Result<()> {
     let timeline = db.timeline_page(20, &unfiltered(), TimelineSort::Desc, None)?;
     let timeline_elapsed = started.elapsed();
 
+    let started = Instant::now();
+    let recent_app = db.recent_page(20, &app_filtered, None)?;
+    let recent_app_elapsed = started.elapsed();
+
+    let started = Instant::now();
+    let recent_bundle = db.recent_page(20, &bundle_filtered, None)?;
+    let recent_bundle_elapsed = started.elapsed();
+
+    let started = Instant::now();
+    let recent_24h = db.recent_page(20, &recent_hours, None)?;
+    let recent_24h_elapsed = started.elapsed();
+
+    let started = Instant::now();
+    let search_fts_app = db.search_fts("git", 20, &app_filtered)?;
+    let search_fts_app_elapsed = started.elapsed();
+
     eprintln!(
-        "recent={:?} search_fts={:?} search_literal={:?} timeline={:?} counts=({}, {}, {}, {})",
+        "recent={:?} search_fts={:?} search_literal={:?} timeline={:?} recent_app={:?} recent_bundle={:?} recent_24h={:?} search_fts_app={:?} counts=({}, {}, {}, {}, {}, {}, {}, {})",
         recent_elapsed,
         search_fts_elapsed,
         search_literal_elapsed,
         timeline_elapsed,
+        recent_app_elapsed,
+        recent_bundle_elapsed,
+        recent_24h_elapsed,
+        search_fts_app_elapsed,
         recent.items().len(),
         search_fts.hits().len(),
         search_literal.hits().len(),
-        timeline.items().len()
+        timeline.items().len(),
+        recent_app.items().len(),
+        recent_bundle.items().len(),
+        recent_24h.items().len(),
+        search_fts_app.hits().len()
     );
 
     Ok(())
