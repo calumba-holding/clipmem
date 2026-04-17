@@ -171,12 +171,45 @@ fn run_cli(args: &[&str]) -> process::Output {
         .expect("clipmem binary should execute")
 }
 
+fn run_cli_with_env(args: &[&str], envs: &[(&str, &str)]) -> process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_clipmem"));
+    command.args(args);
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+    command
+        .output()
+        .expect("clipmem binary should execute with env")
+}
+
 fn stdout_text(output: &process::Output) -> String {
     String::from_utf8(output.stdout.clone()).expect("stdout should be UTF-8")
 }
 
 fn stderr_text(output: &process::Output) -> String {
     String::from_utf8(output.stderr.clone()).expect("stderr should be UTF-8")
+}
+
+fn temp_test_dir(test_name: &str) -> PathBuf {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock should be after unix epoch")
+        .as_nanos();
+
+    std::env::temp_dir()
+        .join("clipmem-agent-tests")
+        .join(format!("{test_name}-{}-{timestamp}", process::id()))
+}
+
+#[cfg(unix)]
+fn write_executable(path: &Path, content: &str) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::write(path, content)?;
+    let mut perms = fs::metadata(path)?.permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(path, perms)?;
+    Ok(())
 }
 
 #[test]
@@ -722,6 +755,93 @@ fn get_rejects_toon_output() -> Result<()> {
     assert!(stderr.contains("TOON is only available for flattened list output"));
 
     cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn agents_openclaw_install_print_and_uninstall_skill_work() -> Result<()> {
+    let test_dir = temp_test_dir("openclaw-install");
+    let bin_dir = test_dir.join("bin");
+    let workspace_dir = test_dir.join("workspace");
+    let install_dir = workspace_dir.join("skills").join("clipboard_memory");
+    fs::create_dir_all(&bin_dir)?;
+    fs::create_dir_all(&workspace_dir)?;
+
+    let openclaw_path = bin_dir.join("openclaw");
+    write_executable(
+        &openclaw_path,
+        &format!(
+            "#!/bin/sh\nif [ \"$1\" = \"config\" ] && [ \"$2\" = \"get\" ] && [ \"$3\" = \"agents.defaults.workspace\" ]; then\n  printf '%s\\n' '{}'\n  exit 0\nfi\nif [ \"$1\" = \"sandbox\" ] && [ \"$2\" = \"explain\" ]; then\n  printf 'sandbox disabled\\n'\n  exit 0\nfi\nexit 1\n",
+            workspace_dir.display()
+        ),
+    )?;
+
+    let clipmem_link = bin_dir.join("clipmem");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_clipmem"), &clipmem_link)?;
+
+    let path_value = bin_dir.display().to_string();
+
+    let install = run_cli_with_env(
+        &["agents", "openclaw", "install-skill"],
+        &[("PATH", &path_value), ("HOME", test_dir.to_str().unwrap())],
+    );
+    assert!(install.status.success());
+    assert!(install_dir.join("SKILL.md").is_file());
+
+    let printed = run_cli_with_env(
+        &["agents", "openclaw", "print-skill"],
+        &[("PATH", &path_value), ("HOME", test_dir.to_str().unwrap())],
+    );
+    assert!(printed.status.success());
+    assert_eq!(
+        stdout_text(&printed),
+        fs::read_to_string(install_dir.join("SKILL.md"))?
+    );
+
+    let uninstall = run_cli_with_env(
+        &["agents", "openclaw", "uninstall-skill"],
+        &[("PATH", &path_value), ("HOME", test_dir.to_str().unwrap())],
+    );
+    assert!(uninstall.status.success());
+    assert!(!install_dir.exists());
+
+    let _ = fs::remove_dir_all(&test_dir);
+    Ok(())
+}
+
+#[test]
+fn agents_openclaw_doctor_reports_missing_clipmem_with_next_steps() -> Result<()> {
+    let test_dir = temp_test_dir("openclaw-doctor-missing-clipmem");
+    let bin_dir = test_dir.join("bin");
+    let workspace_dir = test_dir.join("workspace");
+    let skill_dir = workspace_dir.join("skills").join("clipboard_memory");
+    fs::create_dir_all(&bin_dir)?;
+    fs::create_dir_all(&skill_dir)?;
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        include_str!("../extras/openclaw/clipboard_memory/SKILL.md"),
+    )?;
+
+    let openclaw_path = bin_dir.join("openclaw");
+    write_executable(
+        &openclaw_path,
+        &format!(
+            "#!/bin/sh\nif [ \"$1\" = \"config\" ] && [ \"$2\" = \"get\" ] && [ \"$3\" = \"agents.defaults.workspace\" ]; then\n  printf '%s\\n' '{}'\n  exit 0\nfi\nif [ \"$1\" = \"sandbox\" ] && [ \"$2\" = \"explain\" ]; then\n  printf 'sandbox disabled\\n'\n  exit 0\nfi\nexit 1\n",
+            workspace_dir.display()
+        ),
+    )?;
+
+    let output = run_cli_with_env(
+        &["agents", "openclaw", "doctor"],
+        &[("PATH", bin_dir.to_str().unwrap()), ("HOME", test_dir.to_str().unwrap())],
+    );
+    assert!(!output.status.success());
+    let stdout = stdout_text(&output);
+    assert!(stdout.contains("[FAIL] Host clipmem on PATH"));
+    assert!(stdout.contains("brew install tristanmanchester/tap/clipmem"));
+
+    let _ = fs::remove_dir_all(&test_dir);
     Ok(())
 }
 

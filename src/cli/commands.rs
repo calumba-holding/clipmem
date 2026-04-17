@@ -1,12 +1,13 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
+use std::process::Command as ProcessCommand;
 
 use crate::app::{format_watch_capture_line, process_watch_snapshot, WatchState};
 use crate::db::{
@@ -25,8 +26,9 @@ use super::output::{
     RecallEnvelope, RecallMatchConfidence, RecallOutputRow, OUTPUT_SCHEMA_VERSION,
 };
 use super::{
-    CaptureOnceArgs, Command, DoctorArgs, ExportArgs, GetArgs, OutputFormat, RecallArgs,
-    RecentArgs, SearchArgs, TimelineArgs, WatchArgs,
+    AgentsArgs, CaptureOnceArgs, Command, DoctorArgs, ExportArgs, GetArgs, OpenClawArgs,
+    OpenClawDoctorArgs, OpenClawInstallSkillArgs, OpenClawUninstallSkillArgs, OutputFormat,
+    RecallArgs, RecentArgs, SearchArgs, TimelineArgs, WatchArgs,
 };
 
 #[derive(Debug, Serialize)]
@@ -87,8 +89,45 @@ struct RecallComputation {
     search_mode_used: Option<SearchMode>,
 }
 
+const OPENCLAW_SKILL_NAME: &str = "clipboard_memory";
+const OPENCLAW_SHARED_ROOT: &str = ".openclaw/skills";
+const OPENCLAW_WORKSPACE_ROOT: &str = ".openclaw/workspace";
+
+#[derive(Debug, Clone)]
+struct OpenClawInstallEntry {
+    id: &'static str,
+    kind: &'static str,
+    label: &'static str,
+    bins: &'static [&'static str],
+    formula: Option<&'static str>,
+    tap: Option<&'static str>,
+    package: Option<&'static str>,
+}
+
+#[derive(Debug, Clone)]
+struct OpenClawDoctorReport {
+    target_dir: PathBuf,
+    checks: Vec<OpenClawDoctorCheck>,
+}
+
+#[derive(Debug, Clone)]
+struct OpenClawDoctorCheck {
+    status: OpenClawDoctorStatus,
+    label: String,
+    detail: String,
+    next_steps: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OpenClawDoctorStatus {
+    Ok,
+    Warn,
+    Fail,
+}
+
 pub(super) fn run_command(command: Command, db_path: &Path) -> Result<()> {
     match command {
+        Command::Agents(args) => agents(&args),
         Command::Watch(args) => watch(db_path, &args),
         Command::CaptureOnce(args) => capture_once(db_path, &args),
         Command::Search(args) => search(db_path, &args),
@@ -98,6 +137,24 @@ pub(super) fn run_command(command: Command, db_path: &Path) -> Result<()> {
         Command::Get(args) => show_snapshot(db_path, &args),
         Command::Export(args) => export_snapshot_bytes(db_path, &args),
         Command::Doctor(args) => doctor(db_path, &args),
+    }
+}
+
+fn agents(args: &AgentsArgs) -> Result<()> {
+    match &args.command {
+        super::AgentsCommand::Openclaw(args) => openclaw(args),
+    }
+}
+
+fn openclaw(args: &OpenClawArgs) -> Result<()> {
+    match &args.command {
+        super::OpenClawCommand::InstallSkill(args) => openclaw_install_skill(args),
+        super::OpenClawCommand::UninstallSkill(args) => openclaw_uninstall_skill(args),
+        super::OpenClawCommand::PrintSkill => {
+            print!("{}", packaged_openclaw_skill());
+            Ok(())
+        }
+        super::OpenClawCommand::Doctor(args) => openclaw_doctor(args),
     }
 }
 
@@ -487,6 +544,61 @@ fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -> Result<()> {
     Ok(())
 }
 
+fn openclaw_install_skill(args: &OpenClawInstallSkillArgs) -> Result<()> {
+    let target_dir = resolve_openclaw_skill_dir(args.dest.as_deref(), args.shared)?;
+    if target_dir.exists() {
+        if args.force {
+            std::fs::remove_dir_all(&target_dir).with_context(|| {
+                format!("failed to remove existing skill at {}", target_dir.display())
+            })?;
+        } else {
+            return Err(anyhow!(
+                "skill directory already exists at {} (pass --force to replace it)",
+                target_dir.display()
+            ));
+        }
+    }
+
+    std::fs::create_dir_all(&target_dir)
+        .with_context(|| format!("failed to create {}", target_dir.display()))?;
+    let skill_path = target_dir.join("SKILL.md");
+    std::fs::write(&skill_path, packaged_openclaw_skill())
+        .with_context(|| format!("failed to write {}", skill_path.display()))?;
+
+    println!("Installed OpenClaw skill into {}", target_dir.display());
+    println!("Skill file: {}", skill_path.display());
+    println!("Reload OpenClaw skills or restart OpenClaw if the skill does not appear immediately.");
+    Ok(())
+}
+
+fn openclaw_uninstall_skill(args: &OpenClawUninstallSkillArgs) -> Result<()> {
+    let target_dir = resolve_openclaw_skill_dir(args.dest.as_deref(), args.shared)?;
+    if !target_dir.exists() {
+        println!("No installed skill found at {}", target_dir.display());
+        return Ok(());
+    }
+
+    std::fs::remove_dir_all(&target_dir)
+        .with_context(|| format!("failed to remove {}", target_dir.display()))?;
+    println!("Removed OpenClaw skill from {}", target_dir.display());
+    Ok(())
+}
+
+fn openclaw_doctor(args: &OpenClawDoctorArgs) -> Result<()> {
+    let report = build_openclaw_doctor_report(args)?;
+    print!("{}", render_openclaw_doctor_report(&report));
+
+    if report
+        .checks
+        .iter()
+        .any(|check| matches!(check.status, OpenClawDoctorStatus::Fail))
+    {
+        Err(anyhow!("OpenClaw integration checks failed"))
+    } else {
+        Ok(())
+    }
+}
+
 fn doctor(db_path: &Path, args: &DoctorArgs) -> Result<()> {
     let db = open_existing_db(db_path)?;
     let report = anyhow::Context::context(db.doctor(), "doctor diagnostics failed")?;
@@ -505,6 +617,411 @@ fn open_or_init_db(path: &Path) -> Result<Database> {
     anyhow::Context::with_context(Database::open_or_init(path), || {
         format!("failed to open database at {}", path.display())
     })
+}
+
+fn packaged_openclaw_skill() -> String {
+    let metadata = json!({
+        "openclaw": {
+            "emoji": "📋",
+            "os": ["darwin"],
+            "requires": {
+                "bins": ["clipmem"]
+            },
+            "install": openclaw_install_entries_json(),
+        }
+    });
+
+    format!(
+        "---\nname: {name}\ndescription: Search the local clipboard archive captured by clipmem.\nmetadata: {metadata}\n---\n\nUse this skill when the user asks you to remember, find, search, or recover something they copied earlier on this Mac.\n\nPreferred flow:\n\n1. Run `clipmem recall \"<query>\" --format json --limit 5`.\n2. If there is no query, or the request is more about “what did I copy recently?”, run `clipmem recall --prefer-recent --hours 24 --format json --limit 5`.\n3. Use `best_candidate.best_text`, `best_candidate.urls`, `best_candidate.file_paths`, and `why_selected` from the recall output first.\n4. When a `snapshot_id` needs deeper nested detail, run `clipmem get <snapshot_id> --format json`.\n5. Quote or summarise the surfaced recall text directly from the JSON output before falling back to nested representations.\n\nNotes:\n\n- `clipmem recall` is the primary retrieval command. It chooses one best candidate, ranks alternatives, and falls back to recent clipboard items when query matches are weak.\n- `clipmem search` is still available for direct lexical lookup when you want raw ranked matches.\n- `clipmem recent` is for recent unique clipboard states deduplicated by snapshot.\n- `clipmem timeline` is for the true chronological capture-event history, including repeated copies of the same content.\n- `clipmem get` includes stored text payloads recovered for recognized text-like representations at capture time.\n- If a hit is image-, PDF-, or binary-only and has no `text_value`, report the metadata and explain that raw-byte recovery currently requires `clipmem export`.\n",
+        name = OPENCLAW_SKILL_NAME,
+        metadata = serde_json::to_string(&metadata).unwrap_or_else(|_| "{}".to_string()),
+    )
+}
+
+fn openclaw_install_entries() -> Vec<OpenClawInstallEntry> {
+    vec![
+        OpenClawInstallEntry {
+            id: "brew",
+            kind: "brew",
+            label: "Install clipmem (brew)",
+            bins: &["clipmem"],
+            formula: Some("clipmem"),
+            tap: Some("tristanmanchester/tap"),
+            package: None,
+        },
+        OpenClawInstallEntry {
+            id: "cargo",
+            kind: "cargo",
+            label: "Install clipmem (cargo)",
+            bins: &["clipmem"],
+            formula: None,
+            tap: None,
+            package: Some("clipmem"),
+        },
+    ]
+}
+
+fn openclaw_install_entries_json() -> Vec<serde_json::Value> {
+    openclaw_install_entries()
+        .into_iter()
+        .map(|entry| {
+            let mut value = json!({
+                "id": entry.id,
+                "kind": entry.kind,
+                "label": entry.label,
+                "bins": entry.bins,
+            });
+            if let Some(object) = value.as_object_mut() {
+                if let Some(formula) = entry.formula {
+                    object.insert("formula".to_string(), json!(formula));
+                }
+                if let Some(tap) = entry.tap {
+                    object.insert("tap".to_string(), json!(tap));
+                }
+                if let Some(package) = entry.package {
+                    object.insert("package".to_string(), json!(package));
+                }
+            }
+            value
+        })
+        .collect()
+}
+
+fn resolve_openclaw_skill_dir(dest: Option<&Path>, shared: bool) -> Result<PathBuf> {
+    if let Some(dest) = dest {
+        return Ok(dest.to_path_buf());
+    }
+
+    let base = if shared {
+        home_dir()?.join(OPENCLAW_SHARED_ROOT)
+    } else {
+        resolve_openclaw_workspace_root()?.join("skills")
+    };
+    Ok(base.join(OPENCLAW_SKILL_NAME))
+}
+
+fn resolve_openclaw_workspace_root() -> Result<PathBuf> {
+    if let Some(path) = std::env::var_os("CLIPMEM_OPENCLAW_WORKSPACE") {
+        return Ok(PathBuf::from(path));
+    }
+
+    if let Some(openclaw_bin) = find_executable("openclaw") {
+        let output = ProcessCommand::new(openclaw_bin)
+            .args(["config", "get", "agents.defaults.workspace"])
+            .output();
+        if let Ok(output) = output {
+            if output.status.success() {
+                let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !value.is_empty() {
+                    return Ok(PathBuf::from(value));
+                }
+            }
+        }
+    }
+
+    Ok(home_dir()?.join(OPENCLAW_WORKSPACE_ROOT))
+}
+
+fn home_dir() -> Result<PathBuf> {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| anyhow!("HOME is not set"))
+}
+
+fn find_executable(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path).find_map(|dir| {
+        let candidate = dir.join(name);
+        candidate.is_file().then_some(candidate)
+    })
+}
+
+fn build_openclaw_doctor_report(args: &OpenClawDoctorArgs) -> Result<OpenClawDoctorReport> {
+    let target_dir = resolve_openclaw_skill_dir(args.dest.as_deref(), args.shared)?;
+    let mut checks = Vec::new();
+
+    let clipmem_path = find_executable("clipmem");
+    checks.push(binary_check(
+        "Host clipmem on PATH",
+        clipmem_path.as_ref(),
+        &[
+            "Install clipmem with `brew install tristanmanchester/tap/clipmem`.",
+            "Or install it with `cargo install clipmem`.",
+        ],
+    ));
+
+    let openclaw_path = find_executable("openclaw");
+    checks.push(binary_check(
+        "Host openclaw on PATH",
+        openclaw_path.as_ref(),
+        &["Install OpenClaw and ensure `openclaw` is available on the host PATH."],
+    ));
+
+    let workspace_root = resolve_openclaw_workspace_root()?;
+    checks.push(OpenClawDoctorCheck {
+        status: OpenClawDoctorStatus::Ok,
+        label: "OpenClaw workspace root".to_string(),
+        detail: format!("Resolved workspace root: {}", workspace_root.display()),
+        next_steps: Vec::new(),
+    });
+
+    if target_dir.exists() {
+        checks.push(OpenClawDoctorCheck {
+            status: OpenClawDoctorStatus::Ok,
+            label: "Installed skill directory".to_string(),
+            detail: format!("Found {}", target_dir.display()),
+            next_steps: Vec::new(),
+        });
+    } else {
+        checks.push(OpenClawDoctorCheck {
+            status: OpenClawDoctorStatus::Fail,
+            label: "Installed skill directory".to_string(),
+            detail: format!("Missing {}", target_dir.display()),
+            next_steps: vec![
+                "Install the skill with `clipmem agents openclaw install-skill`.".to_string(),
+                "Use `--shared` if you intended a shared install under ~/.openclaw/skills.".to_string(),
+            ],
+        });
+    }
+
+    let skill_path = target_dir.join("SKILL.md");
+    if skill_path.is_file() {
+        match validate_openclaw_skill_file(&skill_path) {
+            Ok(()) => checks.push(OpenClawDoctorCheck {
+                status: OpenClawDoctorStatus::Ok,
+                label: "SKILL.md metadata".to_string(),
+                detail: format!("Validated {}", skill_path.display()),
+                next_steps: Vec::new(),
+            }),
+            Err(error) => checks.push(OpenClawDoctorCheck {
+                status: OpenClawDoctorStatus::Fail,
+                label: "SKILL.md metadata".to_string(),
+                detail: error.to_string(),
+                next_steps: vec![
+                    "Reinstall the packaged skill with `clipmem agents openclaw install-skill --force`.".to_string(),
+                    "Use `clipmem agents openclaw print-skill` to inspect the packaged content.".to_string(),
+                ],
+            }),
+        }
+    } else {
+        checks.push(OpenClawDoctorCheck {
+            status: OpenClawDoctorStatus::Fail,
+            label: "SKILL.md file".to_string(),
+            detail: format!("Missing {}", skill_path.display()),
+            next_steps: vec![
+                "Install the packaged skill with `clipmem agents openclaw install-skill`.".to_string(),
+            ],
+        });
+    }
+
+    checks.push(openclaw_sandbox_check(openclaw_path.as_ref()));
+
+    Ok(OpenClawDoctorReport { target_dir, checks })
+}
+
+fn binary_check(label: &str, path: Option<&PathBuf>, next_steps: &[&str]) -> OpenClawDoctorCheck {
+    match path {
+        Some(path) => OpenClawDoctorCheck {
+            status: OpenClawDoctorStatus::Ok,
+            label: label.to_string(),
+            detail: format!("Found {}", path.display()),
+            next_steps: Vec::new(),
+        },
+        None => OpenClawDoctorCheck {
+            status: OpenClawDoctorStatus::Fail,
+            label: label.to_string(),
+            detail: format!("{label} is missing"),
+            next_steps: next_steps.iter().map(|s| s.to_string()).collect(),
+        },
+    }
+}
+
+fn openclaw_sandbox_check(openclaw_path: Option<&PathBuf>) -> OpenClawDoctorCheck {
+    let Some(openclaw_path) = openclaw_path else {
+        return OpenClawDoctorCheck {
+            status: OpenClawDoctorStatus::Warn,
+            label: "Sandbox visibility".to_string(),
+            detail: "Skipped sandbox checks because `openclaw` is not available.".to_string(),
+            next_steps: vec!["Install OpenClaw first if you want sandbox-specific guidance.".to_string()],
+        };
+    };
+
+    let output = ProcessCommand::new(openclaw_path)
+        .args(["sandbox", "explain"])
+        .output();
+
+    match output {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let lower = stdout.to_ascii_lowercase();
+            if lower.contains("disabled") || lower.contains("off") {
+                OpenClawDoctorCheck {
+                    status: OpenClawDoctorStatus::Ok,
+                    label: "Sandbox visibility".to_string(),
+                    detail: "OpenClaw sandboxing appears disabled; host PATH should be sufficient.".to_string(),
+                    next_steps: Vec::new(),
+                }
+            } else {
+                OpenClawDoctorCheck {
+                    status: OpenClawDoctorStatus::Warn,
+                    label: "Sandbox visibility".to_string(),
+                    detail: "OpenClaw sandboxing appears active; `clipmem` may need to be available inside sandbox containers as well as on the host.".to_string(),
+                    next_steps: vec![
+                        "Ensure `clipmem` is installed in a path visible inside the sandbox image, not only your host shell.".to_string(),
+                        "If you installed clipmem after sandbox creation, recreate containers with `openclaw sandbox recreate --all`.".to_string(),
+                        "If commands still fail in the sandbox, use `openclaw sandbox explain` and verify the container PATH.".to_string(),
+                    ],
+                }
+            }
+        }
+        Ok(output) => OpenClawDoctorCheck {
+            status: OpenClawDoctorStatus::Warn,
+            label: "Sandbox visibility".to_string(),
+            detail: format!(
+                "Could not inspect sandbox state (`openclaw sandbox explain` exited with {}).",
+                output.status
+            ),
+            next_steps: vec![
+                "Run `openclaw sandbox explain` manually and verify whether `clipmem` is present in the sandbox environment.".to_string(),
+            ],
+        },
+        Err(error) => OpenClawDoctorCheck {
+            status: OpenClawDoctorStatus::Warn,
+            label: "Sandbox visibility".to_string(),
+            detail: format!("Could not inspect sandbox state: {error}"),
+            next_steps: vec![
+                "Run `openclaw sandbox explain` manually and verify whether `clipmem` is present in the sandbox environment.".to_string(),
+            ],
+        },
+    }
+}
+
+fn validate_openclaw_skill_file(path: &Path) -> Result<()> {
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    validate_openclaw_skill_content(&content)
+}
+
+fn validate_openclaw_skill_content(content: &str) -> Result<()> {
+    let mut lines = content.lines();
+    if lines.next() != Some("---") {
+        return Err(anyhow!("skill frontmatter must start with `---`"));
+    }
+
+    let mut frontmatter_lines = Vec::new();
+    let mut found_end = false;
+    for line in lines {
+        if line == "---" {
+            found_end = true;
+            break;
+        }
+        frontmatter_lines.push(line);
+    }
+    if !found_end {
+        return Err(anyhow!("skill frontmatter is missing the closing `---`"));
+    }
+
+    let name = frontmatter_lines
+        .iter()
+        .find_map(|line| line.strip_prefix("name:").map(str::trim))
+        .filter(|value| !value.is_empty());
+    if name != Some(OPENCLAW_SKILL_NAME) {
+        return Err(anyhow!(
+            "skill frontmatter must include `name: {OPENCLAW_SKILL_NAME}`"
+        ));
+    }
+
+    let description = frontmatter_lines
+        .iter()
+        .find_map(|line| line.strip_prefix("description:").map(str::trim))
+        .filter(|value| !value.is_empty());
+    if description.is_none() {
+        return Err(anyhow!("skill frontmatter must include a non-empty `description`"));
+    }
+
+    let metadata_line = frontmatter_lines
+        .iter()
+        .find_map(|line| line.strip_prefix("metadata:").map(str::trim))
+        .ok_or_else(|| anyhow!("skill frontmatter must include `metadata`"))?;
+    let metadata: serde_json::Value =
+        serde_json::from_str(metadata_line).map_err(|error| anyhow!("invalid metadata JSON: {error}"))?;
+    let openclaw = metadata
+        .get("openclaw")
+        .ok_or_else(|| anyhow!("metadata must include `openclaw`"))?;
+    let bins = openclaw
+        .pointer("/requires/bins")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| anyhow!("metadata.openclaw.requires.bins must be an array"))?;
+    if !bins.iter().any(|value| value.as_str() == Some("clipmem")) {
+        return Err(anyhow!(
+            "metadata.openclaw.requires.bins must contain `clipmem`"
+        ));
+    }
+
+    let install = openclaw
+        .get("install")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| anyhow!("metadata.openclaw.install must be an array"))?;
+    validate_openclaw_install_entries(install)?;
+
+    Ok(())
+}
+
+fn validate_openclaw_install_entries(entries: &[serde_json::Value]) -> Result<()> {
+    if entries.is_empty() {
+        return Err(anyhow!("metadata.openclaw.install must contain at least one entry"));
+    }
+
+    for entry in entries {
+        let object = entry
+            .as_object()
+            .ok_or_else(|| anyhow!("metadata.openclaw.install entries must be objects"))?;
+        for key in ["id", "kind", "label", "bins"] {
+            if !object.contains_key(key) {
+                return Err(anyhow!("metadata.openclaw.install entry is missing `{key}`"));
+            }
+        }
+        let bins = object
+            .get("bins")
+            .and_then(serde_json::Value::as_array)
+            .ok_or_else(|| anyhow!("metadata.openclaw.install entry `bins` must be an array"))?;
+        if bins.is_empty() || !bins.iter().any(|value| value.as_str() == Some("clipmem")) {
+            return Err(anyhow!(
+                "metadata.openclaw.install entry `bins` must contain `clipmem`"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn render_openclaw_doctor_report(report: &OpenClawDoctorReport) -> String {
+    let mut out = String::new();
+    let _ = std::fmt::Write::write_fmt(
+        &mut out,
+        format_args!(
+            "OpenClaw integration target: {}\n\n",
+            report.target_dir.display()
+        ),
+    );
+
+    for check in &report.checks {
+        let status = match check.status {
+            OpenClawDoctorStatus::Ok => "OK",
+            OpenClawDoctorStatus::Warn => "WARN",
+            OpenClawDoctorStatus::Fail => "FAIL",
+        };
+        let _ = std::fmt::Write::write_fmt(
+            &mut out,
+            format_args!("[{status}] {}\n{}\n", check.label, check.detail),
+        );
+        for step in &check.next_steps {
+            let _ = std::fmt::Write::write_fmt(&mut out, format_args!("  - {step}\n"));
+        }
+        out.push('\n');
+    }
+
+    out
 }
 
 fn query_search_results(
@@ -1038,8 +1555,9 @@ mod tests {
 
     use super::{
         encode_recent_cursor, encode_search_cursor, parse_recent_cursor, parse_search_cursor,
-        query_search_results, run_watch_iteration_with_capture, SearchArgs, SearchMode,
-        SearchResults, WatchArgs, WatchState,
+        packaged_openclaw_skill, query_search_results, run_watch_iteration_with_capture,
+        validate_openclaw_skill_content, SearchArgs, SearchMode, SearchResults, WatchArgs,
+        WatchState,
     };
     use crate::db::{Database, RetrievalFilters};
     use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
@@ -1315,5 +1833,20 @@ mod tests {
         assert_eq!(db.recent(10, &unfiltered()).unwrap().len(), 1);
 
         cleanup_db(&path);
+    }
+
+    #[test]
+    fn packaged_openclaw_skill_includes_required_metadata() {
+        let content = packaged_openclaw_skill();
+
+        validate_openclaw_skill_content(&content).expect("packaged skill should validate");
+        assert!(content.contains("\"openclaw\""));
+        assert!(content.contains("\"requires\":{\"bins\":[\"clipmem\"]}"));
+        assert!(content.contains("\"id\":\"brew\""));
+        assert!(content.contains("\"tap\":\"tristanmanchester/tap\""));
+        assert!(content.contains("\"formula\":\"clipmem\""));
+        assert!(content.contains("\"id\":\"cargo\""));
+        assert!(content.contains("\"package\":\"clipmem\""));
+        assert!(content.contains("clipmem recall"));
     }
 }

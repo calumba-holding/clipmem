@@ -37,10 +37,10 @@ The local archive is treated as sensitive state: the tool and installer tighten 
 
 - `src/` – Rust source
 - `extras/launchd/` – LaunchAgent template
-- `extras/openclaw/clipboard_memory/` – OpenClaw skill stub
+- `extras/openclaw/clipboard_memory/` – packaged OpenClaw skill content
 - `scripts/install_launchagent.sh` – install and load the watcher as a user LaunchAgent
 - `scripts/uninstall_launchagent.sh` – remove the LaunchAgent
-- `scripts/install_openclaw_skill.sh` – copy the skill into `~/.openclaw/skills`
+- `scripts/install_openclaw_skill.sh` – compatibility wrapper around `clipmem agents openclaw install-skill`
 
 ## Install
 
@@ -299,33 +299,63 @@ To remove the LaunchAgent and plist:
 
 ## OpenClaw
 
-Install the bundled skill stub:
+Use the binary interface rather than copying skill files by hand:
 
 ```bash
-./scripts/install_openclaw_skill.sh
+clipmem agents openclaw install-skill
 ```
 
-That copies:
+By default this installs the packaged skill into the current OpenClaw workspace:
 
 ```text
-extras/openclaw/clipboard_memory/SKILL.md
+~/.openclaw/workspace/skills/clipboard_memory
 ```
 
-into:
+The workspace root is resolved from:
+
+1. `openclaw config get agents.defaults.workspace`
+2. `~/.openclaw/workspace` as a fallback
+
+To install the skill into the shared OpenClaw skills directory instead:
+
+```bash
+clipmem agents openclaw install-skill --shared
+```
+
+That writes:
 
 ```text
 ~/.openclaw/skills/clipboard_memory
 ```
 
-The skill tells OpenClaw to use:
+Useful commands:
+
+```bash
+clipmem agents openclaw doctor
+clipmem agents openclaw print-skill
+clipmem agents openclaw uninstall-skill
+```
+
+`doctor` checks:
+
+- `clipmem` on the host PATH
+- `openclaw` on the host PATH
+- the resolved workspace target
+- installed skill files
+- `SKILL.md` frontmatter validity
+- `metadata.openclaw.requires.bins`
+- `metadata.openclaw.install`
+- sandbox visibility guidance via `openclaw sandbox explain` when available
+
+The packaged skill tells OpenClaw to use:
 
 - `clipmem recall "<query>" --format json`
 - `clipmem recall --prefer-recent --hours 24 --format json`
 - `clipmem get <snapshot-id> --format json` when deeper nested detail is needed
 
-OpenClaw must be able to run `clipmem` from its own environment, not just from your interactive shell. If you installed `clipmem` into `~/.local/bin`, make sure that directory is on the PATH seen by OpenClaw.
+OpenClaw must be able to run `clipmem` from its own environment, not just from your interactive shell. If you installed `clipmem` into `~/.local/bin`, make sure that directory is on the PATH seen by OpenClaw. If sandboxing is active, the binary may also need to be available inside the sandbox image or container.
 
-After copying the skill, reload skills or restart OpenClaw if it does not appear immediately.
+For compatibility, `./scripts/install_openclaw_skill.sh` still exists. It is now a thin wrapper around `clipmem agents openclaw install-skill --shared --force`, so the script preserves the older shared-install behavior while the binary defaults to the workspace-local install.
 
 ## Schema notes
 

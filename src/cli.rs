@@ -96,6 +96,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Manage agent-harness integrations.
+    Agents(AgentsArgs),
     /// Continuously poll the clipboard and archive observed changes.
     Watch(WatchArgs),
     /// Capture the current clipboard state once.
@@ -422,6 +424,73 @@ struct DoctorArgs {
     json: bool,
 }
 
+#[derive(Debug, Args)]
+struct AgentsArgs {
+    #[command(subcommand)]
+    command: AgentsCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum AgentsCommand {
+    /// Manage OpenClaw skill integration.
+    Openclaw(OpenClawArgs),
+}
+
+#[derive(Debug, Args)]
+struct OpenClawArgs {
+    #[command(subcommand)]
+    command: OpenClawCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum OpenClawCommand {
+    /// Install the packaged clipboard-memory skill into OpenClaw.
+    InstallSkill(OpenClawInstallSkillArgs),
+    /// Remove an installed OpenClaw clipboard-memory skill.
+    UninstallSkill(OpenClawUninstallSkillArgs),
+    /// Print the packaged OpenClaw skill content.
+    PrintSkill,
+    /// Check host PATH, installed skill state, metadata, and sandbox guidance.
+    Doctor(OpenClawDoctorArgs),
+}
+
+#[derive(Debug, Args)]
+struct OpenClawInstallSkillArgs {
+    /// Install into the shared OpenClaw skill directory instead of the active workspace.
+    #[arg(long, default_value_t = false)]
+    shared: bool,
+
+    /// Write the skill into this exact destination directory.
+    #[arg(long)]
+    dest: Option<PathBuf>,
+
+    /// Replace an existing skill directory if one is already present.
+    #[arg(long, default_value_t = false)]
+    force: bool,
+}
+
+#[derive(Debug, Args)]
+struct OpenClawUninstallSkillArgs {
+    /// Remove from the shared OpenClaw skill directory instead of the active workspace.
+    #[arg(long, default_value_t = false)]
+    shared: bool,
+
+    /// Remove the skill from this exact destination directory.
+    #[arg(long)]
+    dest: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+struct OpenClawDoctorArgs {
+    /// Check the shared OpenClaw skill directory instead of the active workspace.
+    #[arg(long, default_value_t = false)]
+    shared: bool,
+
+    /// Check this exact destination directory instead of resolving the default target.
+    #[arg(long)]
+    dest: Option<PathBuf>,
+}
+
 /// Parse CLI arguments and execute the requested command.
 ///
 /// # Errors
@@ -449,6 +518,7 @@ where
 
 fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
     match &cli.command {
+        Command::Agents(_args) => {}
         Command::Search(args) => {
             args.output.resolved()?;
             args.filters.normalized()?;
@@ -564,6 +634,55 @@ mod tests {
                 assert!(args.skip_initial);
             }
             other => panic!("expected watch command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn agents_openclaw_commands_parse_install_and_doctor_flags() {
+        let install_cli = Cli::parse_from([
+            "clipmem",
+            "agents",
+            "openclaw",
+            "install-skill",
+            "--shared",
+            "--dest",
+            "/tmp/clipboard_memory",
+            "--force",
+        ]);
+
+        match install_cli.command {
+            Command::Agents(args) => match args.command {
+                super::AgentsCommand::Openclaw(args) => match args.command {
+                    super::OpenClawCommand::InstallSkill(args) => {
+                        assert!(args.shared);
+                        assert_eq!(args.dest, Some(PathBuf::from("/tmp/clipboard_memory")));
+                        assert!(args.force);
+                    }
+                    other => panic!("expected install-skill command, got {other:?}"),
+                },
+            },
+            other => panic!("expected agents command, got {other:?}"),
+        }
+
+        let doctor_cli = Cli::parse_from([
+            "clipmem",
+            "agents",
+            "openclaw",
+            "doctor",
+            "--dest",
+            "/tmp/clipboard_memory",
+        ]);
+        match doctor_cli.command {
+            Command::Agents(args) => match args.command {
+                super::AgentsCommand::Openclaw(args) => match args.command {
+                    super::OpenClawCommand::Doctor(args) => {
+                        assert_eq!(args.dest, Some(PathBuf::from("/tmp/clipboard_memory")));
+                        assert!(!args.shared);
+                    }
+                    other => panic!("expected doctor command, got {other:?}"),
+                },
+            },
+            other => panic!("expected agents command, got {other:?}"),
         }
     }
 

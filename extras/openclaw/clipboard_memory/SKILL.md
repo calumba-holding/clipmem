@@ -1,7 +1,7 @@
 ---
 name: clipboard_memory
 description: Search the local clipboard archive captured by clipmem.
-metadata: {"openclaw":{"emoji":"📋","os":["darwin"],"requires":{"bins":["clipmem"]}}}
+metadata: {"openclaw":{"emoji":"📋","os":["darwin"],"requires":{"bins":["clipmem"]},"install":[{"id":"brew","kind":"brew","label":"Install clipmem (brew)","bins":["clipmem"],"formula":"clipmem","tap":"tristanmanchester/tap"},{"id":"cargo","kind":"cargo","label":"Install clipmem (cargo)","bins":["clipmem"],"package":"clipmem"}]}}
 ---
 
 Use this skill when the user asks you to remember, find, search, or recover something they copied earlier on this Mac.
