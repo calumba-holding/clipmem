@@ -152,7 +152,6 @@ struct QuickRecallWindowView: View {
     }
 
     private func openHistory() {
-        openWindow(id: WindowID.history.rawValue)
-        NSApp.activate(ignoringOtherApps: true)
+        WindowActivation.openWindow(openWindow, id: .history)
     }
 }

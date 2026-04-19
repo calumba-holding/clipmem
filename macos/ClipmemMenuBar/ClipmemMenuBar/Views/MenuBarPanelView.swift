@@ -5,6 +5,7 @@ struct MenuBarPanelView: View {
     let model: AppModel
 
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -22,6 +23,12 @@ struct MenuBarPanelView: View {
             if let message = model.lastErrorMessage {
                 ErrorBanner(message: message)
             }
+            if let message = model.actionMessage {
+                Label(message, systemImage: "checkmark.circle")
+                    .font(.callout)
+                    .foregroundStyle(.green)
+                    .lineLimit(2)
+            }
 
             serviceSummary
             quickActions
@@ -33,7 +40,7 @@ struct MenuBarPanelView: View {
                     .font(.headline)
                 Spacer()
                 Button("Open History", systemImage: "clock.arrow.circlepath") {
-                    openWindow(id: WindowID.history.rawValue)
+                    WindowActivation.openWindow(openWindow, id: .history)
                 }
             }
 
@@ -54,9 +61,11 @@ struct MenuBarPanelView: View {
 
             HStack {
                 Button("Quick Recall", systemImage: "bolt") {
-                    openWindow(id: WindowID.quickRecall.rawValue)
+                    WindowActivation.openWindow(openWindow, id: .quickRecall)
                 }
-                SettingsLink {
+                Button {
+                    WindowActivation.openSettings(openSettings)
+                } label: {
                     Label("Settings", systemImage: "gearshape")
                 }
                 Spacer()
@@ -83,12 +92,15 @@ struct MenuBarPanelView: View {
             Button("Setup", systemImage: "wrench.and.screwdriver") {
                 Task { await model.runSetup() }
             }
+            .disabled(model.isRunningAction)
             Button("Start", systemImage: "play.fill") {
                 Task { await model.serviceAction("start") }
             }
+            .disabled(model.isRunningAction)
             Button("Stop", systemImage: "stop.fill") {
                 Task { await model.serviceAction("stop") }
             }
+            .disabled(model.isRunningAction)
             Menu("More", systemImage: "ellipsis.circle") {
                 Button("Uninstall Service") {
                     Task { await model.serviceAction("uninstall") }
@@ -100,6 +112,11 @@ struct MenuBarPanelView: View {
                     model.openLogsFolder()
                 }
                 .disabled(model.serviceStatus?.logPaths.isEmpty != false)
+            }
+            .disabled(model.isRunningAction)
+            if model.isRunningAction {
+                ProgressView()
+                    .controlSize(.small)
             }
         }
         .buttonStyle(.bordered)

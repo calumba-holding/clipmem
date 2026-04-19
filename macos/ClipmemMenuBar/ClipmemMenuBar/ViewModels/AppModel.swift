@@ -10,8 +10,10 @@ final class AppModel {
     var settingsReport: SettingsReport?
     var recentPreview: [ClipmemItem] = []
     var lastErrorMessage: String?
+    var actionMessage: String?
     var hotkeyMessage: String?
     var isRefreshing = false
+    var isRunningAction = false
 
     @ObservationIgnored private let hotKeyManager = HotKeyManager()
 
@@ -88,21 +90,31 @@ final class AppModel {
     }
 
     func runSetup() async {
-        await runAction(.setup())
-        await refreshAll()
+        if await runAction(.setup(), successMessage: "Setup completed.") {
+            await refreshAll()
+        }
     }
 
     func serviceAction(_ action: String) async {
-        await runAction(.service(action))
-        await refreshAll()
+        if await runAction(.service(action), successMessage: "Service \(action) completed.") {
+            await refreshAll()
+        }
     }
 
-    func runAction(_ command: ClipmemCommand) async {
+    @discardableResult
+    func runAction(_ command: ClipmemCommand, successMessage: String? = nil) async -> Bool {
+        isRunningAction = true
+        actionMessage = nil
+        defer { isRunningAction = false }
         do {
             try await client.runAction(command)
             lastErrorMessage = nil
+            actionMessage = successMessage
+            return true
         } catch {
             lastErrorMessage = error.localizedDescription
+            actionMessage = nil
+            return false
         }
     }
 

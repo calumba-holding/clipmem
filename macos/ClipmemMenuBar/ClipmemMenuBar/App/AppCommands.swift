@@ -1,8 +1,16 @@
+import AppKit
 import SwiftUI
 
 enum WindowID: String {
     case history = "history"
     case quickRecall = "quick-recall"
+
+    var title: String {
+        switch self {
+        case .history: "History"
+        case .quickRecall: "Quick Recall"
+        }
+    }
 }
 
 enum PreferenceKey {
@@ -30,5 +38,62 @@ extension UserDefaults {
             return true
         }
         return bool(forKey: PreferenceKey.hotkeyEnabled)
+    }
+}
+
+enum WindowActivation {
+    @MainActor
+    static func openWindow(_ openWindow: OpenWindowAction, id: WindowID) {
+        openWindow(id: id.rawValue)
+        bringAppForward(target: .window(id))
+    }
+
+    @MainActor
+    static func openSettings(_ openSettings: OpenSettingsAction) {
+        openSettings()
+        bringAppForward(target: .settings)
+    }
+
+    @MainActor
+    static func bringAppForward(target: Target? = nil) {
+        activateNow(target: target)
+        DispatchQueue.main.async {
+            activateNow(target: target)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            activateNow(target: target)
+        }
+    }
+
+    @MainActor
+    private static func activateNow(target: Target?) {
+        NSApp.activate(ignoringOtherApps: true)
+        let windows = NSApp.windows.filter { window in
+            window.isVisible && window.canBecomeKey && (target?.matches(window) ?? true)
+        }
+        for window in windows {
+            window.orderFrontRegardless()
+        }
+    }
+
+    enum Target {
+        case window(WindowID)
+        case settings
+
+        @MainActor
+        func matches(_ window: NSWindow) -> Bool {
+            switch self {
+            case .window(let id):
+                return window.title == id.title
+            case .settings:
+                let identifier = window.identifier?.rawValue ?? ""
+                return identifier == "com_apple_SwiftUI_Settings_window" || [
+                    "General",
+                    "Capture",
+                    "Ignored Apps",
+                    "Privacy"
+                ].contains(window.title)
+            }
+        }
     }
 }

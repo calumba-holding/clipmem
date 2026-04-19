@@ -31,7 +31,7 @@ struct HistoryWindowView: View {
                 }
                 .keyboardShortcut("r", modifiers: .command)
                 Button("Quick Recall", systemImage: "bolt") {
-                    openWindow(id: WindowID.quickRecall.rawValue)
+                    WindowActivation.openWindow(openWindow, id: .quickRecall)
                 }
             }
         }

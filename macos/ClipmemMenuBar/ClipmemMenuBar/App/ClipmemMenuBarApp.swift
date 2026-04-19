@@ -51,8 +51,7 @@ struct ClipmemMenuBarApp: App {
     @MainActor
     private func configureHotkey() {
         appModel.configureHotkey(enabled: hotkeyEnabled) {
-            openWindow(id: WindowID.quickRecall.rawValue)
-            NSApp.activate(ignoringOtherApps: true)
+            WindowActivation.openWindow(openWindow, id: .quickRecall)
         }
     }
 }
