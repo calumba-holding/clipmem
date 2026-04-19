@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-enum QueryMode: String, CaseIterable, Identifiable, Codable, Hashable {
+enum QueryMode: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
     case recall
     case search
     case recent
@@ -31,7 +31,7 @@ enum QueryMode: String, CaseIterable, Identifiable, Codable, Hashable {
     }
 }
 
-enum HealthState: String {
+enum HealthState: String, Sendable {
     case healthy
     case stale
     case setupNeeded
@@ -75,7 +75,7 @@ enum HealthState: String {
     }
 }
 
-enum ClipboardKind: String, CaseIterable, Identifiable, Codable, Hashable {
+enum ClipboardKind: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
     case text
     case html
     case rtf
@@ -103,7 +103,7 @@ enum ClipboardKind: String, CaseIterable, Identifiable, Codable, Hashable {
     }
 }
 
-struct RetrievalFilterState: Equatable {
+struct RetrievalFilterState: Equatable, Sendable {
     var hours: Int
     var appName = ""
     var bundleID = ""

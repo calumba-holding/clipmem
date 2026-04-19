@@ -1,6 +1,6 @@
 import Foundation
 
-struct ProviderStatus: Decodable, Equatable {
+struct ProviderStatus: Decodable, Equatable, Sendable {
     var provider: String?
     var label: String?
     var state: String?
@@ -13,7 +13,7 @@ struct ProviderStatus: Decodable, Equatable {
     var stderrLogPath: String?
 }
 
-struct ServiceStatusReport: Decodable, Equatable {
+struct ServiceStatusReport: Decodable, Equatable, Sendable {
     var binaryPath: String?
     var dbPath: String?
     var preferredProvider: String?
@@ -49,7 +49,7 @@ struct ServiceStatusReport: Decodable, Equatable {
     }
 }
 
-struct DoctorReport: Decodable, Equatable {
+struct DoctorReport: Decodable, Equatable, Sendable {
     var dbPath: String?
     var sqliteVersion: String?
     var journalMode: String?
@@ -58,7 +58,7 @@ struct DoctorReport: Decodable, Equatable {
     var compileOptions: [String]?
 }
 
-struct SettingsReport: Decodable, Equatable {
+struct SettingsReport: Decodable, Equatable, Sendable {
     var paused: Bool
     var apiKeyFilterEnabled: Bool
     var retentionSeconds: UInt64?
@@ -66,7 +66,7 @@ struct SettingsReport: Decodable, Equatable {
     var ignoredBundleIds: [String]
 }
 
-struct ListEnvelope: Decodable, Equatable {
+struct ListEnvelope: Decodable, Equatable, Sendable {
     var schemaVersion: Int?
     var command: String
     var generatedAt: String?
@@ -76,7 +76,7 @@ struct ListEnvelope: Decodable, Equatable {
     var results: [ClipmemItem]
 }
 
-struct RecallEnvelope: Decodable, Equatable {
+struct RecallEnvelope: Decodable, Equatable, Sendable {
     var schemaVersion: Int?
     var command: String
     var generatedAt: String?
@@ -89,14 +89,14 @@ struct RecallEnvelope: Decodable, Equatable {
     var quotedText: String?
 }
 
-struct GetEnvelope: Decodable, Equatable {
+struct GetEnvelope: Decodable, Equatable, Sendable {
     var schemaVersion: Int?
     var command: String
     var generatedAt: String?
     var snapshot: SnapshotDetails
 }
 
-struct ClipmemItem: Decodable, Identifiable, Hashable {
+struct ClipmemItem: Decodable, Identifiable, Hashable, Sendable {
     var snapshotId: Int
     var eventId: Int?
     var sha256: String?
@@ -147,14 +147,14 @@ struct ClipmemItem: Decodable, Identifiable, Hashable {
     }
 }
 
-struct TextFragment: Decodable, Hashable {
+struct TextFragment: Decodable, Hashable, Sendable {
     var itemIndex: Int?
     var uti: String?
     var kind: String?
     var text: String?
 }
 
-struct SnapshotDetails: Decodable, Equatable {
+struct SnapshotDetails: Decodable, Equatable, Sendable {
     var snapshotId: Int
     var sha256: String
     var snapshotKind: String?
@@ -180,7 +180,7 @@ struct SnapshotDetails: Decodable, Equatable {
     var items: [ClipboardItemDetail]
 }
 
-struct CaptureEvent: Decodable, Equatable, Identifiable {
+struct CaptureEvent: Decodable, Equatable, Identifiable, Sendable {
     var eventId: Int
     var observedAt: String
     var changeCount: Int?
@@ -190,7 +190,7 @@ struct CaptureEvent: Decodable, Equatable, Identifiable {
     var id: Int { eventId }
 }
 
-struct ClipboardItemDetail: Decodable, Equatable, Identifiable {
+struct ClipboardItemDetail: Decodable, Equatable, Identifiable, Sendable {
     var itemIndex: Int
     var primaryKind: String?
     var primaryUti: String?
@@ -202,7 +202,7 @@ struct ClipboardItemDetail: Decodable, Equatable, Identifiable {
     var id: Int { itemIndex }
 }
 
-struct ClipboardRepresentation: Decodable, Equatable, Identifiable {
+struct ClipboardRepresentation: Decodable, Equatable, Identifiable, Sendable {
     var uti: String
     var kind: String?
     var isText: Bool?
@@ -213,14 +213,14 @@ struct ClipboardRepresentation: Decodable, Equatable, Identifiable {
     var id: String { uti }
 }
 
-struct RestoreOutput: Decodable, Equatable {
+struct RestoreOutput: Decodable, Equatable, Sendable {
     var snapshotId: Int
     var itemCount: Int
     var representationCount: Int
     var totalBytes: Int
 }
 
-struct ExportOutput: Decodable, Equatable {
+struct ExportOutput: Decodable, Equatable, Sendable {
     var snapshotId: Int
     var itemIndex: Int
     var uti: String
@@ -229,7 +229,7 @@ struct ExportOutput: Decodable, Equatable {
     var out: String
 }
 
-struct ForgetOutput: Decodable, Equatable {
+struct ForgetOutput: Decodable, Equatable, Sendable {
     var snapshotId: Int
     var itemCount: Int
     var representationCount: Int
@@ -237,7 +237,7 @@ struct ForgetOutput: Decodable, Equatable {
     var totalBytes: Int
 }
 
-struct PurgeOutput: Decodable, Equatable {
+struct PurgeOutput: Decodable, Equatable, Sendable {
     var olderThanSeconds: UInt64
     var dryRun: Bool
     var snapshotCount: Int
@@ -247,7 +247,7 @@ struct PurgeOutput: Decodable, Equatable {
     var totalBytes: Int
 }
 
-enum JSONValue: Decodable, Equatable, Hashable {
+enum JSONValue: Decodable, Equatable, Hashable, Sendable {
     case string(String)
     case int(Int)
     case double(Double)

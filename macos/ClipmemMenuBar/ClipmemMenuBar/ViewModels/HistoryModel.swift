@@ -152,7 +152,7 @@ final class HistoryModel {
     }
 }
 
-private struct HistoryRequest: Equatable {
+private struct HistoryRequest: Equatable, Sendable {
     var generation: Int
     var mode: QueryMode
     var query: String

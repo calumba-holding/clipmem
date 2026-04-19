@@ -61,7 +61,7 @@ The Rust CLI and SwiftUI menu bar app ship as separate Homebrew install surfaces
 
 ## Current release artifacts
 
-For `0.2.3`, `dist plan --allow-dirty` reports these CLI artifacts:
+For `0.2.4`, `dist plan --allow-dirty` reports these CLI artifacts:
 
 - `source.tar.gz`
 - `source.tar.gz.sha256`

@@ -1,6 +1,6 @@
 import Foundation
 
-enum ClipmemClientError: Error, LocalizedError, Equatable {
+enum ClipmemClientError: Error, LocalizedError, Equatable, Sendable {
     case binaryNotFound([String])
     case invalidArguments(String)
     case notFound(String)
@@ -41,7 +41,7 @@ enum ClipmemClientError: Error, LocalizedError, Equatable {
     }
 }
 
-struct UserError: Equatable {
+struct UserError: Equatable, Sendable {
     let message: String
     let recovery: String?
 
