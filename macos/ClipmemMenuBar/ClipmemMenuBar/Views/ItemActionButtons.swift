@@ -84,7 +84,7 @@ struct ItemActionButtons: View {
                     itemIndex: clipboardItem.itemIndex,
                     uti: representation.uti,
                     destination: destination,
-                    force: false
+                    force: true
                 )
                 appModel.lastErrorMessage = nil
             } catch {

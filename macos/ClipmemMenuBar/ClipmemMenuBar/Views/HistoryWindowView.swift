@@ -7,7 +7,7 @@ struct HistoryWindowView: View {
     @State private var history: HistoryModel
     @SceneStorage("history.mode") private var storedMode = QueryMode.recent.rawValue
     @SceneStorage("history.query") private var storedQuery = ""
-    @SceneStorage("history.inspector") private var inspectorPresented = true
+    @SceneStorage("history.inspector") private var inspectorPresented = false
     @SceneStorage("history.selected") private var storedSelectedID = 0
 
     init(appModel: AppModel) {
@@ -17,37 +17,38 @@ struct HistoryWindowView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $history.mode) {
-                Section("Browse") {
-                    ForEach([QueryMode.recall, .search, .recent, .timeline]) { mode in
-                        Label(mode.title, systemImage: mode.symbol)
-                            .tag(mode)
-                    }
+            sidebar
+        } content: {
+            contentColumn
+        } detail: {
+            detailColumn
+        }
+        .navigationTitle(history.mode.title)
+        .toolbar {
+            ToolbarItemGroup {
+                Button("Refresh", systemImage: "arrow.clockwise") {
+                    Task { await history.reload() }
                 }
-                Section("System") {
-                    Label(QueryMode.diagnostics.title, systemImage: QueryMode.diagnostics.symbol)
-                        .tag(QueryMode.diagnostics)
+                .keyboardShortcut("r", modifiers: .command)
+                Button("Quick Recall", systemImage: "bolt") {
+                    openWindow(id: WindowID.quickRecall.rawValue)
                 }
             }
-            .navigationTitle("clipmem")
-        } detail: {
-            content
-                .navigationTitle(history.mode.title)
-                .toolbar {
-                    ToolbarItemGroup {
-                        Button("Refresh", systemImage: "arrow.clockwise") {
-                            Task { await history.reload() }
-                        }
-                        .keyboardShortcut("r", modifiers: .command)
-                        Button("Quick Recall", systemImage: "bolt") {
-                            openWindow(id: WindowID.quickRecall.rawValue)
-                        }
-                    }
-                }
         }
         .inspector(isPresented: $inspectorPresented) {
             inspector
-                .inspectorColumnWidth(min: 260, ideal: 300, max: 380)
+                .inspectorColumnWidth(min: 220, ideal: 260, max: 320)
+        }
+        .navigationSplitViewStyle(.balanced)
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(key: HistoryWindowWidthKey.self, value: proxy.size.width)
+            }
+        }
+        .onPreferenceChange(HistoryWindowWidthKey.self) { width in
+            if inspectorPresented, width < 1_400 {
+                inspectorPresented = false
+            }
         }
         .task {
             restoreSceneState()
@@ -66,45 +67,109 @@ struct HistoryWindowView: View {
         }
     }
 
-    @ViewBuilder
-    private var content: some View {
-        if history.mode == .diagnostics {
-            DiagnosticsView(appModel: appModel)
-        } else {
-            VStack(spacing: 0) {
-                VStack(spacing: 10) {
-                    HStack {
-                        Picker("Mode", selection: $history.mode) {
-                            ForEach([QueryMode.recall, .search, .recent, .timeline]) { mode in
-                                Text(mode.title).tag(mode)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 360)
-                        TextField(searchPrompt, text: $history.query)
-                            .textFieldStyle(.roundedBorder)
-                            .disabled(history.mode == .recent || history.mode == .timeline)
-                            .onSubmit {
-                                Task { await history.reload() }
-                            }
-                        Button("Search", systemImage: "magnifyingglass") {
-                            Task { await history.reload() }
-                        }
-                        .disabled((history.mode == .search || history.mode == .recall) && history.query.isEmpty && history.mode == .search)
-                    }
-                    FilterBar(history: history)
-                }
-                .padding()
-
-                Divider()
-
-                HSplitView {
-                    resultList
-                        .frame(minWidth: 360, idealWidth: 440)
-                    SnapshotDetailView(detail: history.selectedDetail, fallback: history.selectedItem)
-                        .frame(minWidth: 420)
+    private var sidebar: some View {
+        List(selection: $history.mode) {
+            Section("Browse") {
+                ForEach([QueryMode.recall, .search, .recent, .timeline]) { mode in
+                    Label(mode.title, systemImage: mode.symbol)
+                        .tag(mode)
                 }
             }
+            Section("System") {
+                Label(QueryMode.diagnostics.title, systemImage: QueryMode.diagnostics.symbol)
+                    .tag(QueryMode.diagnostics)
+            }
+        }
+        .navigationTitle("clipmem")
+        .navigationSplitViewColumnWidth(min: 150, ideal: 180, max: 220)
+    }
+
+    @ViewBuilder
+    private var contentColumn: some View {
+        if history.mode == .diagnostics {
+            DiagnosticsView(appModel: appModel)
+                .navigationTitle("Diagnostics")
+                .navigationSplitViewColumnWidth(min: 560, ideal: 700)
+        } else {
+            VStack(spacing: 0) {
+                queryControls
+                    .padding()
+                Divider()
+                resultList
+            }
+            .navigationTitle(history.mode.title)
+            .navigationSplitViewColumnWidth(min: 320, ideal: 420, max: 560)
+        }
+    }
+
+    @ViewBuilder
+    private var detailColumn: some View {
+        if history.mode == .diagnostics {
+            EmptyStateView(title: "Diagnostics", detail: "Service and doctor output are shown in the middle column.", symbol: "stethoscope")
+                .navigationTitle("Details")
+                .navigationSplitViewColumnWidth(min: 360, ideal: 520)
+        } else {
+            SnapshotDetailView(detail: history.selectedDetail, fallback: history.selectedItem)
+                .navigationTitle(history.mode.title)
+                .navigationSplitViewColumnWidth(min: 360, ideal: 580)
+        }
+    }
+
+    private var queryControls: some View {
+        ViewThatFits(in: .horizontal) {
+            wideQueryControls
+            compactQueryControls
+        }
+    }
+
+    private var wideQueryControls: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Picker("Mode", selection: $history.mode) {
+                    ForEach([QueryMode.recall, .search, .recent, .timeline]) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 300)
+                TextField(searchPrompt, text: $history.query)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(history.mode == .recent || history.mode == .timeline)
+                    .onSubmit {
+                        Task { await history.reload() }
+                    }
+                Button("Search", systemImage: "magnifyingglass") {
+                    Task { await history.reload() }
+                }
+                .disabled((history.mode == .search || history.mode == .recall) && history.query.isEmpty && history.mode == .search)
+            }
+            FilterBar(history: history)
+        }
+    }
+
+    private var compactQueryControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Picker("Mode", selection: $history.mode) {
+                ForEach([QueryMode.recall, .search, .recent, .timeline]) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 300)
+
+            HStack {
+                TextField(searchPrompt, text: $history.query)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(history.mode == .recent || history.mode == .timeline)
+                    .onSubmit {
+                        Task { await history.reload() }
+                    }
+                Button("Search", systemImage: "magnifyingglass") {
+                    Task { await history.reload() }
+                }
+                .disabled((history.mode == .search || history.mode == .recall) && history.query.isEmpty && history.mode == .search)
+            }
+            FilterBar(history: history)
         }
     }
 
@@ -177,5 +242,13 @@ struct HistoryWindowView: View {
         history.mode = QueryMode(rawValue: storedMode) ?? .recent
         history.query = storedQuery
         history.selectedID = storedSelectedID == 0 ? nil : storedSelectedID
+    }
+}
+
+private struct HistoryWindowWidthKey: SwiftUI.PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }

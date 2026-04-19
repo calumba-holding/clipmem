@@ -36,6 +36,8 @@ struct SnapshotDetailView: View {
                 Text(text)
                     .textSelection(.enabled)
                     .font(.body.monospaced())
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 ContentUnavailableView("No Extracted Text", systemImage: "shippingbox", description: Text("This snapshot appears to be binary, image, PDF, or otherwise has no extracted text. Metadata and export actions are available."))
@@ -44,18 +46,18 @@ struct SnapshotDetailView: View {
     }
 
     private func metadataSection(_ detail: SnapshotDetails) -> some View {
-        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
-            FieldRow(title: "Kind", value: detail.snapshotKind)
-            FieldRow(title: "Snapshot ID", value: String(detail.snapshotId))
-            FieldRow(title: "SHA-256", value: detail.sha256)
-            FieldRow(title: "First Seen", value: detail.firstObservedAt)
-            FieldRow(title: "Last Seen", value: detail.lastObservedAt)
-            FieldRow(title: "Capture Count", value: String(detail.captureCount))
-            FieldRow(title: "Bytes", value: String(detail.totalBytes))
-            FieldRow(title: "App Hint", value: detail.lastFrontmostAppName.map { "Copied while in \($0)" })
-            FieldRow(title: "Bundle ID", value: detail.lastFrontmostAppBundleId)
-            FieldRow(title: "URLs", value: detail.urls.joined(separator: "\n"))
-            FieldRow(title: "Files", value: detail.filePaths.joined(separator: "\n"))
+        VStack(alignment: .leading, spacing: 6) {
+            DetailFieldRow(title: "Kind", value: detail.snapshotKind)
+            DetailFieldRow(title: "Snapshot ID", value: String(detail.snapshotId))
+            DetailFieldRow(title: "SHA-256", value: detail.sha256, lineLimit: 1)
+            DetailFieldRow(title: "First Seen", value: detail.firstObservedAt)
+            DetailFieldRow(title: "Last Seen", value: detail.lastObservedAt)
+            DetailFieldRow(title: "Capture Count", value: String(detail.captureCount))
+            DetailFieldRow(title: "Bytes", value: String(detail.totalBytes))
+            DetailFieldRow(title: "App Hint", value: detail.lastFrontmostAppName.map { "Copied while in \($0)" })
+            DetailFieldRow(title: "Bundle ID", value: detail.lastFrontmostAppBundleId, lineLimit: 1)
+            DetailFieldRow(title: "URLs", value: detail.urls.joined(separator: "\n"), lineLimit: 3)
+            DetailFieldRow(title: "Files", value: detail.filePaths.joined(separator: "\n"), lineLimit: 3)
         }
     }
 
@@ -70,9 +72,13 @@ struct SnapshotDetailView: View {
                     ForEach(item.representations) { representation in
                         HStack {
                             Text(representation.uti)
-                            Spacer()
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             Text(representation.kind ?? "unknown")
+                                .lineLimit(1)
                             Text("\(representation.byteLen) bytes")
+                                .lineLimit(1)
                         }
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -93,10 +99,34 @@ struct SnapshotDetailView: View {
                     Text(event.observedAt)
                     if let app = event.frontmostAppName {
                         Text("Copied while in \(app)")
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                     }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+private struct DetailFieldRow: View {
+    let title: String
+    let value: String?
+    var lineLimit: Int?
+
+    var body: some View {
+        if let value, value.isEmpty == false {
+            HStack(alignment: .top, spacing: 12) {
+                Text(title)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 130, alignment: .trailing)
+                Text(value)
+                    .textSelection(.enabled)
+                    .lineLimit(lineLimit)
+                    .truncationMode(.middle)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }

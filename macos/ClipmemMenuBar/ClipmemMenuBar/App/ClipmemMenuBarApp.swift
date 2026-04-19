@@ -25,12 +25,16 @@ struct ClipmemMenuBarApp: App {
 
         WindowGroup("History", id: WindowID.history.rawValue) {
             HistoryWindowView(appModel: appModel)
-                .frame(minWidth: 960, minHeight: 620)
+                .frame(minWidth: 880, idealWidth: 1160, minHeight: 600, idealHeight: 740)
+                .modifier(WindowFrameLimiter(maxVisibleWidthInset: 48, maxVisibleHeightInset: 64))
         }
         .commands {
             InspectorCommands()
         }
         .keyboardShortcut("h", modifiers: [.command, .shift])
+        .defaultSize(width: 1160, height: 740)
+        .defaultPosition(.center)
+        .windowResizability(.contentMinSize)
 
         Window("Quick Recall", id: WindowID.quickRecall.rawValue) {
             QuickRecallWindowView(appModel: appModel)
@@ -49,6 +53,76 @@ struct ClipmemMenuBarApp: App {
         appModel.configureHotkey(enabled: hotkeyEnabled) {
             openWindow(id: WindowID.quickRecall.rawValue)
             NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+}
+
+private struct WindowFrameLimiter: ViewModifier {
+    let maxVisibleWidthInset: CGFloat
+    let maxVisibleHeightInset: CGFloat
+
+    func body(content: Content) -> some View {
+        content.background(WindowFrameLimiterView(widthInset: maxVisibleWidthInset, heightInset: maxVisibleHeightInset))
+    }
+}
+
+private struct WindowFrameLimiterView: NSViewRepresentable {
+    let widthInset: CGFloat
+    let heightInset: CGFloat
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async {
+            context.coordinator.limitWindowFrame(for: view, widthInset: widthInset, heightInset: heightInset)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            context.coordinator.limitWindowFrame(for: nsView, widthInset: widthInset, heightInset: heightInset)
+        }
+    }
+
+    @MainActor
+    final class Coordinator {
+        private var didLimitFrame = false
+
+        func limitWindowFrame(for view: NSView, widthInset: CGFloat, heightInset: CGFloat) {
+            guard didLimitFrame == false, let window = view.window else { return }
+            didLimitFrame = true
+
+            let visibleFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
+            guard visibleFrame.width > 0, visibleFrame.height > 0 else { return }
+
+            let maxSize = CGSize(
+                width: max(880, visibleFrame.width - widthInset),
+                height: max(600, visibleFrame.height - heightInset)
+            )
+            var frame = window.frame
+            frame.size.width = min(frame.width, maxSize.width)
+            frame.size.height = min(frame.height, maxSize.height)
+
+            if frame.maxX > visibleFrame.maxX {
+                frame.origin.x = visibleFrame.maxX - frame.width
+            }
+            if frame.minX < visibleFrame.minX {
+                frame.origin.x = visibleFrame.minX
+            }
+            if frame.maxY > visibleFrame.maxY {
+                frame.origin.y = visibleFrame.maxY - frame.height
+            }
+            if frame.minY < visibleFrame.minY {
+                frame.origin.y = visibleFrame.minY
+            }
+
+            if frame != window.frame {
+                window.setFrame(frame, display: true, animate: false)
+            }
         }
     }
 }

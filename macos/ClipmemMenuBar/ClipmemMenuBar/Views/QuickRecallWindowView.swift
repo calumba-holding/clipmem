@@ -41,6 +41,11 @@ struct QuickRecallWindowView: View {
         .onExitCommand {
             dismiss()
         }
+        .onKeyPress(.space) {
+            guard quick.selectedItem != nil, queryFocused == false else { return .ignored }
+            openHistory()
+            return .handled
+        }
         .confirmationDialog("Forget this snapshot?", isPresented: $confirmForget) {
             Button("Forget", role: .destructive) {
                 let item = pendingForgetItem

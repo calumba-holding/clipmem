@@ -12,23 +12,16 @@ struct ResultRowView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.displayText)
                     .lineLimit(2)
+                    .truncationMode(.tail)
                     .font(.body)
-                HStack(spacing: 8) {
-                    Text(item.kind ?? "unknown")
-                    if let observedAt = item.observedAt {
-                        Text(observedAt)
-                    }
-                    if let appHint = item.appHint {
-                        Text(appHint)
-                    }
-                    if let why = item.whyMatched, why.isEmpty == false {
-                        Text(why)
-                    }
-                }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(metadata)
                 .font(.caption)
                 .foregroundStyle(selected ? .white.opacity(0.82) : .secondary)
                 .lineLimit(1)
+                .truncationMode(.tail)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             Spacer()
             if let score = item.score {
                 Text(score.formatted(.number.precision(.fractionLength(2))))
@@ -40,6 +33,17 @@ struct ResultRowView: View {
         .padding(.horizontal, 6)
         .background(selected ? Color.accentColor : Color.clear, in: .rect(cornerRadius: 6))
         .contentShape(Rectangle())
+    }
+
+    private var metadata: String {
+        [
+            item.kind ?? "unknown",
+            item.observedAt,
+            item.appHint,
+            item.whyMatched?.isEmpty == false ? item.whyMatched : nil,
+        ]
+        .compactMap { $0 }
+        .joined(separator: "   ")
     }
 
     private var symbol: String {

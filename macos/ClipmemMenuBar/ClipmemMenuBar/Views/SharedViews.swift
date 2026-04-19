@@ -52,6 +52,9 @@ struct FieldRow: View {
                     .gridColumnAlignment(.trailing)
                 Text(value)
                     .textSelection(.enabled)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -62,6 +65,15 @@ struct FilterBar: View {
     @Bindable var history: HistoryModel
 
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            wideLayout
+            compactLayout
+        }
+        .toggleStyle(.checkbox)
+        .font(.callout)
+    }
+
+    private var wideLayout: some View {
         HStack(spacing: 10) {
             Stepper("Hours: \(history.filters.hours)", value: $history.filters.hours, in: 1...720)
                 .frame(width: 130)
@@ -84,7 +96,36 @@ struct FilterBar: View {
             Toggle("Image", isOn: $history.filters.hasImage)
             Toggle("PDF", isOn: $history.filters.hasPDF)
         }
-        .toggleStyle(.checkbox)
-        .font(.callout)
+    }
+
+    private var compactLayout: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Stepper("Hours: \(history.filters.hours)", value: $history.filters.hours, in: 1...720)
+                    .frame(width: 130)
+                Picker("Kind", selection: $history.filters.kind) {
+                    Text("Any").tag(ClipboardKind?.none)
+                    ForEach(ClipboardKind.allCases) { kind in
+                        Text(kind.title).tag(Optional(kind))
+                    }
+                }
+                .frame(width: 130)
+            }
+            HStack(spacing: 10) {
+                TextField("App", text: $history.filters.appName)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(minWidth: 120, maxWidth: 180)
+                TextField("Bundle ID", text: $history.filters.bundleID)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(minWidth: 150, maxWidth: 220)
+            }
+            HStack(spacing: 10) {
+                Toggle("Text", isOn: $history.filters.hasText)
+                Toggle("URL", isOn: $history.filters.hasURL)
+                Toggle("File", isOn: $history.filters.hasFile)
+                Toggle("Image", isOn: $history.filters.hasImage)
+                Toggle("PDF", isOn: $history.filters.hasPDF)
+            }
+        }
     }
 }
