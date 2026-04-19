@@ -9,6 +9,10 @@ captured and how long it's kept.
 clipmem makes no network calls and sends no telemetry. Your clipboard
 data never leaves your machine.
 
+When OCR is enabled, image text recognition runs locally through Apple
+Vision on macOS. clipmem doesn't send images or OCR text to any remote
+service.
+
 ## Database location
 
 The database lives at:
@@ -41,6 +45,9 @@ representations) are stored in their raw form so `clipmem restore`
 can faithfully rehydrate them back onto the clipboard. This means
 the database can grow if you frequently copy large binary content.
 
+Phase 1 OCR doesn't compress, transcode, or replace stored images.
+Raw image bytes remain the source of truth for `restore` and `export`.
+
 ## Controlling what gets captured
 
 You have several options to limit what clipmem archives:
@@ -67,6 +74,31 @@ Matching snapshots are skipped entirely instead of being redacted —
 no preview text, search text, or blob payloads are written. The filter
 is heuristic and tuned to avoid false positives rather than catch every
 possible secret.
+
+### OCR
+
+Opt into local OCR for image captures:
+
+```bash
+clipmem settings ocr on
+clipmem settings ocr off
+```
+
+OCR is disabled by default. When enabled, new image captures are stored
+immediately and OCR runs afterward. OCR failures don't block capture.
+Completed OCR text and status are stored in SQLite and become
+searchable by `search`, `recall`, `recent`, and `timeline`.
+
+To process existing image snapshots, run:
+
+```bash
+clipmem ocr run
+clipmem ocr status
+```
+
+Use the same privacy model for OCR text as for copied plain text:
+any readable text inside copied images can become searchable in the
+local database.
 
 ### Ignore list
 

@@ -28,6 +28,8 @@ pub struct FlattenedTextProjection {
     html_text: Option<String>,
     rtf_text: Option<String>,
     text_summary: String,
+    ocr_text: Option<String>,
+    ocr_status: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -160,7 +162,24 @@ impl FlattenedTextProjection {
             html_text,
             rtf_text,
             text_summary,
+            ocr_text: None,
+            ocr_status: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_ocr(mut self, ocr_text: Option<String>, ocr_status: Option<String>) -> Self {
+        let normalized_ocr_text = ocr_text.and_then(|text| normalize_nonempty_text(&text));
+        if self.best_text.trim().is_empty() {
+            if let Some(text) = normalized_ocr_text.as_ref() {
+                self.best_text = text.clone();
+                self.best_text_uti = Some("com.clipmem.ocr.text".to_string());
+                self.text_summary = truncate_chars(text, TEXT_SUMMARY_LIMIT);
+            }
+        }
+        self.ocr_text = normalized_ocr_text;
+        self.ocr_status = ocr_status;
+        self
     }
 
     #[must_use]
@@ -201,6 +220,16 @@ impl FlattenedTextProjection {
     #[must_use]
     pub fn text_summary(&self) -> &str {
         &self.text_summary
+    }
+
+    #[must_use]
+    pub fn ocr_text(&self) -> Option<&str> {
+        self.ocr_text.as_deref()
+    }
+
+    #[must_use]
+    pub fn ocr_status(&self) -> Option<&str> {
+        self.ocr_status.as_deref()
     }
 }
 

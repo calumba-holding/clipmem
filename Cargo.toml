@@ -1,6 +1,6 @@
 [package]
 name = "clipmem"
-version = "0.2.8"
+version = "0.2.9"
 edition = "2021"
 description = "macOS clipboard memory backed by SQLite and searchable from OpenClaw"
 license = "MIT"
@@ -25,7 +25,8 @@ time = { version = "0.3.47", features = ["formatting", "parsing"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.2"
 objc2-app-kit = { version = "0.3.2", features = ["NSPasteboard", "NSPasteboardItem", "NSWorkspace", "NSRunningApplication"] }
-objc2-foundation = { version = "0.3.2", features = ["NSArray", "NSData", "NSString"] }
+objc2-vision = { version = "0.3.2", features = ["VNObservation", "VNRecognizeTextRequest", "VNRequest", "VNRequestHandler"] }
+objc2-foundation = { version = "0.3.2", features = ["NSArray", "NSData", "NSDictionary", "NSString"] }
 
 # The profile that 'dist' will build with
 [profile.dist]

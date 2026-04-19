@@ -2,7 +2,7 @@
 name: clipboard-memory
 description: Recall what the user copied on this Mac via the local clipmem archive — text, commands, URLs, file paths, HTML, images, PDFs. Triggers on requests like "what was that command I copied?", "the URL I copied from Safari", "find that snippet before I restarted", or any paraphrase involving copy, paste, or clipboard. Offers ranked recall, chronological timeline, lexical / FTS search, raw-byte export for binary content, cursor pagination, and filters by app, kind, time window, and content shape. Use before reaching for generic web or repo search whenever the user is trying to recover something they previously had on the clipboard.
 license: MIT
-metadata: {"openclaw":{"emoji":"📋","os":["darwin"],"requires":{"bins":["clipmem"]},"install":[{"id":"brew","kind":"brew","label":"Install clipmem (brew)","bins":["clipmem"],"formula":"clipmem","tap":"tristanmanchester/tap"},{"id":"cargo","kind":"cargo","label":"Install clipmem (cargo)","bins":["clipmem"],"package":"clipmem"}],"version":"1.2.1"}}
+metadata: {"openclaw":{"emoji":"📋","os":["darwin"],"requires":{"bins":["clipmem"]},"install":[{"id":"brew","kind":"brew","label":"Install clipmem (brew)","bins":["clipmem"],"formula":"clipmem","tap":"tristanmanchester/tap"},{"id":"cargo","kind":"cargo","label":"Install clipmem (cargo)","bins":["clipmem"],"package":"clipmem"}],"version":"1.3.0"}}
 ---
 
 Recall what the user copied on this Mac before reaching for generic search. `clipmem` maintains a local, privacy-preserving SQLite archive of every clipboard state macOS emits, and exposes a JSON-first CLI built for agents. This package is installed by `clipmem agents openclaw install-skill`; the canonical cross-agent source lives under `skills/clipboard-memory/`.
@@ -50,7 +50,7 @@ The full flag reference, JSON envelope, and kind values live in [references/comm
 
 ## Output format rule
 
-- `--format json` — single structured object. Use whenever you will parse the response. Stable within `schema_version: 1`.
+- `--format json` — single structured object. Use whenever you will parse the response. Stable within `schema_version: 2`.
 - `--format toon` — flat, token-efficient list. Prefer for high-cardinality enumeration (`timeline`, `search`, `recent`, `recall`) when you only need the top fields. Note: `get` does **not** support `toon`.
 - `--format jsonl` — newline-delimited records. Use when streaming many rows into a pipeline.
 - `--format md` / `--format text` — human-readable previews only; never parse these.
@@ -105,7 +105,7 @@ Read these JSON fields first; walk nested `items[].representations[]` only after
 - `best_candidate.file_paths` — file-URL array.
 - `why_selected`, `best_match_confidence`, `alternatives` (only on `recall`).
 - `next_cursor`, `truncated` — pagination state.
-- `schema_version` — pin to `1` for stability.
+- `schema_version` — pin to `2` for stability.
 
 Full schema in [references/json-schema.md](references/json-schema.md).
 

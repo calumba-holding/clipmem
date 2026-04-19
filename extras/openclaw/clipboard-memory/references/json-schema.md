@@ -1,6 +1,6 @@
 # Clipboard Memory — JSON Schema
 
-Stable response shapes for `--format json`. Current `schema_version` is `1`. This file is kept byte-identical across skill packages.
+Stable response shapes for `--format json`. Current `schema_version` is `2`. This file is kept byte-identical across skill packages.
 
 Breaking changes to these fields will bump `schema_version`. Additive changes (new optional keys) are allowed within the same version.
 
@@ -10,7 +10,7 @@ Breaking changes to these fields will bump `schema_version`. Additive changes (n
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "command": "recall",
   "generated_at": "2026-04-17T12:34:56Z",
   "applied_filters": { "hours": 24, "app": "safari" },
@@ -20,7 +20,7 @@ Breaking changes to these fields will bump `schema_version`. Additive changes (n
 }
 ```
 
-- `schema_version` — integer. Pin to `1` for stability checks.
+- `schema_version` — integer. Pin to `2` for stability checks.
 - `command` — echoes the subcommand.
 - `generated_at` — RFC3339 timestamp when the response was produced.
 - `applied_filters` — echoes the filters actually applied after argument parsing.
@@ -61,6 +61,8 @@ Read these first; walk nested `items[].representations[]` only after `get`.
   "file_paths": [],
   "html_text": null,
   "rtf_text": null,
+  "ocr_text": null,
+  "ocr_status": null,
   "text_summary": "git status",
   "preview_text": "git status",
 
@@ -86,7 +88,7 @@ Fields to read first for common questions:
 | "is this binary / image / pdf" | `kind`, presence of `best_text`, `total_bytes` |
 | "why did recall pick this" | `why_matched`, `matched_fields`, `score` |
 
-`best_text` is empty (`null` or `""`) for binary-only snapshots (images, PDFs, opaque blobs). In that case, fall through to `clipmem export` with a `uti` drawn from `clipmem get`.
+`best_text` can come from OCR for image-only snapshots. In that case, `best_text_uti` is `"com.clipmem.ocr.text"` and `ocr_status` is `"ready"`. If binary-only snapshots have no OCR text, fall through to `clipmem export` with a `uti` drawn from `clipmem get`.
 
 ---
 
@@ -94,7 +96,7 @@ Fields to read first for common questions:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "command": "get",
   "generated_at": "2026-04-17T12:34:56Z",
   "applied_filters": { },
@@ -109,6 +111,8 @@ Fields to read first for common questions:
     "file_paths": [],
     "html_text": null,
     "rtf_text": null,
+    "ocr_text": null,
+    "ocr_status": null,
     "text_summary": "git status",
     "preview_text": "git status",
     "search_text": "git status",
@@ -170,7 +174,7 @@ Returns a single snapshot envelope similar to `get`, describing what was just ca
 
 Before trusting a response:
 
-1. `schema_version == 1`.
+1. `schema_version == 2`.
 2. For envelopes: `truncated` and `next_cursor` before concluding "there is nothing else".
 3. For rows: `best_text` nullability before claiming "I found the exact text".
 4. For `recall`: `best_match_confidence` before committing to `best_candidate`. On `"low"`, surface alternatives.

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use rusqlite::{named_params, params, Error as SqlError, ErrorCode, Row};
+use rusqlite::{named_params, params, Error as SqlError, ErrorCode, OptionalExtension, Row};
 
 use crate::model::{
     CaptureEvent, ClipboardItem, ClipboardRepresentation, DoctorReport, FlattenedTextProjection,
@@ -519,7 +519,24 @@ impl Database {
         }
 
         let items = self.load_snapshot_items(snapshot_id)?;
-        Ok(Some(FlattenedTextProjection::from_items(&items)))
+        let ocr = self
+            .conn
+            .query_row(
+                "SELECT ocr_text, status FROM snapshot_ocr_cache WHERE snapshot_id = ?1",
+                [snapshot_id],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                    ))
+                },
+            )
+            .optional()
+            .context("load snapshot ocr projection")?
+            .unwrap_or((None, None));
+        Ok(Some(
+            FlattenedTextProjection::from_items(&items).with_ocr(ocr.0, ocr.1),
+        ))
     }
 
     /// Collect `SQLite` and FTS5 diagnostics for the current archive database.
@@ -632,13 +649,21 @@ impl Database {
             )
             .context("execute FTS search query")?;
 
-        collect_rows(rows)
+        let native_hits = collect_rows(rows)
             .map(|hits| paginate_rows(hits, limit))
             .map(|page| {
                 let has_more = page.has_more();
                 SearchResults::new(SearchMode::Fts, page.into_items(), has_more)
             })
-            .context("collect FTS search rows")
+            .context("collect FTS search rows")?;
+        let ocr_hits = self.search_ocr_fts_hits(query, limit, filters, cursor)?;
+        Ok(merge_scored_search_results(
+            SearchMode::Fts,
+            native_hits,
+            ocr_hits,
+            limit,
+            true,
+        ))
     }
 
     /// Search stored snapshots with literal `LIKE` matching semantics.
@@ -765,13 +790,140 @@ impl Database {
         }
         .context("execute literal search query")?;
 
+        let native_hits = collect_rows(rows)
+            .map(|hits| paginate_rows(hits, limit))
+            .map(|page| {
+                let has_more = page.has_more();
+                SearchResults::new(SearchMode::Literal, page.into_items(), has_more)
+            })
+            .context("collect literal search rows")?;
+        let ocr_hits = self.search_ocr_literal_hits(&analysis, limit, filters, cursor)?;
+        Ok(merge_scored_search_results(
+            SearchMode::Literal,
+            native_hits,
+            ocr_hits,
+            limit,
+            false,
+        ))
+    }
+
+    fn search_ocr_fts_hits(
+        &self,
+        query: &str,
+        limit: usize,
+        filters: &RetrievalFilters,
+        cursor: Option<&SearchCursorState>,
+    ) -> Result<SearchResults> {
+        let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
+        let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
+        let has_temporal_event_filters = has_temporal_event_filters(filters);
+        let sql = ocr_fts_query(use_snapshot_event_cache, has_temporal_event_filters);
+        let app_like = app_like_pattern(filters);
+        let bundle_id = filters.bundle_id().map(|value| value.to_ascii_lowercase());
+        let kind = filters.kind().map(|value| value.as_str());
+        let since = effective_since_param(filters)?;
+
+        let mut stmt = self
+            .conn
+            .prepare(&sql)
+            .context("prepare OCR FTS search query")?;
+        let rows = stmt
+            .query_map(
+                named_params! {
+                    ":query" : query,
+                    ":since" : since.as_deref(),
+                    ":until" : filters.until(),
+                    ":app_like" : app_like.as_deref(),
+                    ":bundle_id" : bundle_id.as_deref(),
+                    ":kind" : kind,
+                    ":has_text" : filters.has_text(),
+                    ":has_url" : filters.has_url(),
+                    ":has_file_url" : filters.has_file_url(),
+                    ":has_image" : filters.has_image(),
+                    ":has_pdf" : filters.has_pdf(),
+                    ":min_bytes" : filters.min_bytes().map(usize_to_i64).transpose()?,
+                    ":max_bytes" : filters.max_bytes().map(usize_to_i64).transpose()?,
+                    ":cursor_score" : cursor.and_then(SearchCursorState::score),
+                    ":cursor_last_seen_at" : cursor.map(SearchCursorState::last_seen_at),
+                    ":cursor_snapshot_id" : cursor.map(SearchCursorState::snapshot_id),
+                    ":limit" : fetch_limit,
+                },
+                |row| map_search_hit_row(row, true),
+            )
+            .context("execute OCR FTS search query")?;
+
+        collect_rows(rows)
+            .map(|hits| paginate_rows(hits, limit))
+            .map(|page| {
+                let has_more = page.has_more();
+                SearchResults::new(SearchMode::Fts, page.into_items(), has_more)
+            })
+            .context("collect OCR FTS search rows")
+    }
+
+    fn search_ocr_literal_hits(
+        &self,
+        analysis: &QueryAnalysis,
+        limit: usize,
+        filters: &RetrievalFilters,
+        cursor: Option<&SearchCursorState>,
+    ) -> Result<SearchResults> {
+        let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
+        let like = format!("%{}%", escape_like_pattern(&analysis.trimmed));
+        let prefix_like = format!("{}%", escape_like_pattern(&analysis.lower));
+        let app_like = app_like_pattern(filters);
+        let bundle_id = filters.bundle_id().map(|value| value.to_ascii_lowercase());
+        let kind = filters.kind().map(|value| value.as_str());
+        let since = effective_since_param(filters)?;
+        let include_matching_events = requires_matching_events(filters);
+        let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
+        let literal_match = literal_fts_match_query(analysis);
+        let sql = ocr_literal_query(
+            include_matching_events,
+            use_snapshot_event_cache,
+            literal_match.is_some(),
+        );
+
+        let mut stmt = self
+            .conn
+            .prepare(&sql)
+            .context("prepare OCR literal search query")?;
+        let rows = stmt
+            .query_map(
+                named_params! {
+                    ":query_lower" : analysis.lower.as_str(),
+                    ":like" : like,
+                    ":prefix_like" : prefix_like.as_str(),
+                    ":literal_match" : literal_match.as_deref(),
+                    ":exact_phrase_lower" : analysis.exact_phrase.as_deref(),
+                    ":since" : since.as_deref(),
+                    ":until" : filters.until(),
+                    ":app_like" : app_like.as_deref(),
+                    ":bundle_id" : bundle_id.as_deref(),
+                    ":kind" : kind,
+                    ":has_text" : filters.has_text(),
+                    ":has_url" : filters.has_url(),
+                    ":has_file_url" : filters.has_file_url(),
+                    ":has_image" : filters.has_image(),
+                    ":has_pdf" : filters.has_pdf(),
+                    ":min_bytes" : filters.min_bytes().map(usize_to_i64).transpose()?,
+                    ":max_bytes" : filters.max_bytes().map(usize_to_i64).transpose()?,
+                    ":cursor_score" : cursor.and_then(SearchCursorState::score),
+                    ":cursor_last_seen_at" : cursor.map(SearchCursorState::last_seen_at),
+                    ":cursor_snapshot_id" : cursor.map(SearchCursorState::snapshot_id),
+                    ":limit" : fetch_limit,
+                },
+                map_scored_search_hit_row,
+            )
+            .context("execute OCR literal search query")?;
+
         collect_rows(rows)
             .map(|hits| paginate_rows(hits, limit))
             .map(|page| {
                 let has_more = page.has_more();
                 SearchResults::new(SearchMode::Literal, page.into_items(), has_more)
             })
-            .context("collect literal search rows")
+            .context("collect OCR literal search rows")
     }
 
     fn search_file_path_literal_page(
@@ -997,9 +1149,12 @@ impl Database {
                     WHERE ce.snapshot_id = s.id
                     ORDER BY ce.observed_at DESC, ce.id DESC
                     LIMIT 1
-                ) AS last_frontmost_app_bundle_id
+                ) AS last_frontmost_app_bundle_id,
+                soc.ocr_text,
+                soc.status AS ocr_status
             FROM snapshots s
             LEFT JOIN capture_events e ON e.snapshot_id = s.id
+            LEFT JOIN snapshot_ocr_cache soc ON soc.snapshot_id = s.id
             WHERE s.id = ?1
             GROUP BY s.id
         ";
@@ -1022,6 +1177,8 @@ impl Database {
                     row.get(10)?,
                     row.get(11)?,
                     row.get(12)?,
+                    row.get(13)?,
+                    row.get(14)?,
                     Vec::new(),
                     Vec::new(),
                 ))
@@ -1441,7 +1598,7 @@ fn recent_query(include_matching_events: bool, use_snapshot_event_cache: bool) -
                  ss.last_event_id AS event_id,
                  s.sha256 AS sha256,
                  s.snapshot_kind AS snapshot_kind,
-                 s.preview_text AS preview_text,
+                 COALESCE(NULLIF(s.preview_text, ''), soc.ocr_text, '') AS preview_text,
                  s.search_text AS search_text,
                  NULL AS why_matched,
                  '' AS matched_fields,
@@ -1459,6 +1616,7 @@ fn recent_query(include_matching_events: bool, use_snapshot_event_cache: bool) -
              JOIN snapshot_stats ss ON ss.snapshot_id = s.id
              {matching_events_join}
              LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
+             LEFT JOIN snapshot_ocr_cache soc ON soc.snapshot_id = s.id
              LEFT JOIN snapshot_event_filter_cache se ON se.snapshot_id = s.id
              WHERE {snapshot_filter_clause}
                AND {base_event_filter_clause}
@@ -1512,8 +1670,8 @@ fn timeline_query(sort: TimelineSort) -> String {
              ce.change_count AS change_count,
              s.sha256 AS sha256,
              s.snapshot_kind AS snapshot_kind,
-             COALESCE(NULLIF(s.preview_text, ''), s.search_text, '') AS best_text,
-             s.preview_text AS preview_text,
+             COALESCE(NULLIF(s.preview_text, ''), NULLIF(soc.ocr_text, ''), s.search_text, '') AS best_text,
+             COALESCE(NULLIF(s.preview_text, ''), soc.ocr_text, '') AS preview_text,
              ce.frontmost_app_name AS frontmost_app_name,
              ce.frontmost_app_bundle_id AS frontmost_app_bundle_id,
              COALESCE(sp.urls, '') AS urls,
@@ -1523,6 +1681,7 @@ fn timeline_query(sort: TimelineSort) -> String {
          FROM capture_events ce
          JOIN snapshots s ON s.id = ce.snapshot_id
          LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = ce.snapshot_id
+         LEFT JOIN snapshot_ocr_cache soc ON soc.snapshot_id = ce.snapshot_id
          WHERE {event_filter_clause}
            AND {snapshot_filter_clause}
            AND {cursor_predicate}
@@ -1932,6 +2091,168 @@ fn fts_query(use_snapshot_event_cache: bool, has_temporal_event_filters: bool) -
     )
 }
 
+fn ocr_fts_query(use_snapshot_event_cache: bool, has_temporal_event_filters: bool) -> String {
+    format!(
+        "
+         SELECT
+             s.id AS snapshot_id,
+             ss.last_event_id AS event_id,
+             s.sha256 AS sha256,
+             s.snapshot_kind AS snapshot_kind,
+             COALESCE(NULLIF(s.preview_text, ''), soc.ocr_text, '') AS preview_text,
+             s.search_text AS search_text,
+             COALESCE(snippet(snapshot_ocr_fts, 0, '⟦', '⟧', ' … ', 24), 'OCR text match') AS why_matched,
+             'ocr_text' AS matched_fields,
+             ss.capture_count AS capture_count,
+             ss.first_observed_at AS first_observed_at,
+             ss.last_observed_at AS last_observed_at,
+             ss.last_frontmost_app_name AS last_frontmost_app_name,
+             ss.last_frontmost_app_bundle_id AS last_frontmost_app_bundle_id,
+             COALESCE(sp.urls, '') AS urls,
+             COALESCE(sp.file_urls, '') AS file_urls,
+             s.total_bytes AS total_bytes,
+             s.item_count AS item_count,
+             bm25(snapshot_ocr_fts) + 0.1 AS score
+         FROM snapshot_ocr_fts
+         JOIN snapshot_ocr_cache soc ON soc.snapshot_id = snapshot_ocr_fts.rowid
+         JOIN snapshots s ON s.id = snapshot_ocr_fts.rowid
+         JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+         LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
+         LEFT JOIN snapshot_event_filter_cache se ON se.snapshot_id = s.id
+         WHERE snapshot_ocr_fts MATCH :query
+           AND soc.ocr_text != ''
+           AND {snapshot_filter_clause}
+           AND {event_filter_where_clause}
+           AND (
+               :cursor_score IS NULL
+               OR bm25(snapshot_ocr_fts) + 0.1 > :cursor_score
+               OR (
+                   bm25(snapshot_ocr_fts) + 0.1 = :cursor_score
+                   AND (
+                       ss.last_observed_at < :cursor_last_seen_at
+                       OR (ss.last_observed_at = :cursor_last_seen_at AND s.id < :cursor_snapshot_id)
+                   )
+               )
+           )
+         ORDER BY score ASC, ss.last_observed_at DESC, s.id DESC
+         LIMIT :limit",
+        event_filter_where_clause = event_filter_where_clause(
+            "s.id",
+            "se",
+            use_snapshot_event_cache,
+            has_temporal_event_filters,
+        ),
+        snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
+    )
+}
+
+fn ocr_literal_query(
+    include_matching_events: bool,
+    use_snapshot_event_cache: bool,
+    use_literal_fts: bool,
+) -> String {
+    let mut ctes = Vec::new();
+    let literal_candidates_join = if use_literal_fts {
+        ctes.push(
+            "ocr_literal_candidates AS (
+                 SELECT rowid AS snapshot_id
+                 FROM snapshot_ocr_literal_fts
+                 WHERE snapshot_ocr_literal_fts MATCH :literal_match
+             )"
+            .to_string(),
+        );
+        "JOIN ocr_literal_candidates olc ON olc.snapshot_id = s.id"
+    } else {
+        ""
+    };
+    if include_matching_events {
+        ctes.push(format!(
+            "matching_events AS (
+                 SELECT DISTINCT ce.snapshot_id
+                 FROM capture_events ce
+                 WHERE {}
+             )",
+            event_filter_clause("ce")
+        ));
+    }
+    let with_clause = if ctes.is_empty() {
+        String::new()
+    } else {
+        format!("WITH {}", ctes.join(", "))
+    };
+    format!(
+        "{with_clause}
+         SELECT
+             s.id AS snapshot_id,
+             ss.last_event_id AS event_id,
+             s.sha256 AS sha256,
+             s.snapshot_kind AS snapshot_kind,
+             COALESCE(NULLIF(s.preview_text, ''), soc.ocr_text, '') AS preview_text,
+             s.search_text AS search_text,
+             CASE
+                 WHEN :exact_phrase_lower IS NOT NULL AND lower(soc.ocr_text) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\\' THEN 'Exact phrase match in OCR text'
+                 WHEN lower(soc.ocr_text) = :query_lower THEN 'Exact OCR text match'
+                 WHEN lower(soc.ocr_text) LIKE :prefix_like ESCAPE '\\' THEN 'OCR text prefix match'
+                 ELSE 'OCR text match'
+             END AS why_matched,
+             'ocr_text' AS matched_fields,
+             ss.capture_count AS capture_count,
+             ss.first_observed_at AS first_observed_at,
+             ss.last_observed_at AS last_observed_at,
+             ss.last_frontmost_app_name AS last_frontmost_app_name,
+             ss.last_frontmost_app_bundle_id AS last_frontmost_app_bundle_id,
+             COALESCE(sp.urls, '') AS urls,
+             COALESCE(sp.file_urls, '') AS file_urls,
+             s.total_bytes AS total_bytes,
+             s.item_count AS item_count,
+             (
+                 CASE WHEN :exact_phrase_lower IS NOT NULL AND lower(soc.ocr_text) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\\' THEN 0.82 ELSE 0 END +
+                 CASE WHEN lower(soc.ocr_text) = :query_lower THEN 0.8 ELSE 0 END +
+                 CASE WHEN lower(soc.ocr_text) LIKE :prefix_like ESCAPE '\\' THEN 0.74 ELSE 0 END +
+                 CASE WHEN lower(soc.ocr_text) LIKE :like ESCAPE '\\' THEN 0.68 ELSE 0 END +
+                 CASE
+                     WHEN datetime(ss.last_observed_at) >= datetime('now', '-24 hours') THEN 0.05
+                     WHEN datetime(ss.last_observed_at) >= datetime('now', '-7 days') THEN 0.02
+                     ELSE 0
+                 END
+             ) AS score
+         FROM snapshot_ocr_cache soc
+         JOIN snapshots s ON s.id = soc.snapshot_id
+         {literal_candidates_join}
+         JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+         {matching_events_join}
+         LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
+         LEFT JOIN snapshot_event_filter_cache se ON se.snapshot_id = s.id
+         WHERE soc.ocr_text != ''
+           AND lower(soc.ocr_text) LIKE :like ESCAPE '\\'
+           AND (:literal_match IS NULL OR :literal_match IS NOT NULL)
+           AND {snapshot_filter_clause}
+           AND {base_event_filter_clause}
+           AND (
+               :cursor_score IS NULL
+               OR score < :cursor_score
+               OR (
+                   score = :cursor_score
+                   AND (
+                       ss.last_observed_at < :cursor_last_seen_at
+                       OR (ss.last_observed_at = :cursor_last_seen_at AND s.id < :cursor_snapshot_id)
+                   )
+               )
+           )
+         ORDER BY score DESC, ss.last_observed_at DESC, s.id DESC
+         LIMIT :limit",
+        with_clause = with_clause,
+        literal_candidates_join = literal_candidates_join,
+        matching_events_join = matching_events_join(include_matching_events),
+        base_event_filter_clause = base_event_filter_clause(
+            "se",
+            include_matching_events,
+            use_snapshot_event_cache,
+        ),
+        snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
+    )
+}
+
 fn matching_events_cte(include_matching_events: bool) -> String {
     if include_matching_events {
         format!(
@@ -2086,6 +2407,11 @@ fn snapshot_filter_clause(snapshot_alias: &str, snapshot_id_expr: &str) -> Strin
                    AND ir.kind IN ('plain_text', 'url', 'file_url', 'html', 'json', 'xml', 'rtf')
                    AND ir.text_value IS NOT NULL AND ir.text_value != ''
              )
+             OR EXISTS (
+                 SELECT 1 FROM snapshot_ocr_cache soc
+                 WHERE soc.snapshot_id = {snapshot_id_expr}
+                   AND soc.ocr_text != ''
+             )
          ))
          AND (:has_url = 0 OR EXISTS (
              SELECT 1 FROM item_representations ir
@@ -2196,6 +2522,56 @@ fn paginate_rows(mut rows: Vec<SearchHit>, limit: usize) -> Page<SearchHit> {
     }
 
     Page::new(rows, has_more)
+}
+
+fn merge_scored_search_results(
+    mode: SearchMode,
+    native: SearchResults,
+    ocr: SearchResults,
+    limit: usize,
+    lower_score_is_better: bool,
+) -> SearchResults {
+    let mut rows = native.hits().to_vec();
+    let mut seen = rows
+        .iter()
+        .map(SearchHit::snapshot_id)
+        .collect::<std::collections::HashSet<_>>();
+    for hit in ocr.hits() {
+        if seen.insert(hit.snapshot_id()) {
+            rows.push(hit.clone());
+        }
+    }
+
+    rows.sort_by(|left, right| {
+        let left_score = left.score().unwrap_or(if lower_score_is_better {
+            f64::INFINITY
+        } else {
+            f64::NEG_INFINITY
+        });
+        let right_score = right.score().unwrap_or(if lower_score_is_better {
+            f64::INFINITY
+        } else {
+            f64::NEG_INFINITY
+        });
+        let score_order = if lower_score_is_better {
+            left_score
+                .partial_cmp(&right_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        } else {
+            right_score
+                .partial_cmp(&left_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        };
+        score_order
+            .then_with(|| right.last_observed_at().cmp(left.last_observed_at()))
+            .then_with(|| right.snapshot_id().cmp(&left.snapshot_id()))
+    });
+
+    let has_more = native.has_more() || ocr.has_more() || rows.len() > limit;
+    if rows.len() > limit {
+        rows.truncate(limit);
+    }
+    SearchResults::new(mode, rows, has_more)
 }
 
 fn paginate_timeline_rows(mut rows: Vec<TimelineEvent>, limit: usize) -> Page<TimelineEvent> {

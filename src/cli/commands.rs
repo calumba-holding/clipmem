@@ -1,5 +1,6 @@
 use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::thread;
 use std::time::Duration;
 
@@ -12,9 +13,9 @@ use std::process::Command as ProcessCommand;
 
 use crate::app::{format_watch_capture_line, mark_change_handled, WatchState};
 use crate::db::{
-    CapturePolicy, CaptureSettings, CaptureSkipReason, CaptureStoreOutcome, Database, PurgeReport,
-    RecentCursorState, RetrievalFilters, SearchCursorState, SearchMode, SearchResults,
-    SnapshotDeletionReport, TimelineCursorState, TimelineSort,
+    CapturePolicy, CaptureSettings, CaptureSkipReason, CaptureStoreOutcome, Database, OcrRunReport,
+    OcrStatusReport, PurgeReport, RecentCursorState, RetrievalFilters, SearchCursorState,
+    SearchMode, SearchResults, SnapshotDeletionReport, TimelineCursorState, TimelineSort,
 };
 use crate::model::{
     CaptureStoreResult, ClipboardSnapshot, FlattenedTextProjection, SearchHit, TimelineEvent,
@@ -30,14 +31,17 @@ use super::output::{
 };
 use super::service::{render_service_action_text, render_service_status_text, render_setup_text};
 use super::{
-    AgentsArgs, CaptureOnceArgs, Command, DoctorArgs, ExportArgs, ForgetArgs, GetArgs,
-    OpenClawArgs, OpenClawDoctorArgs, OpenClawInstallSkillArgs, OpenClawUninstallSkillArgs,
-    OutputFormat, PurgeArgs, RecallArgs, RecentArgs, RestoreArgs, SearchArgs, ServiceArgs,
-    ServiceCommand, ServiceStatusArgs, SettingsApiKeyFilterArgs, SettingsArgs, SettingsCommand,
-    SettingsIgnoreArgs, SettingsIgnoreCommand, SettingsIgnoreListArgs, SettingsPauseArgs,
+    AgentsArgs, CaptureOnceArgs, Command, DoctorArgs, ExportArgs, ForgetArgs, GetArgs, OcrArgs,
+    OcrCommand, OcrRunArgs, OcrStatusArgs, OpenClawArgs, OpenClawDoctorArgs,
+    OpenClawInstallSkillArgs, OpenClawUninstallSkillArgs, OutputFormat, PurgeArgs, RecallArgs,
+    RecentArgs, RestoreArgs, SearchArgs, ServiceArgs, ServiceCommand, ServiceStatusArgs,
+    SettingsApiKeyFilterArgs, SettingsArgs, SettingsCommand, SettingsIgnoreArgs,
+    SettingsIgnoreCommand, SettingsIgnoreListArgs, SettingsOcrArgs, SettingsPauseArgs,
     SettingsRetentionArgs, SettingsShowArgs, SetupArgs, StatsArgs, StatsOutputFormat, TimelineArgs,
     WatchArgs,
 };
+
+static OCR_WORKER_RUNNING: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Serialize)]
 pub(super) struct CaptureOnceStoredOutput {
@@ -84,6 +88,7 @@ struct ExportOutput {
 struct SettingsView {
     paused: bool,
     api_key_filter_enabled: bool,
+    ocr_enabled: bool,
     retention_seconds: Option<u64>,
     retention: String,
     ignored_bundle_ids: Vec<String>,
@@ -227,6 +232,7 @@ pub(super) fn run_command(command: Command, db_path: &Path) -> Result<()> {
         Command::Restore(args) => restore_snapshot(db_path, &args),
         Command::Forget(args) => forget_snapshot(db_path, &args),
         Command::Purge(args) => purge_snapshots(db_path, &args),
+        Command::Ocr(args) => ocr(db_path, &args),
         Command::Settings(args) => settings(db_path, &args),
         Command::Doctor(args) => doctor(db_path, &args),
     }
@@ -352,6 +358,14 @@ where
     )?;
     match outcome {
         CaptureStoreOutcome::Stored(result) => {
+            if settings.ocr_enabled() {
+                let snapshot_id = result.snapshot_id();
+                if let Err(err) = db.enqueue_ocr_for_snapshot(snapshot_id) {
+                    eprintln!("ocr enqueue failed for snapshot {snapshot_id}: {err:#}");
+                } else {
+                    start_ocr_worker(db.path().to_path_buf());
+                }
+            }
             mark_change_handled(snapshot.change_count(), state);
             db.apply_retention_policy()
                 .context("apply retention policy failed")?;
@@ -377,6 +391,38 @@ where
     }
 
     Ok(())
+}
+
+fn start_ocr_worker(db_path: PathBuf) {
+    if OCR_WORKER_RUNNING.swap(true, AtomicOrdering::AcqRel) {
+        return;
+    }
+
+    thread::spawn(move || {
+        struct ResetWorkerFlag;
+
+        impl Drop for ResetWorkerFlag {
+            fn drop(&mut self) {
+                OCR_WORKER_RUNNING.store(false, AtomicOrdering::Release);
+            }
+        }
+
+        let _reset = ResetWorkerFlag;
+        let run = || -> Result<()> {
+            let mut worker_db = Database::open_or_init(&db_path)?;
+            let engine = crate::ocr::default_engine();
+            loop {
+                let report = crate::ocr::run_ocr_jobs(&mut worker_db, &engine, 1, None, false)?;
+                if report.processed() == 0 {
+                    break;
+                }
+            }
+            Ok(())
+        };
+        if let Err(err) = run() {
+            eprintln!("ocr failed: {err:#}");
+        }
+    });
 }
 
 fn capture_once(db_path: &Path, args: &CaptureOnceArgs) -> Result<()> {
@@ -826,9 +872,48 @@ fn settings(db_path: &Path, args: &SettingsArgs) -> Result<()> {
         SettingsCommand::Show(args) => settings_show(db_path, args),
         SettingsCommand::Pause(args) => settings_pause(db_path, args),
         SettingsCommand::ApiKeyFilter(args) => settings_api_key_filter(db_path, args),
+        SettingsCommand::Ocr(args) => settings_ocr(db_path, args),
         SettingsCommand::Retention(args) => settings_retention(db_path, args),
         SettingsCommand::Ignore(args) => settings_ignore(db_path, args),
     }
+}
+
+fn ocr(db_path: &Path, args: &OcrArgs) -> Result<()> {
+    match &args.command {
+        OcrCommand::Status(args) => ocr_status(db_path, args),
+        OcrCommand::Run(args) => ocr_run(db_path, args),
+    }
+}
+
+fn ocr_status(db_path: &Path, args: &OcrStatusArgs) -> Result<()> {
+    let format = require_text_or_json(args.output.resolved()?, "ocr status")?;
+    let db = open_or_init_db(db_path)?;
+    let report = db.ocr_status_report()?;
+    emit_json_or_text(
+        matches!(format, OutputFormat::Json),
+        &report,
+        render_ocr_status_text,
+    )?;
+    Ok(())
+}
+
+fn ocr_run(db_path: &Path, args: &OcrRunArgs) -> Result<()> {
+    let format = require_text_or_json(args.output.resolved()?, "ocr run")?;
+    let mut db = open_or_init_db(db_path)?;
+    let engine = crate::ocr::default_engine();
+    let report = crate::ocr::run_ocr_jobs(
+        &mut db,
+        &engine,
+        args.limit,
+        args.snapshot,
+        args.retry_failed,
+    )?;
+    emit_json_or_text(
+        matches!(format, OutputFormat::Json),
+        &report,
+        render_ocr_run_text,
+    )?;
+    Ok(())
 }
 
 fn settings_show(db_path: &Path, args: &SettingsShowArgs) -> Result<()> {
@@ -854,6 +939,14 @@ fn settings_pause(db_path: &Path, args: &SettingsPauseArgs) -> Result<()> {
 fn settings_api_key_filter(db_path: &Path, args: &SettingsApiKeyFilterArgs) -> Result<()> {
     let db = open_or_init_db(db_path)?;
     let settings = db.set_api_key_filter_enabled(args.state.is_paused())?;
+    let view = settings_view(CapturePolicy::new(settings, db.list_ignored_bundle_ids()?));
+    emit_json_or_text(false, &view, render_settings_view_text)?;
+    Ok(())
+}
+
+fn settings_ocr(db_path: &Path, args: &SettingsOcrArgs) -> Result<()> {
+    let db = open_or_init_db(db_path)?;
+    let settings = db.set_ocr_enabled(args.state.is_paused())?;
     let view = settings_view(CapturePolicy::new(settings, db.list_ignored_bundle_ids()?));
     emit_json_or_text(false, &view, render_settings_view_text)?;
     Ok(())
@@ -1038,10 +1131,33 @@ fn settings_view(policy: CapturePolicy) -> SettingsView {
     SettingsView {
         paused: policy.settings().paused(),
         api_key_filter_enabled: policy.settings().api_key_filter_enabled(),
+        ocr_enabled: policy.settings().ocr_enabled(),
         retention_seconds: policy.settings().retention_seconds(),
         retention: render_retention_value(policy.settings()),
         ignored_bundle_ids: policy.ignored_bundle_ids().to_vec(),
     }
+}
+
+fn render_ocr_status_text(report: &OcrStatusReport) -> String {
+    format!(
+        "ocr pending={} ready={} failed={} skipped={} snapshots_with_text={}\n",
+        report.pending(),
+        report.ready(),
+        report.failed(),
+        report.skipped(),
+        report.snapshots_with_ocr_text()
+    )
+}
+
+fn render_ocr_run_text(report: &OcrRunReport) -> String {
+    format!(
+        "ocr processed={} ready={} failed={} skipped={} remaining_pending={}\n",
+        report.processed(),
+        report.ready(),
+        report.failed(),
+        report.skipped(),
+        report.remaining_pending()
+    )
 }
 
 fn render_restore_text(output: &RestoreOutput) -> String {
@@ -1099,6 +1215,7 @@ fn render_settings_view_text(view: &SettingsView) -> String {
         "api key filter: {}\n",
         view.api_key_filter_enabled
     ));
+    out.push_str(&format!("ocr: {}\n", view.ocr_enabled));
     out.push_str(&format!("retention: {}\n", view.retention));
     out.push_str(&format!(
         "ignored bundle ids: {}\n",

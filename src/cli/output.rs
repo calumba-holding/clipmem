@@ -13,7 +13,7 @@ use crate::model::{
 use super::commands::CaptureOnceOutput;
 use super::OutputFormat;
 
-pub(super) const OUTPUT_SCHEMA_VERSION: u32 = 1;
+pub(super) const OUTPUT_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug)]
 pub(super) struct UnsupportedFormatError {
@@ -120,6 +120,8 @@ pub(super) struct SnapshotListRow {
     pub(super) html_text: Option<String>,
     pub(super) rtf_text: Option<String>,
     pub(super) text_summary: String,
+    pub(super) ocr_text: Option<String>,
+    pub(super) ocr_status: Option<String>,
     pub(super) preview_text: String,
     pub(super) item_count: usize,
     pub(super) total_bytes: usize,
@@ -146,6 +148,8 @@ pub(super) struct TimelineListRow {
     pub(super) html_text: Option<String>,
     pub(super) rtf_text: Option<String>,
     pub(super) text_summary: String,
+    pub(super) ocr_text: Option<String>,
+    pub(super) ocr_status: Option<String>,
     pub(super) preview_text: String,
     pub(super) total_bytes: usize,
     pub(super) sha256: String,
@@ -178,6 +182,8 @@ pub(super) struct RecallOutputRow {
     pub(super) html_text: Option<String>,
     pub(super) rtf_text: Option<String>,
     pub(super) text_summary: String,
+    pub(super) ocr_text: Option<String>,
+    pub(super) ocr_status: Option<String>,
     pub(super) preview_text: String,
     pub(super) item_count: usize,
     pub(super) total_bytes: usize,
@@ -467,6 +473,8 @@ impl SnapshotListRow {
             html_text: projection.html_text().map(ToOwned::to_owned),
             rtf_text: projection.rtf_text().map(ToOwned::to_owned),
             text_summary: projection.text_summary().to_string(),
+            ocr_text: projection.ocr_text().map(ToOwned::to_owned),
+            ocr_status: projection.ocr_status().map(ToOwned::to_owned),
             preview_text: hit.preview_text().to_string(),
             item_count: hit.item_count(),
             total_bytes: hit.total_bytes(),
@@ -497,6 +505,8 @@ impl TimelineListRow {
             html_text: projection.html_text().map(ToOwned::to_owned),
             rtf_text: projection.rtf_text().map(ToOwned::to_owned),
             text_summary: projection.text_summary().to_string(),
+            ocr_text: projection.ocr_text().map(ToOwned::to_owned),
+            ocr_status: projection.ocr_status().map(ToOwned::to_owned),
             preview_text: event.preview_text().to_string(),
             total_bytes: event.total_bytes(),
             sha256: event.sha256().to_string(),
@@ -590,6 +600,8 @@ impl RecallOutputRow {
             html_text: projection.html_text().map(ToOwned::to_owned),
             rtf_text: projection.rtf_text().map(ToOwned::to_owned),
             text_summary: projection.text_summary().to_string(),
+            ocr_text: projection.ocr_text().map(ToOwned::to_owned),
+            ocr_status: projection.ocr_status().map(ToOwned::to_owned),
             preview_text: hit.preview_text().to_string(),
             item_count: hit.item_count(),
             total_bytes: hit.total_bytes(),
@@ -938,6 +950,12 @@ pub(super) fn render_snapshot_text(snapshot: &SnapshotDetails) -> String {
     }
     if !snapshot.file_paths().is_empty() {
         let _ = writeln!(out, "files: {}", snapshot.file_paths().join(", "));
+    }
+    if let Some(ocr_text) = snapshot.ocr_text() {
+        let _ = writeln!(out, "ocr: {}", ocr_text);
+    }
+    if let Some(ocr_status) = snapshot.ocr_status() {
+        let _ = writeln!(out, "ocr status: {}", ocr_status);
     }
     push_blank_line(&mut out);
 
@@ -1827,6 +1845,8 @@ mod tests {
             "2026-04-16 11:00:00".to_string(),
             Some("Terminal".to_string()),
             Some("com.apple.Terminal".to_string()),
+            None,
+            None,
             vec![CaptureEvent::new(
                 21,
                 "2026-04-16 11:00:00".to_string(),
@@ -1938,6 +1958,8 @@ mod tests {
             file_paths: Vec::new(),
             html_text: None,
             rtf_text: None,
+            ocr_text: None,
+            ocr_status: None,
             text_summary: "git status".to_string(),
             preview_text: "git status".to_string(),
             item_count: 1,
@@ -2010,6 +2032,8 @@ mod tests {
                 "2026-04-16 11:00:00".to_string(),
                 Some("Terminal".to_string()),
                 Some("com.apple.Terminal".to_string()),
+                None,
+                None,
                 vec![CaptureEvent::new(
                     21,
                     "2026-04-16 11:00:00".to_string(),
@@ -2061,6 +2085,8 @@ mod tests {
                 file_paths: vec!["/tmp/file.txt".to_string()],
                 html_text: None,
                 rtf_text: None,
+                ocr_text: None,
+                ocr_status: None,
                 text_summary: "git status".to_string(),
                 preview_text: "git status".to_string(),
                 item_count: 1,
@@ -2088,6 +2114,8 @@ mod tests {
                 file_paths: Vec::new(),
                 html_text: None,
                 rtf_text: None,
+                ocr_text: None,
+                ocr_status: None,
                 text_summary: "git commit".to_string(),
                 preview_text: "git commit".to_string(),
                 item_count: 1,
@@ -2145,6 +2173,8 @@ mod tests {
                 file_paths: Vec::new(),
                 html_text: None,
                 rtf_text: None,
+                ocr_text: None,
+                ocr_status: None,
                 text_summary: "git summary".to_string(),
                 preview_text: "git preview".to_string(),
                 total_bytes: 42,

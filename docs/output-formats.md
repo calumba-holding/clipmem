@@ -30,6 +30,8 @@ scripts and agents.
 | `purge` | `text` | `text`, `json` |
 | `settings show` | `text` | `text`, `json` |
 | `settings ignore list` | `text` | `text`, `json` |
+| `ocr status` | `text` | `text`, `json` |
+| `ocr run` | `text` | `text`, `json` |
 | `service status` | `text` | `text`, `json` (via `--json`) |
 | `capture-once` | — | `json` (via `--json`) |
 | `doctor` | `text` | `text`, `json` (via `--json`) |
@@ -37,7 +39,7 @@ scripts and agents.
 
 `--json` is a compatibility alias for `--format json` on `search`,
 `recent`, `timeline`, `stats`, `get`, `restore`, `forget`, `purge`,
-`export`, `capture-once`, and `doctor`.
+`export`, `ocr status`, `ocr run`, `capture-once`, and `doctor`.
 
 ## JSON envelope
 
@@ -46,7 +48,7 @@ envelope:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "command": "recall",
   "generated_at": "2026-04-17T12:34:56Z",
   "applied_filters": { "hours": 24, "app": "safari" },
@@ -81,7 +83,7 @@ fields:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "command": "stats",
   "generated_at": "2026-04-17T12:34:56Z",
   "applied_filters": { "hours": 24, "app": "safari" },
@@ -107,6 +109,8 @@ you don't have to walk the nested representation tree:
 - `urls` — extracted URLs
 - `file_paths` — extracted file paths
 - `html_text`, `rtf_text` — extracted HTML and RTF text (if present)
+- `ocr_text`, `ocr_status` — OCR text and status when image OCR has
+  been attempted
 - `text_summary` — concise summary for agents
 
 `search` and `recall` additionally include:
@@ -156,7 +160,7 @@ clipmem is designed for script and agent consumption:
 - stderr contains diagnostics only
 - No interactive prompts anywhere in the CLI
 - List commands use bounded defaults and opaque cursor pagination
-- `--format json` output is stable within `schema_version: 1`
+- `--format json` output is stable within `schema_version: 2`
 
 ### Exit codes
 

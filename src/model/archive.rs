@@ -75,6 +75,8 @@ pub struct SnapshotDetails {
     html_text: Option<String>,
     rtf_text: Option<String>,
     text_summary: String,
+    ocr_text: Option<String>,
+    ocr_status: Option<String>,
     preview_text: String,
     search_text: String,
     item_count: usize,
@@ -431,10 +433,12 @@ impl SnapshotDetails {
         last_observed_at: String,
         last_frontmost_app_name: Option<String>,
         last_frontmost_app_bundle_id: Option<String>,
+        ocr_text: Option<String>,
+        ocr_status: Option<String>,
         recent_events: Vec<CaptureEvent>,
         items: Vec<ClipboardItem>,
     ) -> Self {
-        let projection = FlattenedTextProjection::from_items(&items);
+        let projection = FlattenedTextProjection::from_items(&items).with_ocr(ocr_text, ocr_status);
 
         Self {
             snapshot_id,
@@ -448,6 +452,8 @@ impl SnapshotDetails {
             html_text: projection.html_text().map(ToOwned::to_owned),
             rtf_text: projection.rtf_text().map(ToOwned::to_owned),
             text_summary: projection.text_summary().to_string(),
+            ocr_text: projection.ocr_text().map(ToOwned::to_owned),
+            ocr_status: projection.ocr_status().map(ToOwned::to_owned),
             preview_text,
             search_text,
             item_count,
@@ -519,6 +525,16 @@ impl SnapshotDetails {
     }
 
     #[must_use]
+    pub fn ocr_text(&self) -> Option<&str> {
+        self.ocr_text.as_deref()
+    }
+
+    #[must_use]
+    pub fn ocr_status(&self) -> Option<&str> {
+        self.ocr_status.as_deref()
+    }
+
+    #[must_use]
     pub fn preview_text(&self) -> &str {
         &self.preview_text
     }
@@ -583,7 +599,8 @@ impl SnapshotDetails {
     }
 
     pub(crate) fn set_items(&mut self, items: Vec<ClipboardItem>) {
-        let projection = FlattenedTextProjection::from_items(&items);
+        let projection = FlattenedTextProjection::from_items(&items)
+            .with_ocr(self.ocr_text.clone(), self.ocr_status.clone());
         self.best_text = projection.best_text().to_string();
         self.best_text_uti = projection.best_text_uti().map(ToOwned::to_owned);
         self.text_fragments = projection.text_fragments().to_vec();
@@ -592,6 +609,8 @@ impl SnapshotDetails {
         self.html_text = projection.html_text().map(ToOwned::to_owned);
         self.rtf_text = projection.rtf_text().map(ToOwned::to_owned);
         self.text_summary = projection.text_summary().to_string();
+        self.ocr_text = projection.ocr_text().map(ToOwned::to_owned);
+        self.ocr_status = projection.ocr_status().map(ToOwned::to_owned);
         self.items = items;
     }
 }

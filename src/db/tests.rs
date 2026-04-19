@@ -13,7 +13,7 @@ use rusqlite::params;
 
 use super::{
     configure_connection, explain_query_plan, Database, RetrievalFilters, RetrievalKind,
-    SearchMode, TimelineSort, SCHEMA,
+    SearchMode, TimelineSort, CURRENT_SCHEMA_VERSION, SCHEMA,
 };
 
 fn temp_db_path(test_name: &str) -> std::path::PathBuf {
@@ -55,6 +55,25 @@ fn fake_snapshot(change_count: i64, text: &str) -> ClipboardSnapshot {
             .with_frontmost_app_name("Test App")
             .with_frontmost_app_bundle_id("com.example.test"),
         vec![item],
+    )
+}
+
+fn image_snapshot(change_count: i64, representations: Vec<(&str, Vec<u8>)>) -> ClipboardSnapshot {
+    let items = representations
+        .into_iter()
+        .enumerate()
+        .map(|(index, (uti, bytes))| {
+            build_item(
+                index,
+                vec![build_representation(uti.to_string(), None, bytes)],
+            )
+        })
+        .collect();
+    build_snapshot(
+        CaptureContext::new(change_count)
+            .with_frontmost_app_name("Preview")
+            .with_frontmost_app_bundle_id("com.apple.Preview"),
+        items,
     )
 }
 
@@ -461,6 +480,87 @@ fn capture_policy_persists_across_reopen() -> Result<()> {
     );
 
     cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn ocr_setting_defaults_to_off_and_toggles() -> Result<()> {
+    let db = Database::open_in_memory()?;
+
+    assert!(!db.capture_settings()?.ocr_enabled());
+    db.set_ocr_enabled(true)?;
+    assert!(db.capture_settings()?.ocr_enabled());
+    db.set_ocr_enabled(false)?;
+    assert!(!db.capture_settings()?.ocr_enabled());
+
+    Ok(())
+}
+
+#[test]
+fn ready_ocr_text_is_cached_deduped_and_searchable() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let stored = db.store_capture(&image_snapshot(
+        1,
+        vec![
+            ("public.png", b"same-image-bytes".to_vec()),
+            ("public.jpeg", b"same-image-bytes".to_vec()),
+        ],
+    ))?;
+
+    assert_eq!(db.enqueue_ocr_for_snapshot(stored.snapshot_id())?, 1);
+    let candidates = db.next_ocr_candidates(25, None, false)?;
+    assert_eq!(candidates.len(), 1);
+    db.store_ocr_text(
+        candidates[0].raw_sha256(),
+        "fake",
+        "fast",
+        "Invoice Total 42",
+    )?;
+
+    let details = db
+        .find_snapshot(stored.snapshot_id(), 10)?
+        .expect("stored image snapshot should exist");
+    assert_eq!(details.ocr_text(), Some("Invoice Total 42"));
+    assert_eq!(details.ocr_status(), Some("ready"));
+    assert_eq!(details.best_text(), "Invoice Total 42");
+    assert_eq!(details.best_text_uti(), Some("com.clipmem.ocr.text"));
+
+    let results = db.search_auto("Invoice", 10, &unfiltered())?;
+    assert_eq!(results.hits().len(), 1);
+    assert_eq!(results.hits()[0].snapshot_id(), stored.snapshot_id());
+    assert_eq!(
+        results.hits()[0].matched_fields(),
+        &["ocr_text".to_string()]
+    );
+    assert_eq!(db.ocr_status_report()?.snapshots_with_ocr_text(), 1);
+
+    Ok(())
+}
+
+#[test]
+fn failed_ocr_results_do_not_enter_search() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let stored = db.store_capture(&image_snapshot(
+        1,
+        vec![("public.png", b"not-a-supported-image".to_vec())],
+    ))?;
+    db.enqueue_ocr_for_snapshot(stored.snapshot_id())?;
+    let candidates = db.next_ocr_candidates(25, None, false)?;
+    assert_eq!(candidates.len(), 1);
+
+    db.store_ocr_failure(candidates[0].raw_sha256(), "fake", "fast", "decode failed")?;
+
+    let details = db
+        .find_snapshot(stored.snapshot_id(), 10)?
+        .expect("stored image snapshot should exist");
+    assert_eq!(details.ocr_text(), None);
+    assert_eq!(details.ocr_status(), Some("failed"));
+    assert!(db
+        .search_auto("decode", 10, &unfiltered())?
+        .hits()
+        .is_empty());
+    assert_eq!(db.ocr_status_report()?.failed(), 1);
+
     Ok(())
 }
 
@@ -971,7 +1071,7 @@ fn open_existing_migrates_legacy_database_and_rebuilds_fts() -> Result<()> {
         .query_row("PRAGMA user_version", [], |row| row.get(0))?;
     let results = db.search_auto("git", 10, &unfiltered())?;
 
-    assert_eq!(version, 8);
+    assert_eq!(version, CURRENT_SCHEMA_VERSION);
     let api_key_filter_enabled: i64 = db.conn.query_row(
         "SELECT api_key_filter_enabled FROM clipmem_settings WHERE id = 1",
         [],
@@ -1023,7 +1123,7 @@ fn repeated_open_existing_is_idempotent_after_migration() -> Result<()> {
         .conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))?;
 
-    assert_eq!(version, 8);
+    assert_eq!(version, CURRENT_SCHEMA_VERSION);
 
     std::fs::remove_file(&path)?;
     Ok(())

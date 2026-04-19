@@ -4,6 +4,7 @@ pub mod capture;
 pub(crate) mod cli;
 pub(crate) mod db;
 pub(crate) mod model;
+pub(crate) mod ocr;
 pub(crate) mod platform;
 pub(crate) mod sensitive;
 

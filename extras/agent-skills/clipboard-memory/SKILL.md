@@ -4,7 +4,7 @@ description: Recall what the user copied on this Mac via the local clipmem archi
 license: MIT
 compatibility: macOS with a local `clipmem` binary on PATH. Works in any agent runtime with filesystem and shell access. The `clipmem` watcher daemon (LaunchAgent `io.openclaw.clipmem.watch`) should be running for continuous capture; a stale watcher is the most common cause of empty results.
 metadata:
-  version: "1.2.1"
+  version: "1.3.0"
   variant: "portable"
 ---
 
@@ -52,7 +52,7 @@ The full flag reference, JSON envelope, and kind values live in [references/comm
 
 ## Output format rule
 
-- `--format json` — single structured object. Use whenever you will parse the response. Stable within `schema_version: 1`.
+- `--format json` — single structured object. Use whenever you will parse the response. Stable within `schema_version: 2`.
 - `--format toon` — flat, token-efficient list. Prefer for high-cardinality enumeration (`timeline`, `search`, `recent`, `recall`) when you only need the top fields. Note: `get` does **not** support `toon`.
 - `--format jsonl` — newline-delimited records. Use when streaming many rows into a pipeline.
 - `--format md` / `--format text` — human-readable previews only; never parse these.
@@ -107,7 +107,7 @@ Read these JSON fields first; walk nested `items[].representations[]` only after
 - `best_candidate.file_paths` — file-URL array.
 - `why_selected`, `best_match_confidence`, `alternatives` (only on `recall`).
 - `next_cursor`, `truncated` — pagination state.
-- `schema_version` — pin to `1` for stability.
+- `schema_version` — pin to `2` for stability.
 
 Full schema in [references/json-schema.md](references/json-schema.md).
 

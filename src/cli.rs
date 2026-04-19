@@ -159,10 +159,23 @@ Examples:
   clipmem settings show
   clipmem settings pause on
   clipmem settings api-key-filter on
+  clipmem settings ocr on
   clipmem settings retention 30d
   clipmem settings retention forever
   clipmem settings ignore add com.apple.Passwords
   clipmem settings ignore list --format json";
+
+const OCR_AFTER_HELP: &str = "\
+Examples:
+  clipmem ocr status
+  clipmem ocr run
+  clipmem ocr run --limit 50
+  clipmem ocr run --snapshot 42 --retry-failed --format json
+
+Notes:
+  - OCR is opt-in for background capture; use `clipmem settings ocr on`.
+  - `ocr run` is the backfill path for existing image snapshots.
+  - Phase 1 stores OCR text only; original image bytes remain unchanged.";
 
 const DOCTOR_AFTER_HELP: &str = "\
 Examples:
@@ -512,6 +525,8 @@ enum Command {
     Forget(ForgetArgs),
     /// Delete stored snapshots older than a duration.
     Purge(PurgeArgs),
+    /// Backfill and inspect local image OCR.
+    Ocr(OcrArgs),
     /// View and update persistent capture policy.
     Settings(SettingsArgs),
     /// Print `SQLite` and FTS5 diagnostics.
@@ -961,6 +976,45 @@ struct PurgeArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(after_help = OCR_AFTER_HELP)]
+struct OcrArgs {
+    #[command(subcommand)]
+    command: OcrCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum OcrCommand {
+    /// Report OCR queue and result counts.
+    Status(OcrStatusArgs),
+    /// Process pending OCR candidates.
+    Run(OcrRunArgs),
+}
+
+#[derive(Debug, Args)]
+struct OcrStatusArgs {
+    #[command(flatten)]
+    output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
+struct OcrRunArgs {
+    /// Maximum number of pending image hashes to process.
+    #[arg(long, default_value_t = 25, value_parser = parse_bounded_limit)]
+    limit: usize,
+
+    /// Restrict processing to one snapshot id.
+    #[arg(long)]
+    snapshot: Option<i64>,
+
+    /// Requeue failed OCR hashes before processing.
+    #[arg(long, default_value_t = false)]
+    retry_failed: bool,
+
+    #[command(flatten)]
+    output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
 #[command(after_help = SETTINGS_AFTER_HELP)]
 struct SettingsArgs {
     #[command(subcommand)]
@@ -975,6 +1029,8 @@ enum SettingsCommand {
     Pause(SettingsPauseArgs),
     /// Enable or disable API-key-like clipboard filtering.
     ApiKeyFilter(SettingsApiKeyFilterArgs),
+    /// Enable or disable automatic OCR for copied images.
+    Ocr(SettingsOcrArgs),
     /// Set retention to a duration or `forever`.
     Retention(SettingsRetentionArgs),
     /// Manage ignored bundle identifiers.
@@ -996,6 +1052,12 @@ struct SettingsPauseArgs {
 #[derive(Debug, Args)]
 struct SettingsApiKeyFilterArgs {
     /// `on` skips clipboard snapshots that look like API keys, `off` stores them normally.
+    state: PauseState,
+}
+
+#[derive(Debug, Args)]
+struct SettingsOcrArgs {
+    /// `on` enables automatic OCR for image captures, `off` disables it.
     state: PauseState,
 }
 
@@ -1191,6 +1253,14 @@ fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
             args.output.resolved()?;
             args.filters.normalized()?;
         }
+        Command::Ocr(args) => match &args.command {
+            OcrCommand::Status(args) => {
+                args.output.resolved()?;
+            }
+            OcrCommand::Run(args) => {
+                args.output.resolved()?;
+            }
+        },
         Command::Recall(args) => {
             args.filters.normalized()?;
         }
@@ -1216,6 +1286,7 @@ fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
                 args.output.resolved()?;
             }
             SettingsCommand::Pause(_) | SettingsCommand::ApiKeyFilter(_) => {}
+            SettingsCommand::Ocr(_) => {}
             SettingsCommand::Retention(_) => {}
             SettingsCommand::Ignore(args) => match &args.command {
                 SettingsIgnoreCommand::Add(_) | SettingsIgnoreCommand::Remove(_) => {}
@@ -1880,6 +1951,15 @@ mod tests {
             other => panic!("expected settings command, got {other:?}"),
         }
 
+        let ocr_cli = Cli::parse_from(["clipmem", "settings", "ocr", "on"]);
+        match ocr_cli.command {
+            Command::Settings(args) => match args.command {
+                super::SettingsCommand::Ocr(args) => assert!(args.state.is_paused()),
+                other => panic!("expected settings ocr command, got {other:?}"),
+            },
+            other => panic!("expected settings command, got {other:?}"),
+        }
+
         let retention_cli = Cli::parse_from(["clipmem", "settings", "retention", "forever"]);
         match retention_cli.command {
             Command::Settings(args) => match args.command {
@@ -1905,6 +1985,45 @@ mod tests {
                 other => panic!("expected settings ignore command, got {other:?}"),
             },
             other => panic!("expected settings command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ocr_commands_parse_status_and_run_options() {
+        let status_cli = Cli::parse_from(["clipmem", "ocr", "status", "--format", "json"]);
+        match status_cli.command {
+            Command::Ocr(args) => match args.command {
+                super::OcrCommand::Status(args) => {
+                    assert_eq!(args.output.resolved().unwrap(), OutputFormat::Json);
+                }
+                other => panic!("expected ocr status command, got {other:?}"),
+            },
+            other => panic!("expected ocr command, got {other:?}"),
+        }
+
+        let run_cli = Cli::parse_from([
+            "clipmem",
+            "ocr",
+            "run",
+            "--limit",
+            "7",
+            "--snapshot",
+            "42",
+            "--retry-failed",
+            "--format",
+            "json",
+        ]);
+        match run_cli.command {
+            Command::Ocr(args) => match args.command {
+                super::OcrCommand::Run(args) => {
+                    assert_eq!(args.limit, 7);
+                    assert_eq!(args.snapshot, Some(42));
+                    assert!(args.retry_failed);
+                    assert_eq!(args.output.resolved().unwrap(), OutputFormat::Json);
+                }
+                other => panic!("expected ocr run command, got {other:?}"),
+            },
+            other => panic!("expected ocr command, got {other:?}"),
         }
     }
 

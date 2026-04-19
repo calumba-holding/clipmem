@@ -11,6 +11,23 @@ versioning where practical.
 
 Changes for the next release go here.
 
+## 0.2.9 - 2026-04-19
+
+### Added
+
+- Added opt-in local OCR for copied image snapshots on macOS using Apple
+  Vision, including background OCR for new captures, backfill with
+  `clipmem ocr run`, and queue reporting with `clipmem ocr status`.
+- Added OCR settings with `clipmem settings ocr on|off`; OCR is disabled by
+  default.
+- Added OCR text/status fields to flattened JSON output and indexed completed
+  OCR text for `search`, `recall`, `recent`, `timeline`, and `get`.
+
+### Changed
+
+- Bumped the JSON output schema version to `2` because flattened retrieval rows
+  now include OCR fields.
+
 ## 0.2.8 - 2026-04-19
 
 ### Added

@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::model::SearchHit;
 
 const SCHEMA: &str = include_str!("db/schema.sql");
-const CURRENT_SCHEMA_VERSION: i64 = 8;
+const CURRENT_SCHEMA_VERSION: i64 = 9;
 const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
 
 pub struct Database {
@@ -73,6 +73,7 @@ pub(crate) struct CaptureSettings {
     paused: bool,
     retention_seconds: Option<u64>,
     api_key_filter_enabled: bool,
+    ocr_enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Default)]
@@ -111,6 +112,31 @@ pub(crate) struct PurgeReport {
     representation_count: usize,
     capture_event_count: usize,
     total_bytes: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct OcrCandidate {
+    raw_sha256: String,
+    blob_value: Vec<u8>,
+    snapshot_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct OcrStatusReport {
+    pending: usize,
+    ready: usize,
+    failed: usize,
+    skipped: usize,
+    snapshots_with_ocr_text: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct OcrRunReport {
+    processed: usize,
+    ready: usize,
+    failed: usize,
+    skipped: usize,
+    remaining_pending: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -447,11 +473,13 @@ impl CaptureSettings {
         paused: bool,
         retention_seconds: Option<u64>,
         api_key_filter_enabled: bool,
+        ocr_enabled: bool,
     ) -> Self {
         Self {
             paused,
             retention_seconds,
             api_key_filter_enabled,
+            ocr_enabled,
         }
     }
 
@@ -468,6 +496,11 @@ impl CaptureSettings {
     #[must_use]
     pub(crate) fn api_key_filter_enabled(&self) -> bool {
         self.api_key_filter_enabled
+    }
+
+    #[must_use]
+    pub(crate) fn ocr_enabled(&self) -> bool {
+        self.ocr_enabled
     }
 }
 
@@ -607,6 +640,115 @@ impl PurgeReport {
     }
 }
 
+impl OcrCandidate {
+    #[must_use]
+    pub(crate) fn new(raw_sha256: String, blob_value: Vec<u8>, snapshot_count: usize) -> Self {
+        Self {
+            raw_sha256,
+            blob_value,
+            snapshot_count,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn raw_sha256(&self) -> &str {
+        &self.raw_sha256
+    }
+
+    #[must_use]
+    pub(crate) fn blob_value(&self) -> &[u8] {
+        &self.blob_value
+    }
+}
+
+impl OcrStatusReport {
+    #[must_use]
+    pub(crate) fn new(
+        pending: usize,
+        ready: usize,
+        failed: usize,
+        skipped: usize,
+        snapshots_with_ocr_text: usize,
+    ) -> Self {
+        Self {
+            pending,
+            ready,
+            failed,
+            skipped,
+            snapshots_with_ocr_text,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn pending(&self) -> usize {
+        self.pending
+    }
+
+    #[must_use]
+    pub(crate) fn ready(&self) -> usize {
+        self.ready
+    }
+
+    #[must_use]
+    pub(crate) fn failed(&self) -> usize {
+        self.failed
+    }
+
+    #[must_use]
+    pub(crate) fn skipped(&self) -> usize {
+        self.skipped
+    }
+
+    #[must_use]
+    pub(crate) fn snapshots_with_ocr_text(&self) -> usize {
+        self.snapshots_with_ocr_text
+    }
+}
+
+impl OcrRunReport {
+    #[must_use]
+    pub(crate) fn new(
+        processed: usize,
+        ready: usize,
+        failed: usize,
+        skipped: usize,
+        remaining_pending: usize,
+    ) -> Self {
+        Self {
+            processed,
+            ready,
+            failed,
+            skipped,
+            remaining_pending,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn processed(&self) -> usize {
+        self.processed
+    }
+
+    #[must_use]
+    pub(crate) fn ready(&self) -> usize {
+        self.ready
+    }
+
+    #[must_use]
+    pub(crate) fn failed(&self) -> usize {
+        self.failed
+    }
+
+    #[must_use]
+    pub(crate) fn skipped(&self) -> usize {
+        self.skipped
+    }
+
+    #[must_use]
+    pub(crate) fn remaining_pending(&self) -> usize {
+        self.remaining_pending
+    }
+}
+
 impl TimelineCursorState {
     #[must_use]
     pub(crate) fn new(observed_at: String, event_id: i64) -> Self {
@@ -699,6 +841,11 @@ impl Database {
             );
         }
         Ok(())
+    }
+
+    #[must_use]
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
     }
 
     #[cfg(test)]
@@ -913,6 +1060,16 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
+        8 => {
+            if legacy_prerelease_schema_detected(&tx)? {
+                bail!(
+                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
+                );
+            }
+            ensure_api_key_filter_setting_column(&tx)?;
+            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+                .context("set PRAGMA user_version")?;
+        }
         CURRENT_SCHEMA_VERSION => {
             if legacy_prerelease_schema_detected(&tx)? {
                 bail!(
@@ -931,8 +1088,9 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
         }
     }
 
+    ensure_ocr_enabled_setting_column(&tx)?;
     tx.execute(
-        "INSERT OR IGNORE INTO clipmem_settings (id, paused, retention_seconds, api_key_filter_enabled) VALUES (1, 0, NULL, 0)",
+        "INSERT OR IGNORE INTO clipmem_settings (id, paused, retention_seconds, api_key_filter_enabled, ocr_enabled) VALUES (1, 0, NULL, 0, 0)",
         [],
     )
     .context("seed clipmem settings row")?;
@@ -962,6 +1120,27 @@ fn ensure_api_key_filter_setting_column(conn: &Connection) -> Result<()> {
         [],
     )
     .context("add api_key_filter_enabled column")?;
+    Ok(())
+}
+
+fn ensure_ocr_enabled_setting_column(conn: &Connection) -> Result<()> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(clipmem_settings)")
+        .context("prepare clipmem_settings table info query")?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .context("query clipmem_settings columns")?;
+    let columns = collect_rows(rows).context("collect clipmem_settings columns")?;
+
+    if columns.iter().any(|column| column == "ocr_enabled") {
+        return Ok(());
+    }
+
+    conn.execute(
+        "ALTER TABLE clipmem_settings ADD COLUMN ocr_enabled INTEGER NOT NULL DEFAULT 0 CHECK (ocr_enabled IN (0, 1))",
+        [],
+    )
+    .context("add ocr_enabled column")?;
     Ok(())
 }
 

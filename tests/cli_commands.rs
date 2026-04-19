@@ -650,7 +650,7 @@ fn stats_json_output_uses_stable_envelope() -> Result<()> {
     assert_eq!(status_code(&output), 0, "{}", stderr_text(&output));
     let payload: Value = serde_json::from_slice(&output.stdout)?;
 
-    assert_eq!(payload["schema_version"], 1);
+    assert_eq!(payload["schema_version"], 2);
     assert_eq!(payload["command"], "stats");
     assert!(payload["generated_at"].is_string());
     assert!(payload["applied_filters"].is_object());
@@ -1424,7 +1424,7 @@ fn search_json_envelope_includes_agent_friendly_rows() -> Result<()> {
         serde_json::from_slice(&output.stdout).expect("search JSON output should parse");
 
     assert!(output.status.success());
-    assert_eq!(payload["schema_version"].as_u64(), Some(1));
+    assert_eq!(payload["schema_version"].as_u64(), Some(2));
     assert_eq!(payload["command"].as_str(), Some("search"));
     assert_eq!(
         payload["applied_filters"]["requested_mode"].as_str(),
@@ -1441,6 +1441,8 @@ fn search_json_envelope_includes_agent_friendly_rows() -> Result<()> {
         .as_str()
         .unwrap_or_default()
         .contains("git status"));
+    assert!(payload["results"][0]["ocr_text"].is_null());
+    assert!(payload["results"][0]["ocr_status"].is_null());
     assert_eq!(
         payload["results"][0]["best_text_uti"].as_str(),
         Some("public.utf8-plain-text")
@@ -1963,7 +1965,7 @@ fn get_json_wraps_snapshot_in_versioned_envelope() -> Result<()> {
     let payload: Value = serde_json::from_slice(&output.stdout).expect("get JSON should parse");
 
     assert!(output.status.success());
-    assert_eq!(payload["schema_version"].as_u64(), Some(1));
+    assert_eq!(payload["schema_version"].as_u64(), Some(2));
     assert_eq!(payload["command"].as_str(), Some("get"));
     assert_eq!(payload["snapshot"]["snapshot_id"].as_i64(), Some(ids[0]));
     assert_eq!(
@@ -1974,6 +1976,8 @@ fn get_json_wraps_snapshot_in_versioned_envelope() -> Result<()> {
         payload["snapshot"]["best_text_uti"].as_str(),
         Some("public.utf8-plain-text")
     );
+    assert!(payload["snapshot"]["ocr_text"].is_null());
+    assert!(payload["snapshot"]["ocr_status"].is_null());
     assert_eq!(
         payload["snapshot"]["text_fragments"][0]["text"].as_str(),
         Some("git clone https://example.com/repo")
@@ -2166,6 +2170,15 @@ fn settings_commands_persist_policy_and_support_json_views() -> Result<()> {
     ]);
     assert!(api_key_filter_output.status.success());
 
+    let ocr_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "settings",
+        "ocr",
+        "on",
+    ]);
+    assert!(ocr_output.status.success());
+
     let add_output = run_cli(&[
         "--db",
         path.to_str().expect("db path should be UTF-8"),
@@ -2190,6 +2203,7 @@ fn settings_commands_persist_policy_and_support_json_views() -> Result<()> {
     assert!(show_output.status.success());
     assert_eq!(show_payload["paused"].as_bool(), Some(true));
     assert_eq!(show_payload["api_key_filter_enabled"].as_bool(), Some(true));
+    assert_eq!(show_payload["ocr_enabled"].as_bool(), Some(true));
     assert_eq!(
         show_payload["retention_seconds"].as_u64(),
         Some(30 * 24 * 60 * 60)
@@ -3260,6 +3274,53 @@ fn recent_command_rejects_zero_limit() {
     assert!(stderr.contains('0'));
 
     cleanup_db(&path);
+}
+
+#[test]
+fn ocr_commands_report_status_and_empty_backfill_runs() -> Result<()> {
+    let path = temp_db_path("ocr-status");
+    seed_database(&path, &[text_snapshot(1, "git status")])?;
+
+    let status_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "ocr",
+        "status",
+        "--format",
+        "json",
+    ]);
+    let status_payload: Value =
+        serde_json::from_slice(&status_output.stdout).expect("ocr status JSON should parse");
+
+    assert!(
+        status_output.status.success(),
+        "{}",
+        stderr_text(&status_output)
+    );
+    assert_eq!(status_payload["pending"].as_u64(), Some(0));
+    assert_eq!(status_payload["ready"].as_u64(), Some(0));
+    assert_eq!(status_payload["failed"].as_u64(), Some(0));
+    assert_eq!(status_payload["snapshots_with_ocr_text"].as_u64(), Some(0));
+
+    let run_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "ocr",
+        "run",
+        "--limit",
+        "1",
+        "--format",
+        "json",
+    ]);
+    let run_payload: Value =
+        serde_json::from_slice(&run_output.stdout).expect("ocr run JSON should parse");
+
+    assert!(run_output.status.success(), "{}", stderr_text(&run_output));
+    assert_eq!(run_payload["processed"].as_u64(), Some(0));
+    assert_eq!(run_payload["remaining_pending"].as_u64(), Some(0));
+
+    cleanup_db(&path);
+    Ok(())
 }
 
 #[test]

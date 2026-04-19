@@ -18,7 +18,7 @@ Response (trimmed):
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "command": "recall",
   "best_candidate": {
     "snapshot_id": 812,
@@ -122,7 +122,7 @@ clipmem search "launchctl bootstrap" --mode literal --format json --limit 25
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "command": "search",
   "results": [ /* 25 rows */ ],
   "truncated": true,

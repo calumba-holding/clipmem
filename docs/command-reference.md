@@ -23,8 +23,11 @@ subcommand. For conceptual explanations and usage guidance, see
 | `settings show` | `text` | no | Show capture policy |
 | `settings pause` | `text` | — | Pause or resume capture |
 | `settings api-key-filter` | `text` | — | Enable or disable API key filtering |
+| `settings ocr` | `text` | — | Enable or disable local OCR for new captures |
 | `settings retention` | `text` | — | Set retention duration |
 | `settings ignore` | `text` | no | Manage ignored bundle IDs |
+| `ocr status` | `text` | — | Show OCR queue and result counts |
+| `ocr run` | `text` | — | Backfill OCR for stored image snapshots |
 | `setup` | — | — | Initialize and start background capture |
 | `service start` | — | — | Start background capture |
 | `service stop` | — | — | Stop background capture |
@@ -325,6 +328,39 @@ clipmem capture-once
 clipmem capture-once --json
 ```
 
+### `clipmem ocr status`
+
+Show OCR queue counts and how many snapshots have ready OCR text.
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--format` | `text\|json` | `text` | Output format |
+| `--json` | flag | — | Alias for `--format json` |
+
+```bash
+clipmem ocr status
+clipmem ocr status --format json
+```
+
+### `clipmem ocr run`
+
+Process pending OCR work for existing image snapshots. This is the
+backfill path for images copied before OCR was enabled.
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--limit` | 1-250 | 25 | Maximum image hashes to process |
+| `--snapshot` | integer | — | Restrict processing to one snapshot ID |
+| `--retry-failed` | flag | — | Requeue failed OCR hashes before running |
+| `--format` | `text\|json` | `text` | Output format |
+| `--json` | flag | — | Alias for `--format json` |
+
+```bash
+clipmem ocr run
+clipmem ocr run --limit 50
+clipmem ocr run --snapshot 42 --retry-failed --format json
+```
+
 ---
 
 ## Settings commands
@@ -345,6 +381,12 @@ Persistently pause (`on`) or resume (`off`) capture.
 ### `clipmem settings api-key-filter <on|off>`
 
 Enable (`on`) or disable (`off`) API key filtering.
+
+### `clipmem settings ocr <on|off>`
+
+Enable (`on`) or disable (`off`) automatic local OCR for new image
+captures. OCR is off by default. Turning it on doesn't rewrite stored
+image bytes or compress images.
 
 ### `clipmem settings retention <duration|forever>`
 

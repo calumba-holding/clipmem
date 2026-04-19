@@ -16,6 +16,8 @@ For each observed clipboard state, clipmem stores:
 - Decoded text when the representation is text-like, plus strict
   UTF-8/UTF-16 recovery for some byte-only payloads
 - A searchable text projection that powers default retrieval
+- Optional OCR text for image representations when local OCR is
+  enabled or backfilled
 - The frontmost application at capture time as a best-effort source
   hint
 
@@ -32,7 +34,7 @@ Default search uses SQLite's built-in full-text search (FTS5) when
 the query fits, and falls back to literal substring matching for
 wildcard-like input, invalid FTS syntax, or zero FTS hits.
 
-Three FTS5 indexes power different query patterns:
+Five FTS5 indexes power different query patterns:
 
 - `snapshots_fts` — `unicode61` tokenizer over `search_text` and
   `preview_text` for standard full-text queries
@@ -40,6 +42,9 @@ Three FTS5 indexes power different query patterns:
   haystack for fuzzy literal matching
 - `snapshot_file_url_fts` — `trigram` tokenizer over extracted file
   URLs
+- `snapshot_ocr_fts` — `unicode61` tokenizer over completed OCR text
+- `snapshot_ocr_literal_fts` — `trigram` tokenizer over completed OCR
+  text for literal matching
 
 ## Database schema
 
@@ -59,13 +64,16 @@ The core tables:
 Supporting tables:
 
 - `clipmem_settings` — persistent capture policy (pause, retention,
-  API key filter)
+  API key filter, OCR)
 - `ignored_bundle_ids` — excluded app bundle IDs
 - `snapshot_projection_cache` — extracted URLs and file URLs
 - `snapshot_event_filter_cache` — lowercase app names and bundle IDs
   for fast filtering
 - `snapshot_literal_cache` — combined haystack for literal substring
   search
+- `ocr_results` — OCR status and text keyed by representation
+  `raw_sha256`
+- `snapshot_ocr_cache` — aggregated ready OCR text per snapshot
 
 A comprehensive trigger system maintains all denormalized stats and
 caches on every insert, update, and delete. Search indexes stay in
@@ -77,10 +85,21 @@ Text, HTML, URLs, file URLs, RTF, JSON, and XML are indexed when a
 reasonable text form is available. These formats are searchable through
 `recall`, `search`, `recent`, and `timeline`.
 
-Images, PDFs, and opaque binary types are stored as blobs but are not
-OCR'd. They appear in results with metadata (kind, size, app, time)
-but `best_text` is `null`. Use `clipmem export` to recover the raw
-binary payload.
+Images are stored as blobs. If OCR is enabled or backfilled, clipmem
+also stores OCR text and status for image representations. Completed
+OCR text is searchable through `recall`, `search`, `recent`, and
+`timeline`. If an image-only snapshot has ready OCR text and no better
+native text, that OCR text becomes `best_text` with
+`best_text_uti = "com.clipmem.ocr.text"`.
+
+PDFs and opaque binary types are stored as blobs but are not OCR'd.
+They appear in results with metadata (kind, size, app, time), but
+`best_text` is empty when no text projection exists. Use
+`clipmem export` to recover the raw binary payload.
+
+Phase 1 OCR doesn't store bounding boxes, confidence scores,
+thumbnails, compressed images, or language preferences. Image
+compression is not part of this phase.
 
 ## Polling behavior
 
@@ -115,6 +134,9 @@ matching of punctuation-heavy content, use `--mode literal`.
 
 - Clipboard capture uses `NSPasteboard` via `objc2` / `objc2-app-kit`
   and only runs on macOS.
+- Image OCR uses Apple Vision through `objc2-vision` on macOS.
+  Non-macOS builds compile with an unsupported OCR engine that returns
+  a clear error.
 - `clipmem restore` is macOS-only and writes the stored snapshot back
   to the live system clipboard.
 - The database and search layers compile on other platforms for

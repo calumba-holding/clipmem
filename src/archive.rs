@@ -27,6 +27,8 @@ mod tests {
             "2026-04-16 11:00:00".to_string(),
             Some("Terminal".to_string()),
             Some("com.apple.Terminal".to_string()),
+            None,
+            None,
             Vec::new(),
             Vec::new(),
         );

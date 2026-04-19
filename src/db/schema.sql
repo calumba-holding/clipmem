@@ -74,11 +74,31 @@ CREATE TABLE IF NOT EXISTS clipmem_settings (
     id                INTEGER PRIMARY KEY CHECK (id = 1),
     paused            INTEGER NOT NULL DEFAULT 0 CHECK (paused IN (0, 1)),
     retention_seconds INTEGER CHECK (retention_seconds IS NULL OR retention_seconds >= 0),
-    api_key_filter_enabled INTEGER NOT NULL DEFAULT 0 CHECK (api_key_filter_enabled IN (0, 1))
+    api_key_filter_enabled INTEGER NOT NULL DEFAULT 0 CHECK (api_key_filter_enabled IN (0, 1)),
+    ocr_enabled       INTEGER NOT NULL DEFAULT 0 CHECK (ocr_enabled IN (0, 1))
 );
 
 CREATE TABLE IF NOT EXISTS ignored_bundle_ids (
     bundle_id TEXT PRIMARY KEY
+);
+
+CREATE TABLE IF NOT EXISTS ocr_results (
+    raw_sha256        TEXT PRIMARY KEY,
+    status            TEXT NOT NULL CHECK (status IN ('pending', 'ready', 'failed', 'skipped')),
+    engine            TEXT,
+    recognition_level TEXT,
+    text_value        TEXT,
+    error             TEXT,
+    attempt_count     INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS snapshot_ocr_cache (
+    snapshot_id INTEGER PRIMARY KEY REFERENCES snapshots(id) ON DELETE CASCADE,
+    ocr_text    TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'skipped' CHECK (status IN ('pending', 'ready', 'failed', 'skipped')),
+    updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_capture_events_snapshot_id
@@ -113,6 +133,18 @@ CREATE VIRTUAL TABLE IF NOT EXISTS snapshot_file_url_fts USING fts5(
     file_urls,
     content='snapshot_projection_cache',
     content_rowid='snapshot_id',
+    tokenize='trigram'
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS snapshot_ocr_fts USING fts5(
+    ocr_text,
+    content='snapshot_ocr_cache',
+    content_rowid='snapshot_id',
+    tokenize='unicode61'
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS snapshot_ocr_literal_fts USING fts5(
+    ocr_text,
     tokenize='trigram'
 );
 
@@ -191,6 +223,32 @@ CREATE TRIGGER IF NOT EXISTS snapshot_projection_cache_ad
 AFTER DELETE ON snapshot_projection_cache BEGIN
     INSERT INTO snapshot_file_url_fts(snapshot_file_url_fts, rowid, file_urls)
     VALUES ('delete', old.snapshot_id, old.file_urls);
+END;
+
+CREATE TRIGGER IF NOT EXISTS snapshot_ocr_cache_ai
+AFTER INSERT ON snapshot_ocr_cache BEGIN
+    INSERT INTO snapshot_ocr_fts(rowid, ocr_text)
+    VALUES (new.snapshot_id, new.ocr_text);
+    INSERT INTO snapshot_ocr_literal_fts(rowid, ocr_text)
+    VALUES (new.snapshot_id, lower(new.ocr_text));
+END;
+
+CREATE TRIGGER IF NOT EXISTS snapshot_ocr_cache_au
+AFTER UPDATE ON snapshot_ocr_cache BEGIN
+    INSERT INTO snapshot_ocr_fts(snapshot_ocr_fts, rowid, ocr_text)
+    VALUES ('delete', old.snapshot_id, old.ocr_text);
+    INSERT INTO snapshot_ocr_fts(rowid, ocr_text)
+    VALUES (new.snapshot_id, new.ocr_text);
+    DELETE FROM snapshot_ocr_literal_fts WHERE rowid = old.snapshot_id;
+    INSERT INTO snapshot_ocr_literal_fts(rowid, ocr_text)
+    VALUES (new.snapshot_id, lower(new.ocr_text));
+END;
+
+CREATE TRIGGER IF NOT EXISTS snapshot_ocr_cache_ad
+AFTER DELETE ON snapshot_ocr_cache BEGIN
+    INSERT INTO snapshot_ocr_fts(snapshot_ocr_fts, rowid, ocr_text)
+    VALUES ('delete', old.snapshot_id, old.ocr_text);
+    DELETE FROM snapshot_ocr_literal_fts WHERE rowid = old.snapshot_id;
 END;
 
 CREATE TRIGGER IF NOT EXISTS capture_events_ai AFTER INSERT ON capture_events BEGIN

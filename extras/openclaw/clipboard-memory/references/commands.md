@@ -17,7 +17,9 @@ Pick the narrowest command that answers the question. Always pass `--format json
 7. `clipmem export <snapshot_id> --item <n> --uti <uti> --out <path> [--force]` — raw bytes for binary/image/PDF payloads.
 8. `clipmem forget <snapshot_id>` — hard-delete one snapshot and its capture history.
 9. `clipmem purge --older-than <duration> [--dry-run]` — prune by `last_observed_at`.
-10. `clipmem settings show --format json` — inspect persistent pause / retention / ignore-list policy.
+10. `clipmem settings show --format json` — inspect persistent capture policy.
+11. `clipmem ocr status --format json` — inspect local OCR queue and result counts.
+12. `clipmem ocr run [--limit N] [--snapshot ID]` — backfill OCR for image snapshots.
 
 ---
 
@@ -36,8 +38,12 @@ Pick the narrowest command that answers the question. Always pass `--format json
 | `purge` | text | — | Delete old snapshots by `last_observed_at` |
 | `settings show` | `text` | **no** | Show persistent pause / retention / ignore-list policy |
 | `settings pause` | text | — | Persistently pause or resume capture |
+| `settings api-key-filter` | text | — | Enable or disable API key filtering |
+| `settings ocr` | text | — | Enable or disable local OCR for new image captures |
 | `settings retention` | text | — | Set retention to a duration or `forever` |
 | `settings ignore add/remove/list` | text (`list` also supports `json`) | **no** | Manage ignored bundle identifiers |
+| `ocr status` | text (`json` supported) | — | Local OCR queue and result counts |
+| `ocr run` | text (`json` supported) | — | Backfill OCR for stored image snapshots |
 | `capture-once` | — | — | Single clipboard capture (setup / ad-hoc) |
 | `watch` | — | — | Background daemon; usually a LaunchAgent |
 | `setup` | — | — | Seed one capture and start background capture |
@@ -49,7 +55,7 @@ Pick the narrowest command that answers the question. Always pass `--format json
 | `agents openclaw print-skill` | — | — | Print embedded `SKILL.md` to stdout |
 | `agents openclaw uninstall-skill` | — | — | Remove installed skill directory |
 
-`--json` is a compatibility alias for `--format json` on `search`, `recent`, `timeline`, `get`, `capture-once`, and `doctor`.
+`--json` is a compatibility alias for `--format json` on `search`, `recent`, `timeline`, `get`, `ocr status`, `ocr run`, `capture-once`, and `doctor`.
 
 ---
 
@@ -184,17 +190,21 @@ clipmem forget <snapshot_id>
 clipmem purge --older-than 30d [--dry-run]
 clipmem settings show [--format json]
 clipmem settings pause on|off
+clipmem settings api-key-filter on|off
+clipmem settings ocr on|off
 clipmem settings retention <duration|forever>
 clipmem settings ignore add <bundle_id>
 clipmem settings ignore remove <bundle_id>
 clipmem settings ignore list [--format json]
+clipmem ocr status [--format json]
+clipmem ocr run [--limit N] [--snapshot ID] [--retry-failed] [--format json]
 ```
 
 `forget` is a hard delete. It removes the snapshot row, all child items/representations, and all capture events for that snapshot id via foreign-key cascades.
 
 `purge` computes age from `snapshot_stats.last_observed_at`, not `snapshots.created_at`. Duration grammar is a single integer plus one unit: `Nd`, `Nh`, or `Nm`.
 
-`settings` is the persistent capture-policy entrypoint. Ignore matching is exact, case-insensitive bundle-id matching only.
+`settings` is the persistent capture-policy entrypoint. Ignore matching is exact, case-insensitive bundle-id matching only. OCR is opt-in, runs locally through Apple Vision on macOS, and stores text/status separately from raw image bytes.
 
 ---
 
@@ -229,4 +239,4 @@ Scripts can rely on these to distinguish "no such snapshot" (retriable with a di
 - stderr contains diagnostics only.
 - No interactive prompts anywhere in the CLI.
 - List commands use bounded `--limit` defaults and opaque cursor pagination.
-- `--format json` output is stable within `schema_version: 1`.
+- `--format json` output is stable within `schema_version: 2`.

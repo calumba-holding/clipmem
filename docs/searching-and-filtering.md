@@ -103,6 +103,26 @@ clipmem search --mode literal "50%"
 clipmem search --mode fts "\"launchctl\" AND bootstrap"
 ```
 
+## OCR text
+
+When OCR is enabled or backfilled, completed OCR text participates in
+default `search` and `recall` results. OCR matches report
+`matched_fields = ["ocr_text"]` in JSON output and include a
+`why_matched` explanation that names OCR text.
+
+Use these commands to control and inspect OCR:
+
+```bash
+clipmem settings ocr on
+clipmem ocr status
+clipmem ocr run --limit 25
+```
+
+OCR is opt-in for new captures. Use `clipmem ocr run` to backfill
+existing image snapshots. OCR text is stored separately from native
+snapshot text, so the original image bytes stay unchanged for
+`restore` and `export`.
+
 ## Get
 
 `get` returns the full nested detail for a single snapshot, including
@@ -147,6 +167,9 @@ explicitly targeted snapshot.
   not arbitrary files. `other` means mixed or empty snapshots.
 - `--has-text`, `--has-url`, `--has-file-url`, `--has-image`,
   `--has-pdf` — presence flags with additive AND semantics
+
+`--has-text` includes snapshots whose only searchable text comes from
+ready OCR text.
 
 ### Size
 
