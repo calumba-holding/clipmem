@@ -9,7 +9,9 @@ final class QuickRecallModel {
     var results: [ClipmemItem] = []
     var selectedID: Int?
     var isLoading = false
-    var errorMessage: String?
+    var error: UserError?
+
+    var errorMessage: String? { error?.message }
 
     @ObservationIgnored private let appModel: AppModel
     @ObservationIgnored private var searchTask: Task<Void, Never>?
@@ -63,10 +65,10 @@ final class QuickRecallModel {
             if Task.isCancelled { return }
             results = newResults
             selectedID = results.first?.snapshotId
-            errorMessage = nil
+            self.error = nil
         } catch is CancellationError {
         } catch {
-            errorMessage = error.localizedDescription
+            self.error = UserError(error)
         }
     }
 

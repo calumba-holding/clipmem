@@ -15,6 +15,7 @@ struct ResultRowView: View {
                     .truncationMode(.tail)
                     .font(.body)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .help(item.displayText)
                 Text(metadata)
                 .font(.caption)
                 .foregroundStyle(selected ? .white.opacity(0.82) : .secondary)
@@ -43,7 +44,7 @@ struct ResultRowView: View {
             item.whyMatched?.isEmpty == false ? item.whyMatched : nil,
         ]
         .compactMap { $0 }
-        .joined(separator: "   ")
+        .joined(separator: " \u{00B7} ")
     }
 
     private var symbol: String {

@@ -12,11 +12,15 @@ final class HistoryModel {
     var selectedDetail: SnapshotDetails?
     var nextCursor: String?
     var isLoading = false
-    var errorMessage: String?
+    var isLoadingDetail = false
+    var error: UserError?
 
     @ObservationIgnored private let appModel: AppModel
     @ObservationIgnored private var loadGeneration = 0
     @ObservationIgnored private var detailGeneration = 0
+
+    // Keep backward compatibility
+    var errorMessage: String? { error?.message }
 
     init(mode: QueryMode = UserDefaults.standard.clipmemDefaultMode, appModel: AppModel) {
         self.mode = mode
@@ -74,11 +78,11 @@ final class HistoryModel {
                 selectedID = results.first?.snapshotId
                 await loadSelectedDetail()
             }
-            errorMessage = nil
+            error = nil
         } catch is CancellationError {
         } catch {
             guard isCurrent(request) else { return }
-            errorMessage = error.localizedDescription
+            self.error = UserError(error)
         }
     }
 
@@ -89,16 +93,22 @@ final class HistoryModel {
             selectedDetail = nil
             return
         }
+        isLoadingDetail = true
+        defer {
+            if generation == detailGeneration {
+                isLoadingDetail = false
+            }
+        }
         do {
             let detail = try await appModel.client.get(snapshotID: selectedID).snapshot
             guard generation == detailGeneration, self.selectedID == selectedID else { return }
             selectedDetail = detail
-            errorMessage = nil
+            error = nil
         } catch is CancellationError {
         } catch {
             guard generation == detailGeneration, self.selectedID == selectedID else { return }
             selectedDetail = nil
-            errorMessage = error.localizedDescription
+            self.error = UserError(error)
         }
     }
 

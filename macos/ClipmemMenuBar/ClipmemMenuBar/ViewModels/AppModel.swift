@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Observation
+import SwiftUI
 
 @MainActor
 @Observable
@@ -9,13 +10,16 @@ final class AppModel {
     var doctorReport: DoctorReport?
     var settingsReport: SettingsReport?
     var recentPreview: [ClipmemItem] = []
-    var lastErrorMessage: String?
+    var lastError: UserError?
     var actionMessage: String?
     var hotkeyMessage: String?
     var isRefreshing = false
     var isRunningAction = false
 
     @ObservationIgnored private let hotKeyManager = HotKeyManager()
+
+    // Keep backward compatibility for views that check the string directly
+    var lastErrorMessage: String? { lastError?.message }
 
     var healthState: HealthState {
         if client.resolvedBinaryPath() == nil {
@@ -47,7 +51,7 @@ final class AppModel {
     func refreshAll() async {
         isRefreshing = true
         defer { isRefreshing = false }
-        lastErrorMessage = nil
+        lastError = nil
         async let statusTask: Void = refreshStatus()
         async let settingsTask: Void = refreshSettings()
         async let recentTask: Void = refreshRecentPreview()
@@ -59,7 +63,7 @@ final class AppModel {
             serviceStatus = try await client.serviceStatus()
         } catch {
             serviceStatus = nil
-            lastErrorMessage = error.localizedDescription
+            lastError = UserError(error)
         }
     }
 
@@ -68,7 +72,7 @@ final class AppModel {
             doctorReport = try await client.doctor()
         } catch {
             doctorReport = nil
-            lastErrorMessage = error.localizedDescription
+            lastError = UserError(error)
         }
     }
 
@@ -108,11 +112,11 @@ final class AppModel {
         defer { isRunningAction = false }
         do {
             try await client.runAction(command)
-            lastErrorMessage = nil
-            actionMessage = successMessage
+            lastError = nil
+            showActionMessage(successMessage)
             return true
         } catch {
-            lastErrorMessage = error.localizedDescription
+            lastError = UserError(error)
             actionMessage = nil
             return false
         }
@@ -121,10 +125,11 @@ final class AppModel {
     func restore(_ item: ClipmemItem) async {
         do {
             _ = try await client.restore(snapshotID: item.snapshotId)
-            lastErrorMessage = nil
+            lastError = nil
+            showActionMessage("Restored to clipboard")
             await refreshRecentPreview()
         } catch {
-            lastErrorMessage = error.localizedDescription
+            lastError = UserError(error)
         }
     }
 
@@ -132,9 +137,9 @@ final class AppModel {
         do {
             _ = try await client.forget(snapshotID: item.snapshotId)
             recentPreview.removeAll { $0.snapshotId == item.snapshotId }
-            lastErrorMessage = nil
+            lastError = nil
         } catch {
-            lastErrorMessage = error.localizedDescription
+            lastError = UserError(error)
         }
     }
 
@@ -155,6 +160,20 @@ final class AppModel {
     func unregisterHotkey() {
         hotKeyManager.unregister()
         hotkeyMessage = nil
+    }
+
+    // MARK: - Private
+
+    private func showActionMessage(_ message: String?) {
+        actionMessage = message
+        if let message {
+            Task {
+                try? await Task.sleep(for: .seconds(2.5))
+                if self.actionMessage == message {
+                    withAnimation { self.actionMessage = nil }
+                }
+            }
+        }
     }
 
     private func installSelfIgnoreIfNeeded() async {

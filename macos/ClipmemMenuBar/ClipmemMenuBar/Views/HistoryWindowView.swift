@@ -33,11 +33,19 @@ struct HistoryWindowView: View {
                 Button("Quick Recall", systemImage: "bolt") {
                     WindowActivation.openWindow(openWindow, id: .quickRecall)
                 }
+                Button("Inspector", systemImage: inspectorPresented ? "sidebar.right.fill" : "sidebar.right") {
+                    inspectorPresented.toggle()
+                }
+                .help("Toggle inspector (\u{2318}\u{21E7}I)")
             }
         }
         .inspector(isPresented: $inspectorPresented) {
             inspector
                 .inspectorColumnWidth(min: 220, ideal: 260, max: 320)
+        }
+        .overlay(alignment: .top) {
+            ActionFeedbackOverlay(message: appModel.actionMessage)
+                .padding(.top, Spacing.sm)
         }
         .navigationSplitViewStyle(.balanced)
         .background {
@@ -109,54 +117,14 @@ struct HistoryWindowView: View {
                 .navigationTitle("Details")
                 .navigationSplitViewColumnWidth(min: 360, ideal: 520)
         } else {
-            SnapshotDetailView(detail: history.selectedDetail, fallback: history.selectedItem)
+            SnapshotDetailView(detail: history.selectedDetail, fallback: history.selectedItem, isLoading: history.isLoadingDetail)
                 .navigationTitle(history.mode.title)
                 .navigationSplitViewColumnWidth(min: 360, ideal: 580)
         }
     }
 
     private var queryControls: some View {
-        ViewThatFits(in: .horizontal) {
-            wideQueryControls
-            compactQueryControls
-        }
-    }
-
-    private var wideQueryControls: some View {
-        VStack(spacing: 10) {
-            HStack {
-                Picker("Mode", selection: $history.mode) {
-                    ForEach([QueryMode.recall, .search, .recent, .timeline]) { mode in
-                        Text(mode.title).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 300)
-                TextField(searchPrompt, text: $history.query)
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(history.mode == .recent || history.mode == .timeline)
-                    .onSubmit {
-                        Task { await history.reload() }
-                    }
-                Button("Search", systemImage: "magnifyingglass") {
-                    Task { await history.reload() }
-                }
-                .disabled((history.mode == .search || history.mode == .recall) && history.query.isEmpty && history.mode == .search)
-            }
-            FilterBar(history: history)
-        }
-    }
-
-    private var compactQueryControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Picker("Mode", selection: $history.mode) {
-                ForEach([QueryMode.recall, .search, .recent, .timeline]) { mode in
-                    Text(mode.title).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 300)
-
+        VStack(spacing: Spacing.md) {
             HStack {
                 TextField(searchPrompt, text: $history.query)
                     .textFieldStyle(.roundedBorder)
@@ -167,7 +135,7 @@ struct HistoryWindowView: View {
                 Button("Search", systemImage: "magnifyingglass") {
                     Task { await history.reload() }
                 }
-                .disabled((history.mode == .search || history.mode == .recall) && history.query.isEmpty && history.mode == .search)
+                .disabled((history.mode == .search || history.mode == .recall) && history.query.isEmpty)
             }
             FilterBar(history: history)
         }
@@ -175,8 +143,8 @@ struct HistoryWindowView: View {
 
     private var resultList: some View {
         VStack(spacing: 0) {
-            if let error = history.errorMessage {
-                ErrorBanner(message: error)
+            if let error = history.error {
+                ErrorBanner(message: error.message, recovery: error.recovery)
                     .padding()
             }
             List(selection: $history.selectedID) {
@@ -189,23 +157,34 @@ struct HistoryWindowView: View {
                         Task { await history.loadMore() }
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, Spacing.sm)
                 }
             }
             .listStyle(.inset)
+            .overlay {
+                if !history.isLoading && history.results.isEmpty && history.error == nil {
+                    EmptyStateView(
+                        title: history.mode == .recent || history.mode == .timeline ? "No recent history" : "No results",
+                        detail: history.mode == .recent || history.mode == .timeline
+                            ? "Start copying to build your clipboard history."
+                            : "Try adjusting your filters or search query.",
+                        symbol: history.mode == .recent || history.mode == .timeline ? "clock" : "magnifyingglass"
+                    )
+                }
+            }
             if history.isLoading {
                 ProgressView()
-                    .padding(8)
+                    .padding(Spacing.sm)
             }
         }
     }
 
     private var inspector: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Spacing.lg) {
             Text("Inspector")
                 .font(.headline)
             if let selected = history.selectedItem {
-                Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
+                Grid(alignment: .leading, horizontalSpacing: Spacing.md, verticalSpacing: Spacing.sm) {
                     FieldRow(title: "Snapshot", value: String(selected.snapshotId))
                     FieldRow(title: "Event", value: selected.eventId.map(String.init))
                     FieldRow(title: "Kind", value: selected.kind)

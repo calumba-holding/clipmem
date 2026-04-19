@@ -20,12 +20,16 @@ struct QuickRecallWindowView: View {
             header
             Divider()
             list
-            if let error = quick.errorMessage {
-                ErrorBanner(message: error)
+            if let error = quick.error {
+                ErrorBanner(message: error.message, recovery: error.recovery)
                     .padding()
             }
             Divider()
             footer
+        }
+        .overlay(alignment: .top) {
+            ActionFeedbackOverlay(message: appModel.actionMessage)
+                .padding(.top, Spacing.sm)
         }
         .task {
             queryFocused = true
@@ -60,7 +64,7 @@ struct QuickRecallWindowView: View {
                 pendingForgetItem = nil
             }
         } message: {
-            Text("Forgetting removes all capture events for this exact deduplicated snapshot.")
+            Text("This permanently removes the saved content and all records of when it was copied. This cannot be undone.")
         }
         .onChange(of: confirmForget) {
             if confirmForget == false {
@@ -70,14 +74,14 @@ struct QuickRecallWindowView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Spacing.md) {
             Picker("Mode", selection: $quick.mode) {
                 ForEach([QueryMode.recall, .search, .recent, .timeline]) { mode in
                     Text(mode.title).tag(mode)
                 }
             }
             .pickerStyle(.segmented)
-            .frame(width: 300)
+            .fixedSize()
             .onChange(of: quick.mode) {
                 Task { await quick.refresh() }
             }
@@ -127,26 +131,34 @@ struct QuickRecallWindowView: View {
             }
             .keyboardShortcut(.return, modifiers: [])
             .disabled(quick.selectedItem == nil)
+            .help("Restore to clipboard (Return)")
             Button("Open", systemImage: "rectangle.stack.badge.play") {
                 openHistory()
             }
             .keyboardShortcut("o", modifiers: .command)
             .disabled(quick.selectedItem == nil)
+            .help("Open in History (\u{2318}O)")
             Button("Forget", systemImage: "trash", role: .destructive) {
                 pendingForgetItem = quick.selectedItem
                 confirmForget = true
             }
             .keyboardShortcut(.delete, modifiers: [])
             .disabled(quick.selectedItem == nil)
+            .help("Remove this item (Delete)")
             Spacer()
+            Text("Space to preview")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
             Button("Focus Search", systemImage: "magnifyingglass") {
                 queryFocused = true
             }
             .keyboardShortcut("f", modifiers: .command)
+            .help("Focus search field (\u{2318}F)")
             Button("Refresh", systemImage: "arrow.clockwise") {
                 Task { await quick.refresh() }
             }
             .keyboardShortcut("r", modifiers: .command)
+            .help("Refresh results (\u{2318}R)")
         }
         .padding()
     }

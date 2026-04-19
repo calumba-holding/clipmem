@@ -114,6 +114,28 @@ struct RetrievalFilterState: Equatable {
     var hasImage = false
     var hasPDF = false
 
+    var activeAdvancedFilterCount: Int {
+        var count = 0
+        if !appName.isEmpty { count += 1 }
+        if !bundleID.isEmpty { count += 1 }
+        if hasText { count += 1 }
+        if hasURL { count += 1 }
+        if hasFile { count += 1 }
+        if hasImage { count += 1 }
+        if hasPDF { count += 1 }
+        return count
+    }
+
+    mutating func resetAdvanced() {
+        appName = ""
+        bundleID = ""
+        hasText = false
+        hasURL = false
+        hasFile = false
+        hasImage = false
+        hasPDF = false
+    }
+
     static var defaultValue: RetrievalFilterState {
         RetrievalFilterState(hours: UserDefaults.standard.clipmemDefaultHours)
     }

@@ -10,18 +10,21 @@ struct ItemActionButtons: View {
     @State private var confirmForget = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
             Button("Restore Snapshot", systemImage: "arrow.uturn.backward.square") {
                 guard let item else { return }
                 Task { await appModel.restore(item) }
             }
             .disabled(item == nil)
+            .keyboardShortcut(.return, modifiers: .command)
 
             Button("Copy Plain Text", systemImage: "doc.on.doc") {
                 let text = detail?.bestText ?? item?.bestText ?? ""
                 PasteboardActions.copyPlainText(text)
+                appModel.actionMessage = "Copied to clipboard"
             }
             .disabled((detail?.bestText ?? item?.bestText ?? "").isEmpty)
+            .keyboardShortcut("c", modifiers: [.command, .shift])
 
             Button("Open URL", systemImage: "safari") {
                 PasteboardActions.openSingleURL(detail?.urls ?? item?.urls)
@@ -37,7 +40,7 @@ struct ItemActionButtons: View {
                 if let detail {
                     ForEach(detail.items) { clipboardItem in
                         ForEach(clipboardItem.representations) { representation in
-                            Button("\(clipboardItem.itemIndex): \(representation.uti)") {
+                            Button("\(clipboardItem.itemIndex): \(humanReadableType(representation.uti))") {
                                 export(clipboardItem: clipboardItem, representation: representation)
                             }
                         }
@@ -69,7 +72,7 @@ struct ItemActionButtons: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("clipmem deduplicates snapshots. Forgetting removes all capture events for this exact stored content.")
+            Text("This permanently removes the saved content and all records of when it was copied. This cannot be undone.")
         }
     }
 
@@ -86,9 +89,10 @@ struct ItemActionButtons: View {
                     destination: destination,
                     force: true
                 )
-                appModel.lastErrorMessage = nil
+                appModel.lastError = nil
+                appModel.actionMessage = "Exported successfully"
             } catch {
-                appModel.lastErrorMessage = error.localizedDescription
+                appModel.lastError = UserError(error)
             }
         }
     }

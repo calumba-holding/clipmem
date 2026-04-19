@@ -24,6 +24,36 @@ enum ClipmemClientError: Error, LocalizedError, Equatable {
             message
         }
     }
+
+    var recoverySuggestion: String? {
+        switch self {
+        case .binaryNotFound:
+            "Set the binary path in Settings > General, or install via Homebrew."
+        case .setupNeeded:
+            "Click Setup in the menu bar to initialize the database."
+        case .notFound:
+            "This item may have been removed. Try refreshing."
+        case .commandFailed:
+            "Check Diagnostics or the logs folder for details."
+        default:
+            nil
+        }
+    }
+}
+
+struct UserError: Equatable {
+    let message: String
+    let recovery: String?
+
+    init(_ error: Error) {
+        self.message = error.localizedDescription
+        self.recovery = (error as? ClipmemClientError)?.recoverySuggestion
+    }
+
+    init(message: String, recovery: String? = nil) {
+        self.message = message
+        self.recovery = recovery
+    }
 }
 
 struct ClipmemClientConfiguration: Sendable {

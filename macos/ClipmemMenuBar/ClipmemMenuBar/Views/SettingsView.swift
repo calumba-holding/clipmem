@@ -10,6 +10,7 @@ struct ClipmemSettingsView: View {
     @AppStorage(PreferenceKey.hotkeyEnabled) private var hotkeyEnabled = true
     @State private var newIgnoredBundleID = ""
     @State private var retentionValue = "forever"
+    @State private var confirmRetention = false
 
     var body: some View {
         TabView {
@@ -40,10 +41,7 @@ struct ClipmemSettingsView: View {
                 HStack {
                     TextField("Retention", text: $retentionValue)
                     Button("Apply") {
-                        Task {
-                            await appModel.runAction(.settingsRetention(retentionValue))
-                            await appModel.refreshSettings()
-                        }
+                        confirmRetention = true
                     }
                 }
                 Text("Use values like 30d, 12h, 15m, or forever.")
@@ -54,13 +52,24 @@ struct ClipmemSettingsView: View {
             .task {
                 retentionValue = appModel.settingsReport?.retention ?? "forever"
             }
+            .confirmationDialog("Apply retention policy?", isPresented: $confirmRetention) {
+                Button("Apply") {
+                    Task {
+                        await appModel.runAction(.settingsRetention(retentionValue), successMessage: "Retention updated")
+                        await appModel.refreshSettings()
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Items older than this threshold may be purged during the next cleanup cycle.")
+            }
             .tabItem {
                 Label("Capture", systemImage: "hand.raised")
             }
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: Spacing.md) {
                 HStack {
-                    TextField("Bundle ID", text: $newIgnoredBundleID)
+                    TextField("App identifier (e.g., com.apple.Safari)", text: $newIgnoredBundleID)
                     Button("Add", systemImage: "plus") {
                         addIgnoredBundleID()
                     }
@@ -91,13 +100,25 @@ struct ClipmemSettingsView: View {
                 Label("Ignored Apps", systemImage: "app.badge")
             }
 
-            VStack(alignment: .leading, spacing: 14) {
-                Label("Archive data stays local.", systemImage: "checkmark.shield")
-                Text("The database path is shown in Diagnostics and defaults to ~/Library/Application Support/clipmem/clipmem.sqlite3.")
-                Text("The database is not encrypted. Use FileVault or another disk encryption layer for at-rest protection.")
-                Text("Images and PDFs are stored as clipboard representations but are not OCR'd.")
-                Text("App provenance is a best-effort frontmost-app hint. The UI phrases it as copied while in an app.")
-                Text("Search is lexical and rule-based, not semantic AI search.")
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                GroupBox {
+                    Label("Your clipboard archive stays on this Mac.", systemImage: "checkmark.shield")
+                }
+                GroupBox("Storage") {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Text("The database defaults to ~/Library/Application Support/clipmem/. See Diagnostics for the exact path.")
+                        Text("The database is not encrypted. Enable FileVault for at-rest protection.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                GroupBox("What Gets Captured") {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Text("Images and PDFs are stored as-is. Text content is not processed by AI.")
+                        Text("Search is keyword-based, not AI or cloud-powered.")
+                        Text("The \"Copied while in\" label is a best guess based on the active app.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
                 Spacer()
             }
             .padding()
@@ -106,6 +127,10 @@ struct ClipmemSettingsView: View {
                 Label("Privacy", systemImage: "lock")
             }
         }
+        .overlay(alignment: .top) {
+            ActionFeedbackOverlay(message: appModel.actionMessage)
+                .padding(.top, Spacing.sm)
+        }
     }
 
     private var pauseBinding: Binding<Bool> {
@@ -113,7 +138,7 @@ struct ClipmemSettingsView: View {
             appModel.settingsReport?.paused ?? false
         } set: { value in
             Task {
-                await appModel.runAction(.settingsPause(value))
+                await appModel.runAction(.settingsPause(value), successMessage: value ? "Capture paused" : "Capture resumed")
                 await appModel.refreshSettings()
             }
         }
@@ -124,7 +149,7 @@ struct ClipmemSettingsView: View {
             appModel.settingsReport?.apiKeyFilterEnabled ?? false
         } set: { value in
             Task {
-                await appModel.runAction(.settingsAPIKeyFilter(value))
+                await appModel.runAction(.settingsAPIKeyFilter(value), successMessage: value ? "API-key filter enabled" : "API-key filter disabled")
                 await appModel.refreshSettings()
             }
         }
@@ -134,7 +159,7 @@ struct ClipmemSettingsView: View {
         let value = newIgnoredBundleID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard value.isEmpty == false else { return }
         Task {
-            await appModel.runAction(.settingsIgnoreAdd(value))
+            await appModel.runAction(.settingsIgnoreAdd(value), successMessage: "App ignored")
             newIgnoredBundleID = ""
             await appModel.refreshSettings()
         }
