@@ -22,7 +22,7 @@ struct ClipmemSettingsView: View {
                         Text(mode.title).tag(mode.rawValue)
                     }
                 }
-                Toggle("Enable Command-Shift-V global hotkey", isOn: $hotkeyEnabled)
+                Toggle("Enable Option-Shift-V global hotkey", isOn: $hotkeyEnabled)
                 if let message = appModel.hotkeyMessage {
                     Text(message)
                         .foregroundStyle(.orange)

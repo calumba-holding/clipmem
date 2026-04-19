@@ -535,7 +535,7 @@ The menu bar app self-excludes its own bundle id (`io.openclaw.clipmem.menubar`)
 
 Known rough edges in the first native frontend pass:
 
-- Global hotkey support is Command-Shift-V with a reset-to-default preference. Arbitrary hotkey recording is not implemented yet.
+- Global hotkey support is Option-Shift-V with a reset-to-default preference. Arbitrary hotkey recording is not implemented yet.
 - Image representations can be exported for preview/action workflows, but PDFs and opaque binaries are shown through metadata and export actions rather than inline rendering.
 - The app restores clipboard snapshots but does not auto-paste into the previous application.
 - Search is lexical/rule-based and the UI intentionally does not describe it as semantic or AI search.

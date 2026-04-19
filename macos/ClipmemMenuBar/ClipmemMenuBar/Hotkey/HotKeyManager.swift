@@ -46,7 +46,7 @@ final class HotKeyManager {
         let hotKeyID = EventHotKeyID(signature: Self.signature, id: 1)
         let registerStatus = RegisterEventHotKey(
             UInt32(kVK_ANSI_V),
-            UInt32(cmdKey | shiftKey),
+            UInt32(optionKey | shiftKey),
             hotKeyID,
             GetApplicationEventTarget(),
             0,
@@ -54,9 +54,9 @@ final class HotKeyManager {
         )
         guard registerStatus == noErr else {
             unregister()
-            return "Command-Shift-V could not be registered. Another app may already use it."
+            return "Option-Shift-V could not be registered. Another app may already use it."
         }
-        AppLoggers.hotkey.info("Registered Command-Shift-V")
+        AppLoggers.hotkey.info("Registered Option-Shift-V")
         return nil
     }
 

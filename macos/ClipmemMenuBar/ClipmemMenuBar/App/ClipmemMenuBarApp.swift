@@ -40,7 +40,7 @@ struct ClipmemMenuBarApp: App {
             QuickRecallWindowView(appModel: appModel)
                 .frame(width: 720, height: 520)
         }
-        .keyboardShortcut("v", modifiers: [.command, .shift])
+        .keyboardShortcut("v", modifiers: [.option, .shift])
 
         Settings {
             ClipmemSettingsView(appModel: appModel)
