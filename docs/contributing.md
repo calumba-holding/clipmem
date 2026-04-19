@@ -1,0 +1,109 @@
+# Contributing
+
+clipmem is a Rust CLI with a native SwiftUI macOS frontend. The
+codebase is structured to make extension straightforward — export
+commands, embeddings, OCR, richer source-app heuristics, and fuller
+HTML parsing all fit the existing shape.
+
+## Project layout
+
+```
+src/                           Rust source
+  main.rs                      CLI entry point
+  cli.rs                       Argument parsing (clap) and command dispatch
+  cli/commands.rs              Command implementations
+  cli/output.rs                Output formatting (text, JSON, JSONL, MD, TOON)
+  cli/service.rs               Service and setup management
+  cli/db_path.rs               Database path resolution
+  db.rs                        Database connection and retrieval logic
+  db/schema.sql                SQLite schema (tables, indexes, triggers, FTS5)
+  db/store.rs                  Insertion and storage logic
+  db/read.rs                   Query and search logic
+  capture.rs                   Public capture facade
+  model/                       Data structures
+    clipboard.rs               ClipboardSnapshot, ClipboardItem, ClipboardRepresentation
+    archive.rs                 SearchHit, TimelineEvent, CaptureEvent, SnapshotDetails
+    kinds.rs                   ClipboardKind, SnapshotKind enums
+    text_projection.rs         FlattenedTextProjection, TextFragment
+    builders.rs                Snapshot, item, and representation builders
+  platform/
+    macos.rs                   NSPasteboard capture, restore, app detection via objc2
+    unsupported.rs             Stubs for non-macOS platforms
+  app.rs                       Watch state and capture line formatting
+  sensitive.rs                 API key filter heuristics
+  archive.rs                   Public archive facade
+
+macos/ClipmemMenuBar/          Native SwiftUI menu bar app and Swift Testing suite
+
+tests/
+  cli_commands.rs              CLI integration tests
+  database_roundtrip.rs        Schema and serialization tests
+  skill_parity.rs              OpenClaw skill verification
+
+skills/clipboard-memory/       Canonical public skill content
+extras/openclaw/               OpenClaw-native skill package
+extras/agent-skills/           Portable skill package mirror
+extras/launchd/                LaunchAgent plist template
+
+scripts/
+  build_and_run_menubar.sh     Build Rust + SwiftUI app and launch
+  install_launchagent.sh       Compatibility wrapper for clipmem setup
+  uninstall_launchagent.sh     Compatibility wrapper for clipmem service uninstall
+  install_openclaw_skill.sh    Compatibility wrapper for clipmem agents openclaw install-skill
+```
+
+## Platform gating
+
+Clipboard capture is gated behind `cfg(target_os = "macos")`. The
+database, search, and test layers compile on other platforms for
+development, but actual capture and restore only work on macOS.
+
+## Build and test
+
+Build the Rust CLI (requires Rust 1.87+):
+
+```bash
+cargo build --release
+```
+
+Run the test suite:
+
+```bash
+cargo test
+```
+
+The CLI integration tests in `tests/cli_commands.rs` exercise every
+command, flag combination, filter, and output format.
+
+## Build and test the menu bar app
+
+Build and launch the development app from the repo root:
+
+```bash
+scripts/build_and_run_menubar.sh
+```
+
+Or build and test directly with `xcodebuild`:
+
+```bash
+xcodebuild -project macos/ClipmemMenuBar/ClipmemMenuBar.xcodeproj \
+  -scheme ClipmemMenuBar -configuration Debug \
+  -derivedDataPath macos/ClipmemMenuBar/DerivedData build
+
+xcodebuild -project macos/ClipmemMenuBar/ClipmemMenuBar.xcodeproj \
+  -scheme ClipmemMenuBar -configuration Debug \
+  -derivedDataPath macos/ClipmemMenuBar/DerivedData test
+```
+
+## Release workflow
+
+See [RELEASING.md](../RELEASING.md) for the full release workflow,
+including tag-driven builds, GitHub Actions CI, Homebrew formula
+updates, and crates.io publishing.
+
+## Next steps
+
+- [Architecture](architecture.md) — understand the capture model,
+  storage design, and search strategy
+- [Command reference](command-reference.md) — exhaustive flag-level
+  reference

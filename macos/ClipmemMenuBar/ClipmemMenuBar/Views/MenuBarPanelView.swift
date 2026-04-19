@@ -30,6 +30,7 @@ struct MenuBarPanelView: View {
                     .foregroundStyle(.green)
                     .lineLimit(2)
             }
+            updateBanner
 
             serviceSummary
             quickActions
@@ -117,6 +118,10 @@ struct MenuBarPanelView: View {
                 Button("Run Doctor") {
                     Task { await appModel.refreshDoctor() }
                 }
+                Button("Check for Updates") {
+                    Task { await appModel.checkForUpdates() }
+                }
+                .disabled(appModel.updateStatus.isChecking)
                 Button("Open Logs Folder") {
                     appModel.openLogsFolder()
                 }
@@ -138,6 +143,40 @@ struct MenuBarPanelView: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
+    }
+
+    @ViewBuilder
+    private var updateBanner: some View {
+        if appModel.updateStatus.isUpdateAvailable {
+            VStack(alignment: .leading, spacing: Spacing.sm) {
+                HStack(alignment: .firstTextBaseline) {
+                    Label("Update Available", systemImage: "arrow.down.circle.fill")
+                        .font(.headline)
+                    Spacer()
+                    Text(appModel.updateStatus.latestVersion ?? "")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Text("Clipmem \(appModel.updateStatus.latestVersion ?? "the latest release") is available. You have \(appModel.updateStatus.currentVersion).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack {
+                    if appModel.updateStatus.shouldShowHomebrewCommand {
+                        Button("Copy Command", systemImage: "doc.on.doc") {
+                            appModel.copyUpgradeCommand()
+                        }
+                    }
+                    Button("Open Release", systemImage: "arrow.up.right.square") {
+                        appModel.openUpdateRelease()
+                    }
+                    .disabled(appModel.updateStatus.releaseURL == nil)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            .padding(Spacing.md)
+            .background(.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: Spacing.sm))
+        }
     }
 
     private var policySummary: String {

@@ -18,8 +18,10 @@ final class AppModel {
     var launchAtLoginError: UserError?
     var isRefreshing = false
     var isRunningAction = false
+    var updateStatus = UpdateStatus.load()
 
     @ObservationIgnored private let hotKeyManager = HotKeyManager()
+    @ObservationIgnored private let updateChecker = UpdateChecker()
 
     // Keep backward compatibility for views that check the string directly
     var lastErrorMessage: String? { lastError?.message }
@@ -33,12 +35,12 @@ final class AppModel {
 
     var menuBarSymbol: String {
         switch healthState {
-        case .healthy: "paperclip.circle.fill"
+        case .healthy: updateStatus.isUpdateAvailable ? "arrow.down.circle.fill" : "paperclip.circle.fill"
         case .stale: "paperclip.badge.clock"
         case .setupNeeded: "paperclip.badge.plus"
         case .conflict, .error: "paperclip.badge.exclamationmark"
         case .missingBinary: "questionmark.folder"
-        case .unknown: "paperclip"
+        case .unknown: updateStatus.isUpdateAvailable ? "arrow.down.circle" : "paperclip"
         }
     }
 
@@ -50,6 +52,7 @@ final class AppModel {
         configureDefaultLaunchAtLoginIfNeeded()
         await installSelfIgnoreIfNeeded()
         await refreshAll()
+        await checkForUpdatesIfNeeded()
     }
 
     func refreshAll() async {
@@ -154,6 +157,38 @@ final class AppModel {
         guard let path = serviceStatus?.logPaths.first else { return }
         let url = URL(fileURLWithPath: path).deletingLastPathComponent()
         NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    func checkForUpdatesIfNeeded() async {
+        guard updateStatus.shouldCheck() else { return }
+        await checkForUpdates(force: false, manual: false)
+    }
+
+    func checkForUpdates(force: Bool = true, manual: Bool = true) async {
+        if updateStatus.isChecking {
+            return
+        }
+        if force == false, updateStatus.shouldCheck() == false {
+            return
+        }
+
+        updateStatus.beginCheck(manual: manual)
+        do {
+            let result = try await updateChecker.latestStableRelease()
+            updateStatus.applySuccess(result)
+        } catch {
+            updateStatus.applyFailure(error, manual: manual)
+        }
+    }
+
+    func copyUpgradeCommand() {
+        PasteboardActions.copyPlainText(UpdateChecker.homebrewUpgradeCommand)
+        showActionMessage("Upgrade command copied")
+    }
+
+    func openUpdateRelease() {
+        guard let releaseURL = updateStatus.releaseURL else { return }
+        NSWorkspace.shared.open(releaseURL)
     }
 
     func configureHotkey(enabled: Bool, openQuickRecall: @escaping @MainActor () -> Void) {

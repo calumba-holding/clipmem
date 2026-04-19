@@ -36,6 +36,7 @@ struct ClipmemSettingsView: View {
                     Text(message)
                         .foregroundStyle(.secondary)
                 }
+                updateSettingsSection
             }
             .formStyle(.grouped)
             .padding()
@@ -169,6 +170,62 @@ struct ClipmemSettingsView: View {
         } set: { value in
             appModel.setLaunchAtLoginEnabled(value)
         }
+    }
+
+    @ViewBuilder
+    private var updateSettingsSection: some View {
+        Section("Updates") {
+            LabeledContent("Current version", value: appModel.updateStatus.currentVersion)
+            LabeledContent("Latest checked version", value: appModel.updateStatus.latestVersion ?? "Not checked")
+            LabeledContent("Last checked", value: lastUpdateCheckDescription)
+
+            HStack {
+                Button("Check for Updates", systemImage: "arrow.clockwise") {
+                    Task { await appModel.checkForUpdates() }
+                }
+                .disabled(appModel.updateStatus.isChecking)
+                if appModel.updateStatus.isChecking {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+            }
+
+            if appModel.updateStatus.isUpdateAvailable {
+                if appModel.updateStatus.shouldShowHomebrewCommand {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Text("Update with Homebrew")
+                            .font(.headline)
+                        Text(UpdateChecker.homebrewUpgradeCommand)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                        Button("Copy Upgrade Command", systemImage: "doc.on.doc") {
+                            appModel.copyUpgradeCommand()
+                        }
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Text("Download from GitHub Releases")
+                            .font(.headline)
+                        Button("Open Release", systemImage: "arrow.up.right.square") {
+                            appModel.openUpdateRelease()
+                        }
+                        .disabled(appModel.updateStatus.releaseURL == nil)
+                    }
+                }
+            }
+
+            if let message = appModel.updateStatus.errorMessage {
+                Text(message)
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+
+    private var lastUpdateCheckDescription: String {
+        guard let lastCheckedAt = appModel.updateStatus.lastCheckedAt else {
+            return "Never"
+        }
+        return lastCheckedAt.formatted(date: .abbreviated, time: .shortened)
     }
 
     private func addIgnoredBundleID() {

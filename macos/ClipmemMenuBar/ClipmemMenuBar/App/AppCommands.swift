@@ -22,6 +22,9 @@ enum PreferenceKey {
     static let launchAtLoginEnabled = "launchAtLoginEnabled"
     static let didConfigureLaunchAtLogin = "didConfigureLaunchAtLogin"
     static let didInstallSelfIgnore = "didInstallSelfIgnore"
+    static let cachedLatestVersion = "cachedLatestVersion"
+    static let cachedLatestReleaseURL = "cachedLatestReleaseURL"
+    static let lastUpdateCheckAt = "lastUpdateCheckAt"
 }
 
 extension UserDefaults {
