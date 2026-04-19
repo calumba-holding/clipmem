@@ -2,5 +2,6 @@ target/
 .DS_Store
 .desloppify/
 .agents/
+AGENTS.md
 scorecard.png
 skills-lock.json

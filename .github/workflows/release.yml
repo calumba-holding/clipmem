@@ -62,6 +62,14 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - name: Require changelog entry
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if ! grep -Fq "## ${version} - " CHANGELOG.md && ! grep -Fxq "## ${version}" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md must include a ## ${version} section before publishing ${GITHUB_REF_NAME}." >&2
+            exit 1
+          fi
       - name: Install dist
         shell: bash
         run: ./.github/scripts/install-dist.sh
