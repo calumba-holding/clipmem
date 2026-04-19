@@ -13,6 +13,9 @@ final class AppModel {
     var lastError: UserError?
     var actionMessage: String?
     var hotkeyMessage: String?
+    var launchAtLoginEnabled = UserDefaults.standard.clipmemLaunchAtLoginEnabled
+    var launchAtLoginStatus = LoginItemController.status()
+    var launchAtLoginError: UserError?
     var isRefreshing = false
     var isRunningAction = false
 
@@ -44,6 +47,7 @@ final class AppModel {
     }
 
     func start() async {
+        configureDefaultLaunchAtLoginIfNeeded()
         await installSelfIgnoreIfNeeded()
         await refreshAll()
     }
@@ -165,6 +169,25 @@ final class AppModel {
         hotkeyMessage = nil
     }
 
+    func setLaunchAtLoginEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(true, forKey: PreferenceKey.didConfigureLaunchAtLogin)
+        do {
+            try LoginItemController.setEnabled(enabled)
+            UserDefaults.standard.set(enabled, forKey: PreferenceKey.launchAtLoginEnabled)
+            launchAtLoginEnabled = enabled
+            launchAtLoginStatus = LoginItemController.status()
+            launchAtLoginError = nil
+        } catch {
+            launchAtLoginStatus = LoginItemController.status()
+            launchAtLoginEnabled = launchAtLoginStatus == .enabled
+            UserDefaults.standard.set(launchAtLoginEnabled, forKey: PreferenceKey.launchAtLoginEnabled)
+            launchAtLoginError = UserError(
+                message: "Could not update launch at login.",
+                recovery: error.localizedDescription
+            )
+        }
+    }
+
     // MARK: - Private
 
     private func showActionMessage(_ message: String?) {
@@ -188,5 +211,21 @@ final class AppModel {
         } catch {
             AppLoggers.service.info("Self ignore setup was skipped or failed")
         }
+    }
+
+    private func configureDefaultLaunchAtLoginIfNeeded() {
+        let defaults = UserDefaults.standard
+        if defaults.bool(forKey: PreferenceKey.didConfigureLaunchAtLogin) == false {
+            let defaultEnabled = LoginItemController.bundleDefaultEnabled
+            if defaultEnabled {
+                setLaunchAtLoginEnabled(true)
+                return
+            }
+            defaults.set(defaultEnabled, forKey: PreferenceKey.launchAtLoginEnabled)
+            defaults.set(true, forKey: PreferenceKey.didConfigureLaunchAtLogin)
+            launchAtLoginEnabled = defaultEnabled
+        }
+        launchAtLoginEnabled = defaults.clipmemLaunchAtLoginEnabled
+        launchAtLoginStatus = LoginItemController.status()
     }
 }

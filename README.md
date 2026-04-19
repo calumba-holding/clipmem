@@ -38,13 +38,21 @@ A searchable, local-only clipboard history for macOS, with a JSON-first CLI desi
 
 ## Install
 
-Homebrew (Apple Silicon):
+Homebrew CLI only (Apple Silicon):
 
 ```bash
 brew install tristanmanchester/tap/clipmem
 clipmem setup
-# or: brew services start clipmem
 ```
+
+Homebrew CLI + menu bar app (Apple Silicon):
+
+```bash
+brew install --cask tristanmanchester/tap/clipmem-app
+open -a ClipmemMenuBar
+```
+
+The cask depends on the CLI formula and runs `clipmem setup` after installation so background capture starts immediately.
 
 Cargo (Apple Silicon or Intel):
 
@@ -61,7 +69,7 @@ cargo build --release
 cargo install --path . --root ~/.local --force --locked
 ```
 
-All three paths produce the same `clipmem` binary.
+The CLI-only Homebrew, Cargo, and source paths produce the same `clipmem` binary.
 
 ## Quick start
 
@@ -94,10 +102,9 @@ clipmem doctor
 
 ## Run in the background
 
-`clipmem setup` is the canonical onboarding path. It performs one foreground capture to seed the archive, then starts background capture using the most natural provider for the active install:
+`clipmem setup` is the canonical CLI onboarding path. It performs one foreground capture to seed the archive, then starts background capture using the most natural provider for the active install. The Homebrew cask for the menu bar app runs this setup automatically after installation.
 
-- Homebrew installs prefer `brew services start clipmem`.
-- Cargo and manual installs use a direct per-user LaunchAgent (`io.openclaw.clipmem.watch`).
+The current Homebrew formula installs the `clipmem` binary but does not expose a Homebrew service stanza, so `clipmem setup` and `clipmem service start` manage a direct per-user LaunchAgent (`io.openclaw.clipmem.watch`) even for Homebrew installs. If a future formula adds a service stanza, the same commands will prefer `brew services` automatically.
 
 Common service commands:
 
@@ -106,13 +113,6 @@ clipmem setup
 clipmem service status
 clipmem service stop
 clipmem service uninstall
-```
-
-If you prefer the Homebrew-native flow, this is also supported:
-
-```bash
-brew services start clipmem
-brew services stop clipmem
 ```
 
 The compatibility wrappers `./scripts/install_launchagent.sh` and `./scripts/uninstall_launchagent.sh` still exist, but they now delegate to `clipmem setup` and `clipmem service uninstall`.
@@ -495,6 +495,15 @@ Default search uses SQLite's built-in full-text search (FTS5) when that fits the
 ## Native macOS menu bar app
 
 The repo includes a native SwiftUI menu bar frontend at `macos/ClipmemMenuBar/`. It is a Mac app, not Electron, Tauri, or a webview. The app keeps the Rust CLI as the source of truth by shelling out to `clipmem` asynchronously and decoding JSON responses from the same commands used by scripts and agents.
+
+Install the signed app with Homebrew:
+
+```bash
+brew install --cask tristanmanchester/tap/clipmem-app
+open -a ClipmemMenuBar
+```
+
+The cask depends on the `clipmem` formula, runs `clipmem setup` after installation, and enables launch at login by default. You can disable launch at login in the app's Settings window.
 
 Build and launch the development app from the repo root:
 

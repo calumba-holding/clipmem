@@ -19,6 +19,8 @@ enum PreferenceKey {
     static let defaultRecentHours = "defaultRecentHours"
     static let defaultQueryMode = "defaultQueryMode"
     static let hotkeyEnabled = "hotkeyEnabled"
+    static let launchAtLoginEnabled = "launchAtLoginEnabled"
+    static let didConfigureLaunchAtLogin = "didConfigureLaunchAtLogin"
     static let didInstallSelfIgnore = "didInstallSelfIgnore"
 }
 
@@ -38,6 +40,13 @@ extension UserDefaults {
             return true
         }
         return bool(forKey: PreferenceKey.hotkeyEnabled)
+    }
+
+    var clipmemLaunchAtLoginEnabled: Bool {
+        if object(forKey: PreferenceKey.launchAtLoginEnabled) == nil {
+            return LoginItemController.bundleDefaultEnabled
+        }
+        return bool(forKey: PreferenceKey.launchAtLoginEnabled)
     }
 }
 

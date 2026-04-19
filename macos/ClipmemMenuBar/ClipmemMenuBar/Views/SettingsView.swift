@@ -28,6 +28,14 @@ struct ClipmemSettingsView: View {
                     Text(message)
                         .foregroundStyle(.orange)
                 }
+                Toggle("Open Clipmem at login", isOn: launchAtLoginBinding)
+                if let message = appModel.launchAtLoginError?.message {
+                    Text(message)
+                        .foregroundStyle(.orange)
+                } else if let message = appModel.launchAtLoginStatus.message {
+                    Text(message)
+                        .foregroundStyle(.secondary)
+                }
             }
             .formStyle(.grouped)
             .padding()
@@ -152,6 +160,14 @@ struct ClipmemSettingsView: View {
                 await appModel.runAction(.settingsAPIKeyFilter(value), successMessage: value ? "API-key filter enabled" : "API-key filter disabled")
                 await appModel.refreshSettings()
             }
+        }
+    }
+
+    private var launchAtLoginBinding: Binding<Bool> {
+        Binding {
+            appModel.launchAtLoginEnabled
+        } set: { value in
+            appModel.setLaunchAtLoginEnabled(value)
         }
     }
 

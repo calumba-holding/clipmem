@@ -299,6 +299,164 @@ jobs:
           echo "$ANNOUNCEMENT_BODY" > "$RUNNER_TEMP/notes.txt"
           gh release create "${release_args[@]}" artifacts/*
 
+  build-menubar-app:
+    needs:
+      - plan
+      - host
+    if: ${{ !fromJson(needs.plan.outputs.val).announcement_is_prerelease || fromJson(needs.plan.outputs.val).publish_prereleases }}
+    runs-on: "macos-14"
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      APPLE_DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_BASE64 }}
+      APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+    outputs:
+      artifact: ${{ steps.package.outputs.artifact }}
+      sha256: ${{ steps.package.outputs.sha256 }}
+      url: ${{ steps.package.outputs.url }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Read release version
+        id: version
+        shell: bash
+        run: |
+          version="$(python3 - <<'PY'
+          import pathlib
+          import tomllib
+          print(tomllib.loads(pathlib.Path("Cargo.toml").read_text())["package"]["version"])
+          PY
+          )"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+      - name: Test menu bar app
+        run: |
+          xcodebuild \
+            -project macos/ClipmemMenuBar/ClipmemMenuBar.xcodeproj \
+            -scheme ClipmemMenuBar \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath /tmp/clipmem-menubar-test-derived \
+            test
+      - name: Import Developer ID certificate
+        shell: bash
+        run: |
+          required=(
+            APPLE_DEVELOPER_ID_CERTIFICATE_BASE64
+            APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD
+            APPLE_TEAM_ID
+          )
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required secret ${name}" >&2
+              exit 1
+            fi
+          done
+
+          keychain_password="$(openssl rand -base64 24)"
+          keychain_path="$RUNNER_TEMP/clipmem-signing.keychain-db"
+          certificate_path="$RUNNER_TEMP/developer-id.p12"
+          echo "$APPLE_DEVELOPER_ID_CERTIFICATE_BASE64" | base64 --decode > "$certificate_path"
+
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" \
+            -k "$keychain_path" \
+            -P "$APPLE_DEVELOPER_ID_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          existing_keychains=()
+          while IFS= read -r keychain; do
+            if [[ -n "$keychain" ]]; then
+              existing_keychains+=("$keychain")
+            fi
+          done < <(security list-keychains -d user | sed 's/[ "]//g')
+          security list-keychains -d user -s "$keychain_path" "${existing_keychains[@]}"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain_path"
+      - name: Build signed Release app
+        shell: bash
+        run: |
+          xcodebuild \
+            -project macos/ClipmemMenuBar/ClipmemMenuBar.xcodeproj \
+            -scheme ClipmemMenuBar \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath /tmp/clipmem-menubar-release-derived \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            MARKETING_VERSION="${{ steps.version.outputs.version }}" \
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}" \
+            CLIPMEM_DEFAULT_LAUNCH_AT_LOGIN=YES \
+            build
+      - name: Notarize and staple app
+        id: package
+        shell: bash
+        run: |
+          app_path="/tmp/clipmem-menubar-release-derived/Build/Products/Release/ClipmemMenuBar.app"
+          artifact="clipmem-app-aarch64-apple-darwin.zip"
+          notarization_zip="$RUNNER_TEMP/clipmem-app-notarization.zip"
+          final_zip="$RUNNER_TEMP/${artifact}"
+
+          if [[ ! -d "$app_path" ]]; then
+            echo "::error::Built app was not found at ${app_path}" >&2
+            exit 1
+          fi
+
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          ditto -c -k --keepParent "$app_path" "$notarization_zip"
+
+          if [[ -n "${APP_STORE_CONNECT_API_KEY_BASE64:-}" && -n "${APP_STORE_CONNECT_KEY_ID:-}" && -n "${APP_STORE_CONNECT_ISSUER_ID:-}" ]]; then
+            key_path="$RUNNER_TEMP/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+            echo "$APP_STORE_CONNECT_API_KEY_BASE64" | base64 --decode > "$key_path"
+            xcrun notarytool submit "$notarization_zip" \
+              --key "$key_path" \
+              --key-id "$APP_STORE_CONNECT_KEY_ID" \
+              --issuer "$APP_STORE_CONNECT_ISSUER_ID" \
+              --wait
+          elif [[ -n "${APPLE_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]]; then
+            xcrun notarytool submit "$notarization_zip" \
+              --apple-id "$APPLE_ID" \
+              --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+              --wait
+          else
+            echo "::error::Missing notarization credentials. Configure App Store Connect API key secrets or APPLE_ID plus APPLE_APP_SPECIFIC_PASSWORD." >&2
+            exit 1
+          fi
+
+          xcrun stapler staple "$app_path"
+          xcrun stapler validate "$app_path"
+          spctl --assess --type execute --verbose "$app_path"
+
+          ditto -c -k --keepParent "$app_path" "$final_zip"
+          shasum -a 256 "$final_zip" | awk '{print $1}' > "${final_zip}.sha256"
+
+          gh release upload "${{ needs.plan.outputs.tag }}" "$final_zip" "${final_zip}.sha256" --clobber
+
+          sha256="$(cat "${final_zip}.sha256")"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${{ needs.plan.outputs.tag }}/${artifact}"
+          {
+            echo "artifact=${artifact}"
+            echo "sha256=${sha256}"
+            echo "url=${url}"
+          } >> "$GITHUB_OUTPUT"
+      - name: Upload app artifact copy
+        uses: actions/upload-artifact@v6
+        with:
+          name: clipmem-app-aarch64-apple-darwin
+          path: |
+            ${{ runner.temp }}/clipmem-app-aarch64-apple-darwin.zip
+            ${{ runner.temp }}/clipmem-app-aarch64-apple-darwin.zip.sha256
+
   publish-homebrew-formula:
     needs:
       - plan
@@ -346,6 +504,53 @@ jobs:
           done < <(jq --compact-output '.releases[] | select([.artifacts[] | endswith(".rb")] | any)' <<<"$PLAN")
           git push
 
+  publish-homebrew-cask:
+    needs:
+      - plan
+      - build-menubar-app
+      - publish-homebrew-formula
+    runs-on: "ubuntu-22.04"
+    env:
+      GITHUB_USER: "clipmem release bot"
+      GITHUB_EMAIL: "admin+bot@axo.dev"
+    if: ${{ !fromJson(needs.plan.outputs.val).announcement_is_prerelease || fromJson(needs.plan.outputs.val).publish_prereleases }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: recursive
+          path: clipmem
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: true
+          repository: "tristanmanchester/homebrew-tap"
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+      - name: Commit cask file
+        shell: bash
+        working-directory: homebrew-tap
+        run: |
+          git config --global user.name "${GITHUB_USER}"
+          git config --global user.email "${GITHUB_EMAIL}"
+
+          ../clipmem/.github/scripts/write-menubar-cask.sh \
+            "Casks/clipmem-app.rb" \
+            "${{ needs.build-menubar-app.outputs.version }}" \
+            "${{ needs.build-menubar-app.outputs.sha256 }}" \
+            "${{ needs.build-menubar-app.outputs.url }}"
+
+          export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
+          brew update
+          brew style --fix "Casks/clipmem-app.rb" || true
+
+          git add "Casks/clipmem-app.rb"
+          if git diff --cached --quiet; then
+            echo "No cask changes to publish."
+            exit 0
+          fi
+          git commit -m "clipmem-app ${{ needs.build-menubar-app.outputs.version }}"
+          git push
+
   custom-publish-crate:
     needs:
       - plan
@@ -364,11 +569,13 @@ jobs:
       - plan
       - host
       - publish-homebrew-formula
+      - publish-homebrew-cask
+      - build-menubar-app
       - custom-publish-crate
     # use "always() && ..." to allow us to wait for all publish jobs while
     # still allowing individual publish jobs to skip themselves (for prereleases).
     # "host" however must run to completion, no skipping allowed!
-    if: ${{ always() && needs.host.result == 'success' && (needs.publish-homebrew-formula.result == 'skipped' || needs.publish-homebrew-formula.result == 'success') && (needs.custom-publish-crate.result == 'skipped' || needs.custom-publish-crate.result == 'success') }}
+    if: ${{ always() && needs.host.result == 'success' && (needs.build-menubar-app.result == 'skipped' || needs.build-menubar-app.result == 'success') && (needs.publish-homebrew-formula.result == 'skipped' || needs.publish-homebrew-formula.result == 'success') && (needs.publish-homebrew-cask.result == 'skipped' || needs.publish-homebrew-cask.result == 'success') && (needs.custom-publish-crate.result == 'skipped' || needs.custom-publish-crate.result == 'success') }}
     runs-on: "ubuntu-22.04"
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
