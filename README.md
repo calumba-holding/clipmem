@@ -26,6 +26,7 @@ A searchable, local-only clipboard history for macOS, with a JSON-first CLI desi
 - [Uninstall / Full cleanup](#uninstall--full-cleanup)
 - [Limitations](#limitations)
 - [How it works](#how-it-works)
+- [Native macOS menu bar app](#native-macos-menu-bar-app)
 - [Development](#development)
 - [License](#license)
 
@@ -157,14 +158,14 @@ clipmem search --mode fts "\"launchctl\" AND bootstrap"
 
 # Detail + raw bytes
 clipmem get 42 --format json
-clipmem restore 42
-clipmem export 42 --item 0 --uti public.png --out ./clipboard.png
+clipmem restore 42 --format json
+clipmem export 42 --item 0 --uti public.png --out ./clipboard.png --format json
 # Replace an existing regular file explicitly
 clipmem export 42 --item 0 --uti public.png --out ./clipboard.png --force
 
 # Deletion and policy
-clipmem forget 42
-clipmem purge --older-than 30d --dry-run
+clipmem forget 42 --format json
+clipmem purge --older-than 30d --dry-run --format json
 clipmem settings pause on
 clipmem settings api-key-filter on
 clipmem settings ignore add com.apple.Passwords
@@ -268,12 +269,19 @@ Supported formats, by command:
 
 - `search`, `recent`, `timeline`, `get`: `text` (default), `json`, `jsonl`, `md`, `toon` (*not* `toon` for `get`, which returns nested detail).
 - `recall`: `md` (default), `json`, `toon`.
-- `restore`: text summary only.
+- `restore`, `forget`, and `purge`: text summary by default, `json` when requested.
 - `settings show`, `settings ignore list`, and `service status`: `text` by default, `json` when requested.
 - `capture-once` and `doctor`: `--json` only (alias for structured output).
-- `export`: writes raw bytes to `--out`; creates a new file by default, accepts `--force` only for replacing an existing regular file, and has no `--format`.
+- `export`: writes raw bytes to `--out`; creates a new file by default, accepts `--force` only for replacing an existing regular file, and can also return a JSON write report when requested.
 
-`--json` on `search`, `recent`, `timeline`, `get`, `capture-once`, and `doctor` is a compatibility alias for `--format json`.
+`--json` on `search`, `recent`, `timeline`, `get`, `restore`, `forget`, `purge`, `export`, `capture-once`, and `doctor` is a compatibility alias for `--format json`.
+
+Action JSON output is designed for native frontends and scripts:
+
+- `restore --format json` returns whether the snapshot was restored, the restored item count, the restored representation count, and the snapshot id.
+- `forget --format json` returns the deleted snapshot id, event count, item count, representation count, and byte count.
+- `purge --format json` returns age cutoff, dry-run state, and deleted-or-would-delete counts.
+- `export --format json` returns destination path, byte count, UTI, item index, snapshot id, and representation hash after the file is written.
 
 `--format toon` is a compact skim view, not a near-lossless mirror of the JSON payload. TOON keeps scalar columns that are easy for agents and humans to scan quickly; if you need URLs, file paths, text fragments, representation UTIs, or other richer fields, use `--format json` or `clipmem get`.
 
@@ -484,17 +492,67 @@ Default search uses SQLite's built-in full-text search (FTS5) when that fits the
 - `capture_events` — each time a snapshot was observed
 - `snapshots_fts` — FTS5 external-content index over `snapshots.search_text`
 
+## Native macOS menu bar app
+
+The repo includes a native SwiftUI menu bar frontend at `macos/ClipmemMenuBar/`. It is a Mac app, not Electron, Tauri, or a webview. The app keeps the Rust CLI as the source of truth by shelling out to `clipmem` asynchronously and decoding JSON responses from the same commands used by scripts and agents.
+
+Build and launch the development app from the repo root:
+
+```bash
+scripts/build_and_run_menubar.sh
+```
+
+The script runs `cargo build`, builds the app with `xcodebuild`, sets `CLIPMEM_BINARY_PATH` for the launched app, and opens the built `.app` from `macos/ClipmemMenuBar/DerivedData`.
+
+You can also build or test the app directly:
+
+```bash
+xcodebuild -project macos/ClipmemMenuBar/ClipmemMenuBar.xcodeproj -scheme ClipmemMenuBar -configuration Debug -derivedDataPath macos/ClipmemMenuBar/DerivedData build
+xcodebuild -project macos/ClipmemMenuBar/ClipmemMenuBar.xcodeproj -scheme ClipmemMenuBar -configuration Debug -derivedDataPath macos/ClipmemMenuBar/DerivedData test
+```
+
+The app uses explicit SwiftUI scenes:
+
+- `MenuBarExtra` for compact status, setup/service actions, recent items, quick recall, settings, and quit.
+- `WindowGroup("History", id: "history")` for the full browsing surface with sidebar modes, filters, result list, detail, and inspector actions.
+- `Window("Quick Recall", id: "quick-recall")` for keyboard-first recall/search/recent/timeline access.
+- `Settings` for binary path, database path, defaults, hotkey, ignored bundle ids, retention, pause, API-key filtering, and privacy controls.
+
+Backend binary discovery order:
+
+1. `CLIPMEM_BINARY_PATH`
+2. user preference override in the app settings
+3. repo-local `target/debug/clipmem`
+4. repo-local `target/release/clipmem`
+5. `/opt/homebrew/bin/clipmem`
+6. `/usr/local/bin/clipmem`
+7. `~/.cargo/bin/clipmem`
+8. `~/.local/bin/clipmem`
+
+The app passes `--db <path>` to the backend when the database override setting is set. Otherwise it uses the CLI default database path.
+
+The menu bar app self-excludes its own bundle id (`io.openclaw.clipmem.menubar`) on first launch when the database/settings layer is available. Ignore-list, pause, API-key filtering, and retention are still the existing SQLite-backed `clipmem settings` policy, so there is no separate Swift-side config database to keep in sync.
+
+Known rough edges in the first native frontend pass:
+
+- Global hotkey support is Command-Shift-V with a reset-to-default preference. Arbitrary hotkey recording is not implemented yet.
+- Image representations can be exported for preview/action workflows, but PDFs and opaque binaries are shown through metadata and export actions rather than inline rendering.
+- The app restores clipboard snapshots but does not auto-paste into the previous application.
+- Search is lexical/rule-based and the UI intentionally does not describe it as semantic or AI search.
+
 ## Development
 
 Project layout:
 
 - `src/` — Rust source. Capture is gated behind `cfg(target_os = "macos")`; database, search, and tests compile cross-platform.
+- `macos/ClipmemMenuBar/` — native SwiftUI menu bar app and Swift Testing suite.
 - `extras/launchd/` — LaunchAgent plist template.
 - `skills/clipboard-memory/` — canonical public skill content for repo-based installers.
 - `extras/openclaw/clipboard-memory/` — packaged OpenClaw-native skill content.
 - `extras/agent-skills/clipboard-memory/` — portable skill package mirror for non-OpenClaw runtimes.
 - `scripts/install_launchagent.sh` / `scripts/uninstall_launchagent.sh` — compatibility wrappers around `clipmem setup` and `clipmem service uninstall`.
 - `scripts/install_openclaw_skill.sh` — compatibility wrapper around `clipmem agents openclaw install-skill`.
+- `scripts/build_and_run_menubar.sh` — builds Rust, builds the native app, and launches it against the repo-local backend binary.
 
 Build and test (Rust 1.87+):
 

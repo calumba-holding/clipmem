@@ -454,7 +454,7 @@ fn select_provider(context: &ServiceContext) -> Result<ProviderSelection> {
     let mut notes = Vec::new();
     if let Some(brew_path) = &context.brew_path {
         if context.homebrew_prefix.is_some() {
-            if brew_services_available(brew_path) {
+            if brew_services_available(brew_path) && brew_services_can_manage_clipmem(brew_path) {
                 return Ok(ProviderSelection {
                     provider: ServiceProvider::Homebrew,
                     reason:
@@ -464,7 +464,7 @@ fn select_provider(context: &ServiceContext) -> Result<ProviderSelection> {
                 });
             }
             notes.push(
-                "Homebrew install detected, but `brew services` was unavailable; falling back to a direct LaunchAgent.".to_string(),
+                "Homebrew install detected, but `brew services` cannot manage the clipmem formula; falling back to a direct LaunchAgent.".to_string(),
             );
         }
     }
@@ -543,12 +543,22 @@ fn start_homebrew_provider(
         .brew_path
         .as_ref()
         .ok_or_else(|| anyhow!("`brew` is not available on PATH"))?;
-    run_command_checked(
-        ProcessCommand::new(brew)
-            .args(["services", "start", "clipmem"])
-            .output(),
-        "brew services start clipmem",
-    )?;
+    let output = ProcessCommand::new(brew)
+        .args(["services", "start", "clipmem"])
+        .output()
+        .context("run `brew services start clipmem`")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if brew_services_formula_unavailable(&stderr) {
+            let mut fallback_notes = notes.to_vec();
+            fallback_notes.push(
+                "`brew services` is installed, but the clipmem formula does not expose a service file; using a direct LaunchAgent with the Homebrew binary.".to_string(),
+            );
+            return start_direct_provider(context, &fallback_notes);
+        }
+
+        run_command_checked(Ok(output), "brew services start clipmem")?;
+    }
     Ok(ServiceActionReport {
         action: "start",
         provider: ServiceProvider::Homebrew,
@@ -557,6 +567,27 @@ fn start_homebrew_provider(
         label: HOMEBREW_LABEL,
         notes: notes.to_vec(),
     })
+}
+
+fn brew_services_formula_unavailable(stderr: &str) -> bool {
+    stderr.contains("has not implemented #plist")
+        || stderr.contains("has not implemented #service")
+        || stderr.contains("provided a locatable service file")
+}
+
+fn brew_services_can_manage_clipmem(brew: &Path) -> bool {
+    let Ok(output) = ProcessCommand::new(brew)
+        .args(["services", "info", "clipmem", "--json"])
+        .output()
+    else {
+        return false;
+    };
+    if !output.status.success() {
+        return false;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout.contains("\"schedulable\":true") || stdout.contains("\"schedulable\": true")
 }
 
 fn stop_homebrew_provider(context: &ServiceContext) -> Result<ServiceActionReport> {

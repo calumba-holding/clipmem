@@ -1,0 +1,151 @@
+import Foundation
+import Observation
+
+@MainActor
+@Observable
+final class HistoryModel {
+    var mode: QueryMode
+    var query = ""
+    var filters = RetrievalFilterState.defaultValue
+    var results: [ClipmemItem] = []
+    var selectedID: Int?
+    var selectedDetail: SnapshotDetails?
+    var nextCursor: String?
+    var isLoading = false
+    var errorMessage: String?
+
+    @ObservationIgnored private let appModel: AppModel
+    @ObservationIgnored private var loadGeneration = 0
+    @ObservationIgnored private var detailGeneration = 0
+
+    init(mode: QueryMode = UserDefaults.standard.clipmemDefaultMode, appModel: AppModel) {
+        self.mode = mode
+        self.appModel = appModel
+    }
+
+    var selectedItem: ClipmemItem? {
+        guard let selectedID else { return nil }
+        return results.first { $0.snapshotId == selectedID }
+    }
+
+    func reload() async {
+        loadGeneration += 1
+        let generation = loadGeneration
+        nextCursor = nil
+        results = []
+        selectedID = nil
+        selectedDetail = nil
+        await loadMore(generation: generation)
+    }
+
+    func loadMore() async {
+        loadGeneration += 1
+        await loadMore(generation: loadGeneration)
+    }
+
+    private func loadMore(generation: Int) async {
+        guard mode != .diagnostics else {
+            await appModel.refreshDoctor()
+            return
+        }
+        let request = HistoryRequest(
+            generation: generation,
+            mode: mode,
+            query: query,
+            filters: filters,
+            cursor: nextCursor
+        )
+        isLoading = true
+        defer {
+            if generation == loadGeneration {
+                isLoading = false
+            }
+        }
+        do {
+            let page = try await loadPage(request)
+            guard isCurrent(request) else { return }
+            if request.cursor == nil {
+                results = page.items
+            } else {
+                results.append(contentsOf: page.items)
+            }
+            nextCursor = page.nextCursor
+            if selectedID == nil {
+                selectedID = results.first?.snapshotId
+                await loadSelectedDetail()
+            }
+            errorMessage = nil
+        } catch is CancellationError {
+        } catch {
+            guard isCurrent(request) else { return }
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func loadSelectedDetail() async {
+        detailGeneration += 1
+        let generation = detailGeneration
+        guard let selectedID else {
+            selectedDetail = nil
+            return
+        }
+        do {
+            let detail = try await appModel.client.get(snapshotID: selectedID).snapshot
+            guard generation == detailGeneration, self.selectedID == selectedID else { return }
+            selectedDetail = detail
+            errorMessage = nil
+        } catch is CancellationError {
+        } catch {
+            guard generation == detailGeneration, self.selectedID == selectedID else { return }
+            selectedDetail = nil
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func restoreSelected() async {
+        guard let selectedItem else { return }
+        await appModel.restore(selectedItem)
+    }
+
+    func forgetSelected() async {
+        guard let selectedItem else { return }
+        await appModel.forget(selectedItem)
+        results.removeAll { $0.snapshotId == selectedItem.snapshotId }
+        selectedID = results.first?.snapshotId
+        await loadSelectedDetail()
+    }
+
+    private func loadPage(_ request: HistoryRequest) async throws -> (items: [ClipmemItem], nextCursor: String?) {
+        switch request.mode {
+        case .recall:
+            let envelope = try await appModel.client.recall(query: request.query.isEmpty ? nil : request.query, limit: 25, filters: request.filters)
+            return ([envelope.bestCandidate] + envelope.alternatives, nil)
+        case .search:
+            let envelope = try await appModel.client.search(query: request.query, limit: 40, cursor: request.cursor, filters: request.filters)
+            return (envelope.results, envelope.nextCursor)
+        case .recent:
+            let envelope = try await appModel.client.recent(limit: 40, cursor: request.cursor, filters: request.filters)
+            return (envelope.results, envelope.nextCursor)
+        case .timeline:
+            let envelope = try await appModel.client.timeline(limit: 40, cursor: request.cursor, filters: request.filters)
+            return (envelope.results, envelope.nextCursor)
+        case .diagnostics:
+            return ([], nil)
+        }
+    }
+
+    private func isCurrent(_ request: HistoryRequest) -> Bool {
+        request.generation == loadGeneration
+            && request.mode == mode
+            && request.query == query
+            && request.filters == filters
+    }
+}
+
+private struct HistoryRequest: Equatable {
+    var generation: Int
+    var mode: QueryMode
+    var query: String
+    var filters: RetrievalFilterState
+    var cursor: String?
+}

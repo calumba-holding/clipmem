@@ -1,0 +1,9 @@
+{
+  "paused": false,
+  "api_key_filter_enabled": true,
+  "retention_seconds": 2592000,
+  "retention": "30d",
+  "ignored_bundle_ids": [
+    "io.openclaw.clipmem.menubar"
+  ]
+}

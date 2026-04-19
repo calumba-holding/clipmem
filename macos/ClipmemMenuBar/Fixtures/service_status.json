@@ -1,0 +1,42 @@
+{
+  "binary_path": "/Users/test/clipmem/target/debug/clipmem",
+  "db_path": "/Users/test/Library/Application Support/clipmem/clipmem.sqlite3",
+  "preferred_provider": "launchagent",
+  "preferred_provider_reason": "using the direct per-user LaunchAgent managed by clipmem",
+  "conflict": false,
+  "homebrew": {
+    "provider": "homebrew",
+    "label": "homebrew.mxcl.clipmem",
+    "state": "not_installed",
+    "installed": false,
+    "loaded": false,
+    "running": false,
+    "pid": null,
+    "plist_path": "/Users/test/Library/LaunchAgents/homebrew.mxcl.clipmem.plist",
+    "stdout_log_path": "/opt/homebrew/var/log/clipmem.log",
+    "stderr_log_path": "/opt/homebrew/var/log/clipmem.error.log"
+  },
+  "launchagent": {
+    "provider": "launchagent",
+    "label": "io.openclaw.clipmem.watch",
+    "state": "running",
+    "installed": true,
+    "loaded": true,
+    "running": true,
+    "pid": 123,
+    "plist_path": "/Users/test/Library/LaunchAgents/io.openclaw.clipmem.watch.plist",
+    "stdout_log_path": "/Users/test/Library/Application Support/clipmem/logs/clipmem.stdout.log",
+    "stderr_log_path": "/Users/test/Library/Application Support/clipmem/logs/clipmem.stderr.log"
+  },
+  "db_exists": true,
+  "recent_capture_at": "2026-04-19 12:00:00",
+  "recent_capture_within_last_hour": true,
+  "paused": false,
+  "api_key_filter_enabled": true,
+  "retention_seconds": 2592000,
+  "retention": "30d",
+  "ignored_bundle_id_count": 1,
+  "stale": false,
+  "db_error": null,
+  "notes": []
+}

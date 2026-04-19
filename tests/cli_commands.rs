@@ -374,6 +374,11 @@ printf '%s\\n' \"$*\" >> \"$HOMEBREW_LOG\"
 if [ \"$1\" = \"services\" ] && [ \"$2\" = \"list\" ]; then
   exit {availability}
 fi
+if [ \"$1\" = \"services\" ] && [ \"$2\" = \"info\" ] && [ \"$3\" = \"clipmem\" ]; then
+  [ {availability} -eq 0 ] || exit 1
+  printf '[{{\"name\":\"clipmem\",\"schedulable\":true}}]\\n'
+  exit 0
+fi
 if [ \"$1\" = \"services\" ] && [ \"$2\" = \"start\" ] && [ \"$3\" = \"clipmem\" ]; then
   printf '456 0 homebrew.mxcl.clipmem\\n' > \"$HOMEBREW_STATE\"
   exit 0
@@ -381,6 +386,31 @@ fi
 if [ \"$1\" = \"services\" ] && [ \"$2\" = \"stop\" ] && [ \"$3\" = \"clipmem\" ]; then
   rm -f \"$HOMEBREW_STATE\"
   exit 0
+fi
+exit 0
+"
+    );
+    write_executable(&bin_dir.join("brew"), &script)
+}
+
+fn write_brew_stub_without_clipmem_service(bin_dir: &Path, state_dir: &Path) -> Result<()> {
+    let state_dir = state_dir.display().to_string();
+    let script = format!(
+        "#!/bin/sh
+STATE_DIR='{state_dir}'
+HOMEBREW_LOG=\"$STATE_DIR/brew.log\"
+mkdir -p \"$STATE_DIR\"
+printf '%s\\n' \"$*\" >> \"$HOMEBREW_LOG\"
+if [ \"$1\" = \"services\" ] && [ \"$2\" = \"list\" ]; then
+  exit 0
+fi
+if [ \"$1\" = \"services\" ] && [ \"$2\" = \"info\" ] && [ \"$3\" = \"clipmem\" ]; then
+  printf '[{{\"name\":\"clipmem\",\"schedulable\":null}}]\\n'
+  exit 0
+fi
+if [ \"$1\" = \"services\" ] && [ \"$2\" = \"start\" ] && [ \"$3\" = \"clipmem\" ]; then
+  printf 'Error: Invalid usage: Formula `clipmem` has not implemented #plist, #service or provided a locatable service file.\\n' >&2
+  exit 1
 fi
 exit 0
 "
@@ -732,13 +762,67 @@ fn setup_prefers_homebrew_provider_when_homebrew_binary_and_services_are_availab
     assert!(stdout.contains("provider: homebrew"));
 
     let brew_log = fs::read_to_string(state_dir.join("brew.log"))?;
-    assert!(brew_log.contains("services start clipmem"));
+    assert!(brew_log.contains("services info clipmem --json"));
 
     let status = run_cli_with_owned_env(&["service", "status", "--json"], &envs);
     assert!(status.status.success(), "{}", stderr_text(&status));
     let payload: Value = serde_json::from_slice(&status.stdout)?;
     assert_eq!(payload["preferred_provider"], "homebrew");
     assert_eq!(payload["homebrew"]["running"], true);
+
+    let _ = fs::remove_dir_all(&test_dir);
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn setup_falls_back_to_direct_launchagent_when_homebrew_formula_has_no_service() -> Result<()> {
+    let test_dir = temp_test_dir("service-homebrew-no-service");
+    let home_dir = test_dir.join("home");
+    let bin_dir = test_dir.join("bin");
+    let state_dir = test_dir.join("state");
+    fs::create_dir_all(&home_dir)?;
+    fs::create_dir_all(&bin_dir)?;
+    fs::create_dir_all(&state_dir)?;
+    write_stateful_launchctl_stub(&bin_dir, &state_dir)?;
+    write_brew_stub_without_clipmem_service(&bin_dir, &state_dir)?;
+    write_executable(&bin_dir.join("id"), "#!/bin/sh\nprintf '501\\n'\n")?;
+
+    let path_value = format!("{}:/usr/bin:/bin", bin_dir.display());
+    let active_binary = "/opt/homebrew/bin/clipmem".to_string();
+    let envs = vec![
+        ("HOME".to_string(), home_dir.display().to_string()),
+        ("PATH".to_string(), path_value),
+        (
+            "CLIPMEM_TEST_ACTIVE_BINARY".to_string(),
+            active_binary.clone(),
+        ),
+        (
+            "CLIPMEM_TEST_SKIP_SETUP_CAPTURE_ONCE".to_string(),
+            "1".to_string(),
+        ),
+    ];
+
+    let output = run_cli_with_owned_env(&["setup"], &envs);
+    assert!(output.status.success(), "{}", stderr_text(&output));
+    let stdout = stdout_text(&output);
+    assert!(stdout.contains("provider: launchagent"));
+    assert!(stdout.contains("Homebrew install detected"));
+    assert!(stdout.contains("cannot manage the clipmem formula"));
+
+    let brew_log = fs::read_to_string(state_dir.join("brew.log"))?;
+    assert!(brew_log.contains("services info clipmem --json"));
+
+    let plist_path = home_dir.join("Library/LaunchAgents/io.openclaw.clipmem.watch.plist");
+    assert!(plist_path.is_file());
+    let plist = fs::read_to_string(&plist_path)?;
+    assert!(plist.contains(&active_binary));
+
+    let status = run_cli_with_owned_env(&["service", "status", "--json"], &envs);
+    assert!(status.status.success(), "{}", stderr_text(&status));
+    let payload: Value = serde_json::from_slice(&status.stdout)?;
+    assert_eq!(payload["preferred_provider"], "launchagent");
+    assert_eq!(payload["launchagent"]["running"], true);
 
     let _ = fs::remove_dir_all(&test_dir);
     Ok(())
@@ -1522,6 +1606,44 @@ fn get_and_export_use_shared_filters_as_guards() -> Result<()> {
 }
 
 #[test]
+fn export_json_reports_written_representation() -> Result<()> {
+    let path = temp_db_path("export-json");
+    let ids = seed_database(&path, &[text_snapshot(1, "git status")])?;
+    let output_path = temp_artifact_path("export-json", ".txt");
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "export",
+        &ids[0].to_string(),
+        "--item",
+        "0",
+        "--uti",
+        "public.utf8-plain-text",
+        "--out",
+        output_path.to_str().expect("export path should be UTF-8"),
+        "--format",
+        "json",
+    ]);
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("export JSON should parse");
+
+    assert!(output.status.success(), "{}", stderr_text(&output));
+    assert_eq!(payload["snapshot_id"].as_i64(), Some(ids[0]));
+    assert_eq!(payload["item_index"].as_u64(), Some(0));
+    assert_eq!(payload["uti"].as_str(), Some("public.utf8-plain-text"));
+    assert_eq!(
+        payload["byte_count"].as_u64(),
+        Some("git status".len() as u64)
+    );
+    assert_eq!(payload["out"].as_str(), output_path.to_str());
+    assert_eq!(fs::read_to_string(&output_path)?, "git status");
+
+    cleanup_temp_artifact(&output_path);
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
 fn get_json_wraps_snapshot_in_versioned_envelope() -> Result<()> {
     let path = temp_db_path("get-json");
     let ids = seed_database(
@@ -1827,6 +1949,36 @@ fn forget_command_hard_deletes_snapshot() -> Result<()> {
 }
 
 #[test]
+fn forget_json_reports_deleted_snapshot_counts() -> Result<()> {
+    let path = temp_db_path("forget-json");
+    let ids = seed_database(&path, &[text_snapshot(1, "temporary clipboard text")])?;
+
+    let forget_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "forget",
+        &ids[0].to_string(),
+        "--format",
+        "json",
+    ]);
+    let payload: Value =
+        serde_json::from_slice(&forget_output.stdout).expect("forget JSON should parse");
+
+    assert!(
+        forget_output.status.success(),
+        "{}",
+        stderr_text(&forget_output)
+    );
+    assert_eq!(payload["snapshot_id"].as_i64(), Some(ids[0]));
+    assert_eq!(payload["item_count"].as_u64(), Some(1));
+    assert_eq!(payload["representation_count"].as_u64(), Some(1));
+    assert_eq!(payload["capture_event_count"].as_u64(), Some(1));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
 fn purge_command_reports_dry_run_then_deletes_old_snapshots() -> Result<()> {
     let path = temp_db_path("purge-snapshots");
     let events = seed_events(
@@ -1866,6 +2018,43 @@ fn purge_command_reports_dry_run_then_deletes_old_snapshots() -> Result<()> {
     let db = Database::open_existing(&path)?;
     assert!(db.find_snapshot(events[0].0, 10)?.is_none());
     assert!(db.find_snapshot(events[1].0, 10)?.is_some());
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn purge_json_reports_dry_run_counts() -> Result<()> {
+    let path = temp_db_path("purge-json");
+    let events = seed_events(
+        &path,
+        &[
+            text_snapshot(1, "expired snapshot"),
+            text_snapshot(2, "fresh snapshot"),
+        ],
+    )?;
+    set_event_observed_at(&path, events[0].1, "2000-01-01 00:00:00")?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "purge",
+        "--older-than",
+        "30d",
+        "--dry-run",
+        "--format",
+        "json",
+    ]);
+    let payload: Value = serde_json::from_slice(&output.stdout).expect("purge JSON should parse");
+
+    assert!(output.status.success(), "{}", stderr_text(&output));
+    assert_eq!(
+        payload["older_than_seconds"].as_u64(),
+        Some(30 * 24 * 60 * 60)
+    );
+    assert_eq!(payload["dry_run"].as_bool(), Some(true));
+    assert_eq!(payload["snapshot_count"].as_u64(), Some(1));
+    assert_eq!(payload["capture_event_count"].as_u64(), Some(1));
 
     cleanup_db(&path);
     Ok(())
@@ -2692,6 +2881,46 @@ fn json_alias_rejects_non_json_format() {
 
     assert!(!output.status.success());
     assert!(stderr.contains("`--json` is only compatible with `--format json`"));
+}
+
+#[test]
+fn action_json_alias_rejects_non_json_format() {
+    let cases = [
+        vec!["restore", "1", "--json", "--format", "md"],
+        vec!["forget", "1", "--json", "--format", "toon"],
+        vec![
+            "purge",
+            "--older-than",
+            "30d",
+            "--json",
+            "--format",
+            "jsonl",
+        ],
+        vec![
+            "export",
+            "1",
+            "--item",
+            "0",
+            "--uti",
+            "public.utf8-plain-text",
+            "--out",
+            "/tmp/clipmem-export.txt",
+            "--json",
+            "--format",
+            "md",
+        ],
+    ];
+
+    for args in cases {
+        let output = run_cli(&args);
+        let stderr = stderr_text(&output);
+
+        assert_eq!(status_code(&output), 2, "args: {args:?}");
+        assert!(
+            stderr.contains("`--json` is only compatible with `--format json`"),
+            "stderr for {args:?}: {stderr}"
+        );
+    }
 }
 
 #[test]

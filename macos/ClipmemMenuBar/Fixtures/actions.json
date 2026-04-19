@@ -1,0 +1,32 @@
+{
+  "restore": {
+    "snapshot_id": 7,
+    "item_count": 1,
+    "representation_count": 2,
+    "total_bytes": 42
+  },
+  "forget": {
+    "snapshot_id": 7,
+    "item_count": 1,
+    "representation_count": 2,
+    "capture_event_count": 3,
+    "total_bytes": 42
+  },
+  "purge": {
+    "older_than_seconds": 2592000,
+    "dry_run": true,
+    "snapshot_count": 1,
+    "item_count": 1,
+    "representation_count": 2,
+    "capture_event_count": 3,
+    "total_bytes": 42
+  },
+  "export": {
+    "snapshot_id": 7,
+    "item_index": 0,
+    "uti": "public.png",
+    "byte_count": 42,
+    "raw_sha256": "def456",
+    "out": "/Users/test/Desktop/clipboard.png"
+  }
+}

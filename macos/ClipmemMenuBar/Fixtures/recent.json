@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "command": "recent",
+  "generated_at": "2026-04-19T12:00:00Z",
+  "applied_filters": {
+    "hours": 24,
+    "limit": 2,
+    "cursor": null
+  },
+  "truncated": false,
+  "next_cursor": null,
+  "results": [
+    {
+      "snapshot_id": 7,
+      "event_id": 11,
+      "sha256": "abc123",
+      "kind": "text",
+      "observed_at": "2026-04-19 11:59:00",
+      "first_seen_at": "2026-04-19 11:58:00",
+      "last_seen_at": "2026-04-19 11:59:00",
+      "app_name": "Terminal",
+      "app_bundle_id": "com.apple.Terminal",
+      "best_text": "git status",
+      "best_text_uti": "public.utf8-plain-text",
+      "text_fragments": [
+        {
+          "item_index": 0,
+          "uti": "public.utf8-plain-text",
+          "kind": "plain_text",
+          "text": "git status"
+        }
+      ],
+      "urls": [],
+      "file_paths": [],
+      "html_text": null,
+      "rtf_text": null,
+      "text_summary": "git status",
+      "preview_text": "git status",
+      "item_count": 1,
+      "total_bytes": 10,
+      "capture_count": 1,
+      "score": null,
+      "why_matched": null,
+      "matched_fields": []
+    }
+  ]
+}

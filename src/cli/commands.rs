@@ -69,6 +69,16 @@ struct RestoreOutput {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct ExportOutput {
+    snapshot_id: i64,
+    item_index: usize,
+    uti: String,
+    byte_count: usize,
+    raw_sha256: String,
+    out: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct SettingsView {
     paused: bool,
     api_key_filter_enabled: bool,
@@ -679,6 +689,7 @@ fn show_snapshot(db_path: &Path, args: &GetArgs) -> Result<()> {
 }
 
 fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -> Result<()> {
+    let format = require_text_or_json(args.output.resolved()?, "export")?;
     let filters = normalize_retrieval_filters(&args.filters)?;
     let db = open_existing_db(db_path)?;
     anyhow::Context::with_context(db.find_snapshot(args.snapshot_id, 1), || {
@@ -714,20 +725,25 @@ fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -> Result<()> {
         format!("failed to write export file {}", args.out.display())
     })?;
 
-    println!(
-        "exported snapshot={} item={} uti={} bytes={} sha256={} out={}",
-        args.snapshot_id,
-        args.item,
-        args.uti,
-        representation.byte_len(),
-        representation.raw_sha256(),
-        args.out.display()
-    );
+    let output = ExportOutput {
+        snapshot_id: args.snapshot_id,
+        item_index: args.item,
+        uti: args.uti.clone(),
+        byte_count: representation.byte_len(),
+        raw_sha256: representation.raw_sha256().to_string(),
+        out: args.out.display().to_string(),
+    };
+    emit_json_or_text(
+        matches!(format, OutputFormat::Json),
+        &output,
+        render_export_text,
+    )?;
 
     Ok(())
 }
 
 fn restore_snapshot(db_path: &Path, args: &RestoreArgs) -> Result<()> {
+    let format = require_text_or_json(args.output.resolved()?, "restore")?;
     let db = open_existing_db(db_path)?;
     let snapshot = anyhow::Context::with_context(db.find_snapshot(args.snapshot_id, 1), || {
         format!("restore failed for snapshot {}", args.snapshot_id)
@@ -740,29 +756,43 @@ fn restore_snapshot(db_path: &Path, args: &RestoreArgs) -> Result<()> {
         representation_count: report.representation_count(),
         total_bytes: report.total_bytes(),
     };
-    emit_json_or_text(false, &output, render_restore_text)?;
+    emit_json_or_text(
+        matches!(format, OutputFormat::Json),
+        &output,
+        render_restore_text,
+    )?;
 
     Ok(())
 }
 
 fn forget_snapshot(db_path: &Path, args: &ForgetArgs) -> Result<()> {
+    let format = require_text_or_json(args.output.resolved()?, "forget")?;
     let mut db = open_existing_db(db_path)?;
     let report = anyhow::Context::with_context(db.forget_snapshot(args.snapshot_id), || {
         format!("forget failed for snapshot {}", args.snapshot_id)
     })?
     .ok_or_else(|| anyhow!("snapshot {} was not found", args.snapshot_id))?;
-    emit_json_or_text(false, &report, render_forget_text)?;
+    emit_json_or_text(
+        matches!(format, OutputFormat::Json),
+        &report,
+        render_forget_text,
+    )?;
 
     Ok(())
 }
 
 fn purge_snapshots(db_path: &Path, args: &PurgeArgs) -> Result<()> {
+    let format = require_text_or_json(args.output.resolved()?, "purge")?;
     let mut db = open_existing_db(db_path)?;
     let report = anyhow::Context::with_context(
         db.purge_snapshots_older_than(args.older_than.seconds(), args.dry_run),
         || format!("purge failed for duration {}", args.older_than.raw()),
     )?;
-    emit_json_or_text(false, &report, render_purge_text)?;
+    emit_json_or_text(
+        matches!(format, OutputFormat::Json),
+        &report,
+        render_purge_text,
+    )?;
 
     Ok(())
 }
@@ -983,6 +1013,18 @@ fn render_restore_text(output: &RestoreOutput) -> String {
     format!(
         "restored snapshot={} items={} representations={} bytes={}\n",
         output.snapshot_id, output.item_count, output.representation_count, output.total_bytes
+    )
+}
+
+fn render_export_text(output: &ExportOutput) -> String {
+    format!(
+        "exported snapshot={} item={} uti={} bytes={} sha256={} out={}\n",
+        output.snapshot_id,
+        output.item_index,
+        output.uti,
+        output.byte_count,
+        output.raw_sha256,
+        output.out
     )
 }
 

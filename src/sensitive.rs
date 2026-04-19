@@ -243,7 +243,13 @@ mod tests {
 
     #[test]
     fn detects_slack_tokens() {
-        let token = ["xoxb", "123456789012", "123456789012", "abcdefghijklmnopqrstuvwx"].join("-");
+        let token = [
+            "xoxb",
+            "123456789012",
+            "123456789012",
+            "abcdefghijklmnopqrstuvwx",
+        ]
+        .join("-");
         let snapshot = text_snapshot(&token);
         assert!(should_skip_snapshot_for_api_key_filter(&snapshot));
     }

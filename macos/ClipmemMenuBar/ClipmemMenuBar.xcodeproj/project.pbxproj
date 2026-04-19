@@ -1,0 +1,446 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		B00000000000000000000001 /* ClipmemMenuBarApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000001 /* ClipmemMenuBarApp.swift */; };
+		B00000000000000000000002 /* AppCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000002 /* AppCommands.swift */; };
+		B00000000000000000000003 /* AppLoggers.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000003 /* AppLoggers.swift */; };
+		B00000000000000000000004 /* AppTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000004 /* AppTypes.swift */; };
+		B00000000000000000000005 /* ClipmemModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000005 /* ClipmemModels.swift */; };
+		B00000000000000000000006 /* BinaryResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000006 /* BinaryResolver.swift */; };
+		B00000000000000000000007 /* ClipmemCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000007 /* ClipmemCommand.swift */; };
+		B00000000000000000000008 /* CommandRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000008 /* CommandRunner.swift */; };
+		B00000000000000000000009 /* ClipmemClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000009 /* ClipmemClient.swift */; };
+		B00000000000000000000010 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000010 /* AppModel.swift */; };
+		B00000000000000000000011 /* HistoryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000011 /* HistoryModel.swift */; };
+		B00000000000000000000012 /* QuickRecallModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000012 /* QuickRecallModel.swift */; };
+		B00000000000000000000013 /* HotKeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000013 /* HotKeyManager.swift */; };
+		B00000000000000000000014 /* PasteboardActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000014 /* PasteboardActions.swift */; };
+		B00000000000000000000015 /* SharedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000015 /* SharedViews.swift */; };
+		B00000000000000000000016 /* ResultRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000016 /* ResultRowView.swift */; };
+		B00000000000000000000017 /* ItemActionButtons.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000017 /* ItemActionButtons.swift */; };
+		B00000000000000000000018 /* SnapshotDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000018 /* SnapshotDetailView.swift */; };
+		B00000000000000000000019 /* DiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000019 /* DiagnosticsView.swift */; };
+		B00000000000000000000020 /* MenuBarPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000020 /* MenuBarPanelView.swift */; };
+		B00000000000000000000021 /* HistoryWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000021 /* HistoryWindowView.swift */; };
+		B00000000000000000000022 /* QuickRecallWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000022 /* QuickRecallWindowView.swift */; };
+		B00000000000000000000023 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000023 /* SettingsView.swift */; };
+		B00000000000000000000024 /* CommandConstructionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000024 /* CommandConstructionTests.swift */; };
+		B00000000000000000000025 /* BinaryResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000025 /* BinaryResolverTests.swift */; };
+		B00000000000000000000026 /* DecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000026 /* DecodingTests.swift */; };
+		B00000000000000000000027 /* ErrorMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000027 /* ErrorMappingTests.swift */; };
+		B00000000000000000000028 /* CommandRunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000030 /* CommandRunnerTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C00000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E00000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E00000000000000000000002;
+			remoteInfo = ClipmemMenuBar;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		A00000000000000000000001 /* ClipmemMenuBarApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/ClipmemMenuBarApp.swift; sourceTree = "<group>"; };
+		A00000000000000000000002 /* AppCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/AppCommands.swift; sourceTree = "<group>"; };
+		A00000000000000000000003 /* AppLoggers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Logging/AppLoggers.swift; sourceTree = "<group>"; };
+		A00000000000000000000004 /* AppTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/AppTypes.swift; sourceTree = "<group>"; };
+		A00000000000000000000005 /* ClipmemModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/ClipmemModels.swift; sourceTree = "<group>"; };
+		A00000000000000000000006 /* BinaryResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ClipmemClient/BinaryResolver.swift; sourceTree = "<group>"; };
+		A00000000000000000000007 /* ClipmemCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ClipmemClient/ClipmemCommand.swift; sourceTree = "<group>"; };
+		A00000000000000000000008 /* CommandRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ClipmemClient/CommandRunner.swift; sourceTree = "<group>"; };
+		A00000000000000000000009 /* ClipmemClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ClipmemClient/ClipmemClient.swift; sourceTree = "<group>"; };
+		A00000000000000000000010 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModels/AppModel.swift; sourceTree = "<group>"; };
+		A00000000000000000000011 /* HistoryModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModels/HistoryModel.swift; sourceTree = "<group>"; };
+		A00000000000000000000012 /* QuickRecallModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewModels/QuickRecallModel.swift; sourceTree = "<group>"; };
+		A00000000000000000000013 /* HotKeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Hotkey/HotKeyManager.swift; sourceTree = "<group>"; };
+		A00000000000000000000014 /* PasteboardActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Utilities/PasteboardActions.swift; sourceTree = "<group>"; };
+		A00000000000000000000015 /* SharedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/SharedViews.swift; sourceTree = "<group>"; };
+		A00000000000000000000016 /* ResultRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/ResultRowView.swift; sourceTree = "<group>"; };
+		A00000000000000000000017 /* ItemActionButtons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/ItemActionButtons.swift; sourceTree = "<group>"; };
+		A00000000000000000000018 /* SnapshotDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/SnapshotDetailView.swift; sourceTree = "<group>"; };
+		A00000000000000000000019 /* DiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/DiagnosticsView.swift; sourceTree = "<group>"; };
+		A00000000000000000000020 /* MenuBarPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/MenuBarPanelView.swift; sourceTree = "<group>"; };
+		A00000000000000000000021 /* HistoryWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/HistoryWindowView.swift; sourceTree = "<group>"; };
+		A00000000000000000000022 /* QuickRecallWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/QuickRecallWindowView.swift; sourceTree = "<group>"; };
+		A00000000000000000000023 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/SettingsView.swift; sourceTree = "<group>"; };
+		A00000000000000000000024 /* CommandConstructionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipmemMenuBarTests/CommandConstructionTests.swift; sourceTree = "<group>"; };
+		A00000000000000000000025 /* BinaryResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipmemMenuBarTests/BinaryResolverTests.swift; sourceTree = "<group>"; };
+		A00000000000000000000026 /* DecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipmemMenuBarTests/DecodingTests.swift; sourceTree = "<group>"; };
+		A00000000000000000000027 /* ErrorMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipmemMenuBarTests/ErrorMappingTests.swift; sourceTree = "<group>"; };
+		A00000000000000000000028 /* ClipmemMenuBar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClipmemMenuBar.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000029 /* ClipmemMenuBarTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ClipmemMenuBarTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000030 /* CommandRunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipmemMenuBarTests/CommandRunnerTests.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D00000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		D00000000000000000000002 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		F00000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000002 /* ClipmemMenuBar */,
+				F00000000000000000000003 /* ClipmemMenuBarTests */,
+				F00000000000000000000004 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		F00000000000000000000002 /* ClipmemMenuBar */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000001 /* ClipmemMenuBarApp.swift */,
+				A00000000000000000000002 /* AppCommands.swift */,
+				A00000000000000000000003 /* AppLoggers.swift */,
+				A00000000000000000000004 /* AppTypes.swift */,
+				A00000000000000000000005 /* ClipmemModels.swift */,
+				A00000000000000000000006 /* BinaryResolver.swift */,
+				A00000000000000000000007 /* ClipmemCommand.swift */,
+				A00000000000000000000008 /* CommandRunner.swift */,
+				A00000000000000000000009 /* ClipmemClient.swift */,
+				A00000000000000000000010 /* AppModel.swift */,
+				A00000000000000000000011 /* HistoryModel.swift */,
+				A00000000000000000000012 /* QuickRecallModel.swift */,
+				A00000000000000000000013 /* HotKeyManager.swift */,
+				A00000000000000000000014 /* PasteboardActions.swift */,
+				A00000000000000000000015 /* SharedViews.swift */,
+				A00000000000000000000016 /* ResultRowView.swift */,
+				A00000000000000000000017 /* ItemActionButtons.swift */,
+				A00000000000000000000018 /* SnapshotDetailView.swift */,
+				A00000000000000000000019 /* DiagnosticsView.swift */,
+				A00000000000000000000020 /* MenuBarPanelView.swift */,
+				A00000000000000000000021 /* HistoryWindowView.swift */,
+				A00000000000000000000022 /* QuickRecallWindowView.swift */,
+				A00000000000000000000023 /* SettingsView.swift */,
+			);
+			path = ClipmemMenuBar;
+			sourceTree = "<group>";
+		};
+		F00000000000000000000003 /* ClipmemMenuBarTests */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000024 /* CommandConstructionTests.swift */,
+				A00000000000000000000025 /* BinaryResolverTests.swift */,
+				A00000000000000000000026 /* DecodingTests.swift */,
+				A00000000000000000000027 /* ErrorMappingTests.swift */,
+				A00000000000000000000030 /* CommandRunnerTests.swift */,
+			);
+			path = .;
+			sourceTree = "<group>";
+		};
+		F00000000000000000000004 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000028 /* ClipmemMenuBar.app */,
+				A00000000000000000000029 /* ClipmemMenuBarTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		E00000000000000000000002 /* ClipmemMenuBar */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F10000000000000000000001 /* Build configuration list for PBXNativeTarget "ClipmemMenuBar" */;
+			buildPhases = (
+				D00000000000000000000003 /* Sources */,
+				D00000000000000000000001 /* Frameworks */,
+				D00000000000000000000005 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			name = ClipmemMenuBar;
+			productName = ClipmemMenuBar;
+			productReference = A00000000000000000000028 /* ClipmemMenuBar.app */;
+			productType = "com.apple.product-type.application";
+		};
+		E00000000000000000000003 /* ClipmemMenuBarTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F10000000000000000000002 /* Build configuration list for PBXNativeTarget "ClipmemMenuBarTests" */;
+			buildPhases = (
+				D00000000000000000000004 /* Sources */,
+				D00000000000000000000002 /* Frameworks */,
+				D00000000000000000000006 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = (
+				C10000000000000000000001 /* PBXTargetDependency */,
+			);
+			name = ClipmemMenuBarTests;
+			productName = ClipmemMenuBarTests;
+			productReference = A00000000000000000000029 /* ClipmemMenuBarTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E00000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					E00000000000000000000002 = {CreatedOnToolsVersion = 26.0;};
+					E00000000000000000000003 = {CreatedOnToolsVersion = 26.0;};
+				};
+			};
+			buildConfigurationList = F10000000000000000000003 /* Build configuration list for PBXProject "ClipmemMenuBar" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base);
+			mainGroup = F00000000000000000000001;
+			productRefGroup = F00000000000000000000004 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				E00000000000000000000002 /* ClipmemMenuBar */,
+				E00000000000000000000003 /* ClipmemMenuBarTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		D00000000000000000000005 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		D00000000000000000000006 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		D00000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00000000000000000000001,
+				B00000000000000000000002,
+				B00000000000000000000003,
+				B00000000000000000000004,
+				B00000000000000000000005,
+				B00000000000000000000006,
+				B00000000000000000000007,
+				B00000000000000000000008,
+				B00000000000000000000009,
+				B00000000000000000000010,
+				B00000000000000000000011,
+				B00000000000000000000012,
+				B00000000000000000000013,
+				B00000000000000000000014,
+				B00000000000000000000015,
+				B00000000000000000000016,
+				B00000000000000000000017,
+				B00000000000000000000018,
+				B00000000000000000000019,
+				B00000000000000000000020,
+				B00000000000000000000021,
+				B00000000000000000000022,
+				B00000000000000000000023,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D00000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00000000000000000000024,
+				B00000000000000000000025,
+				B00000000000000000000026,
+				B00000000000000000000027,
+				B00000000000000000000028,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C10000000000000000000001 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = E00000000000000000000002 /* ClipmemMenuBar */; targetProxy = C00000000000000000000001 /* PBXContainerItemProxy */; };
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		F20000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ClipmemMenuBar/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.openclaw.clipmem.menubar;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		F20000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ClipmemMenuBar/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.openclaw.clipmem.menubar;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		F20000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.openclaw.clipmem.menubar.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ClipmemMenuBar.app/Contents/MacOS/ClipmemMenuBar";
+			};
+			name = Debug;
+		};
+		F20000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks @loader_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = io.openclaw.clipmem.menubar.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ClipmemMenuBar.app/Contents/MacOS/ClipmemMenuBar";
+			};
+			name = Release;
+		};
+		F20000000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = "DEBUG=1 $(inherited)";
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		F20000000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		F10000000000000000000001 /* Build configuration list for PBXNativeTarget "ClipmemMenuBar" */ = {isa = XCConfigurationList; buildConfigurations = (F20000000000000000000001, F20000000000000000000002); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		F10000000000000000000002 /* Build configuration list for PBXNativeTarget "ClipmemMenuBarTests" */ = {isa = XCConfigurationList; buildConfigurations = (F20000000000000000000003, F20000000000000000000004); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		F10000000000000000000003 /* Build configuration list for PBXProject "ClipmemMenuBar" */ = {isa = XCConfigurationList; buildConfigurations = (F20000000000000000000005, F20000000000000000000006); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+	};
+	rootObject = E00000000000000000000001 /* Project object */;
+}

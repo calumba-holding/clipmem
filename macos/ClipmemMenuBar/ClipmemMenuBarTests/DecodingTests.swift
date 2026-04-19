@@ -1,0 +1,83 @@
+import Foundation
+import Testing
+@testable import ClipmemMenuBar
+
+struct DecodingTests {
+    @Test func serviceStatusFixtureDecodesHealth() throws {
+        let report = try decode(ServiceStatusReport.self, "service_status")
+
+        #expect(report.health == .healthy)
+        #expect(report.launchagent?.running == true)
+        #expect(report.retention == "30d")
+    }
+
+    @Test func listEnvelopeFixtureDecodesRows() throws {
+        let envelope = try decode(ListEnvelope.self, "recent")
+
+        #expect(envelope.command == "recent")
+        let firstResult = try #require(envelope.results.first)
+        #expect(firstResult.displayText == "git status")
+        #expect(firstResult.appHint == "Copied while in Terminal")
+    }
+
+    @Test func getFixtureDecodesNestedRepresentations() throws {
+        let envelope = try decode(GetEnvelope.self, "get")
+
+        #expect(envelope.snapshot.snapshotId == 7)
+        let firstItem = try #require(envelope.snapshot.items.first)
+        let firstRepresentation = try #require(firstItem.representations.first)
+        let firstEvent = try #require(envelope.snapshot.recentEvents.first)
+        #expect(firstRepresentation.uti == "public.utf8-plain-text")
+        #expect(firstEvent.frontmostAppName == "Terminal")
+    }
+
+    @Test func settingsFixtureDecodesPolicy() throws {
+        let settings = try decode(SettingsReport.self, "settings")
+
+        #expect(settings.apiKeyFilterEnabled == true)
+        #expect(settings.ignoredBundleIds.contains("io.openclaw.clipmem.menubar"))
+    }
+
+    @Test func actionPayloadsDecode() throws {
+        let root = try decode([String: JSONValue].self, "actions")
+        let data = try JSONSerialization.data(withJSONObject: try object(root["export"]))
+        let export = try ClipmemClient.decoder.decode(ExportOutput.self, from: data)
+
+        #expect(export.snapshotId == 7)
+        #expect(export.uti == "public.png")
+        #expect(export.byteCount == 42)
+    }
+
+    private func decode<T: Decodable>(_ type: T.Type, _ name: String) throws -> T {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures")
+            .appendingPathComponent("\(name).json")
+        let data = try Data(contentsOf: url)
+        return try ClipmemClient.decoder.decode(T.self, from: data)
+    }
+
+    private func object(_ value: JSONValue?) throws -> [String: Any] {
+        guard case .object(let dictionary) = value else {
+            throw FixtureError.expectedObject
+        }
+        return dictionary.mapValues(any)
+    }
+
+    private func any(_ value: JSONValue) -> Any {
+        switch value {
+        case .string(let value): value
+        case .int(let value): value
+        case .double(let value): value
+        case .bool(let value): value
+        case .object(let value): value.mapValues(any)
+        case .array(let value): value.map(any)
+        case .null: NSNull()
+        }
+    }
+
+    enum FixtureError: Error {
+        case expectedObject
+    }
+}

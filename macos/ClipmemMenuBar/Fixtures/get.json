@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "command": "get",
+  "generated_at": "2026-04-19T12:00:00Z",
+  "applied_filters": {},
+  "snapshot": {
+    "snapshot_id": 7,
+    "sha256": "abc123",
+    "snapshot_kind": "plain_text",
+    "best_text": "git status",
+    "best_text_uti": "public.utf8-plain-text",
+    "text_fragments": [
+      {
+        "item_index": 0,
+        "uti": "public.utf8-plain-text",
+        "kind": "plain_text",
+        "text": "git status"
+      }
+    ],
+    "urls": [],
+    "file_paths": [],
+    "html_text": null,
+    "rtf_text": null,
+    "text_summary": "git status",
+    "preview_text": "git status",
+    "search_text": "git status",
+    "item_count": 1,
+    "total_bytes": 10,
+    "created_at": "2026-04-19 11:58:00",
+    "capture_count": 1,
+    "first_observed_at": "2026-04-19 11:58:00",
+    "last_observed_at": "2026-04-19 11:59:00",
+    "last_frontmost_app_name": "Terminal",
+    "last_frontmost_app_bundle_id": "com.apple.Terminal",
+    "recent_events": [
+      {
+        "event_id": 11,
+        "observed_at": "2026-04-19 11:59:00",
+        "change_count": 3,
+        "frontmost_app_name": "Terminal",
+        "frontmost_app_bundle_id": "com.apple.Terminal"
+      }
+    ],
+    "items": [
+      {
+        "item_index": 0,
+        "primary_kind": "plain_text",
+        "primary_uti": "public.utf8-plain-text",
+        "preview_text": "git status",
+        "search_text": "git status",
+        "total_bytes": 10,
+        "representations": [
+          {
+            "uti": "public.utf8-plain-text",
+            "kind": "plain_text",
+            "is_text": true,
+            "byte_len": 10,
+            "raw_sha256": "def456",
+            "text_value": "git status"
+          }
+        ]
+      }
+    ]
+  }
+}

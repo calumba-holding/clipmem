@@ -105,16 +105,19 @@ Examples:
   clipmem export 42 --item 0 --uti public.png --out ./clipboard.png
   clipmem export 42 --item 0 --uti public.utf8-plain-text --out ./clipboard.txt --app terminal
   clipmem export 42 --item 0 --uti public.png --out ./clipboard.png --force
+  clipmem export 42 --item 0 --uti public.png --out ./clipboard.png --format json
 
 Notes:
   - `export` creates a new file at `--out` by default and refuses to replace an existing path.
   - Pass `--force` to replace an existing regular file.
   - Symlink destinations are never allowed.
-  - Success output is written to stdout; failures are written to stderr only.";
+  - Success output is written to stdout; failures are written to stderr only.
+  - JSON output reports the destination, representation identity, and written byte count.";
 
 const RESTORE_AFTER_HELP: &str = "\
 Examples:
   clipmem restore 42
+  clipmem restore 42 --format json
 
 Notes:
   - Restores every stored item and representation for the snapshot back onto the macOS clipboard.
@@ -123,6 +126,7 @@ Notes:
 const FORGET_AFTER_HELP: &str = "\
 Examples:
   clipmem forget 42
+  clipmem forget 42 --format json
 
 Notes:
   - Forget irreversibly deletes the snapshot content row, all child representations, and all capture events for that snapshot id.
@@ -132,6 +136,7 @@ const PURGE_AFTER_HELP: &str = "\
 Examples:
   clipmem purge --older-than 30d
   clipmem purge --older-than 12h --dry-run
+  clipmem purge --older-than 30d --dry-run --format json
 
 Notes:
   - Purge ages snapshots by `last_observed_at`, not the original snapshot creation time.
@@ -841,6 +846,9 @@ struct ExportArgs {
 
     #[command(flatten)]
     filters: RetrievalFilterArgs,
+
+    #[command(flatten)]
+    output: OutputArgs,
 }
 
 #[derive(Debug, Args)]
@@ -848,6 +856,9 @@ struct ExportArgs {
 struct RestoreArgs {
     /// Snapshot identifier.
     snapshot_id: i64,
+
+    #[command(flatten)]
+    output: OutputArgs,
 }
 
 #[derive(Debug, Args)]
@@ -855,6 +866,9 @@ struct RestoreArgs {
 struct ForgetArgs {
     /// Snapshot identifier.
     snapshot_id: i64,
+
+    #[command(flatten)]
+    output: OutputArgs,
 }
 
 #[derive(Debug, Args)]
@@ -867,6 +881,9 @@ struct PurgeArgs {
     /// Report what would be deleted without deleting anything.
     #[arg(long, default_value_t = false)]
     dry_run: bool,
+
+    #[command(flatten)]
+    output: OutputArgs,
 }
 
 #[derive(Debug, Args)]
@@ -1104,11 +1121,18 @@ fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
             args.filters.normalized()?;
         }
         Command::Export(args) => {
+            args.output.resolved()?;
             args.filters.normalized()?;
         }
-        Command::Restore(_) => {}
-        Command::Forget(_) => {}
-        Command::Purge(_) => {}
+        Command::Restore(args) => {
+            args.output.resolved()?;
+        }
+        Command::Forget(args) => {
+            args.output.resolved()?;
+        }
+        Command::Purge(args) => {
+            args.output.resolved()?;
+        }
         Command::Settings(args) => match &args.command {
             SettingsCommand::Show(args) => {
                 args.output.resolved()?;
