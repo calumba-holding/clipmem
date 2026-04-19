@@ -5,14 +5,16 @@
 [![Rust 1.87+](https://img.shields.io/badge/rust-1.87%2B-orange.svg)](https://www.rust-lang.org)
 
 <p align="center">
+  <img src="docs/clipmem-screenshot.png" alt="WhatsApp conversation asking OpenClaw what was copied, with clipmem recall output" width="600">
+</p>
+
+<p align="center">
   <img src="docs/clipmem-history-window.png" alt="clipmem native macOS history window showing recent clipboard entries and item details" width="860">
 </p>
 
 <p align="center">
   <img src="docs/clipmem-menu-bar-panel.png" alt="clipmem menu bar dropdown showing capture status and recent clipboard entries" width="360">
 </p>
-
-<p align="center"><sub>Screenshots use a demo archive with fabricated clipboard entries.</sub></p>
 
 A searchable, local-only clipboard history for macOS, with a JSON-first CLI designed so agents — OpenClaw and others — can recall things you've copied.
 
