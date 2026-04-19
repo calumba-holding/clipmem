@@ -133,13 +133,16 @@ final class AppModel {
         }
     }
 
-    func forget(_ item: ClipmemItem) async {
+    @discardableResult
+    func forget(_ item: ClipmemItem) async -> Bool {
         do {
             _ = try await client.forget(snapshotID: item.snapshotId)
             recentPreview.removeAll { $0.snapshotId == item.snapshotId }
             lastError = nil
+            return true
         } catch {
             lastError = UserError(error)
+            return false
         }
     }
 

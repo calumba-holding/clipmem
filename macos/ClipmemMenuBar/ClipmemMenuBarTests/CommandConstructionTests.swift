@@ -37,4 +37,32 @@ struct CommandConstructionTests {
         #expect(command.arguments.contains("url"))
         #expect(command.arguments.contains("--has-url"))
     }
+
+    @Test func searchQueryUsesOptionTerminator() throws {
+        var filters = RetrievalFilterState(hours: 12)
+        filters.appName = "Terminal"
+
+        for query in ["--help", "-foo", "--format"] {
+            let arguments = ClipmemCommand.search(query: query, limit: 10, cursor: "next", filters: filters).arguments
+            let terminatorIndex = try #require(arguments.firstIndex(of: "--"))
+
+            #expect(arguments[terminatorIndex + 1] == query)
+            #expect(arguments.firstIndex(of: "--limit")! < terminatorIndex)
+            #expect(arguments.firstIndex(of: "--cursor")! < terminatorIndex)
+            #expect(arguments.firstIndex(of: "--app")! < terminatorIndex)
+        }
+    }
+
+    @Test func recallQueryUsesOptionTerminatorButRecentRecallDoesNot() throws {
+        let queried = ClipmemCommand.recall(query: "--help", limit: 12, filters: .defaultValue).arguments
+        let terminatorIndex = try #require(queried.firstIndex(of: "--"))
+        let queryIndex = try #require(queried.firstIndex(of: "--help"))
+
+        #expect(queryIndex == terminatorIndex + 1)
+        #expect(queried.firstIndex(of: "--limit")! < terminatorIndex)
+
+        let recent = ClipmemCommand.recall(query: nil, limit: 12, filters: .defaultValue).arguments
+        #expect(recent.contains("--prefer-recent"))
+        #expect(!recent.contains("--"))
+    }
 }

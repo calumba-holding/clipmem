@@ -56,8 +56,11 @@ struct MenuBarPanelView: View {
                                 Task { await appModel.restore(item) }
                             }
                             Button("Copy Plain Text") {
-                                PasteboardActions.copyPlainText(item.bestText ?? item.previewText ?? "")
+                                if let text = item.copyablePlainText {
+                                    PasteboardActions.copyPlainText(text)
+                                }
                             }
+                            .disabled(item.copyablePlainText == nil)
                         }
                 }
                 .listStyle(.inset)

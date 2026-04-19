@@ -139,6 +139,12 @@ struct ClipmemItem: Decodable, Identifiable, Hashable {
     var hasText: Bool {
         bestText?.isEmpty == false || previewText?.isEmpty == false || textSummary?.isEmpty == false
     }
+
+    var copyablePlainText: String? {
+        [bestText, previewText]
+            .compactMap { $0 }
+            .first { $0.isEmpty == false }
+    }
 }
 
 struct TextFragment: Decodable, Hashable {

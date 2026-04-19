@@ -119,7 +119,7 @@ final class HistoryModel {
 
     func forgetSelected() async {
         guard let selectedItem else { return }
-        await appModel.forget(selectedItem)
+        guard await appModel.forget(selectedItem) else { return }
         results.removeAll { $0.snapshotId == selectedItem.snapshotId }
         selectedID = results.first?.snapshotId
         await loadSelectedDetail()

@@ -38,6 +38,7 @@ struct QuickRecallModelTests {
         var forgottenIDs: [Int] = []
         let model = QuickRecallModel(appModel: AppModel()) { item in
             forgottenIDs.append(item.snapshotId)
+            return true
         }
         model.results = [Self.item(1), Self.item(2)]
         model.selectedID = 1
@@ -49,7 +50,31 @@ struct QuickRecallModelTests {
         #expect(model.selectedID == 1)
     }
 
-    private static func item(_ snapshotID: Int) -> ClipmemItem {
+    @Test func failedForgetLeavesResultsAndSelectionUnchanged() async {
+        var forgottenIDs: [Int] = []
+        let model = QuickRecallModel(appModel: AppModel()) { item in
+            forgottenIDs.append(item.snapshotId)
+            return false
+        }
+        model.results = [Self.item(1), Self.item(2)]
+        model.selectedID = 2
+
+        await model.forget(Self.item(2))
+
+        #expect(forgottenIDs == [2])
+        #expect(model.results.map(\.snapshotId) == [1, 2])
+        #expect(model.selectedID == 2)
+    }
+
+    @Test func copyablePlainTextUsesFirstNonEmptyTextValue() {
+        #expect(Self.item(1, bestText: "plain", previewText: "preview").copyablePlainText == "plain")
+        #expect(Self.item(1, bestText: nil, previewText: "preview").copyablePlainText == "preview")
+        #expect(Self.item(1, bestText: "", previewText: "preview").copyablePlainText == "preview")
+        #expect(Self.item(1, bestText: nil, previewText: nil).copyablePlainText == nil)
+        #expect(Self.item(1, bestText: "", previewText: "").copyablePlainText == nil)
+    }
+
+    private static func item(_ snapshotID: Int, bestText: String? = nil, previewText: String? = nil) -> ClipmemItem {
         ClipmemItem(
             snapshotId: snapshotID,
             eventId: nil,
@@ -60,7 +85,7 @@ struct QuickRecallModelTests {
             lastSeenAt: nil,
             appName: nil,
             appBundleId: nil,
-            bestText: nil,
+            bestText: bestText,
             bestTextUti: nil,
             textFragments: nil,
             urls: nil,
@@ -68,7 +93,7 @@ struct QuickRecallModelTests {
             htmlText: nil,
             rtfText: nil,
             textSummary: nil,
-            previewText: nil,
+            previewText: previewText,
             itemCount: nil,
             totalBytes: nil,
             captureCount: nil,

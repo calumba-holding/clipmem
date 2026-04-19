@@ -15,9 +15,9 @@ final class QuickRecallModel {
 
     @ObservationIgnored private let appModel: AppModel
     @ObservationIgnored private var searchTask: Task<Void, Never>?
-    @ObservationIgnored private let forgetItem: @MainActor (ClipmemItem) async -> Void
+    @ObservationIgnored private let forgetItem: @MainActor (ClipmemItem) async -> Bool
 
-    init(appModel: AppModel, forgetItem: (@MainActor (ClipmemItem) async -> Void)? = nil) {
+    init(appModel: AppModel, forgetItem: (@MainActor (ClipmemItem) async -> Bool)? = nil) {
         self.appModel = appModel
         self.forgetItem = forgetItem ?? { item in
             await appModel.forget(item)
@@ -90,7 +90,7 @@ final class QuickRecallModel {
     }
 
     func forget(_ item: ClipmemItem) async {
-        await forgetItem(item)
+        guard await forgetItem(item) else { return }
         results.removeAll { $0.snapshotId == item.snapshotId }
         if selectedID == item.snapshotId {
             selectedID = results.first?.snapshotId

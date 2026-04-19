@@ -63,14 +63,20 @@ struct ClipmemCommand: Equatable, Sendable {
     }
 
     static func search(query: String, limit: Int, cursor: String?, filters: RetrievalFilterState) -> ClipmemCommand {
-        listCommand(["search", query], limit: limit, cursor: cursor, filters: filters)
+        var arguments = ["search", "--limit", String(limit), "--format", "json"]
+        if let cursor, cursor.isEmpty == false {
+            arguments += ["--cursor", cursor]
+        }
+        appendFilters(&arguments, filters: filters)
+        arguments += ["--", query]
+        return ClipmemCommand(arguments: arguments)
     }
 
     static func recall(query: String?, limit: Int, filters: RetrievalFilterState) -> ClipmemCommand {
         var arguments = ["recall", "--limit", String(limit), "--format", "json"]
         appendFilters(&arguments, filters: filters)
         if let query, query.isEmpty == false {
-            arguments.append(query)
+            arguments += ["--", query]
         } else {
             arguments.append("--prefer-recent")
         }
