@@ -11,6 +11,8 @@ versioning where practical.
 
 Changes for the next release go here.
 
+## 0.2.8 - 2026-04-19
+
 ### Added
 
 - Added `clipmem stats` with text and JSON output for archive aggregates,
