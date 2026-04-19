@@ -1,6 +1,3 @@
-use anyhow::Result;
-
-use crate::db::Database;
 use crate::model::{CaptureStoreResult, ClipboardSnapshot};
 
 #[derive(Debug, Clone)]
@@ -49,25 +46,6 @@ pub fn mark_change_handled(change_count: i64, state: &mut WatchState) {
     state.first_loop = false;
 }
 
-/// Persist one captured watch snapshot and mark its change count as handled.
-///
-/// # Errors
-///
-/// Returns an error if storing the snapshot or its capture event fails.
-pub fn process_watch_snapshot(
-    db: &mut Database,
-    snapshot: &ClipboardSnapshot,
-    state: &mut WatchState,
-) -> Result<Option<CaptureStoreResult>> {
-    if !should_capture_change(snapshot.change_count(), false, state) {
-        return Ok(None);
-    }
-
-    let result = db.store_capture(snapshot)?;
-    mark_change_handled(snapshot.change_count(), state);
-    Ok(Some(result))
-}
-
 #[must_use]
 pub fn format_watch_capture_line(
     snapshot: &ClipboardSnapshot,
@@ -99,12 +77,27 @@ mod tests {
     use anyhow::Result;
 
     use super::{
-        format_watch_capture_line, process_watch_snapshot, should_capture_change, WatchState,
+        format_watch_capture_line, mark_change_handled, should_capture_change, WatchState,
     };
     use crate::db::{Database, RetrievalFilters};
     use crate::model::{
         build_item, build_representation, build_snapshot, CaptureContext, CaptureStoreResult,
+        ClipboardSnapshot,
     };
+
+    fn process_watch_snapshot(
+        db: &mut Database,
+        snapshot: &ClipboardSnapshot,
+        state: &mut WatchState,
+    ) -> Result<Option<CaptureStoreResult>> {
+        if !should_capture_change(snapshot.change_count(), false, state) {
+            return Ok(None);
+        }
+
+        let result = db.store_capture(snapshot)?;
+        mark_change_handled(snapshot.change_count(), state);
+        Ok(Some(result))
+    }
 
     #[test]
     fn skip_initial_marks_first_change_as_seen_without_storing() -> Result<()> {
