@@ -3,3 +3,4 @@ target/
 .desloppify/
 .agents/
 scorecard.png
+skills-lock.json
