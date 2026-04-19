@@ -18,6 +18,8 @@ struct CommandConstructionTests {
         #expect(ClipmemCommand.forget(snapshotID: 42).arguments == ["forget", "42", "--format", "json"])
         #expect(ClipmemCommand.purge(olderThan: "30d", dryRun: true).arguments.contains("--dry-run"))
         #expect(ClipmemCommand.export(snapshotID: 42, itemIndex: 0, uti: "public.png", destination: "/tmp/a.png", force: true).arguments.contains("--force"))
+        #expect(ClipmemCommand.settingsOCR(true).arguments == ["settings", "ocr", "on"])
+        #expect(ClipmemCommand.settingsOCR(false).arguments == ["settings", "ocr", "off"])
     }
 
     @Test func filtersAppendExpectedFlags() {

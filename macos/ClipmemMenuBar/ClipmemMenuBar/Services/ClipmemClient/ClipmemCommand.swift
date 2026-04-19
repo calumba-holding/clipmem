@@ -50,6 +50,10 @@ struct ClipmemCommand: Equatable, Sendable {
         ClipmemCommand(arguments: ["settings", "api-key-filter", enabled ? "on" : "off"])
     }
 
+    static func settingsOCR(_ enabled: Bool) -> ClipmemCommand {
+        ClipmemCommand(arguments: ["settings", "ocr", enabled ? "on" : "off"])
+    }
+
     static func settingsRetention(_ value: String) -> ClipmemCommand {
         ClipmemCommand(arguments: ["settings", "retention", value])
     }

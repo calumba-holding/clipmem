@@ -47,6 +47,7 @@ struct ClipmemSettingsView: View {
             Form {
                 Toggle("Pause capture", isOn: pauseBinding)
                 Toggle("API-key filter", isOn: apiKeyFilterBinding)
+                Toggle("OCR for copied images", isOn: ocrBinding)
                 HStack {
                     TextField("Retention", text: $retentionValue)
                     Button("Apply") {
@@ -159,6 +160,17 @@ struct ClipmemSettingsView: View {
         } set: { value in
             Task {
                 await appModel.runAction(.settingsAPIKeyFilter(value), successMessage: value ? "API-key filter enabled" : "API-key filter disabled")
+                await appModel.refreshSettings()
+            }
+        }
+    }
+
+    private var ocrBinding: Binding<Bool> {
+        Binding {
+            appModel.settingsReport?.ocrEnabled ?? false
+        } set: { value in
+            Task {
+                await appModel.runAction(.settingsOCR(value), successMessage: value ? "OCR enabled" : "OCR disabled")
                 await appModel.refreshSettings()
             }
         }

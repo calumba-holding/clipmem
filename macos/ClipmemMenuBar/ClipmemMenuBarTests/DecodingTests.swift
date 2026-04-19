@@ -35,6 +35,7 @@ struct DecodingTests {
         let settings = try decode(SettingsReport.self, "settings")
 
         #expect(settings.apiKeyFilterEnabled == true)
+        #expect(settings.ocrEnabled == false)
         #expect(settings.ignoredBundleIds.contains("io.openclaw.clipmem.menubar"))
     }
 

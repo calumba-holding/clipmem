@@ -61,6 +61,7 @@ struct DoctorReport: Decodable, Equatable, Sendable {
 struct SettingsReport: Decodable, Equatable, Sendable {
     var paused: Bool
     var apiKeyFilterEnabled: Bool
+    var ocrEnabled: Bool
     var retentionSeconds: UInt64?
     var retention: String
     var ignoredBundleIds: [String]

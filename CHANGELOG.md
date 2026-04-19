@@ -9,10 +9,19 @@ versioning where practical.
 
 ## Unreleased
 
+Changes for the next release go here.
+
+## 0.2.10 - 2026-04-19
+
 ### Changed
 
 - Updated README and GitHub repository description to mention opt-in local OCR
   for copied images.
+
+### Fixed
+
+- Added the missing menu bar app Settings toggle for enabling or disabling
+  local OCR for copied images.
 
 ## 0.2.9 - 2026-04-19
 
