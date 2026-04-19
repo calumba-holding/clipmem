@@ -11,6 +11,18 @@ versioning where practical.
 
 Changes for the next release go here.
 
+## 0.2.11 - 2026-04-19
+
+### Fixed
+
+- Fixed macOS text clipboard captures whose `public.utf16-plain-text`
+  representation contained embedded NUL bytes, which could make stored text
+  appear truncated or fail search even though the full text representation was
+  captured.
+- Added a schema repair that rebuilds stored snapshot text projections from
+  captured item representations so affected existing captures become
+  searchable after upgrade.
+
 ## 0.2.10 - 2026-04-19
 
 ### Changed

@@ -47,18 +47,26 @@ pub fn build_representation(
     string_value: Option<String>,
     raw_bytes: Vec<u8>,
 ) -> ClipboardRepresentation {
-    let kind = classify_uti(&uti, string_value.is_some());
-    let decoded_text = if let Some(text) = string_value {
-        Some(text)
-    } else {
-        decode_text_bytes_strict(&raw_bytes).or_else(|| {
-            if kind.is_textual() {
-                decode_text_bytes_lossy(&raw_bytes)
-            } else {
-                None
-            }
+    let decoded_raw_text = decode_text_bytes_strict(&raw_bytes);
+    let clean_string_value = string_value
+        .as_deref()
+        .filter(|text| is_searchable_text_fragment(text))
+        .map(ToOwned::to_owned);
+    let kind = classify_uti(&uti, clean_string_value.is_some());
+    let decoded_text = clean_string_value
+        .or_else(|| {
+            decoded_raw_text
+                .as_deref()
+                .filter(|text| is_searchable_text_fragment(text))
+                .map(ToOwned::to_owned)
         })
-    };
+        .or_else(|| {
+            if kind.is_textual() {
+                decode_text_bytes_lossy(&raw_bytes).filter(|text| is_searchable_text_fragment(text))
+            } else {
+                decoded_raw_text
+            }
+        });
 
     ClipboardRepresentation::new(uti, kind, hash_bytes(&raw_bytes), decoded_text, raw_bytes)
 }
@@ -223,6 +231,24 @@ where
     }
 
     out
+}
+
+pub(crate) fn is_searchable_text_fragment(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() || trimmed.contains('\0') {
+        return false;
+    }
+
+    let total = trimmed.chars().count();
+    if total == 0 {
+        return false;
+    }
+
+    let disruptive_controls = trimmed
+        .chars()
+        .filter(|ch| ch.is_control() && !matches!(ch, '\n' | '\r' | '\t'))
+        .count();
+    ratio_at_most(disruptive_controls, total, 1, 20)
 }
 
 fn detect_utf16_endianness(bytes: &[u8]) -> Option<bool> {
@@ -517,6 +543,69 @@ mod tests {
             .flat_map(u16::to_le_bytes)
             .collect::<Vec<_>>();
         assert_eq!(decode_text_bytes_lossy(&bytes).as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn embedded_nul_string_values_fall_back_to_decoded_raw_bytes() {
+        let raw_bytes = "clipmem apple text"
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+        let string_value = Some(
+            "clipmem apple text"
+                .chars()
+                .flat_map(|ch| [ch, '\0'])
+                .collect::<String>(),
+        );
+
+        let representation = build_representation(
+            "public.utf16-plain-text".to_string(),
+            string_value,
+            raw_bytes,
+        );
+
+        assert_eq!(representation.text_value(), Some("clipmem apple text"));
+    }
+
+    #[test]
+    fn apple_plain_text_capture_ignores_control_only_dynamic_representation() {
+        let utf16_bytes = "clipmem-e2e-text"
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+        let utf16_nul_text = "clipmem-e2e-text"
+            .chars()
+            .flat_map(|ch| [ch, '\0'])
+            .collect::<String>();
+        let item = build_item(
+            0,
+            vec![
+                build_representation(
+                    "public.utf16-plain-text".to_string(),
+                    Some(utf16_nul_text),
+                    utf16_bytes,
+                ),
+                build_representation(
+                    "public.utf8-plain-text".to_string(),
+                    Some("clipmem-e2e-text".to_string()),
+                    b"clipmem-e2e-text".to_vec(),
+                ),
+                build_representation(
+                    "com.apple.traditional-mac-plain-text".to_string(),
+                    Some("clipmem-e2e-text".to_string()),
+                    b"clipmem-e2e-text".to_vec(),
+                ),
+                build_representation(
+                    "dyn.ah62d4rv4gk81g7d3ru".to_string(),
+                    Some("\u{1}\0\0\0\0\0\u{10}\0".to_string()),
+                    vec![1, 0, 0, 0, 0, 0, 16, 0],
+                ),
+            ],
+        );
+        let snapshot = build_snapshot(CaptureContext::new(4), vec![item]);
+
+        assert_eq!(snapshot.search_text(), "clipmem-e2e-text");
+        assert_eq!(snapshot.preview_text(), "clipmem-e2e-text");
     }
 
     #[test]

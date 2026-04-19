@@ -13,10 +13,13 @@ use clap::ValueEnum;
 use rusqlite::{Connection, OpenFlags, Row};
 use serde::{Deserialize, Serialize};
 
-use crate::model::SearchHit;
+use crate::model::{
+    dedupe_text_fragments, html_to_text_lossy, is_searchable_text_fragment, normalise_whitespace,
+    rtf_to_text_lossy, truncate_chars, ClipboardKind, SearchHit,
+};
 
 const SCHEMA: &str = include_str!("db/schema.sql");
-const CURRENT_SCHEMA_VERSION: i64 = 9;
+const CURRENT_SCHEMA_VERSION: i64 = 10;
 const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
 
 pub struct Database {
@@ -1067,6 +1070,21 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
                 );
             }
             ensure_api_key_filter_setting_column(&tx)?;
+            rebuild_snapshot_text_from_representations(&tx)?;
+            rebuild_snapshot_literal_cache(&tx)?;
+            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+                .context("set PRAGMA user_version")?;
+        }
+        9 => {
+            if legacy_prerelease_schema_detected(&tx)? {
+                bail!(
+                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
+                );
+            }
+            ensure_api_key_filter_setting_column(&tx)?;
+            ensure_ocr_enabled_setting_column(&tx)?;
+            rebuild_snapshot_text_from_representations(&tx)?;
+            rebuild_snapshot_literal_cache(&tx)?;
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
@@ -1270,6 +1288,204 @@ fn rebuild_snapshot_event_filter_cache(conn: &Connection) -> Result<()> {
     )
     .context("rebuild snapshot event filter cache")?;
     Ok(())
+}
+
+#[derive(Debug)]
+struct StoredProjectionItem {
+    item_index: i64,
+    representations: Vec<StoredProjectionRepresentation>,
+}
+
+#[derive(Debug)]
+struct StoredProjectionRepresentation {
+    uti: String,
+    kind: ClipboardKind,
+    byte_len: i64,
+    text_value: Option<String>,
+}
+
+fn rebuild_snapshot_text_from_representations(conn: &Connection) -> Result<()> {
+    let snapshot_ids = {
+        let mut stmt = conn
+            .prepare("SELECT id FROM snapshots ORDER BY id ASC")
+            .context("prepare snapshot ids query")?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, i64>(0))
+            .context("query snapshot ids")?;
+        collect_rows(rows).context("collect snapshot ids")?
+    };
+
+    for snapshot_id in snapshot_ids {
+        let items = load_stored_projection_items(conn, snapshot_id)?;
+        let mut snapshot_previews = Vec::new();
+        let mut snapshot_search_fragments = Vec::new();
+
+        for item in items {
+            let search_text = rebuilt_item_search_text(&item.representations);
+            let preview_text = rebuilt_item_preview_text(&item.representations, &search_text);
+            conn.execute(
+                "UPDATE snapshot_items
+                 SET primary_kind = ?1,
+                     primary_uti = ?2,
+                     preview_text = ?3,
+                     search_text = ?4
+                 WHERE snapshot_id = ?5 AND item_index = ?6",
+                rusqlite::params![
+                    rebuilt_primary_kind(&item.representations).as_str(),
+                    rebuilt_primary_uti(&item.representations),
+                    preview_text,
+                    search_text,
+                    snapshot_id,
+                    item.item_index,
+                ],
+            )
+            .with_context(|| {
+                format!(
+                    "update text projection for snapshot {snapshot_id} item {}",
+                    item.item_index
+                )
+            })?;
+
+            if !preview_text.trim().is_empty() {
+                snapshot_previews.push(preview_text);
+            }
+            if !search_text.trim().is_empty() {
+                snapshot_search_fragments.push(search_text);
+            }
+        }
+
+        let preview_text = if snapshot_previews.is_empty() {
+            "[empty clipboard]".to_string()
+        } else {
+            truncate_chars(&snapshot_previews.join(" | "), 280)
+        };
+        let search_text = snapshot_search_fragments.join("\n\n");
+
+        conn.execute(
+            "UPDATE snapshots SET preview_text = ?1, search_text = ?2 WHERE id = ?3",
+            rusqlite::params![preview_text, search_text, snapshot_id],
+        )
+        .with_context(|| format!("update text projection for snapshot {snapshot_id}"))?;
+    }
+
+    Ok(())
+}
+
+fn load_stored_projection_items(
+    conn: &Connection,
+    snapshot_id: i64,
+) -> Result<Vec<StoredProjectionItem>> {
+    let mut stmt = conn
+        .prepare(
+            r"
+            SELECT item_index, uti, kind, byte_len, text_value
+            FROM item_representations
+            WHERE snapshot_id = ?1
+            ORDER BY item_index ASC, uti ASC
+            ",
+        )
+        .context("prepare stored representation projection query")?;
+    let rows = stmt
+        .query_map([snapshot_id], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                StoredProjectionRepresentation {
+                    uti: row.get(1)?,
+                    kind: row_enum(row, 2)?,
+                    byte_len: row.get(3)?,
+                    text_value: row.get(4)?,
+                },
+            ))
+        })
+        .context("query stored representation projection rows")?;
+
+    let mut items = Vec::<StoredProjectionItem>::new();
+    for row in rows {
+        let (item_index, representation) = row?;
+        if let Some(item) = items
+            .iter_mut()
+            .find(|candidate| candidate.item_index == item_index)
+        {
+            item.representations.push(representation);
+        } else {
+            items.push(StoredProjectionItem {
+                item_index,
+                representations: vec![representation],
+            });
+        }
+    }
+    Ok(items)
+}
+
+fn rebuilt_primary_representation(
+    representations: &[StoredProjectionRepresentation],
+) -> Option<&StoredProjectionRepresentation> {
+    representations.iter().min_by_key(|representation| {
+        (
+            representation.kind.priority(),
+            !representation
+                .text_value
+                .as_deref()
+                .is_some_and(is_searchable_text_fragment),
+            representation.uti.as_str(),
+        )
+    })
+}
+
+fn rebuilt_primary_kind(representations: &[StoredProjectionRepresentation]) -> ClipboardKind {
+    rebuilt_primary_representation(representations).map_or(ClipboardKind::Empty, |rep| rep.kind)
+}
+
+fn rebuilt_primary_uti(representations: &[StoredProjectionRepresentation]) -> Option<&str> {
+    rebuilt_primary_representation(representations).map(|rep| rep.uti.as_str())
+}
+
+fn rebuilt_item_search_text(representations: &[StoredProjectionRepresentation]) -> String {
+    dedupe_text_fragments(
+        representations
+            .iter()
+            .filter_map(rebuilt_search_fragment_for_representation),
+    )
+    .join("\n\n")
+}
+
+fn rebuilt_search_fragment_for_representation(
+    representation: &StoredProjectionRepresentation,
+) -> Option<String> {
+    if !representation.kind.is_textual() {
+        return None;
+    }
+
+    let text = representation.text_value.as_deref()?;
+    if !is_searchable_text_fragment(text) {
+        return None;
+    }
+
+    let projected = match representation.kind {
+        ClipboardKind::Html => html_to_text_lossy(text),
+        ClipboardKind::Rtf => rtf_to_text_lossy(text),
+        _ => text.to_string(),
+    };
+    let normalized = normalise_whitespace(&projected);
+    is_searchable_text_fragment(&normalized).then_some(normalized)
+}
+
+fn rebuilt_item_preview_text(
+    representations: &[StoredProjectionRepresentation],
+    search_text: &str,
+) -> String {
+    if !search_text.is_empty() {
+        return truncate_chars(&search_text.replace('\n', " "), 200);
+    }
+
+    if let Some(rep) = rebuilt_primary_representation(representations) {
+        return truncate_chars(
+            &format!("[{} · {} bytes · {}]", rep.kind, rep.byte_len, rep.uti),
+            200,
+        );
+    }
+
+    "[empty clipboard item]".to_string()
 }
 
 fn rebuild_snapshot_literal_cache(conn: &Connection) -> Result<()> {

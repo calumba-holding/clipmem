@@ -1,6 +1,6 @@
 [package]
 name = "clipmem"
-version = "0.2.10"
+version = "0.2.11"
 edition = "2021"
 description = "macOS clipboard memory backed by SQLite and searchable from OpenClaw"
 license = "MIT"
