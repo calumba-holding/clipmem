@@ -330,6 +330,7 @@ fn write_stateful_launchctl_stub(bin_dir: &Path, state_dir: &Path) -> Result<()>
         "#!/bin/sh
 STATE_DIR='{state_dir}'
 DIRECT_STATE=\"$STATE_DIR/direct.state\"
+DIRECT_DISABLED=\"$STATE_DIR/direct.disabled\"
 HOMEBREW_STATE=\"$STATE_DIR/homebrew.state\"
 mkdir -p \"$STATE_DIR\"
 case \"$1\" in
@@ -338,6 +339,10 @@ case \"$1\" in
     [ -f \"$DIRECT_STATE\" ] && cat \"$DIRECT_STATE\"
     ;;
   bootstrap)
+    if [ -f \"$DIRECT_DISABLED\" ]; then
+      printf 'Bootstrap failed: 5: Input/output error\\n' >&2
+      exit 5
+    fi
     printf '123 0 io.openclaw.clipmem.watch\\n' > \"$DIRECT_STATE\"
     ;;
   bootout)
@@ -346,7 +351,17 @@ case \"$1\" in
       *io.openclaw.clipmem.watch) rm -f \"$DIRECT_STATE\" ;;
     esac
     ;;
-  enable|disable|kickstart)
+  enable)
+    case \"$2\" in
+      *io.openclaw.clipmem.watch) rm -f \"$DIRECT_DISABLED\" ;;
+    esac
+    ;;
+  disable)
+    case \"$2\" in
+      *io.openclaw.clipmem.watch) touch \"$DIRECT_DISABLED\" ;;
+    esac
+    ;;
+  kickstart)
     ;;
   *)
     ;;
@@ -612,6 +627,50 @@ fn setup_and_service_help_include_examples() {
         assert!(stdout_text(&output).contains("Examples:"));
         assert!(stderr_text(&output).is_empty());
     }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn setup_reenables_disabled_direct_launchagent_before_bootstrap() -> Result<()> {
+    let test_dir = temp_test_dir("service-setup-disabled-direct");
+    let home_dir = test_dir.join("home");
+    let bin_dir = test_dir.join("bin");
+    let state_dir = test_dir.join("state");
+    fs::create_dir_all(&home_dir)?;
+    fs::create_dir_all(&bin_dir)?;
+    fs::create_dir_all(&state_dir)?;
+    write_stateful_launchctl_stub(&bin_dir, &state_dir)?;
+    write_executable(&bin_dir.join("id"), "#!/bin/sh\nprintf '501\\n'\n")?;
+    fs::write(state_dir.join("direct.disabled"), "")?;
+
+    let db_path = home_dir
+        .join("Library/Application Support/clipmem/clipmem.sqlite3")
+        .display()
+        .to_string();
+    let path_value = format!("{}:/usr/bin:/bin", bin_dir.display());
+    let active_binary = home_dir.join(".cargo/bin/clipmem").display().to_string();
+    let envs = vec![
+        ("HOME".to_string(), home_dir.display().to_string()),
+        ("PATH".to_string(), path_value),
+        ("CLIPMEM_TEST_ACTIVE_BINARY".to_string(), active_binary),
+        (
+            "CLIPMEM_TEST_SKIP_SETUP_CAPTURE_ONCE".to_string(),
+            "1".to_string(),
+        ),
+    ];
+
+    let output = run_cli_with_owned_env(&["--db", &db_path, "setup"], &envs);
+    assert!(output.status.success(), "{}", stderr_text(&output));
+    assert!(!state_dir.join("direct.disabled").exists());
+
+    let status = run_cli_with_owned_env(&["--db", &db_path, "service", "status", "--json"], &envs);
+    assert!(status.status.success(), "{}", stderr_text(&status));
+    let payload: Value = serde_json::from_slice(&status.stdout)?;
+    assert_eq!(payload["preferred_provider"], "launchagent");
+    assert_eq!(payload["launchagent"]["running"], true);
+
+    let _ = fs::remove_dir_all(&test_dir);
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]

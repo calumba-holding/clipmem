@@ -630,8 +630,8 @@ fn start_direct_provider(
     touch_log_file(&context.direct_stderr_path)?;
     write_direct_plist(context)?;
     launchctl_bootout(DIRECT_LABEL)?;
-    launchctl_bootstrap(&context.direct_plist_path)?;
     launchctl_enable(DIRECT_LABEL)?;
+    launchctl_bootstrap(&context.direct_plist_path)?;
     launchctl_kickstart(DIRECT_LABEL)?;
     Ok(ServiceActionReport {
         action: "start",

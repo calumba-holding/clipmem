@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.6 - 2026-04-19
+
+### Fixed
+
+- Fixed `clipmem setup` recovery when a previously disabled direct LaunchAgent caused `launchctl bootstrap` to fail with status 5.
+
 ## 0.2.5 - 2026-04-19
 
 ### Added
