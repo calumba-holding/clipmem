@@ -18,6 +18,7 @@ Examples:
   clipmem service status
   clipmem recall \"what was that shell command?\"
   clipmem recent --hours 24
+  clipmem stats
   clipmem timeline --hours 24 --format json
   clipmem get 42 --format json
 
@@ -76,6 +77,17 @@ Notes:
   - `timeline` is event-centric and returns one row per real capture event.
   - `--limit` is the page size. Defaults to 10 and is bounded 1-250.
   - `--cursor` resumes from a prior `next_cursor`. Cursors are opaque and tied to the active filters and sort order.";
+
+const STATS_AFTER_HELP: &str = "\
+Examples:
+  clipmem stats
+  clipmem stats --hours 24
+  clipmem stats --app safari --format json
+
+Notes:
+  - `stats` reports aggregate archive metrics and leaderboards for the active filters.
+  - Supports shared retrieval filters, including time, app, bundle id, kind, shape, and byte filters.
+  - Output formats are intentionally limited to `text` and `json`.";
 
 const RECALL_AFTER_HELP: &str = "\
 Examples:
@@ -309,6 +321,28 @@ pub(super) enum RecallOutputFormat {
     Toon,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(super) enum StatsOutputFormat {
+    Text,
+    Json,
+    Jsonl,
+    Md,
+    Toon,
+}
+
+impl StatsOutputFormat {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Json => "json",
+            Self::Jsonl => "jsonl",
+            Self::Md => "md",
+            Self::Toon => "toon",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct DurationValue {
     raw: String,
@@ -366,6 +400,34 @@ impl RecallOutputArgs {
     #[must_use]
     pub(super) fn resolved(&self) -> RecallOutputFormat {
         self.format.unwrap_or(RecallOutputFormat::Md)
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+pub(super) struct StatsOutputArgs {
+    /// Output format: `text` for terminal use or `json` for stable parsing (default: text).
+    #[arg(long, value_enum)]
+    format: Option<StatsOutputFormat>,
+
+    /// Compatibility alias for `--format json`.
+    #[arg(long, default_value_t = false)]
+    json: bool,
+}
+
+impl StatsOutputArgs {
+    pub(super) fn resolved(&self) -> std::result::Result<StatsOutputFormat, clap::Error> {
+        match (self.json, self.format) {
+            (false, Some(format)) => Ok(format),
+            (false, None) => Ok(StatsOutputFormat::Text),
+            (true, None) | (true, Some(StatsOutputFormat::Json)) => Ok(StatsOutputFormat::Json),
+            (true, Some(format)) => Err(Cli::command().error(
+                ErrorKind::ArgumentConflict,
+                format!(
+                    "`--json` is only compatible with `--format json`, got `--format {}`",
+                    format.as_str()
+                ),
+            )),
+        }
     }
 }
 
@@ -436,6 +498,8 @@ enum Command {
     Recent(RecentArgs),
     /// Show chronological clipboard capture events (one row per observation).
     Timeline(TimelineArgs),
+    /// Report archive aggregates and leaderboards.
+    Stats(StatsArgs),
     /// Recall the most likely clipboard item for an agent query.
     Recall(RecallArgs),
     /// Show a stored snapshot in detail.
@@ -762,6 +826,16 @@ struct TimelineArgs {
 
     #[command(flatten)]
     output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = STATS_AFTER_HELP)]
+struct StatsArgs {
+    #[command(flatten)]
+    filters: RetrievalFilterArgs,
+
+    #[command(flatten)]
+    output: StatsOutputArgs,
 }
 
 #[derive(Debug, Args)]
@@ -1110,6 +1184,10 @@ fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
             args.filters.normalized()?;
         }
         Command::Timeline(args) => {
+            args.output.resolved()?;
+            args.filters.normalized()?;
+        }
+        Command::Stats(args) => {
             args.output.resolved()?;
             args.filters.normalized()?;
         }

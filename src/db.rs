@@ -120,6 +120,57 @@ pub struct SearchResults {
     has_more: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct StatsReport {
+    pub snapshot_count: usize,
+    pub capture_event_count: usize,
+    pub unique_app_count: usize,
+    pub total_bytes: usize,
+    pub average_bytes_per_snapshot: f64,
+    pub average_captures_per_snapshot: f64,
+    pub dedupe_ratio: f64,
+    pub first_observed_at: Option<String>,
+    pub last_observed_at: Option<String>,
+    pub archive_span_seconds: Option<i64>,
+    pub most_recopied_snapshot: Option<StatsSnapshotLeaderboardEntry>,
+    pub kind_breakdown: Vec<StatsKindBreakdownEntry>,
+    pub top_apps: Vec<StatsAppEntry>,
+    pub busiest_hours: Vec<StatsTimeBucketEntry>,
+    pub busiest_weekdays: Vec<StatsTimeBucketEntry>,
+    pub largest_snapshots: Vec<StatsSnapshotLeaderboardEntry>,
+    pub most_captured_snapshots: Vec<StatsSnapshotLeaderboardEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StatsKindBreakdownEntry {
+    pub kind: String,
+    pub snapshot_count: usize,
+    pub total_bytes: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StatsAppEntry {
+    pub app: String,
+    pub capture_event_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StatsTimeBucketEntry {
+    pub bucket: String,
+    pub capture_event_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct StatsSnapshotLeaderboardEntry {
+    pub snapshot_id: i64,
+    pub capture_count: usize,
+    pub kind: String,
+    pub preview_text: String,
+    pub app_name: Option<String>,
+    pub last_observed_at: String,
+    pub total_bytes: usize,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct Page<T> {
     items: Vec<T>,

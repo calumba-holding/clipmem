@@ -13,6 +13,9 @@ the job:
   best-first ranked answer with alternatives.
 - **Want chronological order?** Use `clipmem timeline`. It shows one
   row per capture event, including repeated copies of the same content.
+- **Want archive aggregates?** Use `clipmem stats`. It summarizes
+  matching events, distinct snapshots, app activity, content mix, and
+  leaderboards.
 - **Want recent unique items?** Use `clipmem recent`. It deduplicates
   by snapshot, showing each unique clipboard state once.
 - **Need exact substring matching?** Use `clipmem search`. It does
@@ -76,6 +79,19 @@ clipmem timeline --app safari --has-url --limit 25 --format json
 
 Use `--sort asc|desc` to control chronological order (default: `desc`).
 
+## Stats
+
+`stats` returns aggregate archive metrics for the active filters. It
+counts matching capture events separately from distinct matching
+snapshots, so repeated copies affect event totals and dedupe ratio
+without inflating unique snapshot counts.
+
+```bash
+clipmem stats
+clipmem stats --hours 24
+clipmem stats --app safari --format json
+```
+
 ## Search
 
 `search` does direct lexical matching over stored text. It's best for
@@ -105,9 +121,9 @@ snapshot detail rather than flat list output.
 
 ## Shared retrieval filters
 
-`search`, `recent`, `timeline`, and `recall` accept the same filter
-set. `get` and `export` accept them as guards against the explicitly
-targeted snapshot.
+`search`, `recent`, `timeline`, `stats`, and `recall` accept the same
+filter set. `get` and `export` accept them as guards against the
+explicitly targeted snapshot.
 
 ### Time
 
@@ -140,7 +156,8 @@ targeted snapshot.
 ## Pagination
 
 Every list command accepts `--limit` (bounded 1-250, default 10) and
-an opaque `--cursor` returned as `next_cursor` in a prior response:
+an opaque `--cursor` returned as `next_cursor` in a prior response.
+`stats` is a single aggregate response, so it doesn't paginate:
 
 ```bash
 clipmem search "git status" --format json --limit 10

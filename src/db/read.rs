@@ -9,7 +9,8 @@ use crate::model::{
 use super::{
     collect_rows, row_enum, row_usize, sanitise_limit, usize_to_i64, Database, Page,
     RecentCursorState, RetrievalFilters, SearchCursorState, SearchMode, SearchResults,
-    TimelineCursorState, TimelineSort,
+    StatsAppEntry, StatsKindBreakdownEntry, StatsReport, StatsSnapshotLeaderboardEntry,
+    StatsTimeBucketEntry, TimelineCursorState, TimelineSort,
 };
 
 const LIST_VALUE_SEPARATOR: char = '\u{1f}';
@@ -349,6 +350,143 @@ impl Database {
             .context("evaluate snapshot filters")?;
 
         Ok(exists != 0)
+    }
+
+    pub fn stats(&self, filters: &RetrievalFilters) -> Result<StatsReport> {
+        let params = stats_params(filters)?;
+        self.conn
+            .execute_batch(
+                "DROP TABLE IF EXISTS temp.clipmem_stats_matching_events;
+                 DROP TABLE IF EXISTS temp.clipmem_stats_matching_snapshots;",
+            )
+            .context("clear stats temp tables")?;
+
+        self.conn
+            .execute(
+                &format!(
+                    "CREATE TEMP TABLE clipmem_stats_matching_events AS
+                     SELECT ce.id,
+                            ce.snapshot_id,
+                            ce.observed_at,
+                            ce.frontmost_app_name,
+                            ce.frontmost_app_bundle_id
+                     FROM capture_events ce
+                     JOIN snapshots s ON s.id = ce.snapshot_id
+                     WHERE {event_filter_clause}
+                       AND {snapshot_filter_clause}",
+                    event_filter_clause = event_filter_clause("ce"),
+                    snapshot_filter_clause = snapshot_filter_clause("s", "ce.snapshot_id"),
+                ),
+                named_params! {
+                    ":since": params.since.as_deref(),
+                    ":until": params.until.as_deref(),
+                    ":app_like": params.app_like.as_deref(),
+                    ":bundle_id": params.bundle_id.as_deref(),
+                    ":kind": params.kind,
+                    ":has_text": params.has_text,
+                    ":has_url": params.has_url,
+                    ":has_file_url": params.has_file_url,
+                    ":has_image": params.has_image,
+                    ":has_pdf": params.has_pdf,
+                    ":min_bytes": params.min_bytes,
+                    ":max_bytes": params.max_bytes,
+                },
+            )
+            .context("materialize stats matching events")?;
+
+        self.conn
+            .execute_batch(
+                "CREATE INDEX temp.idx_clipmem_stats_events_snapshot_id
+                    ON clipmem_stats_matching_events(snapshot_id);
+                 CREATE INDEX temp.idx_clipmem_stats_events_observed_at
+                    ON clipmem_stats_matching_events(observed_at);",
+            )
+            .context("index stats matching events")?;
+
+        self.conn
+            .execute(
+                &format!(
+                    "CREATE TEMP TABLE clipmem_stats_matching_snapshots AS
+                     SELECT
+                         s.id AS snapshot_id,
+                         s.snapshot_kind AS kind,
+                         s.preview_text AS preview_text,
+                         s.total_bytes AS total_bytes,
+                         COUNT(me.id) AS capture_count,
+                         MIN(me.observed_at) AS first_observed_at,
+                         MAX(me.observed_at) AS last_observed_at,
+                         (
+                             SELECT me2.frontmost_app_name
+                             FROM clipmem_stats_matching_events me2
+                             WHERE me2.snapshot_id = s.id
+                             ORDER BY me2.observed_at DESC, me2.id DESC
+                             LIMIT 1
+                         ) AS last_frontmost_app_name,
+                         (
+                             SELECT me2.frontmost_app_bundle_id
+                             FROM clipmem_stats_matching_events me2
+                             WHERE me2.snapshot_id = s.id
+                             ORDER BY me2.observed_at DESC, me2.id DESC
+                             LIMIT 1
+                         ) AS last_frontmost_app_bundle_id
+                     FROM snapshots s
+                     JOIN clipmem_stats_matching_events me ON me.snapshot_id = s.id
+                     WHERE {snapshot_filter_clause}
+                     GROUP BY s.id",
+                    snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
+                ),
+                named_params! {
+                    ":kind": params.kind,
+                    ":has_text": params.has_text,
+                    ":has_url": params.has_url,
+                    ":has_file_url": params.has_file_url,
+                    ":has_image": params.has_image,
+                    ":has_pdf": params.has_pdf,
+                    ":min_bytes": params.min_bytes,
+                    ":max_bytes": params.max_bytes,
+                },
+            )
+            .context("materialize stats matching snapshots")?;
+
+        self.conn
+            .execute_batch(
+                "CREATE INDEX temp.idx_clipmem_stats_snapshots_capture_count
+                    ON clipmem_stats_matching_snapshots(capture_count DESC, snapshot_id ASC);
+                 CREATE INDEX temp.idx_clipmem_stats_snapshots_bytes
+                    ON clipmem_stats_matching_snapshots(total_bytes DESC, snapshot_id ASC);",
+            )
+            .context("index stats matching snapshots")?;
+
+        let overview = self.load_stats_overview()?;
+        let kind_breakdown = self.load_stats_kind_breakdown()?;
+        let top_apps = self.load_stats_top_apps()?;
+        let busiest_hours = self.load_stats_hours()?;
+        let busiest_weekdays = self.load_stats_weekdays()?;
+        let largest_snapshots =
+            self.load_stats_snapshot_leaderboard("total_bytes DESC, snapshot_id ASC", 5)?;
+        let most_captured_snapshots =
+            self.load_stats_snapshot_leaderboard("capture_count DESC, snapshot_id ASC", 5)?;
+        let most_recopied_snapshot = most_captured_snapshots.first().cloned();
+
+        Ok(StatsReport {
+            snapshot_count: overview.snapshot_count,
+            capture_event_count: overview.capture_event_count,
+            unique_app_count: overview.unique_app_count,
+            total_bytes: overview.total_bytes,
+            average_bytes_per_snapshot: overview.average_bytes_per_snapshot(),
+            average_captures_per_snapshot: overview.average_captures_per_snapshot(),
+            dedupe_ratio: overview.dedupe_ratio(),
+            first_observed_at: overview.first_observed_at,
+            last_observed_at: overview.last_observed_at,
+            archive_span_seconds: overview.archive_span_seconds,
+            most_recopied_snapshot,
+            kind_breakdown,
+            top_apps,
+            busiest_hours,
+            busiest_weekdays,
+            largest_snapshots,
+            most_captured_snapshots,
+        })
     }
 
     /// Load one snapshot with its recent events and stored item representations.
@@ -995,6 +1133,283 @@ impl Database {
         }
 
         Ok(items)
+    }
+}
+
+struct StatsQueryParams {
+    since: Option<String>,
+    until: Option<String>,
+    app_like: Option<String>,
+    bundle_id: Option<String>,
+    kind: Option<&'static str>,
+    has_text: bool,
+    has_url: bool,
+    has_file_url: bool,
+    has_image: bool,
+    has_pdf: bool,
+    min_bytes: Option<i64>,
+    max_bytes: Option<i64>,
+}
+
+fn stats_params(filters: &RetrievalFilters) -> Result<StatsQueryParams> {
+    Ok(StatsQueryParams {
+        since: effective_since_param(filters)?,
+        until: filters.until().map(ToOwned::to_owned),
+        app_like: app_like_pattern(filters),
+        bundle_id: filters.bundle_id().map(|value| value.to_ascii_lowercase()),
+        kind: filters.kind().map(RetrievalKindExt::as_static_str),
+        has_text: filters.has_text(),
+        has_url: filters.has_url(),
+        has_file_url: filters.has_file_url(),
+        has_image: filters.has_image(),
+        has_pdf: filters.has_pdf(),
+        min_bytes: filters.min_bytes().map(usize_to_i64).transpose()?,
+        max_bytes: filters.max_bytes().map(usize_to_i64).transpose()?,
+    })
+}
+
+trait RetrievalKindExt {
+    fn as_static_str(self) -> &'static str;
+}
+
+impl RetrievalKindExt for super::RetrievalKind {
+    fn as_static_str(self) -> &'static str {
+        self.as_str()
+    }
+}
+
+#[derive(Debug)]
+struct StatsOverview {
+    snapshot_count: usize,
+    capture_event_count: usize,
+    unique_app_count: usize,
+    total_bytes: usize,
+    first_observed_at: Option<String>,
+    last_observed_at: Option<String>,
+    archive_span_seconds: Option<i64>,
+}
+
+impl StatsOverview {
+    fn average_bytes_per_snapshot(&self) -> f64 {
+        if self.snapshot_count == 0 {
+            0.0
+        } else {
+            self.total_bytes as f64 / self.snapshot_count as f64
+        }
+    }
+
+    fn average_captures_per_snapshot(&self) -> f64 {
+        if self.snapshot_count == 0 {
+            0.0
+        } else {
+            self.capture_event_count as f64 / self.snapshot_count as f64
+        }
+    }
+
+    fn dedupe_ratio(&self) -> f64 {
+        if self.capture_event_count == 0 {
+            0.0
+        } else {
+            1.0 - (self.snapshot_count as f64 / self.capture_event_count as f64)
+        }
+    }
+}
+
+impl Database {
+    fn load_stats_overview(&self) -> Result<StatsOverview> {
+        self.conn
+            .query_row(
+                r"
+                SELECT
+                    (SELECT COUNT(*) FROM clipmem_stats_matching_snapshots) AS snapshot_count,
+                    (SELECT COUNT(*) FROM clipmem_stats_matching_events) AS capture_event_count,
+                    (
+                        SELECT COUNT(DISTINCT COALESCE(NULLIF(frontmost_app_name, ''), NULLIF(frontmost_app_bundle_id, ''), 'Unknown'))
+                        FROM clipmem_stats_matching_events
+                    ) AS unique_app_count,
+                    COALESCE((SELECT SUM(total_bytes) FROM clipmem_stats_matching_snapshots), 0) AS total_bytes,
+                    (SELECT MIN(observed_at) FROM clipmem_stats_matching_events) AS first_observed_at,
+                    (SELECT MAX(observed_at) FROM clipmem_stats_matching_events) AS last_observed_at,
+                    (
+                        SELECT CAST(strftime('%s', MAX(observed_at)) AS INTEGER) - CAST(strftime('%s', MIN(observed_at)) AS INTEGER)
+                        FROM clipmem_stats_matching_events
+                    ) AS archive_span_seconds
+                ",
+                [],
+                |row| {
+                    Ok(StatsOverview {
+                        snapshot_count: row_usize(row, 0)?,
+                        capture_event_count: row_usize(row, 1)?,
+                        unique_app_count: row_usize(row, 2)?,
+                        total_bytes: row_usize(row, 3)?,
+                        first_observed_at: row.get(4)?,
+                        last_observed_at: row.get(5)?,
+                        archive_span_seconds: row.get(6)?,
+                    })
+                },
+            )
+            .context("load stats overview")
+    }
+
+    fn load_stats_kind_breakdown(&self) -> Result<Vec<StatsKindBreakdownEntry>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                r"
+                SELECT kind, COUNT(*) AS snapshot_count, COALESCE(SUM(total_bytes), 0) AS total_bytes
+                FROM clipmem_stats_matching_snapshots
+                GROUP BY kind
+                ORDER BY snapshot_count DESC, kind ASC
+                ",
+            )
+            .context("prepare stats kind breakdown")?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(StatsKindBreakdownEntry {
+                    kind: row.get(0)?,
+                    snapshot_count: row_usize(row, 1)?,
+                    total_bytes: row_usize(row, 2)?,
+                })
+            })
+            .context("execute stats kind breakdown")?;
+        collect_rows(rows).context("collect stats kind breakdown")
+    }
+
+    fn load_stats_top_apps(&self) -> Result<Vec<StatsAppEntry>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                r"
+                SELECT
+                    COALESCE(NULLIF(frontmost_app_name, ''), NULLIF(frontmost_app_bundle_id, ''), 'Unknown') AS app,
+                    COUNT(*) AS capture_event_count
+                FROM clipmem_stats_matching_events
+                GROUP BY app
+                ORDER BY capture_event_count DESC, app ASC
+                LIMIT 5
+                ",
+            )
+            .context("prepare stats top apps")?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(StatsAppEntry {
+                    app: row.get(0)?,
+                    capture_event_count: row_usize(row, 1)?,
+                })
+            })
+            .context("execute stats top apps")?;
+        collect_rows(rows).context("collect stats top apps")
+    }
+
+    fn load_stats_hours(&self) -> Result<Vec<StatsTimeBucketEntry>> {
+        self.load_stats_time_distribution("00", 24, "strftime('%H', observed_at)", |index| {
+            format!("{index:02}")
+        })
+    }
+
+    fn load_stats_weekdays(&self) -> Result<Vec<StatsTimeBucketEntry>> {
+        self.load_stats_time_distribution("0", 7, "strftime('%w', observed_at)", |index| {
+            weekday_name(index).to_string()
+        })
+    }
+
+    fn load_stats_time_distribution(
+        &self,
+        first_value: &str,
+        count: usize,
+        bucket_expr: &str,
+        render_bucket: impl Fn(usize) -> String,
+    ) -> Result<Vec<StatsTimeBucketEntry>> {
+        let sql = format!(
+            "WITH RECURSIVE buckets(value) AS (
+                 SELECT CAST(:first_value AS INTEGER)
+                 UNION ALL
+                 SELECT value + 1 FROM buckets WHERE value + 1 < :count
+             ),
+             counts AS (
+                 SELECT CAST({bucket_expr} AS INTEGER) AS value, COUNT(*) AS capture_event_count
+                 FROM clipmem_stats_matching_events
+                 GROUP BY value
+             )
+             SELECT buckets.value, COALESCE(counts.capture_event_count, 0)
+             FROM buckets
+             LEFT JOIN counts ON counts.value = buckets.value
+             ORDER BY buckets.value ASC"
+        );
+        let mut stmt = self
+            .conn
+            .prepare(&sql)
+            .context("prepare stats time distribution")?;
+        let rows = stmt
+            .query_map(
+                named_params! {
+                    ":first_value": first_value,
+                    ":count": usize_to_i64(count)?,
+                },
+                |row| {
+                    let index = row_usize(row, 0)?;
+                    Ok(StatsTimeBucketEntry {
+                        bucket: render_bucket(index),
+                        capture_event_count: row_usize(row, 1)?,
+                    })
+                },
+            )
+            .context("execute stats time distribution")?;
+        collect_rows(rows).context("collect stats time distribution")
+    }
+
+    fn load_stats_snapshot_leaderboard(
+        &self,
+        ordering: &str,
+        limit: usize,
+    ) -> Result<Vec<StatsSnapshotLeaderboardEntry>> {
+        let sql = format!(
+            "SELECT
+                 snapshot_id,
+                 capture_count,
+                 kind,
+                 preview_text,
+                 last_frontmost_app_name,
+                 last_frontmost_app_bundle_id,
+                 last_observed_at,
+                 total_bytes
+             FROM clipmem_stats_matching_snapshots
+             ORDER BY {ordering}
+             LIMIT :limit"
+        );
+        let mut stmt = self
+            .conn
+            .prepare(&sql)
+            .context("prepare stats snapshot leaderboard")?;
+        let rows = stmt
+            .query_map(named_params! { ":limit": usize_to_i64(limit)? }, |row| {
+                let app_name: Option<String> = row.get(4)?;
+                let app_bundle_id: Option<String> = row.get(5)?;
+                Ok(StatsSnapshotLeaderboardEntry {
+                    snapshot_id: row.get(0)?,
+                    capture_count: row_usize(row, 1)?,
+                    kind: row.get(2)?,
+                    preview_text: row.get(3)?,
+                    app_name: app_name.or(app_bundle_id),
+                    last_observed_at: row.get(6)?,
+                    total_bytes: row_usize(row, 7)?,
+                })
+            })
+            .context("execute stats snapshot leaderboard")?;
+        collect_rows(rows).context("collect stats snapshot leaderboard")
+    }
+}
+
+fn weekday_name(index: usize) -> &'static str {
+    match index {
+        0 => "Sunday",
+        1 => "Monday",
+        2 => "Tuesday",
+        3 => "Wednesday",
+        4 => "Thursday",
+        5 => "Friday",
+        6 => "Saturday",
+        _ => "Unknown",
     }
 }
 

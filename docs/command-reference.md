@@ -14,6 +14,7 @@ subcommand. For conceptual explanations and usage guidance, see
 | `search <QUERY>` | `text` | yes | Lexical / FTS match over the archive |
 | `recent` | `text` | yes | Recent unique snapshots (deduplicated) |
 | `timeline` | `text` | yes | Chronological capture events (not deduplicated) |
+| `stats` | `text` | no | Archive aggregates and leaderboards |
 | `get <ID>` | `text` | no | Nested detail for one snapshot |
 | `restore <ID>` | `text` | — | Restore a stored snapshot to the clipboard |
 | `export <ID>` | raw bytes | — | Write one representation to disk |
@@ -44,8 +45,8 @@ subcommand. For conceptual explanations and usage guidance, see
 
 ## Shared retrieval filters
 
-These flags are accepted by `search`, `recent`, `timeline`, `recall`,
-`get`, and `export`:
+These flags are accepted by `search`, `recent`, `timeline`, `stats`,
+`recall`, `get`, and `export`:
 
 | Flag | Type | Description |
 |---|---|---|
@@ -145,6 +146,23 @@ Chronological capture events, one row per observation.
 clipmem timeline --hours 24
 clipmem timeline --sort asc --format json
 clipmem timeline --app safari --has-url --limit 25 --format json
+```
+
+### `clipmem stats`
+
+Archive aggregates and leaderboards for matching captures and
+snapshots.
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--format` | `text\|json` | `text` | Output format |
+| `--json` | flag | — | Alias for `--format json` |
+| + shared filters | | | |
+
+```bash
+clipmem stats
+clipmem stats --hours 24
+clipmem stats --app safari --format json
 ```
 
 ### `clipmem get <SNAPSHOT_ID>`

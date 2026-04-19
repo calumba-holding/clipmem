@@ -66,8 +66,59 @@ fn set_event_observed_at(db: &Database, event_id: i64, observed_at: &str) -> Res
     Ok(())
 }
 
+fn set_event_app(
+    db: &Database,
+    event_id: i64,
+    app_name: Option<&str>,
+    bundle_id: Option<&str>,
+) -> Result<()> {
+    db.conn.execute(
+        "UPDATE capture_events
+         SET frontmost_app_name = ?1, frontmost_app_bundle_id = ?2
+         WHERE id = ?3",
+        params![app_name, bundle_id, event_id],
+    )?;
+    Ok(())
+}
+
 fn unfiltered() -> RetrievalFilters {
     RetrievalFilters::default()
+}
+
+fn filters_with_app(app: &str) -> RetrievalFilters {
+    RetrievalFilters::new(
+        None,
+        None,
+        None,
+        Some(app.to_string()),
+        None,
+        None,
+        false,
+        false,
+        false,
+        false,
+        false,
+        None,
+        None,
+    )
+}
+
+fn filters_with_kind(kind: RetrievalKind) -> RetrievalFilters {
+    RetrievalFilters::new(
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(kind),
+        false,
+        false,
+        false,
+        false,
+        false,
+        None,
+        None,
+    )
 }
 
 fn seed_large_archive(db: &mut Database, snapshot_count: usize, event_count: usize) -> Result<()> {
@@ -254,6 +305,132 @@ fn search_like_treats_percent_as_literal() -> Result<()> {
         .collect();
 
     assert_eq!(previews, vec!["Discount: 50%"]);
+    Ok(())
+}
+
+#[test]
+fn stats_empty_result_returns_zeroes_and_empty_leaderboards() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    db.store_capture(&fake_snapshot(1, "hello"))?;
+
+    let stats = db.stats(&filters_with_app("No Such App"))?;
+
+    assert_eq!(stats.snapshot_count, 0);
+    assert_eq!(stats.capture_event_count, 0);
+    assert_eq!(stats.unique_app_count, 0);
+    assert_eq!(stats.total_bytes, 0);
+    assert_eq!(stats.average_bytes_per_snapshot, 0.0);
+    assert_eq!(stats.average_captures_per_snapshot, 0.0);
+    assert_eq!(stats.dedupe_ratio, 0.0);
+    assert_eq!(stats.first_observed_at, None);
+    assert_eq!(stats.last_observed_at, None);
+    assert_eq!(stats.archive_span_seconds, None);
+    assert!(stats.most_recopied_snapshot.is_none());
+    assert!(stats.kind_breakdown.is_empty());
+    assert!(stats.top_apps.is_empty());
+    assert_eq!(stats.busiest_hours.len(), 24);
+    assert_eq!(stats.busiest_weekdays.len(), 7);
+    assert!(stats.largest_snapshots.is_empty());
+    assert!(stats.most_captured_snapshots.is_empty());
+    Ok(())
+}
+
+#[test]
+fn stats_uses_event_and_snapshot_filtering_semantics() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let first = db.store_capture(&fake_snapshot(1, "repeat text"))?;
+    let second = db.store_capture(&fake_snapshot(2, "repeat text"))?;
+    let third = db.store_capture(&fake_snapshot(3, "other text"))?;
+    set_event_app(
+        &db,
+        first.event_id(),
+        Some("Terminal"),
+        Some("com.apple.Terminal"),
+    )?;
+    set_event_app(
+        &db,
+        second.event_id(),
+        Some("Safari"),
+        Some("com.apple.Safari"),
+    )?;
+    set_event_app(
+        &db,
+        third.event_id(),
+        Some("Safari"),
+        Some("com.apple.Safari"),
+    )?;
+
+    let stats = db.stats(&filters_with_app("safari"))?;
+
+    assert_eq!(stats.capture_event_count, 2);
+    assert_eq!(stats.snapshot_count, 2);
+    assert_eq!(
+        stats.most_recopied_snapshot.as_ref().unwrap().capture_count,
+        1
+    );
+    assert_eq!(stats.top_apps[0].app, "Safari");
+    assert_eq!(stats.top_apps[0].capture_event_count, 2);
+
+    let text_stats = db.stats(&filters_with_kind(RetrievalKind::Text))?;
+    assert_eq!(text_stats.capture_event_count, 3);
+    assert_eq!(text_stats.snapshot_count, 2);
+    Ok(())
+}
+
+#[test]
+fn stats_app_grouping_falls_back_to_bundle_and_unknown() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let first = db.store_capture(&fake_snapshot(1, "first"))?;
+    let second = db.store_capture(&fake_snapshot(2, "second"))?;
+    let third = db.store_capture(&fake_snapshot(3, "third"))?;
+    set_event_app(
+        &db,
+        first.event_id(),
+        Some("Named App"),
+        Some("com.example.named"),
+    )?;
+    set_event_app(&db, second.event_id(), None, Some("com.example.bundle"))?;
+    set_event_app(&db, third.event_id(), None, None)?;
+
+    let stats = db.stats(&unfiltered())?;
+    let apps: Vec<_> = stats
+        .top_apps
+        .iter()
+        .map(|entry| entry.app.as_str())
+        .collect();
+
+    assert!(apps.contains(&"Named App"));
+    assert!(apps.contains(&"com.example.bundle"));
+    assert!(apps.contains(&"Unknown"));
+    assert_eq!(stats.unique_app_count, 3);
+    Ok(())
+}
+
+#[test]
+fn stats_ordering_ties_are_deterministic() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let first = db.store_capture(&fake_snapshot(1, "alpha"))?;
+    let second = db.store_capture(&fake_snapshot(2, "bravo"))?;
+    set_event_observed_at(&db, first.event_id(), "2026-04-17T10:00:00Z")?;
+    set_event_observed_at(&db, second.event_id(), "2026-04-17T10:00:00Z")?;
+
+    let stats = db.stats(&unfiltered())?;
+
+    assert_eq!(stats.largest_snapshots[0].snapshot_id, first.snapshot_id());
+    assert_eq!(
+        stats.most_captured_snapshots[0].snapshot_id,
+        first.snapshot_id()
+    );
+    assert_eq!(stats.busiest_hours[10].capture_event_count, 2);
+    assert_eq!(
+        stats
+            .busiest_weekdays
+            .iter()
+            .find(|entry| entry.bucket == "Friday")
+            .unwrap()
+            .capture_event_count,
+        2
+    );
     Ok(())
 }
 

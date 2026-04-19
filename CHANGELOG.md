@@ -11,6 +11,12 @@ versioning where practical.
 
 Changes for the next release go here.
 
+### Added
+
+- Added `clipmem stats` with text and JSON output for archive aggregates,
+  app/activity leaderboards, content mix, dedupe ratio, and shared retrieval
+  filters.
+
 ## 0.2.7 - 2026-04-19
 
 ### Added

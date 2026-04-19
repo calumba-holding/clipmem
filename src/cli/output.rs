@@ -5,7 +5,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-use crate::db::SearchResults;
+use crate::db::{SearchResults, StatsReport, StatsSnapshotLeaderboardEntry, StatsTimeBucketEntry};
 use crate::model::{
     DoctorReport, FlattenedTextProjection, SearchHit, SnapshotDetails, TextFragment, TimelineEvent,
 };
@@ -54,6 +54,15 @@ pub(super) struct GetEnvelope {
     pub(super) generated_at: String,
     pub(super) applied_filters: Value,
     pub(super) snapshot: SnapshotDetails,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(super) struct StatsEnvelope {
+    pub(super) schema_version: u32,
+    pub(super) command: &'static str,
+    pub(super) generated_at: String,
+    pub(super) applied_filters: Value,
+    pub(super) stats: StatsReport,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -790,6 +799,103 @@ pub(super) fn render_search_results_text(results: &SearchResults) -> String {
         out.push('\n');
     }
     out.push_str(&render_hits_text(results.hits()));
+    out
+}
+
+pub(super) fn render_stats_text(stats: &StatsReport) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "Overview");
+    let _ = writeln!(out, "  snapshots: {}", stats.snapshot_count);
+    let _ = writeln!(out, "  capture events: {}", stats.capture_event_count);
+    let _ = writeln!(out, "  unique apps: {}", stats.unique_app_count);
+    let _ = writeln!(out, "  total bytes: {}", stats.total_bytes);
+    let _ = writeln!(
+        out,
+        "  average bytes per snapshot: {:.1}",
+        stats.average_bytes_per_snapshot
+    );
+    let _ = writeln!(
+        out,
+        "  average captures per snapshot: {:.2}",
+        stats.average_captures_per_snapshot
+    );
+    let _ = writeln!(out, "  dedupe ratio: {:.1}%", stats.dedupe_ratio * 100.0);
+    let _ = writeln!(
+        out,
+        "  observed: {} to {}",
+        stats
+            .first_observed_at
+            .as_deref()
+            .map(format_utc_timestamp)
+            .unwrap_or("none".to_string()),
+        stats
+            .last_observed_at
+            .as_deref()
+            .map(format_utc_timestamp)
+            .unwrap_or("none".to_string())
+    );
+    let _ = writeln!(
+        out,
+        "  archive span: {}",
+        stats
+            .archive_span_seconds
+            .map(|seconds| format_duration_seconds(seconds.max(0) as u64))
+            .unwrap_or_else(|| "0s".to_string())
+    );
+    push_blank_line(&mut out);
+
+    let _ = writeln!(out, "Content mix");
+    if stats.kind_breakdown.is_empty() {
+        let _ = writeln!(out, "  none");
+    } else {
+        for entry in &stats.kind_breakdown {
+            let _ = writeln!(
+                out,
+                "  {}: {} snapshots, {} bytes",
+                entry.kind, entry.snapshot_count, entry.total_bytes
+            );
+        }
+    }
+    push_blank_line(&mut out);
+
+    let _ = writeln!(out, "Top apps");
+    if stats.top_apps.is_empty() {
+        let _ = writeln!(out, "  none");
+    } else {
+        for app in &stats.top_apps {
+            let _ = writeln!(out, "  {}: {} events", app.app, app.capture_event_count);
+        }
+    }
+    push_blank_line(&mut out);
+
+    let _ = writeln!(out, "Activity patterns");
+    let busiest_hour = peak_bucket(&stats.busiest_hours)
+        .map(|entry| {
+            format!(
+                "{}:00 UTC ({} events)",
+                entry.bucket, entry.capture_event_count
+            )
+        })
+        .unwrap_or_else(|| "none".to_string());
+    let busiest_weekday = peak_bucket(&stats.busiest_weekdays)
+        .map(|entry| format!("{} ({} events)", entry.bucket, entry.capture_event_count))
+        .unwrap_or_else(|| "none".to_string());
+    let _ = writeln!(out, "  Busiest hour: {busiest_hour}");
+    let _ = writeln!(out, "  Busiest weekday: {busiest_weekday}");
+    push_blank_line(&mut out);
+
+    let _ = writeln!(out, "Leaderboards");
+    if let Some(snapshot) = &stats.most_recopied_snapshot {
+        let _ = writeln!(out, "  Most re-copied snapshot:");
+        push_snapshot_leaderboard_entry(&mut out, snapshot, 4);
+    } else {
+        let _ = writeln!(out, "  Most re-copied snapshot: none");
+    }
+    let _ = writeln!(out, "  Largest snapshots:");
+    push_snapshot_leaderboard(&mut out, &stats.largest_snapshots, 4);
+    let _ = writeln!(out, "  Most captured snapshots:");
+    push_snapshot_leaderboard(&mut out, &stats.most_captured_snapshots, 4);
+
     out
 }
 
@@ -1531,6 +1637,75 @@ fn truncate_for_markdown(value: &str, limit: usize) -> String {
 
 fn push_blank_line(out: &mut String) {
     out.push('\n');
+}
+
+fn peak_bucket(buckets: &[StatsTimeBucketEntry]) -> Option<&StatsTimeBucketEntry> {
+    buckets
+        .iter()
+        .max_by_key(|entry| {
+            (
+                entry.capture_event_count,
+                std::cmp::Reverse(entry.bucket.as_str()),
+            )
+        })
+        .filter(|entry| entry.capture_event_count > 0)
+}
+
+fn push_snapshot_leaderboard(
+    out: &mut String,
+    snapshots: &[StatsSnapshotLeaderboardEntry],
+    indent: usize,
+) {
+    if snapshots.is_empty() {
+        let _ = writeln!(out, "{}none", " ".repeat(indent));
+        return;
+    }
+
+    for snapshot in snapshots {
+        push_snapshot_leaderboard_entry(out, snapshot, indent);
+    }
+}
+
+fn push_snapshot_leaderboard_entry(
+    out: &mut String,
+    snapshot: &StatsSnapshotLeaderboardEntry,
+    indent: usize,
+) {
+    let prefix = " ".repeat(indent);
+    let app = snapshot.app_name.as_deref().unwrap_or("Unknown");
+    let preview = if snapshot.preview_text.trim().is_empty() {
+        "(no preview)".to_string()
+    } else {
+        truncate_for_markdown(&snapshot.preview_text.replace('\n', " "), 120)
+    };
+    let _ = writeln!(
+        out,
+        "{prefix}[{}] {} captures, {}, {} bytes, last seen {}, {}",
+        snapshot.snapshot_id,
+        snapshot.capture_count,
+        snapshot.kind,
+        snapshot.total_bytes,
+        format_utc_timestamp(&snapshot.last_observed_at),
+        app
+    );
+    let _ = writeln!(out, "{prefix}  preview: {preview}");
+}
+
+fn format_duration_seconds(seconds: u64) -> String {
+    let days = seconds / 86_400;
+    let hours = (seconds % 86_400) / 3_600;
+    let minutes = (seconds % 3_600) / 60;
+    let remainder = seconds % 60;
+
+    if days > 0 {
+        format!("{days}d {hours}h")
+    } else if hours > 0 {
+        format!("{hours}h {minutes}m")
+    } else if minutes > 0 {
+        format!("{minutes}m {remainder}s")
+    } else {
+        format!("{remainder}s")
+    }
 }
 
 fn format_utc_timestamp(timestamp: &str) -> String {

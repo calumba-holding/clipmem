@@ -23,6 +23,7 @@ scripts and agents.
 | `search` | `text` | `text`, `json`, `jsonl`, `md`, `toon` |
 | `recent` | `text` | `text`, `json`, `jsonl`, `md`, `toon` |
 | `timeline` | `text` | `text`, `json`, `jsonl`, `md`, `toon` |
+| `stats` | `text` | `text`, `json` |
 | `get` | `text` | `text`, `json`, `jsonl`, `md` |
 | `restore` | `text` | `text`, `json` |
 | `forget` | `text` | `text`, `json` |
@@ -35,8 +36,8 @@ scripts and agents.
 | `export` | raw bytes | `json` (write report) |
 
 `--json` is a compatibility alias for `--format json` on `search`,
-`recent`, `timeline`, `get`, `restore`, `forget`, `purge`, `export`,
-`capture-once`, and `doctor`.
+`recent`, `timeline`, `stats`, `get`, `restore`, `forget`, `purge`,
+`export`, `capture-once`, and `doctor`.
 
 ## JSON envelope
 
@@ -74,6 +75,27 @@ envelope:
 - `best_match_score` — float in `[0.0, 1.0]`
 - `quoted_text` — present only when `--quote` is set and usable text
   exists
+
+`stats` returns the same stable envelope shape without pagination
+fields:
+
+```json
+{
+  "schema_version": 1,
+  "command": "stats",
+  "generated_at": "2026-04-17T12:34:56Z",
+  "applied_filters": { "hours": 24, "app": "safari" },
+  "stats": {
+    "snapshot_count": 12,
+    "capture_event_count": 18,
+    "dedupe_ratio": 0.33333333333333337
+  }
+}
+```
+
+The `stats` object includes archive totals, first and last observed
+timestamps, content-kind breakdowns, top apps, full UTC hour and
+weekday distributions, and fixed-length snapshot leaderboards.
 
 ## Flattened text fields
 

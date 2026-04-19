@@ -49,6 +49,7 @@ See [docs/installation.md](docs/installation.md) for Cargo, source builds, upgra
 clipmem setup                              # initialize and start background capture
 clipmem recall "what was that command?"     # best-first answer
 clipmem recent --hours 24                  # recent unique items
+clipmem stats --hours 24                   # archive aggregates
 clipmem doctor                             # check database health
 ```
 

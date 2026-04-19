@@ -24,8 +24,9 @@ use crate::platform::{capture_snapshot, current_change_count, restore_items};
 use super::output::{
     emit_get_output, emit_json_or_text, emit_list_output, emit_recall_output, generated_at_now,
     render_capture_once_text, render_doctor_text, render_hits_text, render_search_results_text,
-    render_snapshot_text, render_timeline_text, GetEnvelope, ListEnvelope, ListRow, RecallEnvelope,
-    RecallMatchConfidence, RecallOutputRow, UnsupportedFormatError, OUTPUT_SCHEMA_VERSION,
+    render_snapshot_text, render_stats_text, render_timeline_text, GetEnvelope, ListEnvelope,
+    ListRow, RecallEnvelope, RecallMatchConfidence, RecallOutputRow, StatsEnvelope,
+    UnsupportedFormatError, OUTPUT_SCHEMA_VERSION,
 };
 use super::service::{render_service_action_text, render_service_status_text, render_setup_text};
 use super::{
@@ -34,7 +35,8 @@ use super::{
     OutputFormat, PurgeArgs, RecallArgs, RecentArgs, RestoreArgs, SearchArgs, ServiceArgs,
     ServiceCommand, ServiceStatusArgs, SettingsApiKeyFilterArgs, SettingsArgs, SettingsCommand,
     SettingsIgnoreArgs, SettingsIgnoreCommand, SettingsIgnoreListArgs, SettingsPauseArgs,
-    SettingsRetentionArgs, SettingsShowArgs, SetupArgs, TimelineArgs, WatchArgs,
+    SettingsRetentionArgs, SettingsShowArgs, SetupArgs, StatsArgs, StatsOutputFormat, TimelineArgs,
+    WatchArgs,
 };
 
 #[derive(Debug, Serialize)]
@@ -218,6 +220,7 @@ pub(super) fn run_command(command: Command, db_path: &Path) -> Result<()> {
         Command::Search(args) => search(db_path, &args),
         Command::Recent(args) => recent(db_path, &args),
         Command::Timeline(args) => timeline(db_path, &args),
+        Command::Stats(args) => stats(db_path, &args),
         Command::Recall(args) => recall(db_path, &args),
         Command::Get(args) => show_snapshot(db_path, &args),
         Command::Export(args) => export_snapshot_bytes(db_path, &args),
@@ -587,6 +590,27 @@ fn timeline(db_path: &Path, args: &TimelineArgs) -> Result<()> {
             .collect(),
     };
     emit_list_output(format, &envelope)
+}
+
+fn stats(db_path: &Path, args: &StatsArgs) -> Result<()> {
+    let format = require_stats_format(args.output.resolved()?)?;
+    let filters = normalize_retrieval_filters(&args.filters)?;
+    let db = open_existing_db(db_path)?;
+    let report = anyhow::Context::context(db.stats(&filters), "stats query failed")?;
+
+    if matches!(format, StatsOutputFormat::Text) {
+        print!("{}", render_stats_text(&report));
+        return Ok(());
+    }
+
+    let envelope = StatsEnvelope {
+        schema_version: OUTPUT_SCHEMA_VERSION,
+        command: "stats",
+        generated_at: generated_at_now()?,
+        applied_filters: serde_json::to_value(&filters)?,
+        stats: report,
+    };
+    emit_json_or_text(true, &envelope, |_| String::new())
 }
 
 fn recall(db_path: &Path, args: &RecallArgs) -> Result<()> {
@@ -993,6 +1017,17 @@ fn require_text_or_json(format: OutputFormat, command_name: &str) -> Result<Outp
         OutputFormat::Text | OutputFormat::Json => Ok(format),
         other => Err(UnsupportedFormatError::new(format!(
             "{command_name} only supports `text` and `json` output, got `{}`",
+            other.as_str()
+        ))
+        .into()),
+    }
+}
+
+fn require_stats_format(format: StatsOutputFormat) -> Result<StatsOutputFormat> {
+    match format {
+        StatsOutputFormat::Text | StatsOutputFormat::Json => Ok(format),
+        other => Err(UnsupportedFormatError::new(format!(
+            "stats only supports `text` and `json` output, got `{}`",
             other.as_str()
         ))
         .into()),
