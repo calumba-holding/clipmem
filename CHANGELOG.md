@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.5 - 2026-04-19
+
+### Added
+
+- Added the native macOS menu bar app release path, including Developer ID signing, notarization, stapling, and Homebrew cask publishing.
+- Added separate Homebrew install surfaces for the CLI-only formula and the CLI plus menu bar app cask.
+- Added launch-at-login support and settings controls for the menu bar app.
+
+### Fixed
+
+- Hardened the menu bar app command construction for hyphen-prefixed recall and search queries.
+- Kept failed forget operations visible in the UI instead of removing rows before the CLI confirms deletion.
+- Disabled plain-text copy actions when no text is available, avoiding accidental clipboard clearing.
+
 ## 0.2.1 - 2026-04-17
 
 ### Changed
