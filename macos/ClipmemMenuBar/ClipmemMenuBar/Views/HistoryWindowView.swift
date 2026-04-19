@@ -73,6 +73,9 @@ struct HistoryWindowView: View {
             storedSelectedID = history.selectedID ?? 0
             Task { await history.loadSelectedDetail() }
         }
+        .onChange(of: appModel.clipboardHistoryRevision) {
+            Task { await history.refreshForExternalHistoryChange() }
+        }
     }
 
     private var sidebar: some View {

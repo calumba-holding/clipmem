@@ -85,6 +85,11 @@ struct MenuBarPanelView: View {
             }
         }
         .padding()
+        .onAppear {
+            Task {
+                await appModel.refreshRecentPreviewIfStale(maxAge: 1)
+            }
+        }
     }
 
     private var serviceSummary: some View {

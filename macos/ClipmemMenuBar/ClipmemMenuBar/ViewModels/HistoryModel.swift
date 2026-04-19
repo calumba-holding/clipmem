@@ -1,6 +1,9 @@
 import Foundation
 import Observation
 
+typealias HistoryPage = (items: [ClipmemItem], nextCursor: String?)
+typealias HistoryPageLoader = @MainActor (QueryMode, String, RetrievalFilterState, String?) async throws -> HistoryPage
+
 @MainActor
 @Observable
 final class HistoryModel {
@@ -16,15 +19,21 @@ final class HistoryModel {
     var error: UserError?
 
     @ObservationIgnored private let appModel: AppModel
+    @ObservationIgnored private let pageLoader: HistoryPageLoader?
     @ObservationIgnored private var loadGeneration = 0
     @ObservationIgnored private var detailGeneration = 0
 
     // Keep backward compatibility
     var errorMessage: String? { error?.message }
 
-    init(mode: QueryMode = UserDefaults.standard.clipmemDefaultMode, appModel: AppModel) {
+    init(
+        mode: QueryMode = UserDefaults.standard.clipmemDefaultMode,
+        appModel: AppModel,
+        pageLoader: HistoryPageLoader? = nil
+    ) {
         self.mode = mode
         self.appModel = appModel
+        self.pageLoader = pageLoader
     }
 
     var selectedItem: ClipmemItem? {
@@ -45,6 +54,46 @@ final class HistoryModel {
     func loadMore() async {
         loadGeneration += 1
         await loadMore(generation: loadGeneration)
+    }
+
+    func refreshForExternalHistoryChange() async {
+        guard mode == .recent || mode == .timeline else { return }
+
+        loadGeneration += 1
+        let generation = loadGeneration
+        let previousSelectedID = selectedID
+        let request = HistoryRequest(
+            generation: generation,
+            mode: mode,
+            query: query,
+            filters: filters,
+            cursor: nil
+        )
+
+        isLoading = true
+        defer {
+            if generation == loadGeneration {
+                isLoading = false
+            }
+        }
+
+        do {
+            let page = try await loadPage(request)
+            guard isCurrent(request) else { return }
+            results = page.items
+            nextCursor = page.nextCursor
+            if let previousSelectedID, results.contains(where: { $0.snapshotId == previousSelectedID }) {
+                selectedID = previousSelectedID
+            } else {
+                selectedID = results.first?.snapshotId
+                selectedDetail = nil
+            }
+            error = nil
+        } catch is CancellationError {
+        } catch {
+            guard isCurrent(request) else { return }
+            self.error = UserError(error)
+        }
     }
 
     private func loadMore(generation: Int) async {
@@ -125,7 +174,10 @@ final class HistoryModel {
         await loadSelectedDetail()
     }
 
-    private func loadPage(_ request: HistoryRequest) async throws -> (items: [ClipmemItem], nextCursor: String?) {
+    private func loadPage(_ request: HistoryRequest) async throws -> HistoryPage {
+        if let pageLoader {
+            return try await pageLoader(request.mode, request.query, request.filters, request.cursor)
+        }
         switch request.mode {
         case .recall:
             let envelope = try await appModel.client.recall(query: request.query.isEmpty ? nil : request.query, limit: 25, filters: request.filters)

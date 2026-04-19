@@ -10,6 +10,7 @@ final class AppModel {
     var doctorReport: DoctorReport?
     var settingsReport: SettingsReport?
     var recentPreview: [ClipmemItem] = []
+    var clipboardHistoryRevision = 0
     var lastError: UserError?
     var actionMessage: String?
     var hotkeyMessage: String?
@@ -22,6 +23,17 @@ final class AppModel {
 
     @ObservationIgnored private let hotKeyManager = HotKeyManager()
     @ObservationIgnored private let updateChecker = UpdateChecker()
+    @ObservationIgnored private let loadRecentPreview: @MainActor () async throws -> [ClipmemItem]
+    @ObservationIgnored private var pasteboardMonitor: PasteboardChangeMonitor?
+    @ObservationIgnored private var recentRefreshCoordinator: RecentPreviewRefreshCoordinator?
+    @ObservationIgnored private var recentPreviewRefreshedAt: Date?
+
+    init(loadRecentPreview: (@MainActor () async throws -> [ClipmemItem])? = nil) {
+        self.loadRecentPreview = loadRecentPreview ?? {
+            let envelope = try await ClipmemClient(configuration: .current).recent(limit: 8, cursor: nil, filters: .defaultValue)
+            return envelope.results
+        }
+    }
 
     // Keep backward compatibility for views that check the string directly
     var lastErrorMessage: String? { lastError?.message }
@@ -52,6 +64,7 @@ final class AppModel {
         configureDefaultLaunchAtLoginIfNeeded()
         await installSelfIgnoreIfNeeded()
         await refreshAll()
+        startPasteboardMonitorIfNeeded()
         await checkForUpdatesIfNeeded()
     }
 
@@ -61,7 +74,7 @@ final class AppModel {
         lastError = nil
         async let statusTask: Void = refreshStatus()
         async let settingsTask: Void = refreshSettings()
-        async let recentTask: Void = refreshRecentPreview()
+        async let recentTask: Bool = refreshRecentPreview()
         _ = await (statusTask, settingsTask, recentTask)
     }
 
@@ -91,13 +104,23 @@ final class AppModel {
         }
     }
 
-    func refreshRecentPreview() async {
+    @discardableResult
+    func refreshRecentPreview() async -> Bool {
         do {
-            let envelope = try await client.recent(limit: 8, cursor: nil, filters: .defaultValue)
-            recentPreview = envelope.results
+            recentPreview = try await loadRecentPreview()
+            recentPreviewRefreshedAt = Date()
+            return true
         } catch {
             recentPreview = []
+            return false
         }
+    }
+
+    func refreshRecentPreviewIfStale(maxAge: TimeInterval) async {
+        if let recentPreviewRefreshedAt, Date().timeIntervalSince(recentPreviewRefreshedAt) < maxAge {
+            return
+        }
+        await recentCoordinator().refreshNow()
     }
 
     func runSetup() async {
@@ -262,5 +285,148 @@ final class AppModel {
         }
         launchAtLoginEnabled = defaults.clipmemLaunchAtLoginEnabled
         launchAtLoginStatus = LoginItemController.status()
+    }
+
+    private func startPasteboardMonitorIfNeeded() {
+        if pasteboardMonitor != nil { return }
+        let monitor = PasteboardChangeMonitor { [weak self] in
+            self?.recentCoordinator().schedule()
+        }
+        pasteboardMonitor = monitor
+        monitor.start()
+    }
+
+    private func recentCoordinator() -> RecentPreviewRefreshCoordinator {
+        if let recentRefreshCoordinator {
+            return recentRefreshCoordinator
+        }
+        let coordinator = RecentPreviewRefreshCoordinator { [weak self] in
+            guard let self else { return false }
+            let refreshed = await self.refreshRecentPreview()
+            if refreshed {
+                self.clipboardHistoryRevision += 1
+            }
+            return refreshed
+        }
+        recentRefreshCoordinator = coordinator
+        return coordinator
+    }
+}
+
+@MainActor
+final class PasteboardChangeMonitor {
+    static let defaultPollInterval: Duration = .milliseconds(250)
+
+    private let pollInterval: Duration
+    private let changeCount: @MainActor () -> Int
+    private let onChange: @MainActor () -> Void
+    private var task: Task<Void, Never>?
+    private var lastChangeCount: Int?
+
+    init(
+        pollInterval: Duration = PasteboardChangeMonitor.defaultPollInterval,
+        changeCount: @escaping @MainActor () -> Int = { NSPasteboard.general.changeCount },
+        onChange: @escaping @MainActor () -> Void
+    ) {
+        self.pollInterval = pollInterval
+        self.changeCount = changeCount
+        self.onChange = onChange
+    }
+
+    deinit {
+        task?.cancel()
+    }
+
+    func start() {
+        guard task == nil else { return }
+        lastChangeCount = changeCount()
+        task = Task { [weak self] in
+            while Task.isCancelled == false {
+                guard let self else { return }
+                try? await Task.sleep(for: self.pollInterval)
+                guard Task.isCancelled == false else { return }
+                self.pollOnce()
+            }
+        }
+    }
+
+    func stop() {
+        task?.cancel()
+        task = nil
+    }
+
+    func pollOnce() {
+        let currentChangeCount = changeCount()
+        guard let lastChangeCount else {
+            self.lastChangeCount = currentChangeCount
+            return
+        }
+        guard currentChangeCount != lastChangeCount else { return }
+        self.lastChangeCount = currentChangeCount
+        onChange()
+    }
+}
+
+@MainActor
+final class RecentPreviewRefreshCoordinator {
+    static let defaultDebounce: Duration = .milliseconds(550)
+
+    private let debounce: Duration
+    private let sleep: @MainActor (Duration) async throws -> Void
+    private let refresh: @MainActor () async -> Bool
+    private var pendingTask: Task<Void, Never>?
+    private var isRefreshing = false
+    private var needsFollowUp = false
+
+    init(
+        debounce: Duration = RecentPreviewRefreshCoordinator.defaultDebounce,
+        sleep: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        refresh: @escaping @MainActor () async -> Bool
+    ) {
+        self.debounce = debounce
+        self.sleep = sleep
+        self.refresh = refresh
+    }
+
+    deinit {
+        pendingTask?.cancel()
+    }
+
+    func schedule() {
+        pendingTask?.cancel()
+        pendingTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await sleep(debounce)
+            } catch {
+                return
+            }
+            guard Task.isCancelled == false else { return }
+            await runRefresh(queueFollowUpIfBusy: true)
+        }
+    }
+
+    func refreshNow() async {
+        pendingTask?.cancel()
+        pendingTask = nil
+        await runRefresh(queueFollowUpIfBusy: false)
+    }
+
+    private func runRefresh(queueFollowUpIfBusy: Bool) async {
+        if isRefreshing {
+            if queueFollowUpIfBusy {
+                needsFollowUp = true
+            }
+            return
+        }
+
+        isRefreshing = true
+        _ = await refresh()
+        isRefreshing = false
+
+        if needsFollowUp {
+            needsFollowUp = false
+            schedule()
+        }
     }
 }
