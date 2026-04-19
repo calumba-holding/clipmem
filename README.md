@@ -17,7 +17,13 @@
   </tr>
 </table>
 
-A searchable, local-only clipboard history for macOS. `clipmem` watches the system clipboard, archives every observed state into a local SQLite database, and exposes retrieval commands that return human-readable text or structured JSON — designed so agents (OpenClaw and others) can recall things you've copied.
+A searchable, local-only clipboard history for macOS. `clipmem` watches the
+system clipboard, archives every observed state into a local SQLite database,
+and exposes retrieval commands that return human-readable text or structured
+JSON — designed so agents (OpenClaw and others) can recall things you've
+copied. It can also run opt-in local OCR for copied images using Apple Vision,
+so screenshots and image-only clips become searchable without sending image data
+off-device.
 
 ## Requirements
 
@@ -50,6 +56,8 @@ clipmem setup                              # initialize and start background cap
 clipmem recall "what was that command?"     # best-first answer
 clipmem recent --hours 24                  # recent unique items
 clipmem stats --hours 24                   # archive aggregates
+clipmem settings ocr on                    # opt in to local image OCR
+clipmem ocr run --limit 25                 # backfill OCR for existing images
 clipmem doctor                             # check database health
 ```
 
@@ -59,7 +67,7 @@ See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough.
 
 - [Installation](docs/installation.md) — all install methods, requirements, and upgrades
 - [Getting started](docs/getting-started.md) — setup, background capture, and first queries
-- [Searching and filtering](docs/searching-and-filtering.md) — recall, search, timeline, filters, and pagination
+- [Searching and filtering](docs/searching-and-filtering.md) — recall, search, timeline, OCR text, filters, and pagination
 - [Output formats](docs/output-formats.md) — JSON envelope, TOON, exit codes, and script-friendly guarantees
 - [Managing your archive](docs/managing-your-archive.md) — restore, delete, export, and capture policy
 - [Command reference](docs/command-reference.md) — exhaustive flag-level reference for every command

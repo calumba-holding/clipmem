@@ -9,7 +9,10 @@ versioning where practical.
 
 ## Unreleased
 
-Changes for the next release go here.
+### Changed
+
+- Updated README and GitHub repository description to mention opt-in local OCR
+  for copied images.
 
 ## 0.2.9 - 2026-04-19
 
