@@ -1,6 +1,6 @@
 # Output formats
 
-clipmem supports five output formats. Every retrieval command defaults
+clipmem supports six output formats. Every retrieval command defaults
 to a human-readable format and can switch to structured output for
 scripts and agents.
 
@@ -14,35 +14,55 @@ scripts and agents.
 - **`md`** — compact markdown. Human-oriented, default for `recall`.
 - **`toon`** — flat, compact skim view with scalar columns only. Use
   for quick scans when you don't need nested fields.
+- **`human`** — polished terminal display with aligned summaries,
+  compact tables, and visual bars. Don't parse this.
 
 ## Format support by command
 
 | Command | Default format | Supported formats |
 |---|---|---|
-| `recall` | `md` | `md`, `json`, `toon` |
-| `search` | `text` | `text`, `json`, `jsonl`, `md`, `toon` |
-| `recent` | `text` | `text`, `json`, `jsonl`, `md`, `toon` |
-| `timeline` | `text` | `text`, `json`, `jsonl`, `md`, `toon` |
-| `stats` | `text` | `text`, `json` |
-| `get` | `text` | `text`, `json`, `jsonl`, `md` |
-| `restore` | `text` | `text`, `json` |
-| `forget` | `text` | `text`, `json` |
-| `purge` | `text` | `text`, `json` |
-| `storage compact` | `text` | `text`, `json` |
-| `storage optimize-images` | `text` | `text`, `json` |
-| `settings show` | `text` | `text`, `json` |
-| `settings ignore list` | `text` | `text`, `json` |
-| `ocr status` | `text` | `text`, `json` |
-| `ocr run` | `text` | `text`, `json` |
-| `service status` | `text` | `text`, `json` (via `--json`) |
-| `capture-once` | — | `json` (via `--json`) |
-| `doctor` | `text` | `text`, `json` (via `--json`) |
-| `export` | raw bytes | `json` (write report) |
+| `recall` | `md` | `md`, `json`, `toon`, `human` |
+| `search` | `text` | `text`, `json`, `jsonl`, `md`, `toon`, `human` |
+| `recent` | `text` | `text`, `json`, `jsonl`, `md`, `toon`, `human` |
+| `timeline` | `text` | `text`, `json`, `jsonl`, `md`, `toon`, `human` |
+| `stats` | `text` | `text`, `json`, `human` |
+| `get` | `text` | `text`, `json`, `jsonl`, `md`, `human` |
+| `restore` | `text` | `text`, `json`, `human` |
+| `forget` | `text` | `text`, `json`, `human` |
+| `purge` | `text` | `text`, `json`, `human` |
+| `storage compact` | `text` | `text`, `json`, `human` |
+| `storage optimize-images` | `text` | `text`, `json`, `human` |
+| `settings show` | `text` | `text`, `json`, `human` |
+| `settings ignore list` | `text` | `text`, `json`, `human` |
+| `ocr status` | `text` | `text`, `json`, `human` |
+| `ocr run` | `text` | `text`, `json`, `human` |
+| `service status` | `text` | `text`, `json` (via `--json`), `human` |
+| `capture-once` | — | `json` (via `--json`), `human` |
+| `doctor` | `text` | `text`, `json` (via `--json`), `human` |
+| `export` | `text` | `text`, `json`, `human` |
 
 `--json` is a compatibility alias for `--format json` on `search`,
 `recent`, `timeline`, `stats`, `get`, `restore`, `forget`, `purge`,
 `storage compact`, `storage optimize-images`, `export`, `ocr status`,
 `ocr run`, `capture-once`, and `doctor`.
+
+`--human` is a compatibility alias for `--format human` where format
+selection is available. For commands that use a JSON-only boolean flag,
+such as `service status`, `capture-once`, and `doctor`, `--human`
+selects the polished terminal view directly. `--human` can't be
+combined with `--json` or a non-`human` `--format` value.
+
+## Human terminal output
+
+`--human` is for interactive terminal reading. It uses aligned key
+metrics, compact tables, separators, and proportional bars for quick
+scanning. When stdout is a terminal, clipmem may add color to IDs,
+scores, and warnings. Captured output, redirected output, and
+environments with `NO_COLOR` set stay uncolored.
+
+Don't parse `--human` output. Use `--format json`, `--format jsonl`,
+or `--format toon` for scripts and agent workflows that need stable
+fields.
 
 ## JSON envelope
 

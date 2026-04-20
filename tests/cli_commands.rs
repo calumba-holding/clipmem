@@ -321,6 +321,23 @@ fn status_code(output: &process::Output) -> i32 {
         .expect("process should exit with an explicit status code")
 }
 
+fn assert_no_ansi(text: &str) {
+    assert!(
+        !text.contains("\u{1b}["),
+        "captured human output should not contain ANSI escape codes:\n{text}"
+    );
+}
+
+fn assert_human_output(text: &str, title: &str) {
+    assert!(text.contains(title), "missing title {title:?}\n{text}");
+    assert!(text.contains('═'), "missing heavy separator\n{text}");
+    assert!(
+        !text.contains("\"schema_version\""),
+        "human output should not contain JSON envelope markers\n{text}"
+    );
+    assert_no_ansi(text);
+}
+
 fn temp_test_dir(test_name: &str) -> PathBuf {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -3175,6 +3192,172 @@ fn recall_toon_output_is_flattened() -> Result<()> {
 
     cleanup_db(&path);
     Ok(())
+}
+
+#[test]
+fn retrieval_commands_support_human_output() -> Result<()> {
+    let path = temp_db_path("retrieval-human");
+    seed_database(
+        &path,
+        &[
+            app_text_snapshot(1, "Terminal", "com.apple.Terminal", "git status --short"),
+            app_text_snapshot(2, "Safari", "com.apple.Safari", "https://example.com/docs"),
+        ],
+    )?;
+
+    let search = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "search",
+        "git status",
+        "--human",
+    ]);
+    let search_stdout = stdout_text(&search);
+    assert!(search.status.success());
+    assert_human_output(&search_stdout, "clipmem Search");
+    assert!(search_stdout.contains("ID"));
+    assert!(search_stdout.contains("git status"));
+    assert!(!search_stdout.contains("-200"));
+
+    let recent = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "recent",
+        "--format",
+        "human",
+    ]);
+    let recent_stdout = stdout_text(&recent);
+    assert!(recent.status.success());
+    assert_human_output(&recent_stdout, "clipmem Recent");
+    assert!(recent_stdout.contains("Terminal") || recent_stdout.contains("Safari"));
+    assert!(recent_stdout.contains("Preview"));
+
+    let timeline = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "timeline",
+        "--limit",
+        "5",
+        "--human",
+        "--format",
+        "human",
+    ]);
+    let timeline_stdout = stdout_text(&timeline);
+    assert!(timeline.status.success());
+    assert_human_output(&timeline_stdout, "clipmem Timeline");
+    assert!(timeline_stdout.contains("Event"));
+    assert!(timeline_stdout.contains("Snapshot"));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn recall_stats_and_get_support_human_output() -> Result<()> {
+    let path = temp_db_path("recall-stats-get-human");
+    let ids = seed_database(
+        &path,
+        &[
+            text_snapshot(1, "cargo test --package clipmem"),
+            app_text_snapshot(2, "Safari", "com.apple.Safari", "release notes draft"),
+        ],
+    )?;
+
+    let recall = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "recall",
+        "cargo test",
+        "--human",
+    ]);
+    let recall_stdout = stdout_text(&recall);
+    assert!(recall.status.success());
+    assert_human_output(&recall_stdout, "clipmem Recall");
+    assert!(recall_stdout.contains("Best Match"));
+    assert!(recall_stdout.contains("cargo test"));
+    assert!(recall_stdout.contains("Provenance"));
+
+    let stats = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "stats",
+        "--human",
+    ]);
+    let stats_stdout = stdout_text(&stats);
+    assert!(stats.status.success());
+    assert_human_output(&stats_stdout, "clipmem Archive Stats");
+    assert!(stats_stdout.contains("Dedupe meter"));
+    assert!(stats_stdout.contains("Content Mix"));
+    assert!(stats_stdout.contains("Top Apps"));
+
+    let get = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "get",
+        &ids[0].to_string(),
+        "--human",
+    ]);
+    let get_stdout = stdout_text(&get);
+    assert!(get.status.success());
+    assert_human_output(&get_stdout, "clipmem Snapshot");
+    assert!(get_stdout.contains("Items"));
+    assert!(get_stdout.contains("cargo test"));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn status_action_and_settings_commands_support_human_output() -> Result<()> {
+    let path = temp_db_path("status-action-settings-human");
+    let _db = Database::open_or_init(&path)?;
+
+    let settings = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "settings",
+        "show",
+        "--human",
+    ]);
+    let settings_stdout = stdout_text(&settings);
+    assert!(settings.status.success());
+    assert_human_output(&settings_stdout, "clipmem Settings");
+    assert!(settings_stdout.contains("API key filter"));
+    assert!(settings_stdout.contains("Retention"));
+
+    let ocr = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "ocr",
+        "status",
+        "--human",
+    ]);
+    let ocr_stdout = stdout_text(&ocr);
+    assert!(ocr.status.success());
+    assert_human_output(&ocr_stdout, "clipmem OCR Status");
+    assert!(ocr_stdout.contains("Pending"));
+    assert!(ocr_stdout.contains("Snapshots w/ OCR"));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn human_flag_rejects_conflicting_output_flags() {
+    let accepted = run_cli(&["search", "git", "--human", "--format", "human"]);
+    assert_ne!(status_code(&accepted), 2);
+
+    let json_conflict = run_cli(&["search", "git", "--human", "--json"]);
+    assert_eq!(status_code(&json_conflict), 2);
+    assert!(stderr_text(&json_conflict).contains("cannot be combined"));
+
+    let format_conflict = run_cli(&["search", "git", "--human", "--format", "json"]);
+    assert_eq!(status_code(&format_conflict), 2);
+    assert!(stderr_text(&format_conflict).contains("`--human` is only compatible"));
+
+    let recall_conflict = run_cli(&["recall", "git", "--human", "--format", "json"]);
+    assert_eq!(status_code(&recall_conflict), 2);
+    assert!(stderr_text(&recall_conflict).contains("`--human` is only compatible"));
 }
 
 #[test]

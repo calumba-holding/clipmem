@@ -79,7 +79,8 @@ Best-first ranked answer with alternatives.
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--format` | `md\|json\|toon` | `md` | Output format |
+| `--format` | `md\|json\|toon\|human` | `md` | Output format |
+| `--human` | flag | — | Alias for `--format human` |
 | `--mode` | `auto\|fts\|literal` | `auto` | Search mode |
 | `--limit` | 1-250 | 5 | Ranked candidates to consider |
 | `--full` | flag | — | Expand best candidate text |
@@ -92,6 +93,7 @@ Best-first ranked answer with alternatives.
 ```bash
 clipmem recall "what was that command I copied?"
 clipmem recall "find the URL" --format json
+clipmem recall "find the URL" --human
 clipmem recall --prefer-recent --hours 24
 clipmem recall "exact text" --quote --full
 ```
@@ -102,8 +104,9 @@ Direct lexical matching over stored text.
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--format` | `text\|json\|jsonl\|md\|toon` | `text` | Output format |
+| `--format` | `text\|json\|jsonl\|md\|toon\|human` | `text` | Output format |
 | `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
 | `--mode` | `auto\|fts\|literal` | `auto` | Search mode |
 | `--limit` | 1-250 | 10 | Page size |
 | `--cursor` | string | — | Resume from prior `next_cursor` |
@@ -112,6 +115,7 @@ Direct lexical matching over stored text.
 ```bash
 clipmem search "git commit -m"
 clipmem search "https://example.com" --format json
+clipmem search "git commit -m" --human
 clipmem search --mode literal "foo:bar"
 clipmem search --mode fts "\"launchctl\" AND bootstrap"
 ```
@@ -122,8 +126,9 @@ Recent unique clipboard states, deduplicated by snapshot.
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--format` | `text\|json\|jsonl\|md\|toon` | `text` | Output format |
+| `--format` | `text\|json\|jsonl\|md\|toon\|human` | `text` | Output format |
 | `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
 | `--limit` | 1-250 | 10 | Page size |
 | `--cursor` | string | — | Resume from prior `next_cursor` |
 | + shared filters | | | |
@@ -131,6 +136,7 @@ Recent unique clipboard states, deduplicated by snapshot.
 ```bash
 clipmem recent
 clipmem recent --hours 24 --app safari
+clipmem recent --human
 clipmem recent --format json --limit 25 --cursor "<next_cursor>"
 ```
 
@@ -140,8 +146,9 @@ Chronological capture events, one row per observation.
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--format` | `text\|json\|jsonl\|md\|toon` | `text` | Output format |
+| `--format` | `text\|json\|jsonl\|md\|toon\|human` | `text` | Output format |
 | `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
 | `--sort` | `asc\|desc` | `desc` | Chronological sort order |
 | `--limit` | 1-250 | 10 | Page size |
 | `--cursor` | string | — | Resume from prior `next_cursor` |
@@ -149,6 +156,7 @@ Chronological capture events, one row per observation.
 
 ```bash
 clipmem timeline --hours 24
+clipmem timeline --hours 24 --human
 clipmem timeline --sort asc --format json
 clipmem timeline --app safari --has-url --limit 25 --format json
 ```
@@ -160,13 +168,15 @@ snapshots.
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--format` | `text\|json` | `text` | Output format |
+| `--format` | `text\|json\|human` | `text` | Output format |
 | `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
 | + shared filters | | | |
 
 ```bash
 clipmem stats
 clipmem stats --hours 24
+clipmem stats --human
 clipmem stats --app safari --format json
 ```
 
@@ -176,14 +186,16 @@ Nested item/representation detail for a single snapshot.
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--format` | `text\|json\|jsonl\|md` | `text` | Output format (no `toon`) |
+| `--format` | `text\|json\|jsonl\|md\|human` | `text` | Output format (no `toon`) |
 | `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
 | `--events` | 1-250 | 10 | Recent capture events to include |
 | + shared filters | | | |
 
 ```bash
 clipmem get 42
 clipmem get 42 --format json
+clipmem get 42 --human
 clipmem get 42 --events 25 --format md
 ```
 
@@ -197,11 +209,13 @@ Restore the full stored snapshot back onto the macOS clipboard.
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--format` | `text\|json` | `text` | Output format |
+| `--format` | `text\|json\|human` | `text` | Output format |
 | `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
 
 ```bash
 clipmem restore 42
+clipmem restore 42 --human
 clipmem restore 42 --format json
 ```
 
@@ -215,14 +229,17 @@ Write one stored representation as raw bytes to a file.
 | `--uti` | string | required | Representation UTI |
 | `--out` | path | required | Destination file path |
 | `--force` | flag | — | Replace existing regular file |
-| `--format` | `text\|json` | `text` | Output format |
+| `--format` | `text\|json\|human` | `text` | Output format |
 | `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
 | + shared filters | | | |
 
 ```bash
 clipmem export 42 --item 0 --uti public.png --out ./clipboard.png
 clipmem export 42 --item 0 --uti public.png --out ./clipboard.png \
   --force
+clipmem export 42 --item 0 --uti public.png --out ./clipboard.png \
+  --human
 clipmem export 42 --item 0 --uti public.png --out ./clipboard.png \
   --format json
 ```
@@ -233,11 +250,13 @@ Irreversibly delete one snapshot and its capture history.
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--format` | `text\|json` | `text` | Output format |
+| `--format` | `text\|json\|human` | `text` | Output format |
 | `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
 
 ```bash
 clipmem forget 42
+clipmem forget 42 --human
 clipmem forget 42 --format json
 ```
 
@@ -249,12 +268,14 @@ Delete snapshots older than a given duration.
 |---|---|---|---|
 | `--older-than` | duration | required | Age threshold (`Nd`, `Nh`, `Nm`) |
 | `--dry-run` | flag | — | Preview without deleting |
-| `--format` | `text\|json` | `text` | Output format |
+| `--format` | `text\|json\|human` | `text` | Output format |
 | `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
 
 ```bash
 clipmem purge --older-than 30d
 clipmem purge --older-than 12h --dry-run
+clipmem purge --older-than 30d --dry-run --human
 clipmem purge --older-than 30d --dry-run --format json
 ```
 
@@ -266,12 +287,14 @@ content.
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--dry-run` | flag | — | Report current size/page/WAL state without running `VACUUM` |
-| `--format` | `text\|json` | `text` | Output format |
+| `--format` | `text\|json\|human` | `text` | Output format |
 | `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
 
 ```bash
 clipmem storage compact
 clipmem storage compact --dry-run
+clipmem storage compact --human
 clipmem storage compact --format json
 ```
 
@@ -293,11 +316,13 @@ metadata.
 | `--dry-run` | flag | — | Estimate work and savings without changing rows |
 | `--no-compact` | flag | — | Skip the automatic SQLite compaction step |
 | `--limit` | 1-250 | 25 | Maximum unprocessed image rows to scan |
-| `--format` | `text\|json` | `text` | Output format |
+| `--format` | `text\|json\|human` | `text` | Output format |
 | `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
 
 ```bash
 clipmem storage optimize-images
+clipmem storage optimize-images --human
 clipmem storage optimize-images --dry-run --format json
 clipmem storage optimize-images --no-compact --limit 50 --format json
 clipmem storage optimize-images --limit 50 --format json
@@ -340,9 +365,11 @@ Report provider state, freshness, and service wiring.
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--json` | flag | — | Emit status as JSON |
+| `--human` | flag | — | Emit polished terminal output |
 
 ```bash
 clipmem service status
+clipmem service status --human
 clipmem service status --json
 ```
 
@@ -375,9 +402,11 @@ Capture the current clipboard state once.
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--json` | flag | — | Emit captured snapshot as JSON |
+| `--human` | flag | — | Emit polished terminal output |
 
 ```bash
 clipmem capture-once
+clipmem capture-once --human
 clipmem capture-once --json
 ```
 
@@ -387,11 +416,13 @@ Show OCR queue counts and how many snapshots have ready OCR text.
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--format` | `text\|json` | `text` | Output format |
+| `--format` | `text\|json\|human` | `text` | Output format |
 | `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
 
 ```bash
 clipmem ocr status
+clipmem ocr status --human
 clipmem ocr status --format json
 ```
 
@@ -405,12 +436,14 @@ backfill path for images copied before OCR was enabled.
 | `--limit` | 1-250 | 25 | Maximum image hashes to process |
 | `--snapshot` | integer | — | Restrict processing to one snapshot ID |
 | `--retry-failed` | flag | — | Requeue failed OCR hashes before running |
-| `--format` | `text\|json` | `text` | Output format |
+| `--format` | `text\|json\|human` | `text` | Output format |
 | `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
 
 ```bash
 clipmem ocr run
 clipmem ocr run --limit 50
+clipmem ocr run --human
 clipmem ocr run --snapshot 42 --retry-failed --format json
 ```
 
@@ -424,8 +457,9 @@ Show the current capture policy.
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--format` | `text\|json` | `text` | Output format |
+| `--format` | `text\|json\|human` | `text` | Output format |
 | `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
 
 ### `clipmem settings pause <on|off>`
 
@@ -460,8 +494,9 @@ List ignored bundle IDs.
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--format` | `text\|json` | `text` | Output format |
+| `--format` | `text\|json\|human` | `text` | Output format |
 | `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
 
 ---
 
@@ -474,9 +509,11 @@ Print SQLite and FTS5 diagnostics.
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--json` | flag | — | Emit diagnostics as JSON |
+| `--human` | flag | — | Emit polished terminal output |
 
 ```bash
 clipmem doctor
+clipmem doctor --human
 clipmem doctor --json
 ```
 

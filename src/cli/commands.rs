@@ -23,6 +23,13 @@ use crate::model::{
 };
 use crate::platform::{capture_snapshot, current_change_count, restore_items};
 
+use super::human::{
+    render_capture_once_human, render_doctor_human, render_export_human, render_forget_human,
+    render_image_optimization_human, render_ocr_run_human, render_ocr_status_human,
+    render_purge_human, render_restore_human, render_service_status_human,
+    render_settings_ignore_list_human, render_settings_view_human, render_stats_human,
+    render_storage_compact_human,
+};
 use super::output::{
     emit_get_output, emit_json_or_text, emit_list_output, emit_recall_output, generated_at_now,
     render_capture_once_text, render_doctor_text, render_hits_text, render_search_results_text,
@@ -68,36 +75,36 @@ pub(super) enum CaptureOnceOutput {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct RestoreOutput {
-    snapshot_id: i64,
-    item_count: usize,
-    representation_count: usize,
-    total_bytes: usize,
+pub(super) struct RestoreOutput {
+    pub(super) snapshot_id: i64,
+    pub(super) item_count: usize,
+    pub(super) representation_count: usize,
+    pub(super) total_bytes: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct ExportOutput {
-    snapshot_id: i64,
-    item_index: usize,
-    uti: String,
-    byte_count: usize,
-    raw_sha256: String,
-    out: String,
+pub(super) struct ExportOutput {
+    pub(super) snapshot_id: i64,
+    pub(super) item_index: usize,
+    pub(super) uti: String,
+    pub(super) byte_count: usize,
+    pub(super) raw_sha256: String,
+    pub(super) out: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct SettingsView {
-    paused: bool,
-    api_key_filter_enabled: bool,
-    ocr_enabled: bool,
-    retention_seconds: Option<u64>,
-    retention: String,
-    ignored_bundle_ids: Vec<String>,
+pub(super) struct SettingsView {
+    pub(super) paused: bool,
+    pub(super) api_key_filter_enabled: bool,
+    pub(super) ocr_enabled: bool,
+    pub(super) retention_seconds: Option<u64>,
+    pub(super) retention: String,
+    pub(super) ignored_bundle_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct SettingsIgnoreListOutput {
-    ignored_bundle_ids: Vec<String>,
+pub(super) struct SettingsIgnoreListOutput {
+    pub(super) ignored_bundle_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -269,7 +276,9 @@ fn service(db_path: &Path, args: &ServiceArgs) -> Result<()> {
 
 fn service_status(db_path: &Path, args: &ServiceStatusArgs) -> Result<()> {
     let report = super::service::status_report(db_path)?;
-    if args.json {
+    if args.human {
+        print!("{}", render_service_status_human(&report));
+    } else if args.json {
         emit_json_or_text(true, &report, render_service_status_text)?;
     } else {
         print!("{}", render_service_status_text(&report));
@@ -451,7 +460,11 @@ fn capture_once(db_path: &Path, args: &CaptureOnceArgs) -> Result<()> {
             })
         }
     };
-    emit_json_or_text(args.json, &payload, render_capture_once_text)?;
+    if args.human {
+        print!("{}", render_capture_once_human(&payload));
+    } else {
+        emit_json_or_text(args.json, &payload, render_capture_once_text)?;
+    }
 
     Ok(())
 }
@@ -658,11 +671,16 @@ fn stats(db_path: &Path, args: &StatsArgs) -> Result<()> {
         applied_filters: serde_json::to_value(&filters)?,
         stats: report,
     };
-    emit_json_or_text(true, &envelope, |_| String::new())
+    if matches!(format, StatsOutputFormat::Human) {
+        print!("{}", render_stats_human(&envelope));
+        Ok(())
+    } else {
+        emit_json_or_text(true, &envelope, |_| String::new())
+    }
 }
 
 fn recall(db_path: &Path, args: &RecallArgs) -> Result<()> {
-    let format = args.output.resolved();
+    let format = args.output.resolved()?;
     let filters = normalize_retrieval_filters(&args.filters)?;
     let db = open_existing_db(db_path)?;
     let recall = anyhow::Context::context(
@@ -805,11 +823,12 @@ fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -> Result<()> {
         raw_sha256: representation.raw_sha256().to_string(),
         out: args.out.display().to_string(),
     };
-    emit_json_or_text(
-        matches!(format, OutputFormat::Json),
-        &output,
-        render_export_text,
-    )?;
+    match format {
+        OutputFormat::Json => emit_json_or_text(true, &output, render_export_text)?,
+        OutputFormat::Human => print!("{}", render_export_human(&output)),
+        OutputFormat::Text => print!("{}", render_export_text(&output)),
+        _ => unreachable!("unsupported export format should be rejected earlier"),
+    }
 
     Ok(())
 }
@@ -828,11 +847,12 @@ fn restore_snapshot(db_path: &Path, args: &RestoreArgs) -> Result<()> {
         representation_count: report.representation_count(),
         total_bytes: report.total_bytes(),
     };
-    emit_json_or_text(
-        matches!(format, OutputFormat::Json),
-        &output,
-        render_restore_text,
-    )?;
+    match format {
+        OutputFormat::Json => emit_json_or_text(true, &output, render_restore_text)?,
+        OutputFormat::Human => print!("{}", render_restore_human(&output)),
+        OutputFormat::Text => print!("{}", render_restore_text(&output)),
+        _ => unreachable!("unsupported restore format should be rejected earlier"),
+    }
 
     Ok(())
 }
@@ -844,11 +864,12 @@ fn forget_snapshot(db_path: &Path, args: &ForgetArgs) -> Result<()> {
         format!("forget failed for snapshot {}", args.snapshot_id)
     })?
     .ok_or_else(|| anyhow!("snapshot {} was not found", args.snapshot_id))?;
-    emit_json_or_text(
-        matches!(format, OutputFormat::Json),
-        &report,
-        render_forget_text,
-    )?;
+    match format {
+        OutputFormat::Json => emit_json_or_text(true, &report, render_forget_text)?,
+        OutputFormat::Human => print!("{}", render_forget_human(&report)),
+        OutputFormat::Text => print!("{}", render_forget_text(&report)),
+        _ => unreachable!("unsupported forget format should be rejected earlier"),
+    }
 
     Ok(())
 }
@@ -860,11 +881,12 @@ fn purge_snapshots(db_path: &Path, args: &PurgeArgs) -> Result<()> {
         db.purge_snapshots_older_than(args.older_than.seconds(), args.dry_run),
         || format!("purge failed for duration {}", args.older_than.raw()),
     )?;
-    emit_json_or_text(
-        matches!(format, OutputFormat::Json),
-        &report,
-        render_purge_text,
-    )?;
+    match format {
+        OutputFormat::Json => emit_json_or_text(true, &report, render_purge_text)?,
+        OutputFormat::Human => print!("{}", render_purge_human(&report)),
+        OutputFormat::Text => print!("{}", render_purge_text(&report)),
+        _ => unreachable!("unsupported purge format should be rejected earlier"),
+    }
 
     Ok(())
 }
@@ -880,11 +902,12 @@ fn storage_compact(db_path: &Path, args: &StorageCompactArgs) -> Result<()> {
     let format = require_text_or_json(args.output.resolved()?, "storage compact")?;
     let mut db = open_existing_db(db_path)?;
     let report = db.compact_storage(args.dry_run)?;
-    emit_json_or_text(
-        matches!(format, OutputFormat::Json),
-        &report,
-        render_storage_compact_text,
-    )?;
+    match format {
+        OutputFormat::Json => emit_json_or_text(true, &report, render_storage_compact_text)?,
+        OutputFormat::Human => print!("{}", render_storage_compact_human(&report)),
+        OutputFormat::Text => print!("{}", render_storage_compact_text(&report)),
+        _ => unreachable!("unsupported storage compact format should be rejected earlier"),
+    }
     Ok(())
 }
 
@@ -892,11 +915,12 @@ fn storage_optimize_images(db_path: &Path, args: &StorageOptimizeImagesArgs) -> 
     let format = require_text_or_json(args.output.resolved()?, "storage optimize-images")?;
     let mut db = open_existing_db(db_path)?;
     let report = db.optimize_images(args.dry_run, args.limit, !args.no_compact)?;
-    emit_json_or_text(
-        matches!(format, OutputFormat::Json),
-        &report,
-        render_image_optimization_text,
-    )?;
+    match format {
+        OutputFormat::Json => emit_json_or_text(true, &report, render_image_optimization_text)?,
+        OutputFormat::Human => print!("{}", render_image_optimization_human(&report)),
+        OutputFormat::Text => print!("{}", render_image_optimization_text(&report)),
+        _ => unreachable!("unsupported storage optimize-images format should be rejected earlier"),
+    }
     Ok(())
 }
 
@@ -922,11 +946,12 @@ fn ocr_status(db_path: &Path, args: &OcrStatusArgs) -> Result<()> {
     let format = require_text_or_json(args.output.resolved()?, "ocr status")?;
     let db = open_or_init_db(db_path)?;
     let report = db.ocr_status_report()?;
-    emit_json_or_text(
-        matches!(format, OutputFormat::Json),
-        &report,
-        render_ocr_status_text,
-    )?;
+    match format {
+        OutputFormat::Json => emit_json_or_text(true, &report, render_ocr_status_text)?,
+        OutputFormat::Human => print!("{}", render_ocr_status_human(&report)),
+        OutputFormat::Text => print!("{}", render_ocr_status_text(&report)),
+        _ => unreachable!("unsupported ocr status format should be rejected earlier"),
+    }
     Ok(())
 }
 
@@ -941,11 +966,12 @@ fn ocr_run(db_path: &Path, args: &OcrRunArgs) -> Result<()> {
         args.snapshot,
         args.retry_failed,
     )?;
-    emit_json_or_text(
-        matches!(format, OutputFormat::Json),
-        &report,
-        render_ocr_run_text,
-    )?;
+    match format {
+        OutputFormat::Json => emit_json_or_text(true, &report, render_ocr_run_text)?,
+        OutputFormat::Human => print!("{}", render_ocr_run_human(&report)),
+        OutputFormat::Text => print!("{}", render_ocr_run_text(&report)),
+        _ => unreachable!("unsupported ocr run format should be rejected earlier"),
+    }
     Ok(())
 }
 
@@ -953,11 +979,12 @@ fn settings_show(db_path: &Path, args: &SettingsShowArgs) -> Result<()> {
     let format = require_text_or_json(args.output.resolved()?, "settings show")?;
     let db = open_or_init_db(db_path)?;
     let view = settings_view(db.capture_policy()?);
-    emit_json_or_text(
-        matches!(format, OutputFormat::Json),
-        &view,
-        render_settings_view_text,
-    )?;
+    match format {
+        OutputFormat::Json => emit_json_or_text(true, &view, render_settings_view_text)?,
+        OutputFormat::Human => print!("{}", render_settings_view_human(&view)),
+        OutputFormat::Text => print!("{}", render_settings_view_text(&view)),
+        _ => unreachable!("unsupported settings show format should be rejected earlier"),
+    }
     Ok(())
 }
 
@@ -1027,11 +1054,12 @@ fn settings_ignore_list(db_path: &Path, args: &SettingsIgnoreListArgs) -> Result
     let output = SettingsIgnoreListOutput {
         ignored_bundle_ids: db.list_ignored_bundle_ids()?,
     };
-    emit_json_or_text(
-        matches!(format, OutputFormat::Json),
-        &output,
-        render_settings_ignore_list_text,
-    )?;
+    match format {
+        OutputFormat::Json => emit_json_or_text(true, &output, render_settings_ignore_list_text)?,
+        OutputFormat::Human => print!("{}", render_settings_ignore_list_human(&output)),
+        OutputFormat::Text => print!("{}", render_settings_ignore_list_text(&output)),
+        _ => unreachable!("unsupported settings ignore list format should be rejected earlier"),
+    }
     Ok(())
 }
 
@@ -1133,16 +1161,20 @@ fn openclaw_doctor(args: &OpenClawDoctorArgs) -> Result<()> {
 fn doctor(db_path: &Path, args: &DoctorArgs) -> Result<()> {
     let db = open_existing_db(db_path)?;
     let report = anyhow::Context::context(db.doctor(), "doctor diagnostics failed")?;
-    emit_json_or_text(args.json, &report, render_doctor_text)?;
+    if args.human {
+        print!("{}", render_doctor_human(&report));
+    } else {
+        emit_json_or_text(args.json, &report, render_doctor_text)?;
+    }
 
     Ok(())
 }
 
 fn require_text_or_json(format: OutputFormat, command_name: &str) -> Result<OutputFormat> {
     match format {
-        OutputFormat::Text | OutputFormat::Json => Ok(format),
+        OutputFormat::Text | OutputFormat::Json | OutputFormat::Human => Ok(format),
         other => Err(UnsupportedFormatError::new(format!(
-            "{command_name} only supports `text` and `json` output, got `{}`",
+            "{command_name} only supports `text`, `json`, and `human` output, got `{}`",
             other.as_str()
         ))
         .into()),
@@ -1151,9 +1183,9 @@ fn require_text_or_json(format: OutputFormat, command_name: &str) -> Result<Outp
 
 fn require_stats_format(format: StatsOutputFormat) -> Result<StatsOutputFormat> {
     match format {
-        StatsOutputFormat::Text | StatsOutputFormat::Json => Ok(format),
+        StatsOutputFormat::Text | StatsOutputFormat::Json | StatsOutputFormat::Human => Ok(format),
         other => Err(UnsupportedFormatError::new(format!(
-            "stats only supports `text` and `json` output, got `{}`",
+            "stats only supports `text`, `json`, and `human` output, got `{}`",
             other.as_str()
         ))
         .into()),
@@ -2574,6 +2606,7 @@ mod tests {
                 output: crate::cli::OutputArgs {
                     format: None,
                     json: false,
+                    human: false,
                 },
             },
             &unfiltered(),

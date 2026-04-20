@@ -11,6 +11,7 @@ use crate::model::{
 };
 
 use super::commands::CaptureOnceOutput;
+use super::human::{render_get_human, render_list_human, render_recall_human};
 use super::OutputFormat;
 
 pub(super) const OUTPUT_SCHEMA_VERSION: u32 = 2;
@@ -649,6 +650,10 @@ pub(super) fn emit_list_output(format: OutputFormat, envelope: &ListEnvelope) ->
             print!("{}", render_list_toon(envelope));
             Ok(())
         }
+        OutputFormat::Human => {
+            print!("{}", render_list_human(envelope));
+            Ok(())
+        }
     }
 }
 
@@ -668,6 +673,10 @@ pub(super) fn emit_get_output(format: OutputFormat, envelope: &GetEnvelope) -> R
             "format toon is only supported for flattened list outputs; `clipmem get` returns nested snapshot detail",
         )
         .into()),
+        OutputFormat::Human => {
+            print!("{}", render_get_human(envelope));
+            Ok(())
+        }
     }
 }
 
@@ -683,6 +692,10 @@ pub(super) fn emit_recall_output(
         }
         super::RecallOutputFormat::Toon => {
             print!("{}", render_recall_toon(envelope));
+            Ok(())
+        }
+        super::RecallOutputFormat::Human => {
+            print!("{}", render_recall_human(envelope));
             Ok(())
         }
     }

@@ -9,6 +9,7 @@ use crate::db::{RetrievalFilters, RetrievalKind, SearchMode, TimelineSort};
 
 mod commands;
 mod db_path;
+mod human;
 mod output;
 mod service;
 
@@ -42,11 +43,13 @@ Notes:
 const CAPTURE_ONCE_AFTER_HELP: &str = "\
 Examples:
   clipmem capture-once
+  clipmem capture-once --human
   clipmem capture-once --json";
 
 const SEARCH_AFTER_HELP: &str = "\
 Examples:
   clipmem search \"git commit -m\"
+  clipmem search \"git commit -m\" --human
   clipmem search \"https://example.com/repo\" --format json
   clipmem search \"launchctl bootstrap\" --limit 25 --cursor \"<next_cursor>\" --format json
   clipmem search --mode literal \"foo:bar\"
@@ -59,6 +62,7 @@ Notes:
 const RECENT_AFTER_HELP: &str = "\
 Examples:
   clipmem recent
+  clipmem recent --human
   clipmem recent --hours 24 --app safari
   clipmem recent --format json --limit 25 --cursor \"<next_cursor>\"
 
@@ -70,6 +74,7 @@ Notes:
 const TIMELINE_AFTER_HELP: &str = "\
 Examples:
   clipmem timeline --hours 24
+  clipmem timeline --hours 24 --human
   clipmem timeline --since 2026-04-16T09:00:00Z --until 2026-04-16T18:00:00Z --sort asc --format json
   clipmem timeline --app safari --has-url --limit 25 --cursor \"<next_cursor>\" --format json
 
@@ -82,16 +87,18 @@ const STATS_AFTER_HELP: &str = "\
 Examples:
   clipmem stats
   clipmem stats --hours 24
+  clipmem stats --human
   clipmem stats --app safari --format json
 
 Notes:
   - `stats` reports aggregate archive metrics and leaderboards for the active filters.
   - Supports shared retrieval filters, including time, app, bundle id, kind, shape, and byte filters.
-  - Output formats are intentionally limited to `text` and `json`.";
+  - Output formats are intentionally limited to `text`, `json`, and `human`.";
 
 const RECALL_AFTER_HELP: &str = "\
 Examples:
   clipmem recall \"what was that command I copied?\"
+  clipmem recall \"what was that command I copied?\" --human
   clipmem recall \"find the URL I copied yesterday\" --format json
   clipmem recall --prefer-recent --hours 24
   clipmem recall \"give me the exact text\" --quote --full
@@ -104,6 +111,7 @@ Notes:
 const GET_AFTER_HELP: &str = "\
 Examples:
   clipmem get 42
+  clipmem get 42 --human
   clipmem get 42 --format json
   clipmem get 42 --events 25 --format md
 
@@ -194,6 +202,7 @@ Notes:
 const DOCTOR_AFTER_HELP: &str = "\
 Examples:
   clipmem doctor
+  clipmem doctor --human
   clipmem doctor --json
 
 Notes:
@@ -224,10 +233,12 @@ Notes:
 const SERVICE_STATUS_AFTER_HELP: &str = "\
 Examples:
   clipmem service status
+  clipmem service status --human
   clipmem service status --json
 
 Notes:
   - Text output is intended for humans.
+  - Human output is polished for interactive terminals.
   - `--json` is the stable machine-readable form used by packaged skill health checks.";
 
 const OPENCLAW_INSTALL_AFTER_HELP: &str = "\
@@ -326,6 +337,7 @@ pub(super) enum OutputFormat {
     Jsonl,
     Md,
     Toon,
+    Human,
 }
 
 impl OutputFormat {
@@ -337,6 +349,7 @@ impl OutputFormat {
             Self::Jsonl => "jsonl",
             Self::Md => "md",
             Self::Toon => "toon",
+            Self::Human => "human",
         }
     }
 }
@@ -346,6 +359,19 @@ pub(super) enum RecallOutputFormat {
     Md,
     Json,
     Toon,
+    Human,
+}
+
+impl RecallOutputFormat {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Md => "md",
+            Self::Json => "json",
+            Self::Toon => "toon",
+            Self::Human => "human",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -355,6 +381,7 @@ pub(super) enum StatsOutputFormat {
     Jsonl,
     Md,
     Toon,
+    Human,
 }
 
 impl StatsOutputFormat {
@@ -366,6 +393,7 @@ impl StatsOutputFormat {
             Self::Jsonl => "jsonl",
             Self::Md => "md",
             Self::Toon => "toon",
+            Self::Human => "human",
         }
     }
 }
@@ -390,25 +418,71 @@ pub(super) enum PauseState {
 
 #[derive(Debug, Clone, Args)]
 pub(super) struct OutputArgs {
-    /// Output format: `text` for terminal use, `json` for stable parsing, `jsonl` for pipelines, `md` for compact review, and `toon` for flat list output only (default: text).
+    /// Output format: `text` for terminal use, `json` for stable parsing, `jsonl` for pipelines, `md` for compact review, `toon` for flat list output only, and `human` for polished terminal display (default: text).
     #[arg(long, value_enum)]
     format: Option<OutputFormat>,
 
     /// Compatibility alias for `--format json`.
     #[arg(long, default_value_t = false)]
     json: bool,
+
+    /// Compatibility alias for `--format human`.
+    #[arg(long, default_value_t = false)]
+    human: bool,
 }
 
 impl OutputArgs {
     pub(super) fn resolved(&self) -> std::result::Result<OutputFormat, clap::Error> {
-        match (self.json, self.format) {
-            (false, Some(format)) => Ok(format),
-            (false, None) => Ok(OutputFormat::Text),
-            (true, None) | (true, Some(OutputFormat::Json)) => Ok(OutputFormat::Json),
-            (true, Some(format)) => Err(Cli::command().error(
+        match (self.json, self.human, self.format) {
+            (false, false, Some(format)) => Ok(format),
+            (false, false, None) => Ok(OutputFormat::Text),
+            (true, false, None) | (true, false, Some(OutputFormat::Json)) => Ok(OutputFormat::Json),
+            (false, true, None) | (false, true, Some(OutputFormat::Human)) => {
+                Ok(OutputFormat::Human)
+            }
+            (true, false, Some(format)) => Err(Cli::command().error(
                 ErrorKind::ArgumentConflict,
                 format!(
                     "`--json` is only compatible with `--format json`, got `--format {}`",
+                    format.as_str()
+                ),
+            )),
+            (false, true, Some(format)) => Err(Cli::command().error(
+                ErrorKind::ArgumentConflict,
+                format!(
+                    "`--human` is only compatible with `--format human`, got `--format {}`",
+                    format.as_str()
+                ),
+            )),
+            (true, true, _) => Err(Cli::command().error(
+                ErrorKind::ArgumentConflict,
+                "`--human` cannot be combined with `--json`",
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+pub(super) struct RecallOutputArgs {
+    /// Output format: `md` for direct agent use, `json` for structured parsing, `toon` for flattened tabular recall output, or `human` for polished terminal display (default: md).
+    #[arg(long, value_enum)]
+    format: Option<RecallOutputFormat>,
+
+    /// Compatibility alias for `--format human`.
+    #[arg(long, default_value_t = false)]
+    human: bool,
+}
+
+impl RecallOutputArgs {
+    pub(super) fn resolved(&self) -> std::result::Result<RecallOutputFormat, clap::Error> {
+        match (self.human, self.format) {
+            (false, Some(format)) => Ok(format),
+            (false, None) => Ok(RecallOutputFormat::Md),
+            (true, None) | (true, Some(RecallOutputFormat::Human)) => Ok(RecallOutputFormat::Human),
+            (true, Some(format)) => Err(Cli::command().error(
+                ErrorKind::ArgumentConflict,
+                format!(
+                    "`--human` is only compatible with `--format human`, got `--format {}`",
                     format.as_str()
                 ),
             )),
@@ -417,42 +491,48 @@ impl OutputArgs {
 }
 
 #[derive(Debug, Clone, Args)]
-pub(super) struct RecallOutputArgs {
-    /// Output format: `md` for direct agent use, `json` for structured parsing, or `toon` for flattened tabular recall output (default: md).
-    #[arg(long, value_enum)]
-    format: Option<RecallOutputFormat>,
-}
-
-impl RecallOutputArgs {
-    #[must_use]
-    pub(super) fn resolved(&self) -> RecallOutputFormat {
-        self.format.unwrap_or(RecallOutputFormat::Md)
-    }
-}
-
-#[derive(Debug, Clone, Args)]
 pub(super) struct StatsOutputArgs {
-    /// Output format: `text` for terminal use or `json` for stable parsing (default: text).
+    /// Output format: `text` for terminal use, `json` for stable parsing, or `human` for polished terminal display (default: text).
     #[arg(long, value_enum)]
     format: Option<StatsOutputFormat>,
 
     /// Compatibility alias for `--format json`.
     #[arg(long, default_value_t = false)]
     json: bool,
+
+    /// Compatibility alias for `--format human`.
+    #[arg(long, default_value_t = false)]
+    human: bool,
 }
 
 impl StatsOutputArgs {
     pub(super) fn resolved(&self) -> std::result::Result<StatsOutputFormat, clap::Error> {
-        match (self.json, self.format) {
-            (false, Some(format)) => Ok(format),
-            (false, None) => Ok(StatsOutputFormat::Text),
-            (true, None) | (true, Some(StatsOutputFormat::Json)) => Ok(StatsOutputFormat::Json),
-            (true, Some(format)) => Err(Cli::command().error(
+        match (self.json, self.human, self.format) {
+            (false, false, Some(format)) => Ok(format),
+            (false, false, None) => Ok(StatsOutputFormat::Text),
+            (true, false, None) | (true, false, Some(StatsOutputFormat::Json)) => {
+                Ok(StatsOutputFormat::Json)
+            }
+            (false, true, None) | (false, true, Some(StatsOutputFormat::Human)) => {
+                Ok(StatsOutputFormat::Human)
+            }
+            (true, false, Some(format)) => Err(Cli::command().error(
                 ErrorKind::ArgumentConflict,
                 format!(
                     "`--json` is only compatible with `--format json`, got `--format {}`",
                     format.as_str()
                 ),
+            )),
+            (false, true, Some(format)) => Err(Cli::command().error(
+                ErrorKind::ArgumentConflict,
+                format!(
+                    "`--human` is only compatible with `--format human`, got `--format {}`",
+                    format.as_str()
+                ),
+            )),
+            (true, true, _) => Err(Cli::command().error(
+                ErrorKind::ArgumentConflict,
+                "`--human` cannot be combined with `--json`",
             )),
         }
     }
@@ -594,6 +674,10 @@ struct ServiceStatusArgs {
     /// Emit service status as JSON.
     #[arg(long, default_value_t = false)]
     json: bool,
+
+    /// Emit service status as polished terminal output.
+    #[arg(long, default_value_t = false)]
+    human: bool,
 }
 
 #[derive(Debug, Args)]
@@ -602,6 +686,10 @@ struct CaptureOnceArgs {
     /// Emit the captured snapshot as JSON.
     #[arg(long, default_value_t = false)]
     json: bool,
+
+    /// Emit the captured snapshot as polished terminal output.
+    #[arg(long, default_value_t = false)]
+    human: bool,
 }
 
 #[derive(Debug, Args)]
@@ -1161,6 +1249,10 @@ struct DoctorArgs {
     /// Emit diagnostics as JSON.
     #[arg(long, default_value_t = false)]
     json: bool,
+
+    /// Emit diagnostics as polished terminal output.
+    #[arg(long, default_value_t = false)]
+    human: bool,
 }
 
 #[derive(Debug, Args)]
@@ -1295,7 +1387,11 @@ fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
     match &cli.command {
         Command::Agents(_args) => {}
         Command::Setup(_) => {}
-        Command::Service(_) => {}
+        Command::Service(args) => {
+            if let ServiceCommand::Status(args) = &args.command {
+                validate_json_human_flags(args.json, args.human)?;
+            }
+        }
         Command::Search(args) => {
             args.output.resolved()?;
             args.filters.normalized()?;
@@ -1321,6 +1417,7 @@ fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
             }
         },
         Command::Recall(args) => {
+            args.output.resolved()?;
             args.filters.normalized()?;
         }
         Command::Get(args) => {
@@ -1362,10 +1459,27 @@ fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
                 }
             },
         },
-        Command::Watch(_) | Command::CaptureOnce(_) | Command::Doctor(_) => {}
+        Command::Watch(_) => {}
+        Command::CaptureOnce(args) => {
+            validate_json_human_flags(args.json, args.human)?;
+        }
+        Command::Doctor(args) => {
+            validate_json_human_flags(args.json, args.human)?;
+        }
     }
 
     Ok(())
+}
+
+fn validate_json_human_flags(json: bool, human: bool) -> std::result::Result<(), clap::Error> {
+    if json && human {
+        Err(Cli::command().error(
+            ErrorKind::ArgumentConflict,
+            "`--human` cannot be combined with `--json`",
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 fn validate_time_window(
@@ -1723,7 +1837,7 @@ mod tests {
         match cli.command {
             Command::Recall(args) => {
                 assert_eq!(args.query.as_deref(), Some("git status"));
-                assert_eq!(args.output.resolved(), RecallOutputFormat::Json);
+                assert_eq!(args.output.resolved().unwrap(), RecallOutputFormat::Json);
                 assert_eq!(args.limit, 4);
                 assert_eq!(args.filters.hours, Some(24));
                 assert!(args.full);
@@ -1742,7 +1856,7 @@ mod tests {
 
         match cli.command {
             Command::Recall(args) => {
-                assert_eq!(args.output.resolved(), RecallOutputFormat::Md);
+                assert_eq!(args.output.resolved().unwrap(), RecallOutputFormat::Md);
             }
             other => panic!("expected recall command, got {other:?}"),
         }

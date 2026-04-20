@@ -13,6 +13,9 @@ Changes for the next release go here.
 
 ### Added
 
+- Added `--human` CLI output for polished terminal summaries, tables, and
+  visual bars across retrieval, stats, detail, status, settings, OCR, storage,
+  and archive action commands.
 - Added a menu bar app manual purge flow that previews archive deletion counts
   before purging snapshots older than a chosen duration.
 - Added the project logo to the README and bundled a black transparent SVG
