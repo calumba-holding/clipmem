@@ -42,11 +42,16 @@ full-disk encryption) for at-rest protection.
 
 Blob payloads (images, PDFs, RTF, file URLs, and other clipboard
 representations) are stored in their raw form so `clipmem restore`
-can faithfully rehydrate them back onto the clipboard. This means
-the database can grow if you frequently copy large binary content.
+can faithfully rehydrate them back onto the clipboard. Images and PDFs
+are stored as-is unless you explicitly run image optimization; image
+optimization converts eligible images to lossless WebP while
+preserving exact decoded pixels. PDFs are not optimized.
 
-Phase 1 OCR doesn't compress, transcode, or replace stored images.
-Raw image bytes remain the source of truth for `restore` and `export`.
+This means the database can grow if you frequently copy large binary
+content. Use `clipmem storage optimize-images` to reduce eligible image
+payloads and return freed SQLite pages to the filesystem. Use
+`clipmem storage compact` separately after purging history or when you
+want to reclaim existing free SQLite pages.
 
 ## Controlling what gets captured
 

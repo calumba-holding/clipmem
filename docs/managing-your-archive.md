@@ -81,6 +81,43 @@ aren't supported.
 Use `--dry-run` to preview what would be deleted without deleting
 anything.
 
+## Compact database storage
+
+`storage compact` asks SQLite to checkpoint and vacuum the database.
+It reclaims free database and WAL pages back to the filesystem and
+does not change clipboard content.
+
+```bash
+clipmem storage compact --dry-run --format json
+clipmem storage compact
+```
+
+Use the dry run first if you want to inspect current DB/WAL/SHM file
+sizes, page count, freelist count, and checkpoint state. A real compact
+may need temporary disk space while SQLite rebuilds the database.
+
+## Optimize stored images
+
+`storage optimize-images` rewrites eligible stored image
+representations as lossless WebP when doing so saves meaningful space,
+then compacts SQLite storage by default so freed pages are returned to
+the filesystem. Exact decoded pixels are preserved, including alpha,
+but original encoded container metadata is not preserved.
+
+```bash
+clipmem storage optimize-images --dry-run --format json
+clipmem storage optimize-images --limit 50 --format json
+clipmem storage optimize-images --no-compact --limit 50 --format json
+```
+
+Only image rows marked `uncompressed` are considered. Rows converted
+to WebP are marked `compressed`, and rows that are unsupported,
+corrupt, animated, not smaller, or conflict with existing archive rows
+are marked `skipped`. Normal optimization runs never retry rows that
+have already been compressed or skipped. Use `--no-compact` only when
+you want to batch several limited optimization runs and compact once at
+the end.
+
 ## Capture policy
 
 Persistent capture policy lives in SQLite and is managed through

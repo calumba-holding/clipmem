@@ -70,6 +70,20 @@ struct DecodingTests {
         #expect(export.snapshotId == 7)
         #expect(export.uti == "public.png")
         #expect(export.byteCount == 42)
+
+        let compactData = try JSONSerialization.data(withJSONObject: try object(root["storageCompact"]))
+        let compact = try ClipmemClient.decoder.decode(StorageCompactOutput.self, from: compactData)
+        #expect(compact.reclaimedBytes == 4096)
+        #expect(compact.estimatedReclaimableBytes == 0)
+        #expect(compact.checkpoint.busy == 0)
+
+        let optimizeData = try JSONSerialization.data(withJSONObject: try object(root["imageOptimization"]))
+        let optimize = try ClipmemClient.decoder.decode(ImageOptimizationOutput.self, from: optimizeData)
+        #expect(optimize.format == "webp_lossless")
+        #expect(optimize.compactRun == true)
+        #expect(optimize.compact?.reclaimedBytes == 393_216)
+        #expect(optimize.filesystemSavedBytes == 393_216)
+        #expect(optimize.compactRecommended == false)
     }
 
     private func decode<T: Decodable>(_ type: T.Type, _ name: String) throws -> T {

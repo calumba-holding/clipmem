@@ -13,9 +13,10 @@ use std::process::Command as ProcessCommand;
 
 use crate::app::{format_watch_capture_line, mark_change_handled, WatchState};
 use crate::db::{
-    CapturePolicy, CaptureSettings, CaptureSkipReason, CaptureStoreOutcome, Database, OcrRunReport,
-    OcrStatusReport, PurgeReport, RecentCursorState, RetrievalFilters, SearchCursorState,
-    SearchMode, SearchResults, SnapshotDeletionReport, TimelineCursorState, TimelineSort,
+    CapturePolicy, CaptureSettings, CaptureSkipReason, CaptureStoreOutcome, Database,
+    ImageOptimizationReport, OcrRunReport, OcrStatusReport, PurgeReport, RecentCursorState,
+    RetrievalFilters, SearchCursorState, SearchMode, SearchResults, SnapshotDeletionReport,
+    StorageCompactReport, TimelineCursorState, TimelineSort,
 };
 use crate::model::{
     CaptureStoreResult, ClipboardSnapshot, FlattenedTextProjection, SearchHit, TimelineEvent,
@@ -37,8 +38,8 @@ use super::{
     RecentArgs, RestoreArgs, SearchArgs, ServiceArgs, ServiceCommand, ServiceStatusArgs,
     SettingsApiKeyFilterArgs, SettingsArgs, SettingsCommand, SettingsIgnoreArgs,
     SettingsIgnoreCommand, SettingsIgnoreListArgs, SettingsOcrArgs, SettingsPauseArgs,
-    SettingsRetentionArgs, SettingsShowArgs, SetupArgs, StatsArgs, StatsOutputFormat, TimelineArgs,
-    WatchArgs,
+    SettingsRetentionArgs, SettingsShowArgs, SetupArgs, StatsArgs, StatsOutputFormat, StorageArgs,
+    StorageCommand, StorageCompactArgs, StorageOptimizeImagesArgs, TimelineArgs, WatchArgs,
 };
 
 static OCR_WORKER_RUNNING: AtomicBool = AtomicBool::new(false);
@@ -232,6 +233,7 @@ pub(super) fn run_command(command: Command, db_path: &Path) -> Result<()> {
         Command::Restore(args) => restore_snapshot(db_path, &args),
         Command::Forget(args) => forget_snapshot(db_path, &args),
         Command::Purge(args) => purge_snapshots(db_path, &args),
+        Command::Storage(args) => storage(db_path, &args),
         Command::Ocr(args) => ocr(db_path, &args),
         Command::Settings(args) => settings(db_path, &args),
         Command::Doctor(args) => doctor(db_path, &args),
@@ -867,6 +869,37 @@ fn purge_snapshots(db_path: &Path, args: &PurgeArgs) -> Result<()> {
     Ok(())
 }
 
+fn storage(db_path: &Path, args: &StorageArgs) -> Result<()> {
+    match &args.command {
+        StorageCommand::Compact(args) => storage_compact(db_path, args),
+        StorageCommand::OptimizeImages(args) => storage_optimize_images(db_path, args),
+    }
+}
+
+fn storage_compact(db_path: &Path, args: &StorageCompactArgs) -> Result<()> {
+    let format = require_text_or_json(args.output.resolved()?, "storage compact")?;
+    let mut db = open_existing_db(db_path)?;
+    let report = db.compact_storage(args.dry_run)?;
+    emit_json_or_text(
+        matches!(format, OutputFormat::Json),
+        &report,
+        render_storage_compact_text,
+    )?;
+    Ok(())
+}
+
+fn storage_optimize_images(db_path: &Path, args: &StorageOptimizeImagesArgs) -> Result<()> {
+    let format = require_text_or_json(args.output.resolved()?, "storage optimize-images")?;
+    let mut db = open_existing_db(db_path)?;
+    let report = db.optimize_images(args.dry_run, args.limit, !args.no_compact)?;
+    emit_json_or_text(
+        matches!(format, OutputFormat::Json),
+        &report,
+        render_image_optimization_text,
+    )?;
+    Ok(())
+}
+
 fn settings(db_path: &Path, args: &SettingsArgs) -> Result<()> {
     match &args.command {
         SettingsCommand::Show(args) => settings_show(db_path, args),
@@ -1205,6 +1238,65 @@ fn render_purge_text(report: &PurgeReport) -> String {
         report.representation_count(),
         report.capture_event_count(),
         report.total_bytes()
+    )
+}
+
+fn render_storage_compact_text(report: &StorageCompactReport) -> String {
+    let action = if report.dry_run {
+        "storage compact dry-run"
+    } else {
+        "storage compacted"
+    };
+    format!(
+        "{} db={} before={} after={} reclaimed={} estimated_reclaimable={} page_count={} freelist_count={} checkpoint_busy={} checkpoint_log={} checkpointed={}\n",
+        action,
+        report.db_path,
+        report.total_before_bytes,
+        report.total_after_bytes,
+        report.reclaimed_bytes,
+        report.estimated_reclaimable_bytes,
+        report.page_count,
+        report.freelist_count,
+        report.checkpoint.busy,
+        report.checkpoint.log,
+        report.checkpoint.checkpointed
+    )
+}
+
+fn render_image_optimization_text(report: &ImageOptimizationReport) -> String {
+    let action = if report.dry_run {
+        "image optimization dry-run"
+    } else if report.compact_error.is_some() {
+        "image optimization complete; database compaction failed"
+    } else {
+        "image optimization complete"
+    };
+    let recommendation = if report.compact_recommended {
+        " Run `clipmem storage compact` to return freed pages to the filesystem."
+    } else {
+        ""
+    };
+    let compact_error = report
+        .compact_error
+        .as_ref()
+        .map(|error| format!(" compact_error={error}"))
+        .unwrap_or_default();
+    format!(
+        "{} format={} scanned={} compressed={} skipped={} conflicts={} original_bytes={} optimized_bytes={} logical_saved_bytes={} compact_run={} filesystem_saved_bytes={} filesystem_growth_bytes={}{}{}\n",
+        action,
+        report.format,
+        report.scanned_rows,
+        report.compressed_rows,
+        report.skipped_rows,
+        report.conflict_count,
+        report.original_bytes,
+        report.optimized_bytes,
+        report.logical_saved_bytes,
+        report.compact_run,
+        report.filesystem_saved_bytes,
+        report.filesystem_growth_bytes,
+        compact_error,
+        recommendation
     )
 }
 

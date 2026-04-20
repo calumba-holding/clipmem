@@ -107,6 +107,25 @@ struct ClipmemCommand: Equatable, Sendable {
         return ClipmemCommand(arguments: arguments)
     }
 
+    static func storageCompact(dryRun: Bool) -> ClipmemCommand {
+        var arguments = ["storage", "compact", "--format", "json"]
+        if dryRun {
+            arguments.append("--dry-run")
+        }
+        return ClipmemCommand(arguments: arguments)
+    }
+
+    static func storageOptimizeImages(dryRun: Bool, limit: Int?) -> ClipmemCommand {
+        var arguments = ["storage", "optimize-images", "--format", "json"]
+        if dryRun {
+            arguments.append("--dry-run")
+        }
+        if let limit {
+            arguments += ["--limit", String(limit)]
+        }
+        return ClipmemCommand(arguments: arguments)
+    }
+
     static func export(snapshotID: Int, itemIndex: Int, uti: String, destination: String, force: Bool) -> ClipmemCommand {
         var arguments = [
             "export",

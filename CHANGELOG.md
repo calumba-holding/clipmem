@@ -11,6 +11,14 @@ versioning where practical.
 
 Changes for the next release go here.
 
+### Added
+
+- Added `clipmem storage compact` for SQLite/WAL compaction and
+  `clipmem storage optimize-images` for opt-in lossless WebP image
+  optimization, with menu bar actions and JSON reports. Image
+  optimization now compacts SQLite storage by default so freed pages
+  are returned to the filesystem.
+
 ### Fixed
 
 - Hardened Homebrew formula publishing so nested macOS and architecture guards

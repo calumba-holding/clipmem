@@ -121,6 +121,14 @@ struct ClipmemClient: Sendable {
         try await decode(PurgeOutput.self, from: .purge(olderThan: olderThan, dryRun: dryRun))
     }
 
+    func storageCompact(dryRun: Bool) async throws -> StorageCompactOutput {
+        try await decode(StorageCompactOutput.self, from: .storageCompact(dryRun: dryRun))
+    }
+
+    func storageOptimizeImages(dryRun: Bool, limit: Int?) async throws -> ImageOptimizationOutput {
+        try await decode(ImageOptimizationOutput.self, from: .storageOptimizeImages(dryRun: dryRun, limit: limit))
+    }
+
     func export(snapshotID: Int, itemIndex: Int, uti: String, destination: String, force: Bool) async throws -> ExportOutput {
         try await decode(ExportOutput.self, from: .export(snapshotID: snapshotID, itemIndex: itemIndex, uti: uti, destination: destination, force: force))
     }

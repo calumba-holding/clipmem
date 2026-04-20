@@ -28,5 +28,73 @@
     "byte_count": 42,
     "raw_sha256": "def456",
     "out": "/Users/test/Desktop/clipboard.png"
+  },
+  "storageCompact": {
+    "db_path": "/Users/test/Library/Application Support/clipmem/clipmem.sqlite3",
+    "before": {
+      "db": 8192,
+      "wal": 4096,
+      "shm": 32768
+    },
+    "after": {
+      "db": 8192,
+      "wal": 0,
+      "shm": 32768
+    },
+    "total_before_bytes": 45056,
+    "total_after_bytes": 40960,
+    "reclaimed_bytes": 4096,
+    "estimated_reclaimable_bytes": 0,
+    "page_count": 2,
+    "freelist_count": 0,
+    "checkpoint": {
+      "busy": 0,
+      "log": 0,
+      "checkpointed": 0
+    },
+    "dry_run": false,
+    "completed": true
+  },
+  "imageOptimization": {
+    "dry_run": false,
+    "format": "webp_lossless",
+    "scanned_rows": 2,
+    "compressed_rows": 1,
+    "skipped_rows": 1,
+    "conflict_count": 0,
+    "original_bytes": 524288,
+    "optimized_bytes": 262144,
+    "logical_saved_bytes": 262144,
+    "compact_run": true,
+    "compact": {
+      "db_path": "/Users/test/Library/Application Support/clipmem/clipmem.sqlite3",
+      "before": {
+        "db": 1048576,
+        "wal": 131072,
+        "shm": 32768
+      },
+      "after": {
+        "db": 786432,
+        "wal": 0,
+        "shm": 32768
+      },
+      "total_before_bytes": 1212416,
+      "total_after_bytes": 819200,
+      "reclaimed_bytes": 393216,
+      "estimated_reclaimable_bytes": 0,
+      "page_count": 192,
+      "freelist_count": 0,
+      "checkpoint": {
+        "busy": 0,
+        "log": 0,
+        "checkpointed": 0
+      },
+      "dry_run": false,
+      "completed": true
+    },
+    "compact_error": null,
+    "filesystem_saved_bytes": 393216,
+    "filesystem_growth_bytes": 0,
+    "compact_recommended": false
   }
 }

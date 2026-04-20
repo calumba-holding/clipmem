@@ -28,6 +28,8 @@ scripts and agents.
 | `restore` | `text` | `text`, `json` |
 | `forget` | `text` | `text`, `json` |
 | `purge` | `text` | `text`, `json` |
+| `storage compact` | `text` | `text`, `json` |
+| `storage optimize-images` | `text` | `text`, `json` |
 | `settings show` | `text` | `text`, `json` |
 | `settings ignore list` | `text` | `text`, `json` |
 | `ocr status` | `text` | `text`, `json` |
@@ -39,7 +41,8 @@ scripts and agents.
 
 `--json` is a compatibility alias for `--format json` on `search`,
 `recent`, `timeline`, `stats`, `get`, `restore`, `forget`, `purge`,
-`export`, `ocr status`, `ocr run`, `capture-once`, and `doctor`.
+`storage compact`, `storage optimize-images`, `export`, `ocr status`,
+`ocr run`, `capture-once`, and `doctor`.
 
 ## JSON envelope
 
@@ -149,6 +152,12 @@ Action commands return structured output when you request JSON:
   count, representation count, and byte count
 - `purge --format json` — age cutoff, dry-run state, and
   deleted-or-would-delete counts
+- `storage compact --format json` — DB/WAL/SHM file sizes,
+  reclaimed bytes, estimated reclaimable bytes, page/freelist counts,
+  and checkpoint state
+- `storage optimize-images --format json` — scanned, compressed,
+  skipped, conflict, byte-savings, auto-compaction, and filesystem
+  savings fields
 - `export --format json` — destination path, byte count, UTI, item
   index, snapshot ID, and representation hash
 

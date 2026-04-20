@@ -20,6 +20,10 @@ struct CommandConstructionTests {
         #expect(ClipmemCommand.export(snapshotID: 42, itemIndex: 0, uti: "public.png", destination: "/tmp/a.png", force: true).arguments.contains("--force"))
         #expect(ClipmemCommand.settingsOCR(true).arguments == ["settings", "ocr", "on"])
         #expect(ClipmemCommand.settingsOCR(false).arguments == ["settings", "ocr", "off"])
+        #expect(ClipmemCommand.storageCompact(dryRun: false).arguments == ["storage", "compact", "--format", "json"])
+        #expect(ClipmemCommand.storageCompact(dryRun: true).arguments.contains("--dry-run"))
+        #expect(ClipmemCommand.storageOptimizeImages(dryRun: false, limit: 50).arguments == ["storage", "optimize-images", "--format", "json", "--limit", "50"])
+        #expect(ClipmemCommand.storageOptimizeImages(dryRun: true, limit: nil).arguments.contains("--dry-run"))
     }
 
     @Test func filtersAppendExpectedFlags() {

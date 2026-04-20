@@ -249,6 +249,51 @@ struct PurgeOutput: Decodable, Equatable, Sendable {
     var totalBytes: Int
 }
 
+struct StorageFileSizes: Decodable, Equatable, Sendable {
+    var db: UInt64
+    var wal: UInt64
+    var shm: UInt64
+}
+
+struct StorageCheckpointReport: Decodable, Equatable, Sendable {
+    var busy: Int
+    var log: Int
+    var checkpointed: Int
+}
+
+struct StorageCompactOutput: Decodable, Equatable, Sendable {
+    var dbPath: String
+    var before: StorageFileSizes
+    var after: StorageFileSizes
+    var totalBeforeBytes: UInt64
+    var totalAfterBytes: UInt64
+    var reclaimedBytes: UInt64
+    var estimatedReclaimableBytes: UInt64
+    var pageCount: Int
+    var freelistCount: Int
+    var checkpoint: StorageCheckpointReport
+    var dryRun: Bool
+    var completed: Bool
+}
+
+struct ImageOptimizationOutput: Decodable, Equatable, Sendable {
+    var dryRun: Bool
+    var format: String
+    var scannedRows: Int
+    var compressedRows: Int
+    var skippedRows: Int
+    var conflictCount: Int
+    var originalBytes: Int
+    var optimizedBytes: Int
+    var logicalSavedBytes: Int
+    var compactRun: Bool
+    var compact: StorageCompactOutput?
+    var compactError: String?
+    var filesystemSavedBytes: UInt64
+    var filesystemGrowthBytes: UInt64
+    var compactRecommended: Bool
+}
+
 enum JSONValue: Decodable, Equatable, Hashable, Sendable {
     case string(String)
     case int(Int)

@@ -20,6 +20,8 @@ subcommand. For conceptual explanations and usage guidance, see
 | `export <ID>` | raw bytes | — | Write one representation to disk |
 | `forget <ID>` | `text` | — | Hard-delete one snapshot and its history |
 | `purge` | `text` | — | Delete old snapshots by age |
+| `storage compact` | `text` | — | Reclaim SQLite and WAL disk space |
+| `storage optimize-images` | `text` | — | Convert eligible images to lossless WebP |
 | `settings show` | `text` | no | Show capture policy |
 | `settings pause` | `text` | — | Pause or resume capture |
 | `settings api-key-filter` | `text` | — | Enable or disable API key filtering |
@@ -255,6 +257,57 @@ clipmem purge --older-than 30d
 clipmem purge --older-than 12h --dry-run
 clipmem purge --older-than 30d --dry-run --format json
 ```
+
+### `clipmem storage compact`
+
+Reclaim SQLite database and WAL disk space without changing clipboard
+content.
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--dry-run` | flag | — | Report current size/page/WAL state without running `VACUUM` |
+| `--format` | `text\|json` | `text` | Output format |
+| `--json` | flag | — | Alias for `--format json` |
+
+```bash
+clipmem storage compact
+clipmem storage compact --dry-run
+clipmem storage compact --format json
+```
+
+JSON output includes the database path, DB/WAL/SHM sizes before and
+after, total bytes before and after, reclaimed bytes, estimated
+reclaimable bytes, page count, freelist count, WAL checkpoint fields,
+and whether compaction completed.
+
+### `clipmem storage optimize-images`
+
+Convert eligible stored image representations to lossless WebP. The
+optimizer replaces the original encoded image bytes only when WebP
+saves at least 10% and at least 64 KiB. It preserves exact decoded
+pixels, including alpha, but not original PNG/TIFF/JPEG container
+metadata.
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--dry-run` | flag | — | Estimate work and savings without changing rows |
+| `--no-compact` | flag | — | Skip the automatic SQLite compaction step |
+| `--limit` | 1-250 | 25 | Maximum unprocessed image rows to scan |
+| `--format` | `text\|json` | `text` | Output format |
+| `--json` | flag | — | Alias for `--format json` |
+
+```bash
+clipmem storage optimize-images
+clipmem storage optimize-images --dry-run --format json
+clipmem storage optimize-images --no-compact --limit 50 --format json
+clipmem storage optimize-images --limit 50 --format json
+```
+
+Rows already marked `compressed` or `skipped` are not retried by
+normal runs. JSON output reports scanned rows, compressed rows,
+skipped rows, conflicts, original bytes, optimized bytes, logical
+bytes saved, whether compaction ran, filesystem bytes reclaimed, and
+whether database compaction is still recommended.
 
 ---
 

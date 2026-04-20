@@ -137,6 +137,51 @@ final class AppModel {
         }
     }
 
+    func compactDatabase() async {
+        isRunningAction = true
+        actionMessage = nil
+        defer { isRunningAction = false }
+        do {
+            let report = try await client.storageCompact(dryRun: false)
+            lastError = nil
+            showActionMessage("Compacted database. Reclaimed \(formatBytes(report.reclaimedBytes)).")
+            await refreshStatus()
+        } catch {
+            lastError = UserError(error)
+            actionMessage = nil
+        }
+    }
+
+    func optimizeImages() async {
+        isRunningAction = true
+        actionMessage = nil
+        defer { isRunningAction = false }
+        do {
+            let report = try await client.storageOptimizeImages(dryRun: false, limit: nil)
+            lastError = nil
+            let saved = DisplayFormatters.byteCount(report.logicalSavedBytes) ?? "\(report.logicalSavedBytes) bytes"
+            let reclaimed = formatBytes(report.filesystemSavedBytes)
+            if let compactError = report.compactError {
+                showActionMessage("Optimized \(report.compressedRows) images. Reduced image bytes by \(saved), but database compaction failed: \(compactError). Run Compact Database to retry.")
+            } else if report.compactRun {
+                showActionMessage("Optimized \(report.compressedRows) images. Reduced image bytes by \(saved) and reclaimed \(reclaimed) from the database.")
+            } else if report.compactRecommended {
+                showActionMessage("Optimized \(report.compressedRows) images. Reduced image bytes by \(saved). Run Compact Database to return freed pages to disk.")
+            } else {
+                showActionMessage("Optimized \(report.compressedRows) images. Reduced image bytes by \(saved).")
+            }
+            await refreshStatus()
+        } catch {
+            lastError = UserError(error)
+            actionMessage = nil
+        }
+    }
+
+    private func formatBytes(_ bytes: UInt64) -> String {
+        let clamped = min(bytes, UInt64(Int.max))
+        return DisplayFormatters.byteCount(Int(clamped)) ?? "\(bytes) bytes"
+    }
+
     @discardableResult
     func runAction(_ command: ClipmemCommand, successMessage: String? = nil) async -> Bool {
         isRunningAction = true

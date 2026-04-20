@@ -3,12 +3,14 @@ use std::thread;
 use std::time::Instant;
 
 use anyhow::{Context, Result};
+use std::io::Cursor;
 use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::model::{
     build_item, build_representation, build_snapshot, CaptureContext, ClipboardSnapshot,
 };
+use image::{ImageFormat, ImageReader, Rgba, RgbaImage};
 use rusqlite::params;
 
 use super::{
@@ -75,6 +77,26 @@ fn image_snapshot(change_count: i64, representations: Vec<(&str, Vec<u8>)>) -> C
             .with_frontmost_app_bundle_id("com.apple.Preview"),
         items,
     )
+}
+
+fn lossless_test_tiff() -> Result<Vec<u8>> {
+    let mut image = RgbaImage::new(256, 256);
+    for (x, y, pixel) in image.enumerate_pixels_mut() {
+        let alpha = if (x + y) % 3 == 0 { 96 } else { 255 };
+        *pixel = Rgba([(x % 16) as u8, (y % 16) as u8, ((x + y) % 16) as u8, alpha]);
+    }
+
+    let mut out = Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(image).write_to(&mut out, ImageFormat::Tiff)?;
+    Ok(out.into_inner())
+}
+
+fn decode_rgba(bytes: &[u8]) -> Result<Vec<u8>> {
+    Ok(ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()?
+        .decode()?
+        .to_rgba8()
+        .into_raw())
 }
 
 fn set_event_observed_at(db: &Database, event_id: i64, observed_at: &str) -> Result<()> {
@@ -1162,6 +1184,258 @@ fn migration_repairs_embedded_nul_snapshot_text_projection() -> Result<()> {
     assert_eq!(results.hits().len(), 1);
 
     std::fs::remove_file(&path)?;
+    Ok(())
+}
+
+#[test]
+fn schema_version_11_adds_image_compression_metadata() -> Result<()> {
+    let path = temp_db_path("image-compression-metadata-migration");
+    let parent = path.parent().expect("temporary path should have a parent");
+    std::fs::create_dir_all(parent)?;
+
+    let conn = rusqlite::Connection::open(&path)?;
+    conn.execute_batch(
+        r"
+        CREATE TABLE item_representations (
+            snapshot_id INTEGER NOT NULL,
+            item_index INTEGER NOT NULL,
+            uti TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            byte_len INTEGER NOT NULL,
+            raw_sha256 TEXT NOT NULL,
+            text_value TEXT,
+            blob_value BLOB NOT NULL,
+            PRIMARY KEY (snapshot_id, item_index, uti)
+        );
+        PRAGMA user_version = 10;
+    ",
+    )?;
+    drop(conn);
+
+    let db = Database::open_existing(&path)?;
+    let version: i64 = db
+        .conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let columns = db
+        .conn
+        .prepare("PRAGMA table_info(item_representations)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    assert_eq!(version, CURRENT_SCHEMA_VERSION);
+    assert!(columns.contains(&"image_compression_status".to_string()));
+    assert!(columns.contains(&"image_compression_format".to_string()));
+    assert!(columns.contains(&"image_original_raw_sha256".to_string()));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn new_image_captures_start_uncompressed() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let snapshot = image_snapshot(1, vec![("public.png", b"not actually a png".to_vec())]);
+    let stored = db.store_capture(&snapshot)?;
+
+    let status: String = db.conn.query_row(
+        "SELECT image_compression_status FROM item_representations WHERE snapshot_id = ?1",
+        [stored.snapshot_id()],
+        |row| row.get(0),
+    )?;
+
+    assert_eq!(status, "uncompressed");
+    Ok(())
+}
+
+#[test]
+fn lossless_webp_optimization_rewrites_image_once_and_preserves_pixels() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let original = lossless_test_tiff()?;
+    let original_pixels = decode_rgba(&original)?;
+    let snapshot = image_snapshot(1, vec![("public.tiff", original.clone())]);
+    let stored = db.store_capture(&snapshot)?;
+    let original_snapshot_sha: String = db.conn.query_row(
+        "SELECT sha256 FROM snapshots WHERE id = ?1",
+        [stored.snapshot_id()],
+        |row| row.get(0),
+    )?;
+
+    let representation_count_before: i64 =
+        db.conn
+            .query_row("SELECT COUNT(*) FROM item_representations", [], |row| {
+                row.get(0)
+            })?;
+
+    let report = db.optimize_images(false, 25, true)?;
+
+    assert_eq!(report.scanned_rows, 1);
+    assert_eq!(report.compressed_rows, 1);
+    assert_eq!(report.skipped_rows, 0);
+    assert!(report.logical_saved_bytes >= 64 * 1024);
+    assert!(!report.compact_run);
+
+    let representation_count_after: i64 =
+        db.conn
+            .query_row("SELECT COUNT(*) FROM item_representations", [], |row| {
+                row.get(0)
+            })?;
+    assert_eq!(representation_count_after, representation_count_before);
+
+    let (uti, status, format, original_len, original_hash, byte_len, raw_hash, blob): (
+        String,
+        String,
+        Option<String>,
+        Option<i64>,
+        Option<String>,
+        i64,
+        String,
+        Vec<u8>,
+    ) = db.conn.query_row(
+        r"
+            SELECT
+                uti,
+                image_compression_status,
+                image_compression_format,
+                image_original_byte_len,
+                image_original_raw_sha256,
+                byte_len,
+                raw_sha256,
+                blob_value
+            FROM item_representations
+            WHERE snapshot_id = ?1
+        ",
+        [stored.snapshot_id()],
+        |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+                row.get(6)?,
+                row.get(7)?,
+            ))
+        },
+    )?;
+    let optimized_snapshot_sha: String = db.conn.query_row(
+        "SELECT sha256 FROM snapshots WHERE id = ?1",
+        [stored.snapshot_id()],
+        |row| row.get(0),
+    )?;
+    let total_bytes: i64 = db.conn.query_row(
+        "SELECT total_bytes FROM snapshots WHERE id = ?1",
+        [stored.snapshot_id()],
+        |row| row.get(0),
+    )?;
+
+    assert_eq!(uti, "org.webmproject.webp");
+    assert_eq!(status, "compressed");
+    assert_eq!(format.as_deref(), Some("webp_lossless"));
+    assert_eq!(original_len, Some(original.len() as i64));
+    assert!(original_hash.is_some());
+    assert_eq!(byte_len as usize, blob.len());
+    assert_ne!(raw_hash, original_hash.unwrap());
+    assert_ne!(optimized_snapshot_sha, original_snapshot_sha);
+    assert_eq!(total_bytes, byte_len);
+    assert_eq!(decode_rgba(&blob)?, original_pixels);
+
+    let second_report = db.optimize_images(false, 25, true)?;
+    assert_eq!(second_report.scanned_rows, 0);
+    assert_eq!(second_report.compressed_rows, 0);
+    Ok(())
+}
+
+#[test]
+fn file_backed_image_optimization_compacts_without_adding_rows() -> Result<()> {
+    let path = temp_db_path("image-optimization-compacts");
+    let original = lossless_test_tiff()?;
+    let snapshot = image_snapshot(1, vec![("public.tiff", original)]);
+    let mut db = Database::open_or_init(&path)?;
+    let stored = db.store_capture(&snapshot)?;
+    let size_before = super::storage_file_sizes(&path)?.total_bytes();
+    let row_count_before: i64 =
+        db.conn
+            .query_row("SELECT COUNT(*) FROM item_representations", [], |row| {
+                row.get(0)
+            })?;
+
+    let report = db.optimize_images(false, 25, true)?;
+
+    let row_count_after: i64 =
+        db.conn
+            .query_row("SELECT COUNT(*) FROM item_representations", [], |row| {
+                row.get(0)
+            })?;
+    let size_after = super::storage_file_sizes(&path)?.total_bytes();
+    let status: String = db.conn.query_row(
+        "SELECT image_compression_status FROM item_representations WHERE snapshot_id = ?1",
+        [stored.snapshot_id()],
+        |row| row.get(0),
+    )?;
+
+    assert_eq!(report.scanned_rows, 1);
+    assert_eq!(report.compressed_rows, 1);
+    assert!(report.compact_run);
+    assert!(report.compact.is_some());
+    assert!(!report.compact_recommended);
+    assert_eq!(row_count_after, row_count_before);
+    assert_eq!(status, "compressed");
+    assert!(size_after <= size_before);
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn no_compact_optimization_leaves_reclaimable_pages_for_later_compaction() -> Result<()> {
+    let path = temp_db_path("image-optimization-no-compact");
+    let original = lossless_test_tiff()?;
+    let snapshot = image_snapshot(1, vec![("public.tiff", original)]);
+    let mut db = Database::open_or_init(&path)?;
+    db.store_capture(&snapshot)?;
+
+    let first = db.optimize_images(false, 25, false)?;
+    let freelist_after_rewrite: i64 = db
+        .conn
+        .query_row("PRAGMA freelist_count", [], |row| row.get(0))?;
+    let second = db.optimize_images(false, 25, true)?;
+
+    assert_eq!(first.compressed_rows, 1);
+    assert!(!first.compact_run);
+    assert!(first.compact_recommended);
+    assert!(freelist_after_rewrite > 0);
+    assert_eq!(second.scanned_rows, 0);
+    assert_eq!(second.compressed_rows, 0);
+    assert!(second.compact_run);
+    assert!(second.compact.is_some());
+    assert!(!second.compact_recommended);
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn corrupt_image_rows_are_marked_skipped_once() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let snapshot = image_snapshot(1, vec![("public.png", b"not actually a png".to_vec())]);
+    let stored = db.store_capture(&snapshot)?;
+
+    let report = db.optimize_images(false, 25, true)?;
+    assert_eq!(report.scanned_rows, 1);
+    assert_eq!(report.compressed_rows, 0);
+    assert_eq!(report.skipped_rows, 1);
+
+    let (status, reason): (String, Option<String>) = db.conn.query_row(
+        "SELECT image_compression_status, image_compression_reason FROM item_representations WHERE snapshot_id = ?1",
+        [stored.snapshot_id()],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    assert_eq!(status, "skipped");
+    assert_eq!(reason.as_deref(), Some("corrupt_or_unsupported"));
+
+    let second_report = db.optimize_images(false, 25, true)?;
+    assert_eq!(second_report.scanned_rows, 0);
     Ok(())
 }
 

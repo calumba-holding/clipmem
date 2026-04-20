@@ -19,7 +19,7 @@ use crate::model::{
 };
 
 const SCHEMA: &str = include_str!("db/schema.sql");
-const CURRENT_SCHEMA_VERSION: i64 = 10;
+const CURRENT_SCHEMA_VERSION: i64 = 11;
 const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
 
 pub struct Database {
@@ -140,6 +140,55 @@ pub(crate) struct OcrRunReport {
     failed: usize,
     skipped: usize,
     remaining_pending: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct StorageFileSizes {
+    pub(crate) db: u64,
+    pub(crate) wal: u64,
+    pub(crate) shm: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct StorageCheckpointReport {
+    pub(crate) busy: i64,
+    pub(crate) log: i64,
+    pub(crate) checkpointed: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct StorageCompactReport {
+    pub(crate) db_path: String,
+    pub(crate) before: StorageFileSizes,
+    pub(crate) after: StorageFileSizes,
+    pub(crate) total_before_bytes: u64,
+    pub(crate) total_after_bytes: u64,
+    pub(crate) reclaimed_bytes: u64,
+    pub(crate) estimated_reclaimable_bytes: u64,
+    pub(crate) page_count: usize,
+    pub(crate) freelist_count: usize,
+    pub(crate) checkpoint: StorageCheckpointReport,
+    pub(crate) dry_run: bool,
+    pub(crate) completed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct ImageOptimizationReport {
+    pub(crate) dry_run: bool,
+    pub(crate) format: &'static str,
+    pub(crate) scanned_rows: usize,
+    pub(crate) compressed_rows: usize,
+    pub(crate) skipped_rows: usize,
+    pub(crate) conflict_count: usize,
+    pub(crate) original_bytes: usize,
+    pub(crate) optimized_bytes: usize,
+    pub(crate) logical_saved_bytes: usize,
+    pub(crate) compact_run: bool,
+    pub(crate) compact: Option<StorageCompactReport>,
+    pub(crate) compact_error: Option<String>,
+    pub(crate) filesystem_saved_bytes: u64,
+    pub(crate) filesystem_growth_bytes: u64,
+    pub(crate) compact_recommended: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -851,6 +900,45 @@ impl Database {
         &self.path
     }
 
+    pub(crate) fn compact_storage(&mut self, dry_run: bool) -> Result<StorageCompactReport> {
+        let before = storage_file_sizes(&self.path)?;
+        let total_before_bytes = before.total_bytes();
+
+        let checkpoint = if dry_run {
+            run_wal_checkpoint(&self.conn, "PASSIVE")?
+        } else {
+            let _ = run_wal_checkpoint(&self.conn, "TRUNCATE")?;
+            self.conn
+                .execute_batch("VACUUM")
+                .context("vacuum database")?;
+            self.conn
+                .execute_batch("PRAGMA optimize")
+                .context("optimize database")?;
+            run_wal_checkpoint(&self.conn, "TRUNCATE")?
+        };
+
+        let page_count = pragma_usize(&self.conn, "page_count")?;
+        let freelist_count = pragma_usize(&self.conn, "freelist_count")?;
+        let page_size = pragma_usize(&self.conn, "page_size")?;
+        let after = storage_file_sizes(&self.path)?;
+        let total_after_bytes = after.total_bytes();
+
+        Ok(StorageCompactReport {
+            db_path: self.path.display().to_string(),
+            before,
+            after,
+            total_before_bytes,
+            total_after_bytes,
+            reclaimed_bytes: total_before_bytes.saturating_sub(total_after_bytes),
+            estimated_reclaimable_bytes: (page_size as u64).saturating_mul(freelist_count as u64),
+            page_count,
+            freelist_count,
+            checkpoint,
+            dry_run,
+            completed: !dry_run,
+        })
+    }
+
     #[cfg(test)]
     pub(crate) fn open_in_memory() -> Result<Self> {
         let mut conn = Connection::open_in_memory()?;
@@ -860,6 +948,51 @@ impl Database {
             path: PathBuf::from(":memory:"),
         })
     }
+}
+
+impl StorageFileSizes {
+    #[must_use]
+    pub(crate) const fn total_bytes(&self) -> u64 {
+        self.db + self.wal + self.shm
+    }
+}
+
+fn storage_file_sizes(path: &Path) -> Result<StorageFileSizes> {
+    Ok(StorageFileSizes {
+        db: metadata_len(path)?,
+        wal: metadata_len(&sidecar_path(path, "-wal"))?,
+        shm: metadata_len(&sidecar_path(path, "-shm"))?,
+    })
+}
+
+fn sidecar_path(path: &Path, suffix: &str) -> PathBuf {
+    PathBuf::from(format!("{}{suffix}", path.display()))
+}
+
+fn metadata_len(path: &Path) -> Result<u64> {
+    match std::fs::metadata(path) {
+        Ok(metadata) => Ok(metadata.len()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(0),
+        Err(error) => Err(error).with_context(|| format!("read size of {}", path.display())),
+    }
+}
+
+fn pragma_usize(conn: &Connection, pragma: &str) -> Result<usize> {
+    let sql = format!("PRAGMA {pragma}");
+    conn.query_row(&sql, [], |row| row_usize(row, 0))
+        .with_context(|| format!("read PRAGMA {pragma}"))
+}
+
+fn run_wal_checkpoint(conn: &Connection, mode: &str) -> Result<StorageCheckpointReport> {
+    let sql = format!("PRAGMA wal_checkpoint({mode})");
+    conn.query_row(&sql, [], |row| {
+        Ok(StorageCheckpointReport {
+            busy: row.get(0)?,
+            log: row.get(1)?,
+            checkpointed: row.get(2)?,
+        })
+    })
+    .with_context(|| format!("run WAL checkpoint {mode}"))
 }
 
 pub(super) fn sanitise_limit(limit: usize) -> usize {
@@ -1088,6 +1221,16 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
+        10 => {
+            if legacy_prerelease_schema_detected(&tx)? {
+                bail!(
+                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
+                );
+            }
+            ensure_image_compression_columns(&tx)?;
+            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+                .context("set PRAGMA user_version")?;
+        }
         CURRENT_SCHEMA_VERSION => {
             if legacy_prerelease_schema_detected(&tx)? {
                 bail!(
@@ -1107,6 +1250,7 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
     }
 
     ensure_ocr_enabled_setting_column(&tx)?;
+    ensure_image_compression_columns(&tx)?;
     tx.execute(
         "INSERT OR IGNORE INTO clipmem_settings (id, paused, retention_seconds, api_key_filter_enabled, ocr_enabled) VALUES (1, 0, NULL, 0, 0)",
         [],
@@ -1159,6 +1303,51 @@ fn ensure_ocr_enabled_setting_column(conn: &Connection) -> Result<()> {
         [],
     )
     .context("add ocr_enabled column")?;
+    Ok(())
+}
+
+fn ensure_image_compression_columns(conn: &Connection) -> Result<()> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(item_representations)")
+        .context("prepare item_representations table info query")?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .context("query item_representations columns")?;
+    let columns = collect_rows(rows).context("collect item_representations columns")?;
+
+    let add_column = |name: &str, sql: &str| -> Result<()> {
+        if columns.iter().any(|column| column == name) {
+            return Ok(());
+        }
+        conn.execute(sql, [])
+            .with_context(|| format!("add {name} column"))?;
+        Ok(())
+    };
+
+    add_column(
+        "image_compression_status",
+        "ALTER TABLE item_representations ADD COLUMN image_compression_status TEXT NOT NULL DEFAULT 'uncompressed' CHECK (image_compression_status IN ('uncompressed', 'compressed', 'skipped'))",
+    )?;
+    add_column(
+        "image_compression_format",
+        "ALTER TABLE item_representations ADD COLUMN image_compression_format TEXT",
+    )?;
+    add_column(
+        "image_compressed_at",
+        "ALTER TABLE item_representations ADD COLUMN image_compressed_at TEXT",
+    )?;
+    add_column(
+        "image_original_byte_len",
+        "ALTER TABLE item_representations ADD COLUMN image_original_byte_len INTEGER",
+    )?;
+    add_column(
+        "image_original_raw_sha256",
+        "ALTER TABLE item_representations ADD COLUMN image_original_raw_sha256 TEXT",
+    )?;
+    add_column(
+        "image_compression_reason",
+        "ALTER TABLE item_representations ADD COLUMN image_compression_reason TEXT",
+    )?;
     Ok(())
 }
 

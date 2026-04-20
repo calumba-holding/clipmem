@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::process;
 use std::process::Command;
@@ -9,6 +10,7 @@ use clipmem::archive::Database;
 use clipmem::capture::{
     build_item, build_representation, build_snapshot, CaptureContext, ClipboardSnapshot,
 };
+use image::{ImageFormat, Rgba, RgbaImage};
 use rusqlite::Connection;
 use serde_json::Value;
 
@@ -209,6 +211,18 @@ fn image_snapshot(change_count: i64, bytes: &[u8]) -> ClipboardSnapshot {
             .with_frontmost_app_bundle_id("com.apple.Preview"),
         vec![item],
     )
+}
+
+fn lossless_test_tiff() -> Result<Vec<u8>> {
+    let mut image = RgbaImage::new(256, 256);
+    for (x, y, pixel) in image.enumerate_pixels_mut() {
+        let alpha = if (x + y) % 3 == 0 { 96 } else { 255 };
+        *pixel = Rgba([(x % 16) as u8, (y % 16) as u8, ((x + y) % 16) as u8, alpha]);
+    }
+
+    let mut out = Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(image).write_to(&mut out, ImageFormat::Tiff)?;
+    Ok(out.into_inner())
 }
 
 fn seed_database(path: &Path, snapshots: &[ClipboardSnapshot]) -> Result<Vec<i64>> {
@@ -2370,6 +2384,177 @@ fn purge_json_reports_dry_run_counts() -> Result<()> {
     assert_eq!(payload["dry_run"].as_bool(), Some(true));
     assert_eq!(payload["snapshot_count"].as_u64(), Some(1));
     assert_eq!(payload["capture_event_count"].as_u64(), Some(1));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn storage_compact_json_reports_file_sizes() -> Result<()> {
+    let path = temp_db_path("storage-compact-json");
+    seed_database(&path, &[text_snapshot(1, "compact me")])?;
+    let before = fs::metadata(&path)?.len();
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "storage",
+        "compact",
+        "--dry-run",
+        "--format",
+        "json",
+    ]);
+    let payload: Value =
+        serde_json::from_slice(&output.stdout).expect("storage compact JSON should parse");
+
+    assert!(output.status.success(), "{}", stderr_text(&output));
+    assert_eq!(payload["dry_run"].as_bool(), Some(true));
+    assert_eq!(payload["completed"].as_bool(), Some(false));
+    assert_eq!(payload["db_path"].as_str(), path.to_str());
+    assert!(payload["before"]["db"].as_u64().unwrap_or_default() >= before);
+    assert!(payload["after"]["db"].as_u64().unwrap_or_default() >= before);
+    assert!(payload["page_count"].as_u64().unwrap_or_default() > 0);
+    assert!(payload["estimated_reclaimable_bytes"].as_u64().is_some());
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn storage_optimize_images_json_reports_dry_run_without_marking_rows() -> Result<()> {
+    let path = temp_db_path("storage-optimize-images-json");
+    seed_database(&path, &[image_snapshot(1, b"not actually a png")])?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "storage",
+        "optimize-images",
+        "--dry-run",
+        "--format",
+        "json",
+    ]);
+    let payload: Value =
+        serde_json::from_slice(&output.stdout).expect("image optimization JSON should parse");
+
+    assert!(output.status.success(), "{}", stderr_text(&output));
+    assert_eq!(payload["dry_run"].as_bool(), Some(true));
+    assert_eq!(payload["format"].as_str(), Some("webp_lossless"));
+    assert_eq!(payload["scanned_rows"].as_u64(), Some(1));
+    assert_eq!(payload["skipped_rows"].as_u64(), Some(1));
+    assert_eq!(payload["compact_run"].as_bool(), Some(false));
+    assert!(payload["compact"].is_null());
+
+    let conn = Connection::open(&path)?;
+    let status: String = conn.query_row(
+        "SELECT image_compression_status FROM item_representations",
+        [],
+        |row| row.get(0),
+    )?;
+    assert_eq!(status, "uncompressed");
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn storage_optimize_images_json_compacts_by_default() -> Result<()> {
+    let path = temp_db_path("storage-optimize-images-compacts");
+    let original = lossless_test_tiff()?;
+    seed_database(&path, &[image_snapshot(1, &original)])?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "storage",
+        "optimize-images",
+        "--format",
+        "json",
+    ]);
+    let payload: Value =
+        serde_json::from_slice(&output.stdout).expect("image optimization JSON should parse");
+
+    assert!(output.status.success(), "{}", stderr_text(&output));
+    assert_eq!(payload["compressed_rows"].as_u64(), Some(1));
+    assert_eq!(payload["compact_run"].as_bool(), Some(true));
+    assert!(payload["compact"].is_object());
+    assert_eq!(payload["compact_recommended"].as_bool(), Some(false));
+    assert!(payload["filesystem_growth_bytes"].as_u64().is_some());
+    assert!(payload["filesystem_saved_bytes"].as_u64().is_some());
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn storage_optimize_images_no_compact_reports_recommendation() -> Result<()> {
+    let path = temp_db_path("storage-optimize-images-no-compact");
+    let original = lossless_test_tiff()?;
+    seed_database(&path, &[image_snapshot(1, &original)])?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "storage",
+        "optimize-images",
+        "--no-compact",
+        "--format",
+        "json",
+    ]);
+    let payload: Value =
+        serde_json::from_slice(&output.stdout).expect("image optimization JSON should parse");
+
+    assert!(output.status.success(), "{}", stderr_text(&output));
+    assert_eq!(payload["compressed_rows"].as_u64(), Some(1));
+    assert_eq!(payload["compact_run"].as_bool(), Some(false));
+    assert!(payload["compact"].is_null());
+    assert_eq!(payload["compact_recommended"].as_bool(), Some(true));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn storage_optimize_images_limit_processes_uncompressed_rows() -> Result<()> {
+    let path = temp_db_path("storage-optimize-images-limit");
+    seed_database(
+        &path,
+        &[
+            image_snapshot(1, b"not actually a png"),
+            image_snapshot(2, b"also not actually a png"),
+        ],
+    )?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "storage",
+        "optimize-images",
+        "--limit",
+        "1",
+        "--format",
+        "json",
+    ]);
+    let payload: Value =
+        serde_json::from_slice(&output.stdout).expect("image optimization JSON should parse");
+
+    assert!(output.status.success(), "{}", stderr_text(&output));
+    assert_eq!(payload["scanned_rows"].as_u64(), Some(1));
+    assert_eq!(payload["skipped_rows"].as_u64(), Some(1));
+
+    let conn = Connection::open(&path)?;
+    let skipped_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM item_representations WHERE image_compression_status = 'skipped'",
+        [],
+        |row| row.get(0),
+    )?;
+    let uncompressed_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM item_representations WHERE image_compression_status = 'uncompressed'",
+        [],
+        |row| row.get(0),
+    )?;
+    assert_eq!(skipped_count, 1);
+    assert_eq!(uncompressed_count, 1);
 
     cleanup_db(&path);
     Ok(())

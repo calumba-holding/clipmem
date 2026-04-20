@@ -7,6 +7,8 @@ struct MenuBarPanelView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
     @State private var confirmUninstall = false
+    @State private var confirmCompact = false
+    @State private var confirmOptimizeImages = false
     @State private var recentSearchQuery = ""
 
     var body: some View {
@@ -96,6 +98,13 @@ struct MenuBarPanelView: View {
             }
             .disabled(appModel.isRunningAction)
             Menu("More", systemImage: "ellipsis.circle") {
+                Button("Compact Database") {
+                    confirmCompact = true
+                }
+                Button("Optimize Images...") {
+                    confirmOptimizeImages = true
+                }
+                Divider()
                 Button("Uninstall Service") {
                     confirmUninstall = true
                 }
@@ -119,6 +128,22 @@ struct MenuBarPanelView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("This stops clipboard capture. Your saved history is kept. You can reinstall with Setup.")
+            }
+            .confirmationDialog("Compact the clipmem database?", isPresented: $confirmCompact) {
+                Button("Compact Database") {
+                    Task { await appModel.compactDatabase() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This reclaims SQLite and WAL disk space. Clipboard content is not changed. The operation may need temporary disk space while SQLite rebuilds the database.")
+            }
+            .confirmationDialog("Optimize stored images?", isPresented: $confirmOptimizeImages) {
+                Button("Optimize Images") {
+                    Task { await appModel.optimizeImages() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This replaces original encoded image bytes with lossless WebP, preserves exact decoded pixels, compacts SQLite afterward to return freed pages to disk, and will never recompress already processed images.")
             }
             if appModel.isRunningAction {
                 ProgressView()

@@ -31,6 +31,12 @@ CREATE TABLE IF NOT EXISTS item_representations (
     raw_sha256     TEXT NOT NULL,
     text_value     TEXT,
     blob_value     BLOB NOT NULL,
+    image_compression_status TEXT NOT NULL DEFAULT 'uncompressed' CHECK (image_compression_status IN ('uncompressed', 'compressed', 'skipped')),
+    image_compression_format TEXT,
+    image_compressed_at TEXT,
+    image_original_byte_len INTEGER,
+    image_original_raw_sha256 TEXT,
+    image_compression_reason TEXT,
     PRIMARY KEY (snapshot_id, item_index, uti)
 );
 

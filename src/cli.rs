@@ -154,6 +154,20 @@ Notes:
   - Purge ages snapshots by `last_observed_at`, not the original snapshot creation time.
   - Duration grammar is a single integer plus one unit: `Nd`, `Nh`, or `Nm`.";
 
+const STORAGE_AFTER_HELP: &str = "\
+Examples:
+  clipmem storage compact --format json
+  clipmem storage compact --dry-run --format json
+  clipmem storage optimize-images --format json
+  clipmem storage optimize-images --dry-run --format json
+  clipmem storage optimize-images --no-compact --format json
+  clipmem storage optimize-images --limit 50 --format json
+
+Notes:
+  - `compact` reclaims SQLite and WAL disk space without changing clipboard content.
+  - `optimize-images` converts eligible stored image bytes to lossless WebP, then compacts SQLite storage by default.
+  - Use `--no-compact` when batching optimization runs and compacting once at the end.";
+
 const SETTINGS_AFTER_HELP: &str = "\
 Examples:
   clipmem settings show
@@ -525,6 +539,8 @@ enum Command {
     Forget(ForgetArgs),
     /// Delete stored snapshots older than a duration.
     Purge(PurgeArgs),
+    /// Compact database storage and optimize archived images.
+    Storage(StorageArgs),
     /// Backfill and inspect local image OCR.
     Ocr(OcrArgs),
     /// View and update persistent capture policy.
@@ -976,6 +992,49 @@ struct PurgeArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(after_help = STORAGE_AFTER_HELP)]
+struct StorageArgs {
+    #[command(subcommand)]
+    command: StorageCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum StorageCommand {
+    /// Reclaim SQLite database and WAL disk space.
+    Compact(StorageCompactArgs),
+    /// Convert eligible archived images to lossless WebP.
+    OptimizeImages(StorageOptimizeImagesArgs),
+}
+
+#[derive(Debug, Args)]
+struct StorageCompactArgs {
+    /// Report database size and freelist state without running VACUUM.
+    #[arg(long, default_value_t = false)]
+    dry_run: bool,
+
+    #[command(flatten)]
+    output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
+struct StorageOptimizeImagesArgs {
+    /// Report eligible rows and estimated savings without changing image bytes.
+    #[arg(long, default_value_t = false)]
+    dry_run: bool,
+
+    /// Do not compact SQLite storage after optimizing images.
+    #[arg(long, default_value_t = false)]
+    no_compact: bool,
+
+    /// Maximum number of unprocessed image rows to scan.
+    #[arg(long, default_value_t = 25, value_parser = parse_bounded_limit)]
+    limit: usize,
+
+    #[command(flatten)]
+    output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
 #[command(after_help = OCR_AFTER_HELP)]
 struct OcrArgs {
     #[command(subcommand)]
@@ -1281,6 +1340,14 @@ fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
         Command::Purge(args) => {
             args.output.resolved()?;
         }
+        Command::Storage(args) => match &args.command {
+            StorageCommand::Compact(args) => {
+                args.output.resolved()?;
+            }
+            StorageCommand::OptimizeImages(args) => {
+                args.output.resolved()?;
+            }
+        },
         Command::Settings(args) => match &args.command {
             SettingsCommand::Show(args) => {
                 args.output.resolved()?;
@@ -1917,6 +1984,51 @@ mod tests {
                 assert!(args.dry_run);
             }
             other => panic!("expected purge command, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn storage_commands_parse_expected_arguments() {
+        let compact_cli = Cli::parse_from([
+            "clipmem",
+            "storage",
+            "compact",
+            "--dry-run",
+            "--format",
+            "json",
+        ]);
+        match compact_cli.command {
+            Command::Storage(args) => match args.command {
+                super::StorageCommand::Compact(args) => {
+                    assert!(args.dry_run);
+                    assert_eq!(args.output.resolved().unwrap(), OutputFormat::Json);
+                }
+                other => panic!("expected storage compact command, got {other:?}"),
+            },
+            other => panic!("expected storage command, got {other:?}"),
+        }
+
+        let optimize_cli = Cli::parse_from([
+            "clipmem",
+            "storage",
+            "optimize-images",
+            "--no-compact",
+            "--limit",
+            "50",
+            "--format",
+            "json",
+        ]);
+        match optimize_cli.command {
+            Command::Storage(args) => match args.command {
+                super::StorageCommand::OptimizeImages(args) => {
+                    assert!(!args.dry_run);
+                    assert!(args.no_compact);
+                    assert_eq!(args.limit, 50);
+                    assert_eq!(args.output.resolved().unwrap(), OutputFormat::Json);
+                }
+                other => panic!("expected storage optimize-images command, got {other:?}"),
+            },
+            other => panic!("expected storage command, got {other:?}"),
         }
     }
 
