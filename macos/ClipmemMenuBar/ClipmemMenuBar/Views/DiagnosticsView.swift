@@ -4,6 +4,7 @@ struct DiagnosticsView: View {
     let appModel: AppModel
     @State private var confirmCompact = false
     @State private var confirmOptimizeImages = false
+    @State private var showManualPurge = false
 
     var body: some View {
         ScrollView {
@@ -29,6 +30,9 @@ struct DiagnosticsView: View {
                             }
                             Button("Optimize Images...", systemImage: "photo.stack") {
                                 confirmOptimizeImages = true
+                            }
+                            Button("Purge Older Than...", systemImage: "trash") {
+                                showManualPurge = true
                             }
                         }
                         .buttonStyle(.bordered)
@@ -77,6 +81,9 @@ struct DiagnosticsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This replaces original encoded image bytes with lossless WebP, preserves exact decoded pixels, compacts SQLite afterward to return freed pages to disk, and will never recompress already processed images.")
+        }
+        .sheet(isPresented: $showManualPurge) {
+            ManualPurgeSheet(appModel: appModel, initialDuration: appModel.serviceStatus?.retention)
         }
     }
 }

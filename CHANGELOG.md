@@ -13,6 +13,8 @@ Changes for the next release go here.
 
 ### Added
 
+- Added a menu bar app manual purge flow that previews archive deletion counts
+  before purging snapshots older than a chosen duration.
 - Added the project logo to the README and bundled a black transparent SVG
   version for the macOS menu bar icon.
 

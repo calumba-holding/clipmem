@@ -11,6 +11,7 @@ struct ClipmemSettingsView: View {
     @State private var newIgnoredBundleID = ""
     @State private var retentionValue = "forever"
     @State private var confirmRetention = false
+    @State private var showManualPurge = false
 
     var body: some View {
         TabView {
@@ -56,6 +57,12 @@ struct ClipmemSettingsView: View {
                 }
                 Text("Use values like 30d, 12h, 15m, or forever.")
                     .foregroundStyle(.secondary)
+                Button("Purge Older Than...", systemImage: "trash") {
+                    showManualPurge = true
+                }
+                .disabled(appModel.isRunningAction)
+                Text("Preview matching archive data before manually deleting old snapshots.")
+                    .foregroundStyle(.secondary)
             }
             .formStyle(.grouped)
             .padding()
@@ -72,6 +79,9 @@ struct ClipmemSettingsView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Items older than this threshold may be purged during the next cleanup cycle.")
+            }
+            .sheet(isPresented: $showManualPurge) {
+                ManualPurgeSheet(appModel: appModel, initialDuration: retentionValue)
             }
             .tabItem {
                 Label("Capture", systemImage: "hand.raised")

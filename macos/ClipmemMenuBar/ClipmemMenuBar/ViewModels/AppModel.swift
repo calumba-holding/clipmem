@@ -179,9 +179,59 @@ final class AppModel {
         }
     }
 
+    func previewPurge(olderThan: String) async -> PurgeOutput? {
+        let threshold = olderThan.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard threshold.isEmpty == false else {
+            lastError = UserError(message: "Enter a purge threshold.", recovery: "Use a duration like 30d, 12h, or 15m.")
+            return nil
+        }
+
+        isRunningAction = true
+        actionMessage = nil
+        defer { isRunningAction = false }
+        do {
+            let report = try await client.purge(olderThan: threshold, dryRun: true)
+            lastError = nil
+            return report
+        } catch {
+            lastError = UserError(error)
+            return nil
+        }
+    }
+
+    func purge(olderThan: String) async -> PurgeOutput? {
+        let threshold = olderThan.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard threshold.isEmpty == false else {
+            lastError = UserError(message: "Enter a purge threshold.", recovery: "Use a duration like 30d, 12h, or 15m.")
+            return nil
+        }
+
+        isRunningAction = true
+        actionMessage = nil
+        defer { isRunningAction = false }
+        do {
+            let report = try await client.purge(olderThan: threshold, dryRun: false)
+            lastError = nil
+            showActionMessage("Purged \(formatCount(report.snapshotCount, singular: "snapshot")) older than \(threshold). Removed \(formatBytes(UInt64(report.totalBytes))).")
+            await refreshStatus()
+            await refreshSettings()
+            _ = await refreshRecentPreview()
+            clipboardHistoryRevision += 1
+            return report
+        } catch {
+            lastError = UserError(error)
+            actionMessage = nil
+            return nil
+        }
+    }
+
     private func formatBytes(_ bytes: UInt64) -> String {
         let clamped = min(bytes, UInt64(Int.max))
         return DisplayFormatters.byteCount(Int(clamped)) ?? "\(bytes) bytes"
+    }
+
+    private func formatCount(_ count: Int, singular: String) -> String {
+        count == 1 ? "1 \(singular)" : "\(count) \(singular)s"
     }
 
     @discardableResult

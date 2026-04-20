@@ -96,6 +96,16 @@ struct DecodingTests {
         #expect(export.uti == "public.png")
         #expect(export.byteCount == 42)
 
+        let purgeData = try JSONSerialization.data(withJSONObject: try object(root["purge"]))
+        let purge = try ClipmemClient.decoder.decode(PurgeOutput.self, from: purgeData)
+        #expect(purge.dryRun == true)
+        #expect(purge.olderThanSeconds == 2_592_000)
+        #expect(purge.snapshotCount == 1)
+        #expect(purge.itemCount == 1)
+        #expect(purge.representationCount == 2)
+        #expect(purge.captureEventCount == 3)
+        #expect(purge.totalBytes == 42)
+
         let compactData = try JSONSerialization.data(withJSONObject: try object(root["storageCompact"]))
         let compact = try ClipmemClient.decoder.decode(StorageCompactOutput.self, from: compactData)
         #expect(compact.reclaimedBytes == 4096)
