@@ -11,6 +11,8 @@ versioning where practical.
 
 Changes for the next release go here.
 
+## 0.2.13 - 2026-04-20
+
 ### Added
 
 - Added `clipmem storage compact` for SQLite/WAL compaction and
