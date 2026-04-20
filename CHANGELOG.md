@@ -25,6 +25,8 @@ Changes for the next release go here.
 
 ### Fixed
 
+- Fixed Quick Recall's Open and Space actions so History opens focused on the
+  selected snapshot instead of a generic History window.
 - Switched the README logo to a non-transparent PNG so it remains visible in
   GitHub dark mode.
 - Fixed Homebrew formula repair for release artifacts that use a multiline

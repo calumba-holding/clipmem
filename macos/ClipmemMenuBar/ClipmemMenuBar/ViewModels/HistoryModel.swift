@@ -3,6 +3,7 @@ import Observation
 
 typealias HistoryPage = (items: [ClipmemItem], nextCursor: String?)
 typealias HistoryPageLoader = @MainActor (QueryMode, String, RetrievalFilterState, String?) async throws -> HistoryPage
+typealias HistoryDetailLoader = @MainActor (Int) async throws -> SnapshotDetails
 
 @MainActor
 @Observable
@@ -20,6 +21,7 @@ final class HistoryModel {
 
     @ObservationIgnored private let appModel: AppModel
     @ObservationIgnored private let pageLoader: HistoryPageLoader?
+    @ObservationIgnored private let detailLoader: HistoryDetailLoader
     @ObservationIgnored private var loadGeneration = 0
     @ObservationIgnored private var detailGeneration = 0
 
@@ -29,11 +31,15 @@ final class HistoryModel {
     init(
         mode: QueryMode = UserDefaults.standard.clipmemDefaultMode,
         appModel: AppModel,
-        pageLoader: HistoryPageLoader? = nil
+        pageLoader: HistoryPageLoader? = nil,
+        detailLoader: HistoryDetailLoader? = nil
     ) {
         self.mode = mode
         self.appModel = appModel
         self.pageLoader = pageLoader
+        self.detailLoader = detailLoader ?? { snapshotID in
+            try await appModel.client.get(snapshotID: snapshotID).snapshot
+        }
     }
 
     var selectedItem: ClipmemItem? {
@@ -41,12 +47,12 @@ final class HistoryModel {
         return results.first { $0.snapshotId == selectedID }
     }
 
-    func reload() async {
+    func reload(selecting snapshotID: Int? = nil) async {
         loadGeneration += 1
         let generation = loadGeneration
         nextCursor = nil
         results = []
-        selectedID = nil
+        selectedID = snapshotID
         selectedDetail = nil
         await loadMore(generation: generation)
     }
@@ -125,6 +131,8 @@ final class HistoryModel {
             nextCursor = page.nextCursor
             if selectedID == nil {
                 selectedID = results.first?.snapshotId
+            }
+            if selectedID != nil, selectedDetail == nil {
                 await loadSelectedDetail()
             }
             error = nil
@@ -149,7 +157,7 @@ final class HistoryModel {
             }
         }
         do {
-            let detail = try await appModel.client.get(snapshotID: selectedID).snapshot
+            let detail = try await detailLoader(selectedID)
             guard generation == detailGeneration, self.selectedID == selectedID else { return }
             selectedDetail = detail
             error = nil

@@ -9,7 +9,7 @@ struct HistoryWindowView: View {
     @SceneStorage("history.query") private var storedQuery = ""
     @SceneStorage("history.inspector") private var inspectorPresented = false
     @SceneStorage("history.selected") private var storedSelectedID = 0
-    @State private var handledHistorySearchRequestID = 0
+    @State private var handledHistoryOpenRequestID = 0
 
     init(appModel: AppModel) {
         self.appModel = appModel
@@ -61,19 +61,14 @@ struct HistoryWindowView: View {
         }
         .task {
             restoreSceneState()
-            applyPendingHistorySearchIfNeeded()
-            await history.reload()
-        }
-        .onChange(of: appModel.pendingHistorySearchRequestID) {
-            let previousMode = history.mode
-            applyPendingHistorySearchIfNeeded()
-            if previousMode == .search {
-                Task { await history.reload() }
+            if await applyPendingHistoryOpenRequestIfNeeded() == false {
+                await history.reload()
             }
         }
-        .onChange(of: history.mode) {
-            storedMode = history.mode.rawValue
-            Task { await history.reload() }
+        .onChange(of: appModel.pendingHistoryOpenRequest?.id) {
+            Task {
+                await applyPendingHistoryOpenRequestIfNeeded()
+            }
         }
         .onChange(of: history.query) {
             storedQuery = history.query
@@ -88,7 +83,7 @@ struct HistoryWindowView: View {
     }
 
     private var sidebar: some View {
-        List(selection: $history.mode) {
+        List(selection: modeSelection) {
             Section("Browse") {
                 ForEach([QueryMode.recall, .search, .recent, .timeline]) { mode in
                     Label(mode.title, systemImage: mode.symbol)
@@ -102,6 +97,17 @@ struct HistoryWindowView: View {
         }
         .navigationTitle("clipmem")
         .navigationSplitViewColumnWidth(min: 150, ideal: 180, max: 220)
+    }
+
+    private var modeSelection: Binding<QueryMode> {
+        Binding {
+            history.mode
+        } set: { newMode in
+            guard history.mode != newMode else { return }
+            history.mode = newMode
+            storedMode = newMode.rawValue
+            Task { await history.reload() }
+        }
     }
 
     @ViewBuilder
@@ -235,14 +241,20 @@ struct HistoryWindowView: View {
         history.selectedID = storedSelectedID == 0 ? nil : storedSelectedID
     }
 
-    private func applyPendingHistorySearchIfNeeded() {
-        guard appModel.pendingHistorySearchRequestID != handledHistorySearchRequestID else { return }
-        guard appModel.pendingHistorySearchQuery.isEmpty == false else { return }
-        handledHistorySearchRequestID = appModel.pendingHistorySearchRequestID
-        history.mode = .search
-        history.query = appModel.pendingHistorySearchQuery
-        history.selectedID = nil
-        history.selectedDetail = nil
+    @discardableResult
+    private func applyPendingHistoryOpenRequestIfNeeded() async -> Bool {
+        guard let request = appModel.pendingHistoryOpenRequest else { return false }
+        guard request.id != handledHistoryOpenRequestID else { return false }
+
+        handledHistoryOpenRequestID = request.id
+        let mode = request.mode == .diagnostics ? QueryMode.recent : request.mode
+        history.mode = mode
+        history.query = request.query
+        storedMode = mode.rawValue
+        storedQuery = request.query
+        storedSelectedID = request.focusedSnapshotID ?? 0
+        await history.reload(selecting: request.focusedSnapshotID)
+        return true
     }
 }
 

@@ -3,6 +3,13 @@ import Foundation
 import Observation
 import SwiftUI
 
+struct HistoryOpenRequest: Equatable, Sendable {
+    var id: Int
+    var mode: QueryMode
+    var query: String
+    var focusedSnapshotID: Int?
+}
+
 @MainActor
 @Observable
 final class AppModel {
@@ -20,12 +27,12 @@ final class AppModel {
     var isRefreshing = false
     var isRunningAction = false
     var updateStatus = UpdateStatus.load()
-    var pendingHistorySearchQuery = ""
-    var pendingHistorySearchRequestID = 0
+    var pendingHistoryOpenRequest: HistoryOpenRequest?
 
     @ObservationIgnored private let hotKeyManager = HotKeyManager()
     @ObservationIgnored private let updateChecker = UpdateChecker()
     @ObservationIgnored private let loadRecentPreview: @MainActor () async throws -> [ClipmemItem]
+    @ObservationIgnored private var historyOpenRequestID = 0
     @ObservationIgnored private var pasteboardMonitor: PasteboardChangeMonitor?
     @ObservationIgnored private var recentRefreshCoordinator: RecentPreviewRefreshCoordinator?
     @ObservationIgnored private var recentPreviewRefreshedAt: Date?
@@ -316,8 +323,19 @@ final class AppModel {
     func requestHistorySearch(query: String) {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmedQuery.isEmpty == false else { return }
-        pendingHistorySearchQuery = trimmedQuery
-        pendingHistorySearchRequestID += 1
+        enqueueHistoryOpenRequest(mode: .search, query: trimmedQuery, focusedSnapshotID: nil)
+    }
+
+    func requestHistoryFocus(snapshotID: Int, mode: QueryMode, query: String) {
+        let historyMode = mode == .diagnostics ? QueryMode.recent : mode
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let historyQuery = switch historyMode {
+        case .recall, .search:
+            trimmedQuery
+        case .recent, .timeline, .diagnostics:
+            ""
+        }
+        enqueueHistoryOpenRequest(mode: historyMode, query: historyQuery, focusedSnapshotID: snapshotID)
     }
 
     func configureHotkey(enabled: Bool, openQuickRecall: @escaping @MainActor () -> Void) {
@@ -364,6 +382,16 @@ final class AppModel {
                 }
             }
         }
+    }
+
+    private func enqueueHistoryOpenRequest(mode: QueryMode, query: String, focusedSnapshotID: Int?) {
+        historyOpenRequestID += 1
+        pendingHistoryOpenRequest = HistoryOpenRequest(
+            id: historyOpenRequestID,
+            mode: mode,
+            query: query,
+            focusedSnapshotID: focusedSnapshotID
+        )
     }
 
     private func installSelfIgnoreIfNeeded() async {

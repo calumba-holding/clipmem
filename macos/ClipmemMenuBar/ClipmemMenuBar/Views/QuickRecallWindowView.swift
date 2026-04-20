@@ -106,7 +106,7 @@ struct QuickRecallWindowView: View {
                     .tag(item.snapshotId)
                     .contextMenu {
                         Button("Restore") { Task { await appModel.restore(item) } }
-                        Button("Open in History") { openHistory() }
+                        Button("Open in History") { openHistory(item: item) }
                         Button("Forget", role: .destructive) {
                             pendingForgetItem = item
                             confirmForget = true
@@ -164,6 +164,12 @@ struct QuickRecallWindowView: View {
     }
 
     private func openHistory() {
+        guard let item = quick.selectedItem else { return }
+        openHistory(item: item)
+    }
+
+    private func openHistory(item: ClipmemItem) {
+        appModel.requestHistoryFocus(snapshotID: item.snapshotId, mode: quick.mode, query: quick.query)
         WindowActivation.openWindow(openWindow, id: .history)
     }
 }
