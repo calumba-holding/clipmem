@@ -11,6 +11,11 @@ versioning where practical.
 
 Changes for the next release go here.
 
+### Fixed
+
+- Fixed Homebrew formula repair for release artifacts that use a multiline
+  Apple Silicon install guard.
+
 ## 0.2.13 - 2026-04-20
 
 ### Added

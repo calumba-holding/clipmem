@@ -39,6 +39,14 @@ def main() -> int:
         '    bin.install "clipmem"',
     )
     text = re.sub(
+        r'\n\s*if OS\.mac\? && Hardware::CPU\.arm\?\n'
+        r'\s*bin\.install "clipmem"\n'
+        r'\s*end\n',
+        '\n    bin.install "clipmem"\n',
+        text,
+        count=1,
+    )
+    text = re.sub(
         r'\n\s*if OS\.mac\?\n'
         r'\s*if Hardware::CPU\.arm\?\n'
         r'\s*bin\.install "clipmem"\n'
