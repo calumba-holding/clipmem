@@ -33,7 +33,9 @@ enum QueryMode: String, CaseIterable, Identifiable, Codable, Hashable, Sendable 
 
 enum HealthState: String, Sendable {
     case healthy
-    case stale
+    case capturePaused
+    case watcherStopped
+    case noRecentCaptures
     case setupNeeded
     case conflict
     case missingBinary
@@ -43,7 +45,9 @@ enum HealthState: String, Sendable {
     var title: String {
         switch self {
         case .healthy: "Capture Running"
-        case .stale: "Capture Stale"
+        case .capturePaused: "Capture Paused"
+        case .watcherStopped: "Watcher Stopped"
+        case .noRecentCaptures: "No Recent Captures"
         case .setupNeeded: "Setup Needed"
         case .conflict: "Service Conflict"
         case .missingBinary: "Binary Missing"
@@ -55,7 +59,9 @@ enum HealthState: String, Sendable {
     var symbol: String {
         switch self {
         case .healthy: "checkmark.circle.fill"
-        case .stale: "clock.badge.exclamationmark"
+        case .capturePaused: "pause.circle.fill"
+        case .watcherStopped: "stop.circle.fill"
+        case .noRecentCaptures: "clock.arrow.circlepath"
         case .setupNeeded: "wrench.and.screwdriver"
         case .conflict: "exclamationmark.triangle.fill"
         case .missingBinary: "questionmark.folder"
@@ -67,7 +73,7 @@ enum HealthState: String, Sendable {
     var tint: Color {
         switch self {
         case .healthy: .green
-        case .stale: .orange
+        case .capturePaused, .watcherStopped, .noRecentCaptures: .orange
         case .setupNeeded: .blue
         case .conflict, .error, .missingBinary: .red
         case .unknown: .secondary

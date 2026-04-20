@@ -12,6 +12,31 @@ struct DecodingTests {
         #expect(report.dbSizeBytes == 12_582_912)
     }
 
+    @Test func stoppedWatcherFixtureMapsToWatcherStopped() throws {
+        let report = try decode(ServiceStatusReport.self, "service_status_stopped_watcher")
+
+        #expect(report.stale == true)
+        #expect(report.homebrew?.running == false)
+        #expect(report.launchagent?.running == false)
+        #expect(report.health == .watcherStopped)
+    }
+
+    @Test func serviceHealthMappingPrioritizesActionableStates() {
+        let runningLaunchAgent = provider("launchagent", installed: true, loaded: true, running: true)
+        #expect(status(launchagent: runningLaunchAgent, recentCaptureWithinLastHour: true).health == .healthy)
+        #expect(status(launchagent: runningLaunchAgent, recentCaptureWithinLastHour: false).health == .noRecentCaptures)
+        #expect(status(launchagent: runningLaunchAgent, paused: true).health == .capturePaused)
+
+        let stoppedLaunchAgent = provider("launchagent", installed: true, loaded: true, running: false)
+        #expect(status(launchagent: stoppedLaunchAgent, recentCaptureWithinLastHour: false).health == .watcherStopped)
+
+        let missingLaunchAgent = provider("launchagent", installed: false, loaded: false, running: false)
+        #expect(status(launchagent: missingLaunchAgent, recentCaptureWithinLastHour: false).health == .setupNeeded)
+
+        #expect(status(conflict: true, launchagent: runningLaunchAgent, paused: true).health == .conflict)
+        #expect(status(launchagent: runningLaunchAgent, paused: true, dbError: "database locked").health == .error)
+    }
+
     @Test func listEnvelopeFixtureDecodesRows() throws {
         let envelope = try decode(ListEnvelope.self, "recent")
 
@@ -94,6 +119,59 @@ struct DecodingTests {
             .appendingPathComponent("\(name).json")
         let data = try Data(contentsOf: url)
         return try ClipmemClient.decoder.decode(T.self, from: data)
+    }
+
+    private func status(
+        conflict: Bool = false,
+        homebrew: ProviderStatus? = nil,
+        launchagent: ProviderStatus? = nil,
+        dbExists: Bool = true,
+        recentCaptureWithinLastHour: Bool? = true,
+        paused: Bool? = false,
+        stale: Bool = false,
+        dbError: String? = nil
+    ) -> ServiceStatusReport {
+        ServiceStatusReport(
+            binaryPath: "/Users/test/clipmem",
+            dbPath: "/Users/test/clipmem.sqlite3",
+            preferredProvider: "launchagent",
+            preferredProviderReason: "test",
+            conflict: conflict,
+            homebrew: homebrew ?? provider("homebrew", installed: false, loaded: false, running: false),
+            launchagent: launchagent ?? provider("launchagent", installed: true, loaded: true, running: true),
+            dbExists: dbExists,
+            dbSizeBytes: 1024,
+            recentCaptureAt: "2026-04-20 08:09:29",
+            recentCaptureWithinLastHour: recentCaptureWithinLastHour,
+            paused: paused,
+            apiKeyFilterEnabled: false,
+            retentionSeconds: nil,
+            retention: "forever",
+            ignoredBundleIdCount: 0,
+            stale: stale,
+            dbError: dbError,
+            notes: []
+        )
+    }
+
+    private func provider(
+        _ provider: String,
+        installed: Bool,
+        loaded: Bool,
+        running: Bool
+    ) -> ProviderStatus {
+        ProviderStatus(
+            provider: provider,
+            label: provider,
+            state: running ? "running" : (installed ? "stopped" : "not_installed"),
+            installed: installed,
+            loaded: loaded,
+            running: running,
+            pid: running ? 123 : nil,
+            plistPath: nil,
+            stdoutLogPath: nil,
+            stderrLogPath: nil
+        )
     }
 
     private func object(_ value: JSONValue?) throws -> [String: Any] {

@@ -38,15 +38,30 @@ struct ServiceStatusReport: Decodable, Equatable, Sendable {
         if conflict == true { return .conflict }
         if dbError != nil { return .error }
         if dbExists == false { return .setupNeeded }
-        if stale == true { return .stale }
-        if homebrew?.running == true || launchagent?.running == true { return .healthy }
-        if recentCaptureWithinLastHour == true { return .healthy }
+        if paused == true { return .capturePaused }
+        if isAnyProviderRunning {
+            if recentCaptureWithinLastHour == false { return .noRecentCaptures }
+            return .healthy
+        }
+        if isAnyProviderConfigured { return .watcherStopped }
         return .setupNeeded
     }
 
     var logPaths: [String] {
         [homebrew?.stdoutLogPath, homebrew?.stderrLogPath, launchagent?.stdoutLogPath, launchagent?.stderrLogPath]
             .compactMap { $0 }
+    }
+
+    private var isAnyProviderRunning: Bool {
+        homebrew?.running == true || launchagent?.running == true
+    }
+
+    private var isAnyProviderConfigured: Bool {
+        providerIsConfigured(homebrew) || providerIsConfigured(launchagent)
+    }
+
+    private func providerIsConfigured(_ provider: ProviderStatus?) -> Bool {
+        provider?.installed == true || provider?.loaded == true || provider?.running == true
     }
 }
 

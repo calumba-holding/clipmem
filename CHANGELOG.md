@@ -29,6 +29,8 @@ Changes for the next release go here.
   requiring the dropdown to be reopened.
 - Fixed the menu-bar status item fallback icons so stale/setup/error states
   remain visible on macOS versions without the previous badge symbols.
+- Clarified menu-bar capture status so stopped or missing watchers are shown as
+  actionable service states instead of as stale clipboard activity.
 
 ## 0.2.12 - 2026-04-20
 

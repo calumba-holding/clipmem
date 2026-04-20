@@ -69,7 +69,7 @@ struct MenuBarPanelView: View {
     private var serviceSummary: some View {
         Grid(alignment: .leading, horizontalSpacing: Spacing.lg, verticalSpacing: Spacing.sm) {
             GridRow {
-                CompactStatusMetric(title: "Provider", value: appModel.serviceStatus?.preferredProvider ?? "Unknown")
+                CompactStatusMetric(title: "Watcher", value: watcherSummary)
                 CompactStatusMetric(title: "Latest", value: latestCaptureSummary)
             }
             GridRow {
@@ -184,12 +184,26 @@ struct MenuBarPanelView: View {
     }
 
     private var latestCaptureSummary: String {
-        DisplayFormatters.localTimestamp(appModel.serviceStatus?.recentCaptureAt) ?? "No recent capture"
+        DisplayFormatters.localTimestamp(appModel.serviceStatus?.recentCaptureAt) ?? "No captures yet"
     }
 
     private var databaseSummary: String {
         guard appModel.serviceStatus?.dbExists == true else { return "Missing" }
         return DisplayFormatters.byteCount(appModel.serviceStatus?.dbSizeBytes) ?? "Size unavailable"
+    }
+
+    private var watcherSummary: String {
+        guard let status = appModel.serviceStatus else { return "Unknown" }
+        if status.conflict == true { return "Multiple watchers running" }
+        if status.launchagent?.running == true { return "LaunchAgent running" }
+        if status.homebrew?.running == true { return "Homebrew running" }
+        if status.launchagent?.installed == true || status.launchagent?.loaded == true {
+            return "LaunchAgent stopped"
+        }
+        if status.homebrew?.installed == true || status.homebrew?.loaded == true {
+            return "Homebrew stopped"
+        }
+        return "Not set up"
     }
 
     private var recentsHeader: some View {
