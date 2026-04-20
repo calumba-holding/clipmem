@@ -68,6 +68,7 @@ pub(super) struct ServiceStatusReport {
     pub(super) homebrew: ServiceProviderStatus,
     pub(super) launchagent: ServiceProviderStatus,
     pub(super) db_exists: bool,
+    pub(super) db_size_bytes: Option<u64>,
     pub(super) recent_capture_at: Option<String>,
     pub(super) recent_capture_within_last_hour: Option<bool>,
     pub(super) paused: Option<bool>,
@@ -216,6 +217,13 @@ pub(super) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
     let selection = select_provider(&context)?;
 
     let db_exists = context.db_path.is_file();
+    let db_size_bytes = if db_exists {
+        fs::metadata(&context.db_path)
+            .map(|metadata| metadata.len())
+            .ok()
+    } else {
+        None
+    };
     let (
         recent_capture_at,
         recent_capture_within_last_hour,
@@ -283,6 +291,7 @@ pub(super) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
         homebrew: homebrew_status,
         launchagent: direct_status,
         db_exists,
+        db_size_bytes,
         recent_capture_at,
         recent_capture_within_last_hour,
         paused,
@@ -346,6 +355,9 @@ pub(super) fn render_service_status_text(report: &ServiceStatusReport) -> String
     render_provider_status(&mut out, &report.launchagent);
     out.push('\n');
     out.push_str(&format!("database exists: {}\n", report.db_exists));
+    if let Some(db_size_bytes) = report.db_size_bytes {
+        out.push_str(&format!("database size: {db_size_bytes} bytes\n"));
+    }
     if let Some(recent_capture_at) = &report.recent_capture_at {
         out.push_str(&format!("latest capture: {recent_capture_at}\n"));
     } else {

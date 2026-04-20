@@ -22,6 +22,7 @@ struct ServiceStatusReport: Decodable, Equatable, Sendable {
     var homebrew: ProviderStatus?
     var launchagent: ProviderStatus?
     var dbExists: Bool?
+    var dbSizeBytes: Int?
     var recentCaptureAt: String?
     var recentCaptureWithinLastHour: Bool?
     var paused: Bool?

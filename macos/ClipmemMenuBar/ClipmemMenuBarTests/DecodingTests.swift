@@ -9,6 +9,7 @@ struct DecodingTests {
         #expect(report.health == .healthy)
         #expect(report.launchagent?.running == true)
         #expect(report.retention == "30d")
+        #expect(report.dbSizeBytes == 12_582_912)
     }
 
     @Test func listEnvelopeFixtureDecodesRows() throws {
@@ -37,6 +38,28 @@ struct DecodingTests {
         #expect(settings.apiKeyFilterEnabled == true)
         #expect(settings.ocrEnabled == false)
         #expect(settings.ignoredBundleIds.contains("io.openclaw.clipmem.menubar"))
+    }
+
+    @Test func sqliteTimestampDisplaysInLocalTimeZone() throws {
+        let berlin = try #require(TimeZone(identifier: "Europe/Berlin"))
+        let formatted = try #require(DisplayFormatters.localTimestamp(
+            "2026-04-19 06:20:00",
+            timeZone: berlin,
+            locale: Locale(identifier: "en_US_POSIX")
+        ))
+
+        #expect(formatted.contains("8:20"))
+    }
+
+    @Test func rfc3339TimestampDisplaysInLocalTimeZone() throws {
+        let berlin = try #require(TimeZone(identifier: "Europe/Berlin"))
+        let formatted = try #require(DisplayFormatters.localTimestamp(
+            "2026-04-19T06:20:00Z",
+            timeZone: berlin,
+            locale: Locale(identifier: "en_US_POSIX")
+        ))
+
+        #expect(formatted.contains("8:20"))
     }
 
     @Test func actionPayloadsDecode() throws {

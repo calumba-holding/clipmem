@@ -2436,6 +2436,10 @@ fn service_status_reports_capture_policy_in_text_and_json() -> Result<()> {
     );
     assert_eq!(json_payload["retention"].as_str(), Some("30d"));
     assert_eq!(json_payload["ignored_bundle_id_count"].as_u64(), Some(1));
+    assert!(
+        json_payload["db_size_bytes"].as_u64().unwrap_or_default() > 0,
+        "service status should report the database file size"
+    );
 
     let text_output = run_cli(&[
         "--db",
@@ -2450,6 +2454,7 @@ fn service_status_reports_capture_policy_in_text_and_json() -> Result<()> {
     assert!(text.contains("api key filter: true"));
     assert!(text.contains("retention: 30d"));
     assert!(text.contains("ignored bundle ids: 1"));
+    assert!(text.contains("database size: "));
 
     cleanup_db(&path);
     Ok(())

@@ -20,6 +20,54 @@ func humanReadableType(_ uti: String) -> String {
     return uti
 }
 
+enum DisplayFormatters {
+    static func localTimestamp(
+        _ value: String?,
+        timeZone: TimeZone = .current,
+        locale: Locale = .current
+    ) -> String? {
+        guard let date = parseTimestamp(value) else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = timeZone
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    static func byteCount(_ bytes: Int?) -> String? {
+        guard let bytes else { return nil }
+        return ByteCountFormatStyle(style: .file).format(Int64(bytes))
+    }
+
+    private static func parseTimestamp(_ value: String?) -> Date? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), value.isEmpty == false else {
+            return nil
+        }
+
+        if let date = iso8601Date(from: value) {
+            return date
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter.date(from: value)
+    }
+
+    private static func iso8601Date(from value: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: value) {
+            return date
+        }
+
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: value)
+    }
+}
+
 // MARK: - Shared Components
 
 struct StatusBadge: View {

@@ -20,6 +20,8 @@ final class AppModel {
     var isRefreshing = false
     var isRunningAction = false
     var updateStatus = UpdateStatus.load()
+    var pendingHistorySearchQuery = ""
+    var pendingHistorySearchRequestID = 0
 
     @ObservationIgnored private let hotKeyManager = HotKeyManager()
     @ObservationIgnored private let updateChecker = UpdateChecker()
@@ -30,7 +32,7 @@ final class AppModel {
 
     init(loadRecentPreview: (@MainActor () async throws -> [ClipmemItem])? = nil) {
         self.loadRecentPreview = loadRecentPreview ?? {
-            let envelope = try await ClipmemClient(configuration: .current).recent(limit: 8, cursor: nil, filters: .defaultValue)
+            let envelope = try await ClipmemClient(configuration: .current).recent(limit: 40, cursor: nil, filters: .defaultValue)
             return envelope.results
         }
     }
@@ -212,6 +214,13 @@ final class AppModel {
     func openUpdateRelease() {
         guard let releaseURL = updateStatus.releaseURL else { return }
         NSWorkspace.shared.open(releaseURL)
+    }
+
+    func requestHistorySearch(query: String) {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedQuery.isEmpty == false else { return }
+        pendingHistorySearchQuery = trimmedQuery
+        pendingHistorySearchRequestID += 1
     }
 
     func configureHotkey(enabled: Bool, openQuickRecall: @escaping @MainActor () -> Void) {

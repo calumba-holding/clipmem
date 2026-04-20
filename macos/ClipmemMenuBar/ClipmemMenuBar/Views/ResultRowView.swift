@@ -39,7 +39,7 @@ struct ResultRowView: View {
     private var metadata: String {
         [
             item.kind ?? "unknown",
-            item.observedAt,
+            DisplayFormatters.localTimestamp(item.observedAt) ?? item.observedAt,
             item.appHint,
             item.whyMatched?.isEmpty == false ? item.whyMatched : nil,
         ]

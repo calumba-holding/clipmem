@@ -9,6 +9,7 @@ struct HistoryWindowView: View {
     @SceneStorage("history.query") private var storedQuery = ""
     @SceneStorage("history.inspector") private var inspectorPresented = false
     @SceneStorage("history.selected") private var storedSelectedID = 0
+    @State private var handledHistorySearchRequestID = 0
 
     init(appModel: AppModel) {
         self.appModel = appModel
@@ -60,7 +61,15 @@ struct HistoryWindowView: View {
         }
         .task {
             restoreSceneState()
+            applyPendingHistorySearchIfNeeded()
             await history.reload()
+        }
+        .onChange(of: appModel.pendingHistorySearchRequestID) {
+            let previousMode = history.mode
+            applyPendingHistorySearchIfNeeded()
+            if previousMode == .search {
+                Task { await history.reload() }
+            }
         }
         .onChange(of: history.mode) {
             storedMode = history.mode.rawValue
@@ -224,6 +233,16 @@ struct HistoryWindowView: View {
         history.mode = QueryMode(rawValue: storedMode) ?? .recent
         history.query = storedQuery
         history.selectedID = storedSelectedID == 0 ? nil : storedSelectedID
+    }
+
+    private func applyPendingHistorySearchIfNeeded() {
+        guard appModel.pendingHistorySearchRequestID != handledHistorySearchRequestID else { return }
+        guard appModel.pendingHistorySearchQuery.isEmpty == false else { return }
+        handledHistorySearchRequestID = appModel.pendingHistorySearchRequestID
+        history.mode = .search
+        history.query = appModel.pendingHistorySearchQuery
+        history.selectedID = nil
+        history.selectedDetail = nil
     }
 }
 

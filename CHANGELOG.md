@@ -11,6 +11,22 @@ versioning where practical.
 
 Changes for the next release go here.
 
+## 0.2.12 - 2026-04-20
+
+### Added
+
+- Added database file size to `clipmem service status` text and JSON output,
+  and surfaced it in the menu bar dropdown.
+- Added inline search to the menu bar dropdown's recent clipboard list, with a
+  shortcut into full History search when the loaded recents don't match.
+
+### Changed
+
+- Expanded the menu bar dropdown's recent preview and compacted its status
+  summary so more clipboard history fits in the panel.
+- Display clipboard capture times in the menu bar app using the Mac's local
+  time zone instead of raw UTC database timestamps.
+
 ### Fixed
 
 - Fixed generated Homebrew formula and cask files so the tap audit can validate

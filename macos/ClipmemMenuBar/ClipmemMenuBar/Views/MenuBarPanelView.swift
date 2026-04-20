@@ -7,9 +7,10 @@ struct MenuBarPanelView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
     @State private var confirmUninstall = false
+    @State private var recentSearchQuery = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
+        VStack(alignment: .leading, spacing: Spacing.md) {
             HStack {
                 StatusBadge(state: appModel.healthState)
                 Spacer()
@@ -37,35 +38,9 @@ struct MenuBarPanelView: View {
 
             Divider()
 
-            HStack {
-                Text("Recent")
-                    .font(.headline)
-                Spacer()
-                Button("Open History", systemImage: "clock.arrow.circlepath") {
-                    WindowActivation.openWindow(openWindow, id: .history)
-                }
-            }
-
-            if appModel.recentPreview.isEmpty && !appModel.isRefreshing {
-                EmptyStateView(title: "No recent copies", detail: "Clipboard entries will appear here as you copy.", symbol: "clipboard")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                List(appModel.recentPreview) { item in
-                    ResultRowView(item: item, selected: false)
-                        .contextMenu {
-                            Button("Restore") {
-                                Task { await appModel.restore(item) }
-                            }
-                            Button("Copy Plain Text") {
-                                if let text = item.copyablePlainText {
-                                    PasteboardActions.copyPlainText(text)
-                                }
-                            }
-                            .disabled(item.copyablePlainText == nil)
-                        }
-                }
-                .listStyle(.inset)
-            }
+            recentsHeader
+            recentsSearchField
+            recentsContent
 
             Divider()
 
@@ -93,13 +68,17 @@ struct MenuBarPanelView: View {
     }
 
     private var serviceSummary: some View {
-        Grid(alignment: .leading, horizontalSpacing: Spacing.md, verticalSpacing: Spacing.xs) {
-            FieldRow(title: "Provider", value: appModel.serviceStatus?.preferredProvider)
-            FieldRow(title: "Capture", value: appModel.serviceStatus?.recentCaptureAt ?? "No recent capture")
-            FieldRow(title: "Database", value: appModel.serviceStatus?.dbExists == true ? "Available" : "Missing")
-            FieldRow(title: "Policy", value: policySummary)
+        Grid(alignment: .leading, horizontalSpacing: Spacing.lg, verticalSpacing: Spacing.sm) {
+            GridRow {
+                CompactStatusMetric(title: "Provider", value: appModel.serviceStatus?.preferredProvider ?? "Unknown")
+                CompactStatusMetric(title: "Latest", value: latestCaptureSummary)
+            }
+            GridRow {
+                CompactStatusMetric(title: "Database", value: databaseSummary)
+                CompactStatusMetric(title: "Policy", value: policySummary)
+            }
         }
-        .font(.callout)
+        .font(.caption)
     }
 
     private var quickActions: some View {
@@ -188,5 +167,111 @@ struct MenuBarPanelView: View {
         let paused = appModel.serviceStatus?.paused == true ? "paused" : "active"
         let filter = appModel.serviceStatus?.apiKeyFilterEnabled == true ? "API-key filter on" : "API-key filter off"
         return "\(paused), \(filter)"
+    }
+
+    private var latestCaptureSummary: String {
+        DisplayFormatters.localTimestamp(appModel.serviceStatus?.recentCaptureAt) ?? "No recent capture"
+    }
+
+    private var databaseSummary: String {
+        guard appModel.serviceStatus?.dbExists == true else { return "Missing" }
+        return DisplayFormatters.byteCount(appModel.serviceStatus?.dbSizeBytes) ?? "Size unavailable"
+    }
+
+    private var recentsHeader: some View {
+        HStack {
+            Text("Recent")
+                .font(.headline)
+            Spacer()
+            Button("Open History", systemImage: "clock.arrow.circlepath") {
+                WindowActivation.openWindow(openWindow, id: .history)
+            }
+        }
+    }
+
+    private var recentsSearchField: some View {
+        TextField("Search recents", text: $recentSearchQuery)
+            .textFieldStyle(.roundedBorder)
+            .controlSize(.small)
+    }
+
+    @ViewBuilder
+    private var recentsContent: some View {
+        if appModel.recentPreview.isEmpty && !appModel.isRefreshing {
+            EmptyStateView(title: "No recent copies", detail: "Clipboard entries will appear here as you copy.", symbol: "clipboard")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if filteredRecentPreview.isEmpty && recentSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            VStack(spacing: Spacing.md) {
+                EmptyStateView(
+                    title: "No matching recents",
+                    detail: "Search the full archive in History.",
+                    symbol: "magnifyingglass"
+                )
+                Button("Open History Search", systemImage: "arrow.up.right.square") {
+                    appModel.requestHistorySearch(query: recentSearchQuery)
+                    WindowActivation.openWindow(openWindow, id: .history)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            List(filteredRecentPreview) { item in
+                ResultRowView(item: item, selected: false)
+                    .contextMenu {
+                        Button("Restore") {
+                            Task { await appModel.restore(item) }
+                        }
+                        Button("Copy Plain Text") {
+                            if let text = item.copyablePlainText {
+                                PasteboardActions.copyPlainText(text)
+                            }
+                        }
+                        .disabled(item.copyablePlainText == nil)
+                    }
+            }
+            .listStyle(.inset)
+        }
+    }
+
+    private var filteredRecentPreview: [ClipmemItem] {
+        let query = recentSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.isEmpty == false else { return appModel.recentPreview }
+        return appModel.recentPreview.filter { item in
+            searchableText(for: item).localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private func searchableText(for item: ClipmemItem) -> String {
+        [
+            item.displayText,
+            item.appName,
+            item.appBundleId,
+            item.kind,
+            DisplayFormatters.localTimestamp(item.observedAt),
+            item.observedAt,
+            item.urls?.joined(separator: " "),
+            item.filePaths?.joined(separator: " "),
+        ]
+        .compactMap { $0 }
+        .joined(separator: " ")
+    }
+}
+
+private struct CompactStatusMetric: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .help(value)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

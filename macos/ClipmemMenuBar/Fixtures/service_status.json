@@ -29,6 +29,7 @@
     "stderr_log_path": "/Users/test/Library/Application Support/clipmem/logs/clipmem.stderr.log"
   },
   "db_exists": true,
+  "db_size_bytes": 12582912,
   "recent_capture_at": "2026-04-19 12:00:00",
   "recent_capture_within_last_hour": true,
   "paused": false,
