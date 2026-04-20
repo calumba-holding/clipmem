@@ -11,6 +11,11 @@ versioning where practical.
 
 Changes for the next release go here.
 
+### Fixed
+
+- Fixed generated Homebrew formula and cask files so the tap audit can validate
+  release commits across Homebrew's supported OS and architecture matrix.
+
 ## 0.2.11 - 2026-04-19
 
 ### Fixed

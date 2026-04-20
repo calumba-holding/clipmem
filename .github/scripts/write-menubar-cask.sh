@@ -11,6 +11,7 @@ cask_path="$1"
 version="$2"
 sha256="$3"
 url="$4"
+artifact="$(basename "${url}")"
 
 mkdir -p "$(dirname "${cask_path}")"
 
@@ -19,7 +20,7 @@ cask "clipmem-app" do
   version "${version}"
   sha256 "${sha256}"
 
-  url "${url}"
+  url "https://github.com/tristanmanchester/clipmem/releases/download/v#{version}/${artifact}"
   name "Clipmem"
   desc "Menu bar app for local clipboard history"
   homepage "https://github.com/tristanmanchester/clipmem"
