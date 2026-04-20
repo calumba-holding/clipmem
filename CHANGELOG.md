@@ -11,6 +11,17 @@ versioning where practical.
 
 Changes for the next release go here.
 
+## 0.3.1 - 2026-04-20
+
+### Fixed
+
+- Fixed the local menu bar build script so it quits any existing menu bar app
+  instance before launching the debug build and verifies the debug app is
+  running.
+- Fixed the menu bar icon asset so it uses the bundled transparent logo SVG as
+  a compiled menu bar image, and added the app icon asset used by Spotlight and
+  LaunchServices.
+
 ## 0.3.0 - 2026-04-20
 
 ### Added
