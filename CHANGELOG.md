@@ -11,6 +11,12 @@ versioning where practical.
 
 Changes for the next release go here.
 
+### Fixed
+
+- Hardened Homebrew formula publishing so nested macOS and architecture guards
+  are removed before tap audit runs, preventing release commits with no active
+  formula URL on Linux or Intel macOS.
+
 ## 0.2.12 - 2026-04-20
 
 ### Added
