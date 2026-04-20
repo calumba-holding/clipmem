@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/clipmem-logo.svg" alt="clipmem logo" width="96">
+  <img src="docs/clipmem-logo.png" alt="clipmem logo" width="96">
 </p>
 
 # clipmem

@@ -18,6 +18,8 @@ Changes for the next release go here.
 
 ### Fixed
 
+- Switched the README logo to a non-transparent PNG so it remains visible in
+  GitHub dark mode.
 - Fixed Homebrew formula repair for release artifacts that use a multiline
   Apple Silicon install guard.
 
