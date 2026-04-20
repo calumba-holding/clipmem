@@ -64,14 +64,24 @@ private struct ClipmemMenuBarLabel: View {
     let isUpdateAvailable: Bool
 
     var body: some View {
-        Image("ClipmemMenuBarIcon")
-            .renderingMode(.template)
-            .resizable()
-            .scaledToFit()
-            .frame(width: 18, height: 18)
-            .accessibilityLabel("clipmem")
-            .accessibilityValue(Text(accessibilityValue))
-            .help(accessibilityValue)
+        ZStack(alignment: .bottomTrailing) {
+            Image("ClipmemMenuBarIcon")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 18, height: 18)
+
+            if let badgeSymbol = healthState.menuBarBadgeSymbol,
+               let badgeTone = healthState.menuBarBadgeTone {
+                MenuBarHealthBadge(symbol: badgeSymbol, tone: badgeTone)
+                    .offset(x: 2, y: 1)
+            }
+        }
+        .frame(width: 20, height: 18)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("clipmem")
+        .accessibilityValue(Text(accessibilityValue))
+        .help(accessibilityValue)
     }
 
     private var accessibilityValue: String {
@@ -79,6 +89,23 @@ private struct ClipmemMenuBarLabel: View {
             return "\(healthState.title), update available"
         }
         return healthState.title
+    }
+}
+
+private struct MenuBarHealthBadge: View {
+    let symbol: String
+    let tone: MenuBarBadgeTone
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 6, weight: .black))
+            .foregroundStyle(.white)
+            .frame(width: 9, height: 9)
+            .background(tone.tint, in: Circle())
+            .overlay {
+                Circle()
+                    .stroke(.primary.opacity(0.18), lineWidth: 1)
+            }
     }
 }
 

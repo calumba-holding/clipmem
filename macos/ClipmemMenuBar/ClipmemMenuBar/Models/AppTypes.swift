@@ -36,6 +36,7 @@ enum HealthState: String, Sendable {
     case capturePaused
     case watcherStopped
     case noRecentCaptures
+    case stale
     case setupNeeded
     case conflict
     case missingBinary
@@ -48,6 +49,7 @@ enum HealthState: String, Sendable {
         case .capturePaused: "Capture Paused"
         case .watcherStopped: "Watcher Stopped"
         case .noRecentCaptures: "No Recent Captures"
+        case .stale: "Capture Stale"
         case .setupNeeded: "Setup Needed"
         case .conflict: "Service Conflict"
         case .missingBinary: "Binary Missing"
@@ -62,6 +64,7 @@ enum HealthState: String, Sendable {
         case .capturePaused: "pause.circle.fill"
         case .watcherStopped: "stop.circle.fill"
         case .noRecentCaptures: "clock.arrow.circlepath"
+        case .stale: "exclamationmark.circle.fill"
         case .setupNeeded: "wrench.and.screwdriver"
         case .conflict: "exclamationmark.triangle.fill"
         case .missingBinary: "questionmark.folder"
@@ -73,10 +76,66 @@ enum HealthState: String, Sendable {
     var tint: Color {
         switch self {
         case .healthy: .green
-        case .capturePaused, .watcherStopped, .noRecentCaptures: .orange
+        case .capturePaused, .watcherStopped, .noRecentCaptures, .stale: .orange
         case .setupNeeded: .blue
         case .conflict, .error, .missingBinary: .red
         case .unknown: .secondary
+        }
+    }
+
+    var menuBarBadgeSymbol: String? {
+        switch self {
+        case .healthy:
+            nil
+        case .capturePaused:
+            "pause.fill"
+        case .watcherStopped:
+            "stop.fill"
+        case .noRecentCaptures:
+            "clock.fill"
+        case .stale:
+            "exclamationmark"
+        case .setupNeeded:
+            "plus"
+        case .conflict:
+            "exclamationmark"
+        case .missingBinary:
+            "questionmark"
+        case .error:
+            "xmark"
+        case .unknown:
+            "ellipsis"
+        }
+    }
+
+    var menuBarBadgeTone: MenuBarBadgeTone? {
+        switch self {
+        case .healthy:
+            nil
+        case .capturePaused, .watcherStopped, .noRecentCaptures, .stale:
+            .warning
+        case .setupNeeded:
+            .setup
+        case .conflict, .missingBinary, .error:
+            .critical
+        case .unknown:
+            .neutral
+        }
+    }
+}
+
+enum MenuBarBadgeTone: Equatable, Sendable {
+    case warning
+    case setup
+    case critical
+    case neutral
+
+    var tint: Color {
+        switch self {
+        case .warning: .orange
+        case .setup: .blue
+        case .critical: .red
+        case .neutral: .secondary
         }
     }
 }

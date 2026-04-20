@@ -12,29 +12,46 @@ struct DecodingTests {
         #expect(report.dbSizeBytes == 12_582_912)
     }
 
-    @Test func stoppedWatcherFixtureMapsToWatcherStopped() throws {
+    @Test func stoppedWatcherFixtureMapsToStale() throws {
         let report = try decode(ServiceStatusReport.self, "service_status_stopped_watcher")
 
         #expect(report.stale == true)
         #expect(report.homebrew?.running == false)
         #expect(report.launchagent?.running == false)
-        #expect(report.health == .watcherStopped)
+        #expect(report.health == .stale)
     }
 
     @Test func serviceHealthMappingPrioritizesActionableStates() {
         let runningLaunchAgent = provider("launchagent", installed: true, loaded: true, running: true)
         #expect(status(launchagent: runningLaunchAgent, recentCaptureWithinLastHour: true).health == .healthy)
-        #expect(status(launchagent: runningLaunchAgent, recentCaptureWithinLastHour: false).health == .noRecentCaptures)
-        #expect(status(launchagent: runningLaunchAgent, paused: true).health == .capturePaused)
+        #expect(status(launchagent: runningLaunchAgent, recentCaptureWithinLastHour: false, stale: false).health == .noRecentCaptures)
 
         let stoppedLaunchAgent = provider("launchagent", installed: true, loaded: true, running: false)
-        #expect(status(launchagent: stoppedLaunchAgent, recentCaptureWithinLastHour: false).health == .watcherStopped)
+        #expect(status(launchagent: stoppedLaunchAgent, recentCaptureWithinLastHour: false, stale: true).health == .stale)
+        #expect(status(launchagent: stoppedLaunchAgent, recentCaptureWithinLastHour: false, stale: false).health == .watcherStopped)
 
         let missingLaunchAgent = provider("launchagent", installed: false, loaded: false, running: false)
         #expect(status(launchagent: missingLaunchAgent, recentCaptureWithinLastHour: false).health == .setupNeeded)
 
-        #expect(status(conflict: true, launchagent: runningLaunchAgent, paused: true).health == .conflict)
-        #expect(status(launchagent: runningLaunchAgent, paused: true, dbError: "database locked").health == .error)
+        #expect(status(conflict: true, launchagent: runningLaunchAgent, paused: true, stale: true).health == .conflict)
+        #expect(status(launchagent: runningLaunchAgent, paused: true, stale: true, dbError: "database locked").health == .error)
+        #expect(status(launchagent: runningLaunchAgent, dbExists: false, stale: true).health == .setupNeeded)
+        #expect(status(launchagent: runningLaunchAgent, paused: true, stale: true).health == .capturePaused)
+    }
+
+    @Test func menuBarBadgePolicyMarksOnlyAttentionStates() {
+        #expect(HealthState.healthy.menuBarBadgeSymbol == nil)
+        #expect(HealthState.healthy.menuBarBadgeTone == nil)
+
+        #expect(HealthState.stale.title == "Capture Stale")
+        #expect(HealthState.stale.menuBarBadgeSymbol == "exclamationmark")
+        #expect(HealthState.stale.menuBarBadgeTone == .warning)
+        #expect(HealthState.setupNeeded.menuBarBadgeSymbol != nil)
+        #expect(HealthState.setupNeeded.menuBarBadgeTone == .setup)
+        #expect(HealthState.error.menuBarBadgeSymbol != nil)
+        #expect(HealthState.error.menuBarBadgeTone == .critical)
+        #expect(HealthState.conflict.menuBarBadgeSymbol != nil)
+        #expect(HealthState.conflict.menuBarBadgeTone == .critical)
     }
 
     @Test func listEnvelopeFixtureDecodesRows() throws {

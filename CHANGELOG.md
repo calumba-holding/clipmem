@@ -27,6 +27,8 @@ Changes for the next release go here.
 
 - Fixed Quick Recall's Open and Space actions so History opens focused on the
   selected snapshot instead of a generic History window.
+- Fixed the macOS menu bar logo so it stays plain when healthy and shows an
+  attention badge for stale, setup, error, and conflict states.
 - Switched the README logo to a non-transparent PNG so it remains visible in
   GitHub dark mode.
 - Fixed Homebrew formula repair for release artifacts that use a multiline

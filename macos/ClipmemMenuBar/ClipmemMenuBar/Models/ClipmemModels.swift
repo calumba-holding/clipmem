@@ -39,6 +39,7 @@ struct ServiceStatusReport: Decodable, Equatable, Sendable {
         if dbError != nil { return .error }
         if dbExists == false { return .setupNeeded }
         if paused == true { return .capturePaused }
+        if stale == true { return .stale }
         if isAnyProviderRunning {
             if recentCaptureWithinLastHour == false { return .noRecentCaptures }
             return .healthy
