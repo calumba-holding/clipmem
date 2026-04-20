@@ -16,6 +16,11 @@ Changes for the next release go here.
 - Added the project logo to the README and bundled a black transparent SVG
   version for the macOS menu bar icon.
 
+### Changed
+
+- Added pull request CI coverage that builds and tests the macOS menu bar app
+  with unsigned `xcodebuild` Debug jobs.
+
 ### Fixed
 
 - Switched the README logo to a non-transparent PNG so it remains visible in

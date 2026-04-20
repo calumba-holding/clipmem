@@ -41,3 +41,32 @@ jobs:
 
       - name: List packaged files
         run: cargo package --list
+
+  menubar-app:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Build menu bar app
+        run: |
+          xcodebuild \
+            -project macos/ClipmemMenuBar/ClipmemMenuBar.xcodeproj \
+            -scheme ClipmemMenuBar \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath /tmp/clipmem-menubar-ci-build-derived \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Test menu bar app
+        run: |
+          xcodebuild \
+            -project macos/ClipmemMenuBar/ClipmemMenuBar.xcodeproj \
+            -scheme ClipmemMenuBar \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath /tmp/clipmem-menubar-ci-test-derived \
+            CODE_SIGNING_ALLOWED=NO \
+            test
