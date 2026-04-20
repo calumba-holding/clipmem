@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/clipmem-logo.svg" alt="clipmem logo" width="96">
+</p>
+
 # clipmem
 
 [![Crates.io](https://img.shields.io/crates/v/clipmem.svg)](https://crates.io/crates/clipmem)

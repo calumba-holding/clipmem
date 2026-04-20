@@ -12,7 +12,10 @@ struct ClipmemMenuBarApp: App {
             MenuBarPanelView(appModel: appModel)
                 .frame(width: 420, height: 620)
         } label: {
-            Label("clipmem", systemImage: appModel.menuBarSymbol)
+            ClipmemMenuBarLabel(
+                healthState: appModel.healthState,
+                isUpdateAvailable: appModel.updateStatus.isUpdateAvailable
+            )
                 .task {
                     await appModel.start()
                     configureHotkey()
@@ -53,6 +56,29 @@ struct ClipmemMenuBarApp: App {
         appModel.configureHotkey(enabled: hotkeyEnabled) {
             WindowActivation.openWindow(openWindow, id: .quickRecall)
         }
+    }
+}
+
+private struct ClipmemMenuBarLabel: View {
+    let healthState: HealthState
+    let isUpdateAvailable: Bool
+
+    var body: some View {
+        Image("ClipmemMenuBarIcon")
+            .renderingMode(.template)
+            .resizable()
+            .scaledToFit()
+            .frame(width: 18, height: 18)
+            .accessibilityLabel("clipmem")
+            .accessibilityValue(Text(accessibilityValue))
+            .help(accessibilityValue)
+    }
+
+    private var accessibilityValue: String {
+        if isUpdateAvailable {
+            return "\(healthState.title), update available"
+        }
+        return healthState.title
     }
 }
 

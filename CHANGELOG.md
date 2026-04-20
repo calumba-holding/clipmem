@@ -11,6 +11,11 @@ versioning where practical.
 
 Changes for the next release go here.
 
+### Added
+
+- Added the project logo to the README and bundled a black transparent SVG
+  version for the macOS menu bar icon.
+
 ### Fixed
 
 - Fixed Homebrew formula repair for release artifacts that use a multiline
