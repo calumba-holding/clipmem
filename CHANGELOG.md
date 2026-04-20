@@ -11,6 +11,8 @@ versioning where practical.
 
 Changes for the next release go here.
 
+## 0.3.0 - 2026-04-20
+
 ### Added
 
 - Added `--human` CLI output for polished terminal summaries, tables, and
