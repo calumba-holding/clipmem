@@ -50,9 +50,9 @@ final class AppModel {
     var menuBarSymbol: String {
         switch healthState {
         case .healthy: updateStatus.isUpdateAvailable ? "arrow.down.circle.fill" : "paperclip.circle.fill"
-        case .stale: "paperclip.badge.clock"
-        case .setupNeeded: "paperclip.badge.plus"
-        case .conflict, .error: "paperclip.badge.exclamationmark"
+        case .stale: "clock.arrow.circlepath"
+        case .setupNeeded: "plus.circle.fill"
+        case .conflict, .error: "exclamationmark.triangle.fill"
         case .missingBinary: "questionmark.folder"
         case .unknown: updateStatus.isUpdateAvailable ? "arrow.down.circle" : "paperclip"
         }

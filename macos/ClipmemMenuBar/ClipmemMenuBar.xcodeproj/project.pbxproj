@@ -39,6 +39,7 @@
 		B00000000000000000000030 /* UpdateStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000032 /* UpdateStatus.swift */; };
 		B00000000000000000000031 /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000033 /* UpdateChecker.swift */; };
 		B00000000000000000000032 /* UpdateCheckerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000034 /* UpdateCheckerTests.swift */; };
+		B00000000000000000000033 /* ConfirmationAlertPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000035 /* ConfirmationAlertPresenter.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -86,6 +87,7 @@
 		A00000000000000000000032 /* UpdateStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/UpdateStatus.swift; sourceTree = "<group>"; };
 		A00000000000000000000033 /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/UpdateChecker.swift; sourceTree = "<group>"; };
 		A00000000000000000000034 /* UpdateCheckerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipmemMenuBarTests/UpdateCheckerTests.swift; sourceTree = "<group>"; };
+		A00000000000000000000035 /* ConfirmationAlertPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Utilities/ConfirmationAlertPresenter.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -123,6 +125,7 @@
 				A00000000000000000000013 /* HotKeyManager.swift */,
 				A00000000000000000000031 /* LoginItemController.swift */,
 				A00000000000000000000014 /* PasteboardActions.swift */,
+				A00000000000000000000035 /* ConfirmationAlertPresenter.swift */,
 				A00000000000000000000015 /* SharedViews.swift */,
 				A00000000000000000000016 /* ResultRowView.swift */,
 				A00000000000000000000017 /* ItemActionButtons.swift */,
@@ -259,6 +262,7 @@
 				B00000000000000000000029,
 				B00000000000000000000030,
 				B00000000000000000000031,
+				B00000000000000000000033,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

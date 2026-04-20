@@ -24,6 +24,11 @@ Changes for the next release go here.
 - Hardened Homebrew formula publishing so nested macOS and architecture guards
   are removed before tap audit runs, preventing release commits with no active
   formula URL on Linux or Intel macOS.
+- Fixed menu-bar maintenance confirmations so Compact Database, Optimize
+  Images, and Uninstall Service register the first button click instead of
+  requiring the dropdown to be reopened.
+- Fixed the menu-bar status item fallback icons so stale/setup/error states
+  remain visible on macOS versions without the previous badge symbols.
 
 ## 0.2.12 - 2026-04-20
 
