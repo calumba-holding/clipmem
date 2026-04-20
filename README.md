@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/clipmem-logo.png" alt="clipmem logo" width="96">
+  <img src="docs/clipmem-logo.png" alt="clipmem logo" width="128">
 </p>
 
 # clipmem
@@ -7,6 +7,14 @@
 [![Crates.io](https://img.shields.io/crates/v/clipmem.svg)](https://crates.io/crates/clipmem)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Rust 1.87+](https://img.shields.io/badge/rust-1.87%2B-orange.svg)](https://www.rust-lang.org)
+
+A searchable, local-only clipboard history for macOS. `clipmem` watches the
+system clipboard, archives every observed state into a local SQLite database,
+and exposes retrieval commands that return human-readable text or structured
+JSON — designed so agents (OpenClaw and others) can recall things you've
+copied. It can also run opt-in local OCR for copied images using Apple Vision,
+so screenshots and image-only clips become searchable without sending image data
+off-device.
 
 <table>
   <tr>
@@ -20,14 +28,6 @@
     </td>
   </tr>
 </table>
-
-A searchable, local-only clipboard history for macOS. `clipmem` watches the
-system clipboard, archives every observed state into a local SQLite database,
-and exposes retrieval commands that return human-readable text or structured
-JSON — designed so agents (OpenClaw and others) can recall things you've
-copied. It can also run opt-in local OCR for copied images using Apple Vision,
-so screenshots and image-only clips become searchable without sending image data
-off-device.
 
 ## Requirements
 
