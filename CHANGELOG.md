@@ -11,6 +11,13 @@ versioning where practical.
 
 Changes for the next release go here.
 
+## 0.3.2 - 2026-04-20
+
+### Changed
+
+- Updated the README logo and macOS menu bar app icon assets to use the
+  refreshed `clipmem` logo.
+
 ## 0.3.1 - 2026-04-20
 
 ### Fixed
