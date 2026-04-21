@@ -343,23 +343,20 @@ pub(crate) fn html_to_text_lossy(html: &str) -> String {
 
         if in_entity {
             if ch == ';' {
-                out.push_str(match entity.as_str() {
-                    "amp" => "&",
-                    "lt" => "<",
-                    "gt" => ">",
-                    "quot" => "\"",
-                    "apos" => "'",
-                    _ => " ",
-                });
+                out.push_str(&decode_html_entity(&entity).unwrap_or_else(|| " ".to_string()));
                 entity.clear();
                 in_entity = false;
-            } else if entity.len() < 12 {
-                entity.push(ch);
-            } else {
-                entity.clear();
-                in_entity = false;
+                continue;
             }
-            continue;
+            if entity.len() < 12 && is_html_entity_char(ch) {
+                entity.push(ch);
+                continue;
+            }
+
+            out.push('&');
+            out.push_str(&entity);
+            entity.clear();
+            in_entity = false;
         }
 
         match ch {
@@ -372,7 +369,41 @@ pub(crate) fn html_to_text_lossy(html: &str) -> String {
         }
     }
 
+    if in_entity {
+        out.push('&');
+        out.push_str(&entity);
+    }
+
     normalise_whitespace(&out)
+}
+
+fn is_html_entity_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '#'
+}
+
+fn decode_html_entity(entity: &str) -> Option<String> {
+    match entity {
+        "amp" => Some("&".to_string()),
+        "lt" => Some("<".to_string()),
+        "gt" => Some(">".to_string()),
+        "quot" => Some("\"".to_string()),
+        "apos" => Some("'".to_string()),
+        "nbsp" => Some(" ".to_string()),
+        _ => decode_numeric_html_entity(entity).map(|ch| ch.to_string()),
+    }
+}
+
+fn decode_numeric_html_entity(entity: &str) -> Option<char> {
+    if let Some(hex) = entity
+        .strip_prefix("#x")
+        .or_else(|| entity.strip_prefix("#X"))
+    {
+        u32::from_str_radix(hex, 16).ok().and_then(char::from_u32)
+    } else if let Some(decimal) = entity.strip_prefix('#') {
+        decimal.parse::<u32>().ok().and_then(char::from_u32)
+    } else {
+        None
+    }
 }
 
 pub(crate) fn rtf_to_text_lossy(rtf: &str) -> String {
@@ -528,6 +559,18 @@ mod tests {
     fn html_is_stripped_reasonably() {
         let html = "<p>Hello <strong>world</strong> &amp; friends</p>";
         assert_eq!(html_to_text_lossy(html), "Hello world & friends");
+    }
+
+    #[test]
+    fn html_decodes_numeric_entities() {
+        let html = "<p>Tristan&#39;s path: &#x2F;tmp&#47;clipmem</p>";
+        assert_eq!(html_to_text_lossy(html), "Tristan's path: /tmp/clipmem");
+    }
+
+    #[test]
+    fn html_preserves_bare_ampersands() {
+        let html = "<p>AT&T research</p>";
+        assert_eq!(html_to_text_lossy(html), "AT&T research");
     }
 
     #[test]

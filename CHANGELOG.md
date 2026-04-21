@@ -9,6 +9,11 @@ versioning where practical.
 
 ## Unreleased
 
+### Fixed
+
+- Fixed HTML clipboard text normalization so numeric entities like `&#39;` and
+  `&#x2F;` remain searchable as their original characters instead of spaces.
+
 ### Changed
 
 - Updated the README and menu bar app documentation screenshot to show the
