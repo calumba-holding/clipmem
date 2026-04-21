@@ -52,6 +52,12 @@ LaunchAgent is running:
 clipmem setup
 ```
 
+If `watcher_binary_mismatch: true`, the command you ran and the
+background watcher are using different `clipmem` binaries. Restart the
+watcher from the same binary with `clipmem service start`, or use
+`scripts/build_and_run_menubar.sh` for development so the menu bar app
+and watcher use `target/debug/clipmem` together.
+
 ## Doctor says everything is fine but you get no results
 
 Two common causes:

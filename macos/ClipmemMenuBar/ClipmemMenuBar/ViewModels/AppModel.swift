@@ -105,9 +105,11 @@ final class AppModel {
     @discardableResult
     func refreshRecentPreview() async -> Bool {
         do {
-            recentPreview = try await loadRecentPreview()
+            let loadedPreview = try await loadRecentPreview()
+            let changed = loadedPreview != recentPreview
+            recentPreview = loadedPreview
             recentPreviewRefreshedAt = Date()
-            return true
+            return changed
         } catch {
             recentPreview = []
             return false
@@ -248,6 +250,7 @@ final class AppModel {
     func restore(_ item: ClipmemItem) async {
         do {
             _ = try await client.restore(snapshotID: item.snapshotId)
+            pasteboardMonitor?.markCurrentChangeHandled()
             lastError = nil
             showActionMessage("Restored to clipboard")
             await refreshRecentPreview()
@@ -485,6 +488,10 @@ final class PasteboardChangeMonitor {
         guard currentChangeCount != lastChangeCount else { return }
         self.lastChangeCount = currentChangeCount
         onChange()
+    }
+
+    func markCurrentChangeHandled() {
+        lastChangeCount = changeCount()
     }
 }
 

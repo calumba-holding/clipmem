@@ -54,6 +54,9 @@ pub(super) struct ServiceProviderStatus {
     pub(super) running: bool,
     pub(super) pid: Option<i64>,
     pub(super) plist_path: Option<String>,
+    pub(super) configured_binary_path: Option<String>,
+    pub(super) running_command: Option<String>,
+    pub(super) running_binary_path: Option<String>,
     pub(super) stdout_log_path: Option<String>,
     pub(super) stderr_log_path: Option<String>,
 }
@@ -78,6 +81,8 @@ pub(super) struct ServiceStatusReport {
     pub(super) ignored_bundle_id_count: Option<usize>,
     pub(super) stale: bool,
     pub(super) db_error: Option<String>,
+    pub(super) watcher_binary_mismatch: bool,
+    pub(super) watcher_binary_mismatch_note: Option<String>,
     pub(super) notes: Vec<String>,
 }
 
@@ -195,6 +200,7 @@ pub(super) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
         direct_installed,
         direct_row,
         Some(context.direct_plist_path.clone()),
+        configured_binary_path_from_plist(&context.direct_plist_path),
         Some(context.direct_stdout_path.clone()),
         Some(context.direct_stderr_path.clone()),
     );
@@ -204,6 +210,7 @@ pub(super) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
         homebrew_installed,
         homebrew_row,
         Some(context.homebrew_plist_path.clone()),
+        configured_binary_path_from_plist(&context.homebrew_plist_path),
         context
             .homebrew_prefix
             .as_ref()
@@ -281,6 +288,12 @@ pub(super) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
             "No recent captures were found and no background watcher is running.".to_string(),
         );
     }
+    let watcher_binary_mismatch_note =
+        watcher_binary_mismatch_note(&context.binary_path, [&homebrew_status, &direct_status]);
+    let watcher_binary_mismatch = watcher_binary_mismatch_note.is_some();
+    if let Some(note) = &watcher_binary_mismatch_note {
+        notes.push(note.clone());
+    }
 
     Ok(ServiceStatusReport {
         binary_path: context.binary_path.display().to_string(),
@@ -301,6 +314,8 @@ pub(super) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
         ignored_bundle_id_count,
         stale,
         db_error,
+        watcher_binary_mismatch,
+        watcher_binary_mismatch_note,
         notes,
     })
 }
@@ -389,6 +404,13 @@ pub(super) fn render_service_status_text(report: &ServiceStatusReport) -> String
         out.push_str("ignored bundle ids: unknown\n");
     }
     out.push_str(&format!("stale: {}\n", report.stale));
+    out.push_str(&format!(
+        "watcher binary mismatch: {}\n",
+        report.watcher_binary_mismatch
+    ));
+    if let Some(note) = &report.watcher_binary_mismatch_note {
+        out.push_str(&format!("watcher binary mismatch note: {note}\n"));
+    }
     if let Some(db_error) = &report.db_error {
         out.push_str(&format!("database error: {db_error}\n"));
     }
@@ -413,6 +435,15 @@ fn render_provider_status(out: &mut String, status: &ServiceProviderStatus) {
     }
     if let Some(path) = &status.plist_path {
         out.push_str(&format!("  plist: {path}\n"));
+    }
+    if let Some(path) = &status.configured_binary_path {
+        out.push_str(&format!("  configured binary: {path}\n"));
+    }
+    if let Some(path) = &status.running_binary_path {
+        out.push_str(&format!("  running binary: {path}\n"));
+    }
+    if let Some(command) = &status.running_command {
+        out.push_str(&format!("  running command: {command}\n"));
     }
     if let Some(path) = &status.stdout_log_path {
         out.push_str(&format!("  stdout log: {path}\n"));
@@ -517,6 +548,9 @@ fn render_seed_capture_outcome(outcome: SeedCaptureOutcome) -> &'static str {
     match outcome {
         SeedCaptureOutcome::Stored => "stored",
         SeedCaptureOutcome::Skipped(CaptureSkipReason::ApiKeyFilter) => "skipped_api_key_filter",
+        SeedCaptureOutcome::Skipped(CaptureSkipReason::RestoredSnapshot) => {
+            "skipped_restored_snapshot"
+        }
         SeedCaptureOutcome::NotAttempted => "not_attempted",
     }
 }
@@ -738,6 +772,7 @@ fn provider_status(
     installed: bool,
     row: Option<LaunchctlRow>,
     plist_path: Option<PathBuf>,
+    configured_binary_path: Option<String>,
     stdout_log_path: Option<PathBuf>,
     stderr_log_path: Option<PathBuf>,
 ) -> ServiceProviderStatus {
@@ -746,6 +781,8 @@ fn provider_status(
         Some(_) => (true, false, None),
         None => (false, false, None),
     };
+    let running_command = pid.and_then(process_command);
+    let running_binary_path = running_command.as_deref().and_then(command_binary_path);
     let state = if running {
         ServiceState::Running
     } else if loaded {
@@ -765,8 +802,107 @@ fn provider_status(
         running,
         pid,
         plist_path: plist_path.map(|path| path.display().to_string()),
+        configured_binary_path,
+        running_command,
+        running_binary_path,
         stdout_log_path: stdout_log_path.map(|path| path.display().to_string()),
         stderr_log_path: stderr_log_path.map(|path| path.display().to_string()),
+    }
+}
+
+fn configured_binary_path_from_plist(plist_path: &Path) -> Option<String> {
+    if !plist_path.is_file() {
+        return None;
+    }
+
+    let output = ProcessCommand::new("plutil")
+        .args([
+            "-extract",
+            "ProgramArguments.0",
+            "raw",
+            "-o",
+            "-",
+            &plist_path.display().to_string(),
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!value.is_empty()).then_some(value)
+}
+
+fn process_command(pid: i64) -> Option<String> {
+    let output = ProcessCommand::new("ps")
+        .args(["-ww", "-p", &pid.to_string(), "-o", "command="])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!value.is_empty()).then_some(value)
+}
+
+fn command_binary_path(command: &str) -> Option<String> {
+    let trimmed = command.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some(rest) = trimmed.strip_prefix('"') {
+        let end = rest.find('"')?;
+        let value = &rest[..end];
+        return (!value.is_empty()).then_some(value.to_string());
+    }
+    if let Some(rest) = trimmed.strip_prefix('\'') {
+        let end = rest.find('\'')?;
+        let value = &rest[..end];
+        return (!value.is_empty()).then_some(value.to_string());
+    }
+    trimmed.split_whitespace().next().map(ToString::to_string)
+}
+
+fn watcher_binary_mismatch_note<'a>(
+    current_binary_path: &Path,
+    providers: impl IntoIterator<Item = &'a ServiceProviderStatus>,
+) -> Option<String> {
+    for provider in providers {
+        if !(provider.installed || provider.loaded || provider.running) {
+            continue;
+        }
+        let candidates: Vec<&str> = if let Some(running) = provider.running_binary_path.as_deref() {
+            vec![running]
+        } else {
+            provider
+                .configured_binary_path
+                .iter()
+                .map(String::as_str)
+                .collect()
+        };
+        for candidate in candidates {
+            if !paths_equivalent(current_binary_path, Path::new(candidate)) {
+                return Some(format!(
+                    "{} watcher uses {}, but this command is {}. Restart the watcher with the same clipmem binary to avoid mixed-build behavior.",
+                    provider.provider.as_str(),
+                    candidate,
+                    current_binary_path.display()
+                ));
+            }
+        }
+    }
+    None
+}
+
+fn paths_equivalent(left: &Path, right: &Path) -> bool {
+    if left == right {
+        return true;
+    }
+    match (fs::canonicalize(left), fs::canonicalize(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
     }
 }
 
@@ -986,7 +1122,10 @@ fn home_dir() -> Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::homebrew_prefix_for_binary;
+    use super::{
+        command_binary_path, configured_binary_path_from_plist, homebrew_prefix_for_binary,
+        watcher_binary_mismatch_note, ServiceProvider, ServiceProviderStatus, ServiceState,
+    };
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -1027,5 +1166,77 @@ mod tests {
             homebrew_prefix_for_binary(Path::new("/Users/tristan/.cargo/bin/clipmem")),
             None
         );
+    }
+
+    #[test]
+    fn command_binary_path_reads_first_program_argument() {
+        assert_eq!(
+            command_binary_path("/Users/test/clipmem/target/debug/clipmem watch --skip-initial"),
+            Some("/Users/test/clipmem/target/debug/clipmem".to_string())
+        );
+        assert_eq!(
+            command_binary_path("\"/Users/test/Clip Mem/clipmem\" watch"),
+            Some("/Users/test/Clip Mem/clipmem".to_string())
+        );
+    }
+
+    #[test]
+    fn launchagent_plist_reports_configured_binary_path() {
+        let path = std::env::temp_dir().join(format!(
+            "clipmem-service-test-{}-{}.plist",
+            std::process::id(),
+            "configured-binary"
+        ));
+        std::fs::write(
+            &path,
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/tmp/clipmem-debug</string>
+      <string>watch</string>
+    </array>
+  </dict>
+</plist>
+"#,
+        )
+        .expect("write test plist");
+
+        assert_eq!(
+            configured_binary_path_from_plist(&path),
+            Some("/tmp/clipmem-debug".to_string())
+        );
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn watcher_binary_mismatch_reports_configured_path() {
+        let provider = ServiceProviderStatus {
+            provider: ServiceProvider::Launchagent,
+            label: "io.openclaw.clipmem.watch".to_string(),
+            state: ServiceState::Running,
+            installed: true,
+            loaded: true,
+            running: true,
+            pid: Some(123),
+            plist_path: None,
+            configured_binary_path: Some("/opt/homebrew/bin/clipmem".to_string()),
+            running_command: None,
+            running_binary_path: None,
+            stdout_log_path: None,
+            stderr_log_path: None,
+        };
+
+        let note = watcher_binary_mismatch_note(
+            Path::new("/Users/test/clipmem/target/debug/clipmem"),
+            [&provider],
+        )
+        .expect("different watcher binary should be reported");
+
+        assert!(note.contains("launchagent watcher uses /opt/homebrew/bin/clipmem"));
+        assert!(note.contains("/Users/test/clipmem/target/debug/clipmem"));
     }
 }

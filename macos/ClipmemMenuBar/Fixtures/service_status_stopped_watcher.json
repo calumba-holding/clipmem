@@ -13,6 +13,9 @@
     "running": false,
     "pid": null,
     "plist_path": "/Users/test/Library/LaunchAgents/homebrew.mxcl.clipmem.plist",
+    "configured_binary_path": null,
+    "running_command": null,
+    "running_binary_path": null,
     "stdout_log_path": null,
     "stderr_log_path": null
   },
@@ -25,6 +28,9 @@
     "running": false,
     "pid": null,
     "plist_path": "/Users/test/Library/LaunchAgents/io.openclaw.clipmem.watch.plist",
+    "configured_binary_path": "/Users/test/clipmem/target/debug/clipmem",
+    "running_command": null,
+    "running_binary_path": null,
     "stdout_log_path": "/Users/test/Library/Application Support/clipmem/logs/clipmem.stdout.log",
     "stderr_log_path": "/Users/test/Library/Application Support/clipmem/logs/clipmem.stderr.log"
   },
@@ -39,6 +45,8 @@
   "ignored_bundle_id_count": 1,
   "stale": true,
   "db_error": null,
+  "watcher_binary_mismatch": false,
+  "watcher_binary_mismatch_note": null,
   "notes": [
     "No recent captures were found and no background watcher is running."
   ]

@@ -141,7 +141,7 @@ Examples:
 
 Notes:
   - Restores every stored item and representation for the snapshot back onto the macOS clipboard.
-  - The active watcher may record the restored clipboard state as a fresh capture event.";
+  - The active watcher suppresses the matching restored state so it doesn't create a duplicate capture event.";
 
 const FORGET_AFTER_HELP: &str = "\
 Examples:

@@ -61,9 +61,11 @@ struct ClipmemClientConfiguration: Sendable {
     var databaseOverride: String?
 
     static var current: ClipmemClientConfiguration {
-        ClipmemClientConfiguration(
+        let environment = ProcessInfo.processInfo.environment
+        return ClipmemClientConfiguration(
             binaryOverride: UserDefaults.standard.string(forKey: PreferenceKey.binaryPathOverride),
-            databaseOverride: UserDefaults.standard.string(forKey: PreferenceKey.databasePathOverride)
+            databaseOverride: environment["CLIPMEM_DB_PATH"]
+                ?? UserDefaults.standard.string(forKey: PreferenceKey.databasePathOverride)
         )
     }
 }

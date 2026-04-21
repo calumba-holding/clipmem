@@ -219,6 +219,9 @@ clipmem restore 42 --human
 clipmem restore 42 --format json
 ```
 
+The active watcher suppresses the matching restored state, so restoring
+an archived snapshot doesn't create a duplicate capture event.
+
 ### `clipmem export <SNAPSHOT_ID>`
 
 Write one stored representation as raw bytes to a file.
@@ -360,7 +363,8 @@ Stop background capture without uninstalling the service definition.
 
 ### `clipmem service status`
 
-Report provider state, freshness, and service wiring.
+Report provider state, freshness, service wiring, and watcher binary
+mismatches.
 
 | Flag | Type | Default | Description |
 |---|---|---|---|

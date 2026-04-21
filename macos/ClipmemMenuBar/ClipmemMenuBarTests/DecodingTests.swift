@@ -10,6 +10,7 @@ struct DecodingTests {
         #expect(report.launchagent?.running == true)
         #expect(report.retention == "30d")
         #expect(report.dbSizeBytes == 12_582_912)
+        #expect(report.watcherBinaryPath == "/Users/test/clipmem/target/debug/clipmem")
     }
 
     @Test func stoppedWatcherFixtureMapsToStale() throws {
@@ -38,6 +39,28 @@ struct DecodingTests {
         #expect(status(launchagent: runningLaunchAgent, dbExists: false, stale: true).health == .setupNeeded)
         #expect(status(launchagent: runningLaunchAgent, paused: true, stale: true).health == .capturePaused)
     }
+
+    @Test func serviceStatusExposesWatcherBinaryMismatchWithoutChangingHealth() {
+        let launchAgent = provider(
+            "launchagent",
+            installed: true,
+            loaded: true,
+            running: true,
+            configuredBinaryPath: "/opt/homebrew/bin/clipmem",
+            runningBinaryPath: "/opt/homebrew/bin/clipmem"
+        )
+        let report = status(
+            launchagent: launchAgent,
+            watcherBinaryMismatch: true,
+            watcherBinaryMismatchNote: "launchagent watcher uses /opt/homebrew/bin/clipmem"
+        )
+
+        #expect(report.health == .healthy)
+        #expect(report.watcherBinaryMismatch == true)
+        #expect(report.watcherBinaryPath == "/opt/homebrew/bin/clipmem")
+        #expect(report.watcherBinaryMismatchNote?.contains("/opt/homebrew/bin/clipmem") == true)
+    }
+
 
     @Test func menuBarBadgePolicyMarksOnlyAttentionStates() {
         #expect(HealthState.healthy.menuBarBadgeSymbol == nil)
@@ -156,7 +179,9 @@ struct DecodingTests {
         recentCaptureWithinLastHour: Bool? = true,
         paused: Bool? = false,
         stale: Bool = false,
-        dbError: String? = nil
+        dbError: String? = nil,
+        watcherBinaryMismatch: Bool = false,
+        watcherBinaryMismatchNote: String? = nil
     ) -> ServiceStatusReport {
         ServiceStatusReport(
             binaryPath: "/Users/test/clipmem",
@@ -177,6 +202,8 @@ struct DecodingTests {
             ignoredBundleIdCount: 0,
             stale: stale,
             dbError: dbError,
+            watcherBinaryMismatch: watcherBinaryMismatch,
+            watcherBinaryMismatchNote: watcherBinaryMismatchNote,
             notes: []
         )
     }
@@ -185,7 +212,9 @@ struct DecodingTests {
         _ provider: String,
         installed: Bool,
         loaded: Bool,
-        running: Bool
+        running: Bool,
+        configuredBinaryPath: String? = nil,
+        runningBinaryPath: String? = nil
     ) -> ProviderStatus {
         ProviderStatus(
             provider: provider,
@@ -196,6 +225,9 @@ struct DecodingTests {
             running: running,
             pid: running ? 123 : nil,
             plistPath: nil,
+            configuredBinaryPath: configuredBinaryPath,
+            runningCommand: runningBinaryPath.map { "\($0) watch --skip-initial" },
+            runningBinaryPath: runningBinaryPath,
             stdoutLogPath: nil,
             stderrLogPath: nil
         )

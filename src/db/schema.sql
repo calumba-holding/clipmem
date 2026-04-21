@@ -88,6 +88,11 @@ CREATE TABLE IF NOT EXISTS ignored_bundle_ids (
     bundle_id TEXT PRIMARY KEY
 );
 
+CREATE TABLE IF NOT EXISTS pending_restores (
+    snapshot_sha256 TEXT PRIMARY KEY,
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS ocr_results (
     raw_sha256        TEXT PRIMARY KEY,
     status            TEXT NOT NULL CHECK (status IN ('pending', 'ready', 'failed', 'skipped')),
@@ -118,6 +123,9 @@ CREATE INDEX IF NOT EXISTS idx_capture_events_observed_id
 
 CREATE INDEX IF NOT EXISTS idx_snapshot_stats_last_observed_snapshot
     ON snapshot_stats(last_observed_at DESC, snapshot_id DESC);
+
+CREATE INDEX IF NOT EXISTS idx_pending_restores_created_at
+    ON pending_restores(created_at);
 
 CREATE INDEX IF NOT EXISTS idx_snapshot_items_snapshot_id
     ON snapshot_items(snapshot_id, item_index);
@@ -255,6 +263,16 @@ AFTER DELETE ON snapshot_ocr_cache BEGIN
     INSERT INTO snapshot_ocr_fts(snapshot_ocr_fts, rowid, ocr_text)
     VALUES ('delete', old.snapshot_id, old.ocr_text);
     DELETE FROM snapshot_ocr_literal_fts WHERE rowid = old.snapshot_id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS capture_events_restore_suppression_bi
+BEFORE INSERT ON capture_events BEGIN
+    DELETE FROM pending_restores
+    WHERE datetime(created_at) < datetime('now', '-30 seconds');
+    DELETE FROM pending_restores
+    WHERE snapshot_sha256 = (SELECT sha256 FROM snapshots WHERE id = new.snapshot_id)
+      AND datetime(created_at) >= datetime('now', '-30 seconds');
+    SELECT CASE WHEN changes() > 0 THEN RAISE(IGNORE) END;
 END;
 
 CREATE TRIGGER IF NOT EXISTS capture_events_ai AFTER INSERT ON capture_events BEGIN

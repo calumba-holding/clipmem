@@ -364,7 +364,7 @@ where
         return Ok(());
     }
     let outcome = anyhow::Context::context(
-        db.store_capture_if_allowed(&snapshot),
+        db.store_watched_capture_if_allowed(&snapshot),
         "database write failed",
     )?;
     match outcome {
@@ -840,7 +840,17 @@ fn restore_snapshot(db_path: &Path, args: &RestoreArgs) -> Result<()> {
         format!("restore failed for snapshot {}", args.snapshot_id)
     })?
     .ok_or_else(|| anyhow!("snapshot {} was not found", args.snapshot_id))?;
-    let report = anyhow::Context::context(restore_items(snapshot.items()), "restore failed")?;
+    db.register_pending_restore(snapshot.sha256())
+        .context("register pending restore")?;
+    let report = match restore_items(snapshot.items()) {
+        Ok(report) => report,
+        Err(err) => {
+            if let Err(clear_err) = db.clear_pending_restore(snapshot.sha256()) {
+                eprintln!("pending restore cleanup failed: {clear_err:#}");
+            }
+            return Err(err).context("restore failed");
+        }
+    };
     let output = RestoreOutput {
         snapshot_id: args.snapshot_id,
         item_count: report.item_count(),
@@ -2795,6 +2805,80 @@ mod tests {
         assert_eq!(capture_calls.get(), 1);
         assert_eq!(db.recent(10, &unfiltered()).unwrap().len(), 1);
 
+        cleanup_db(&path);
+    }
+
+    #[test]
+    fn watch_iteration_skips_restored_snapshots_and_marks_them_handled() {
+        let path = temp_db_path("watch-restore-suppression");
+        let mut db = Database::open_or_init(&path).expect("test database should open");
+        let stored = db
+            .store_capture(&build_snapshot(
+                CaptureContext::new(1)
+                    .with_frontmost_app_name("Terminal")
+                    .with_frontmost_app_bundle_id("com.apple.Terminal"),
+                vec![build_item(
+                    0,
+                    vec![build_representation(
+                        "public.utf8-plain-text".to_string(),
+                        None,
+                        b"git status".to_vec(),
+                    )],
+                )],
+            ))
+            .expect("seed snapshot should store");
+        let sha256 = db
+            .find_snapshot(stored.snapshot_id(), 1)
+            .expect("snapshot lookup should succeed")
+            .expect("snapshot should exist")
+            .sha256()
+            .to_string();
+        db.register_pending_restore(&sha256)
+            .expect("pending restore should register");
+        let args = WatchArgs {
+            interval_ms: 350,
+            quiet: true,
+            skip_initial: false,
+        };
+        let mut state = WatchState::new();
+        let capture_calls = Cell::new(0);
+
+        let first = run_watch_iteration_with_capture(
+            &mut db,
+            &args,
+            &mut state,
+            || Ok(2),
+            || {
+                capture_calls.set(capture_calls.get() + 1);
+                Ok(build_snapshot(
+                    CaptureContext::new(2)
+                        .with_frontmost_app_name("Terminal")
+                        .with_frontmost_app_bundle_id("com.apple.Terminal"),
+                    vec![build_item(
+                        0,
+                        vec![build_representation(
+                            "public.utf8-plain-text".to_string(),
+                            None,
+                            b"git status".to_vec(),
+                        )],
+                    )],
+                ))
+            },
+        );
+
+        assert!(first.is_ok());
+        assert_eq!(capture_calls.get(), 1);
+        assert_eq!(db.recent(10, &unfiltered()).unwrap()[0].capture_count(), 1);
+
+        let second = run_watch_iteration_with_capture(
+            &mut db,
+            &args,
+            &mut state,
+            || Ok(2),
+            || panic!("restored change count should have been marked handled"),
+        );
+
+        assert!(second.is_ok());
         cleanup_db(&path);
     }
 

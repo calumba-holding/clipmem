@@ -9,6 +9,9 @@ struct ProviderStatus: Decodable, Equatable, Sendable {
     var running: Bool?
     var pid: Int?
     var plistPath: String?
+    var configuredBinaryPath: String?
+    var runningCommand: String?
+    var runningBinaryPath: String?
     var stdoutLogPath: String?
     var stderrLogPath: String?
 }
@@ -32,6 +35,8 @@ struct ServiceStatusReport: Decodable, Equatable, Sendable {
     var ignoredBundleIdCount: Int?
     var stale: Bool?
     var dbError: String?
+    var watcherBinaryMismatch: Bool?
+    var watcherBinaryMismatchNote: String?
     var notes: [String]?
 
     var health: HealthState {
@@ -51,6 +56,16 @@ struct ServiceStatusReport: Decodable, Equatable, Sendable {
     var logPaths: [String] {
         [homebrew?.stdoutLogPath, homebrew?.stderrLogPath, launchagent?.stdoutLogPath, launchagent?.stderrLogPath]
             .compactMap { $0 }
+    }
+
+    var watcherBinaryPath: String? {
+        if launchagent?.running == true {
+            return launchagent?.runningBinaryPath ?? launchagent?.configuredBinaryPath
+        }
+        if homebrew?.running == true {
+            return homebrew?.runningBinaryPath ?? homebrew?.configuredBinaryPath
+        }
+        return launchagent?.configuredBinaryPath ?? homebrew?.configuredBinaryPath
     }
 
     private var isAnyProviderRunning: Bool {

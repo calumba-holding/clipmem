@@ -31,6 +31,14 @@ versioning where practical.
 - Updated ResultRowView spacing to use consistent design tokens and increased
   metadata font weight for better legibility.
 
+### Fixed
+
+- Fixed restore actions so restored clipboard states are suppressed as known
+  duplicates instead of briefly appearing as fresh recent captures.
+- Fixed restore recents moving or flashing when a stale watcher binary is
+  still running by suppressing restore-induced duplicate events at the
+  database layer and surfacing watcher binary mismatches in diagnostics.
+
 ## 0.3.2 - 2026-04-20
 
 ### Changed

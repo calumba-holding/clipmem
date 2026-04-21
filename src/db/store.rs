@@ -22,6 +22,7 @@ const IMAGE_OPTIMIZATION_MIN_ABSOLUTE_SAVINGS: usize = 64 * 1024;
 const IMAGE_OPTIMIZATION_MIN_RELATIVE_SAVINGS_NUMERATOR: usize = 1;
 const IMAGE_OPTIMIZATION_MIN_RELATIVE_SAVINGS_DENOMINATOR: usize = 10;
 const IMAGE_OPTIMIZATION_MAX_DIMENSION: u32 = 16_384;
+const RESTORE_SUPPRESSION_WINDOW_SECONDS: i64 = 30;
 
 impl Database {
     /// Store a captured clipboard snapshot and append a capture event for the observation.
@@ -77,21 +78,27 @@ impl Database {
             .context("lookup existing snapshot by fingerprint")?
         };
 
-        tx.execute(
-            "INSERT INTO capture_events (
+        let inserted_event_rows = tx
+            .execute(
+                "INSERT INTO capture_events (
                 snapshot_id,
                 change_count,
                 frontmost_app_bundle_id,
                 frontmost_app_name
             ) VALUES (?1, ?2, ?3, ?4)",
-            params![
-                snapshot_id,
-                snapshot.change_count(),
-                snapshot.frontmost_app_bundle_id(),
-                snapshot.frontmost_app_name(),
-            ],
-        )
-        .context("insert capture event row")?;
+                params![
+                    snapshot_id,
+                    snapshot.change_count(),
+                    snapshot.frontmost_app_bundle_id(),
+                    snapshot.frontmost_app_name(),
+                ],
+            )
+            .context("insert capture event row")?;
+        if inserted_event_rows == 0 {
+            tx.commit()
+                .context("commit suppressed capture transaction")?;
+            anyhow::bail!("capture event suppressed by pending restore marker");
+        }
         let event_id = tx.last_insert_rowid();
 
         tx.commit().context("commit capture transaction")?;
@@ -118,6 +125,63 @@ impl Database {
 
         self.store_capture(snapshot)
             .map(CaptureStoreOutcome::Stored)
+    }
+
+    pub(crate) fn store_watched_capture_if_allowed(
+        &mut self,
+        snapshot: &ClipboardSnapshot,
+    ) -> Result<CaptureStoreOutcome> {
+        if self.consume_pending_restore(snapshot.fingerprint())? {
+            return Ok(CaptureStoreOutcome::Skipped(
+                CaptureSkipReason::RestoredSnapshot,
+            ));
+        }
+
+        self.store_capture_if_allowed(snapshot)
+    }
+
+    pub(crate) fn register_pending_restore(&self, snapshot_sha256: &str) -> Result<()> {
+        self.delete_expired_pending_restores()?;
+        self.conn
+            .execute(
+                "INSERT INTO pending_restores (snapshot_sha256, created_at)
+                 VALUES (?1, CURRENT_TIMESTAMP)
+                 ON CONFLICT(snapshot_sha256) DO UPDATE SET created_at = CURRENT_TIMESTAMP",
+                [snapshot_sha256],
+            )
+            .context("register pending restore")?;
+        Ok(())
+    }
+
+    pub(crate) fn clear_pending_restore(&self, snapshot_sha256: &str) -> Result<()> {
+        self.conn
+            .execute(
+                "DELETE FROM pending_restores WHERE snapshot_sha256 = ?1",
+                [snapshot_sha256],
+            )
+            .context("clear pending restore")?;
+        Ok(())
+    }
+
+    fn consume_pending_restore(&mut self, snapshot_sha256: &str) -> Result<bool> {
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .context("begin pending restore transaction")?;
+        delete_expired_pending_restores(&tx)?;
+        let consumed = tx
+            .execute(
+                "DELETE FROM pending_restores WHERE snapshot_sha256 = ?1",
+                [snapshot_sha256],
+            )
+            .context("consume pending restore")?
+            != 0;
+        tx.commit().context("commit pending restore transaction")?;
+        Ok(consumed)
+    }
+
+    fn delete_expired_pending_restores(&self) -> Result<()> {
+        delete_expired_pending_restores(&self.conn)
     }
 
     pub(crate) fn capture_settings(&self) -> Result<CaptureSettings> {
@@ -1353,6 +1417,17 @@ fn normalize_bundle_id(bundle_id: &str) -> Result<String> {
         anyhow::bail!("bundle id cannot be empty");
     }
     Ok(normalized)
+}
+
+fn delete_expired_pending_restores(conn: &rusqlite::Connection) -> Result<()> {
+    let expiry_window = format!("-{RESTORE_SUPPRESSION_WINDOW_SECONDS} seconds");
+    conn.execute(
+        "DELETE FROM pending_restores
+         WHERE datetime(created_at) < datetime('now', ?1)",
+        [expiry_window],
+    )
+    .context("delete expired pending restores")?;
+    Ok(())
 }
 
 fn load_snapshot_deletion_report(

@@ -619,6 +619,170 @@ fn store_capture_if_allowed_stores_sensitive_text_when_filter_is_disabled() -> R
 }
 
 #[test]
+fn watched_capture_skips_pending_restored_snapshot_once() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let stored = db.store_capture(&fake_snapshot(1, "git status"))?;
+
+    db.register_pending_restore(db.find_snapshot(stored.snapshot_id(), 1)?.unwrap().sha256())?;
+    let outcome = db.store_watched_capture_if_allowed(&fake_snapshot(2, "git status"))?;
+
+    assert!(matches!(
+        outcome,
+        super::CaptureStoreOutcome::Skipped(super::CaptureSkipReason::RestoredSnapshot)
+    ));
+    let event_count: i64 = db
+        .conn
+        .query_row("SELECT COUNT(*) FROM capture_events", [], |row| row.get(0))?;
+    assert_eq!(event_count, 1);
+
+    let outcome = db.store_watched_capture_if_allowed(&fake_snapshot(3, "git status"))?;
+
+    assert!(matches!(outcome, super::CaptureStoreOutcome::Stored(_)));
+    let event_count: i64 = db
+        .conn
+        .query_row("SELECT COUNT(*) FROM capture_events", [], |row| row.get(0))?;
+    assert_eq!(event_count, 2);
+    Ok(())
+}
+
+#[test]
+fn pending_restore_trigger_suppresses_direct_capture_event_once() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let stored = db.store_capture(&fake_snapshot(1, "git status"))?;
+    let snapshot = db
+        .find_snapshot(stored.snapshot_id(), 1)?
+        .expect("stored snapshot should exist");
+
+    db.register_pending_restore(snapshot.sha256())?;
+    let inserted = db.conn.execute(
+        "INSERT INTO capture_events (snapshot_id, change_count) VALUES (?1, ?2)",
+        params![stored.snapshot_id(), 2_i64],
+    )?;
+
+    assert_eq!(inserted, 0);
+    let event_count: i64 = db
+        .conn
+        .query_row("SELECT COUNT(*) FROM capture_events", [], |row| row.get(0))?;
+    let pending_count: i64 =
+        db.conn
+            .query_row("SELECT COUNT(*) FROM pending_restores", [], |row| {
+                row.get(0)
+            })?;
+    let capture_count: i64 = db.conn.query_row(
+        "SELECT capture_count FROM snapshot_stats WHERE snapshot_id = ?1",
+        [stored.snapshot_id()],
+        |row| row.get(0),
+    )?;
+
+    assert_eq!(event_count, 1);
+    assert_eq!(pending_count, 0);
+    assert_eq!(capture_count, 1);
+
+    let inserted = db.conn.execute(
+        "INSERT INTO capture_events (snapshot_id, change_count) VALUES (?1, ?2)",
+        params![stored.snapshot_id(), 3_i64],
+    )?;
+    let event_count: i64 = db
+        .conn
+        .query_row("SELECT COUNT(*) FROM capture_events", [], |row| row.get(0))?;
+    let capture_count: i64 = db.conn.query_row(
+        "SELECT capture_count FROM snapshot_stats WHERE snapshot_id = ?1",
+        [stored.snapshot_id()],
+        |row| row.get(0),
+    )?;
+
+    assert_eq!(inserted, 1);
+    assert_eq!(event_count, 2);
+    assert_eq!(capture_count, 2);
+    Ok(())
+}
+
+#[test]
+fn store_capture_reports_restore_trigger_suppression_without_stale_event_id() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let stored = db.store_capture(&fake_snapshot(1, "git status"))?;
+    let snapshot = db
+        .find_snapshot(stored.snapshot_id(), 1)?
+        .expect("stored snapshot should exist");
+
+    db.register_pending_restore(snapshot.sha256())?;
+    let err = db
+        .store_capture(&fake_snapshot(2, "git status"))
+        .expect_err("trigger suppression should not return a stale event id");
+
+    assert!(err
+        .to_string()
+        .contains("capture event suppressed by pending restore marker"));
+    let event_count: i64 = db
+        .conn
+        .query_row("SELECT COUNT(*) FROM capture_events", [], |row| row.get(0))?;
+    assert_eq!(event_count, 1);
+    Ok(())
+}
+
+#[test]
+fn expired_pending_restore_does_not_suppress_capture() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let stored = db.store_capture(&fake_snapshot(1, "git status"))?;
+    let sha256 = db
+        .find_snapshot(stored.snapshot_id(), 1)?
+        .unwrap()
+        .sha256()
+        .to_string();
+    db.register_pending_restore(&sha256)?;
+    db.conn.execute(
+        "UPDATE pending_restores SET created_at = datetime('now', '-31 seconds') WHERE snapshot_sha256 = ?1",
+        [&sha256],
+    )?;
+
+    let outcome = db.store_watched_capture_if_allowed(&fake_snapshot(2, "git status"))?;
+
+    assert!(matches!(outcome, super::CaptureStoreOutcome::Stored(_)));
+    let pending_count: i64 =
+        db.conn
+            .query_row("SELECT COUNT(*) FROM pending_restores", [], |row| {
+                row.get(0)
+            })?;
+    assert_eq!(pending_count, 0);
+    Ok(())
+}
+
+#[test]
+fn expired_pending_restore_trigger_allows_direct_capture_event() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let stored = db.store_capture(&fake_snapshot(1, "git status"))?;
+    let sha256 = db
+        .find_snapshot(stored.snapshot_id(), 1)?
+        .unwrap()
+        .sha256()
+        .to_string();
+    db.register_pending_restore(&sha256)?;
+    db.conn.execute(
+        "UPDATE pending_restores SET created_at = datetime('now', '-31 seconds') WHERE snapshot_sha256 = ?1",
+        [&sha256],
+    )?;
+
+    let inserted = db.conn.execute(
+        "INSERT INTO capture_events (snapshot_id, change_count) VALUES (?1, ?2)",
+        params![stored.snapshot_id(), 2_i64],
+    )?;
+
+    let event_count: i64 = db
+        .conn
+        .query_row("SELECT COUNT(*) FROM capture_events", [], |row| row.get(0))?;
+    let pending_count: i64 =
+        db.conn
+            .query_row("SELECT COUNT(*) FROM pending_restores", [], |row| {
+                row.get(0)
+            })?;
+
+    assert_eq!(inserted, 1);
+    assert_eq!(event_count, 2);
+    assert_eq!(pending_count, 0);
+    Ok(())
+}
+
+#[test]
 fn forget_snapshot_cascades_and_removes_search_visibility() -> Result<()> {
     let mut db = Database::open_in_memory()?;
     let stored = db.store_capture(&fake_snapshot(1, "git status"))?;
@@ -819,6 +983,7 @@ fn schema_keeps_fts_index_and_triggers() {
     assert!(SCHEMA.contains("CREATE TRIGGER IF NOT EXISTS snapshots_ai"));
     assert!(SCHEMA.contains("CREATE TRIGGER IF NOT EXISTS snapshots_ad"));
     assert!(SCHEMA.contains("CREATE TRIGGER IF NOT EXISTS snapshots_au"));
+    assert!(SCHEMA.contains("capture_events_restore_suppression_bi"));
     assert!(SCHEMA.contains("idx_capture_events_snapshot_observed_id"));
     assert!(SCHEMA.contains("idx_capture_events_observed_id"));
 }
@@ -1226,6 +1391,60 @@ fn schema_version_11_adds_image_compression_metadata() -> Result<()> {
     assert!(columns.contains(&"image_compression_status".to_string()));
     assert!(columns.contains(&"image_compression_format".to_string()));
     assert!(columns.contains(&"image_original_raw_sha256".to_string()));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn schema_version_13_adds_pending_restore_backstop() -> Result<()> {
+    let path = temp_db_path("pending-restore-marker-migration");
+    let parent = path.parent().expect("temporary path should have a parent");
+    std::fs::create_dir_all(parent)?;
+
+    let conn = rusqlite::Connection::open(&path)?;
+    conn.execute_batch(
+        r"
+        CREATE TABLE item_representations (
+            snapshot_id INTEGER NOT NULL,
+            item_index INTEGER NOT NULL,
+            uti TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            byte_len INTEGER NOT NULL,
+            raw_sha256 TEXT NOT NULL,
+            text_value TEXT,
+            blob_value BLOB NOT NULL,
+            image_compression_status TEXT NOT NULL DEFAULT 'uncompressed',
+            image_compression_format TEXT,
+            image_compressed_at TEXT,
+            image_original_byte_len INTEGER,
+            image_original_raw_sha256 TEXT,
+            image_compression_reason TEXT,
+            PRIMARY KEY (snapshot_id, item_index, uti)
+        );
+        PRAGMA user_version = 12;
+    ",
+    )?;
+    drop(conn);
+
+    let db = Database::open_existing(&path)?;
+    let version: i64 = db
+        .conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let table_exists: bool = db.conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'pending_restores')",
+        [],
+        |row| row.get::<_, i64>(0).map(|value| value != 0),
+    )?;
+    let trigger_exists: bool = db.conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = 'capture_events_restore_suppression_bi')",
+        [],
+        |row| row.get::<_, i64>(0).map(|value| value != 0),
+    )?;
+
+    assert_eq!(version, CURRENT_SCHEMA_VERSION);
+    assert!(table_exists);
+    assert!(trigger_exists);
 
     cleanup_db(&path);
     Ok(())

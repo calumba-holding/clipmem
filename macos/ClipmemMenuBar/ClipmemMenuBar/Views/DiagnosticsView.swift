@@ -36,10 +36,18 @@ struct DiagnosticsView: View {
                     VStack(alignment: .leading, spacing: Spacing.md) {
                         Grid(alignment: .leading, horizontalSpacing: Spacing.md, verticalSpacing: Spacing.sm) {
                             FieldRow(title: "Binary", value: appModel.client.resolvedBinaryPath() ?? "Not found", showPlaceholder: true)
+                            FieldRow(title: "Watcher binary", value: appModel.serviceStatus?.watcherBinaryPath, showPlaceholder: true)
                             FieldRow(title: "Database", value: appModel.serviceStatus?.dbPath, showPlaceholder: true)
                             FieldRow(title: "Service method", value: appModel.serviceStatus?.preferredProvider, showPlaceholder: true)
                             FieldRow(title: "Latest Capture", value: appModel.serviceStatus?.recentCaptureAt, showPlaceholder: true)
                             FieldRow(title: "Retention", value: appModel.serviceStatus?.retention, showPlaceholder: true)
+                        }
+                        if appModel.serviceStatus?.watcherBinaryMismatch == true,
+                           let note = appModel.serviceStatus?.watcherBinaryMismatchNote {
+                            Label(note, systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                                .font(.callout)
+                                .textSelection(.enabled)
                         }
                         HStack {
                             Button("Compact Database", systemImage: "archivebox") {

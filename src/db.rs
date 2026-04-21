@@ -19,7 +19,7 @@ use crate::model::{
 };
 
 const SCHEMA: &str = include_str!("db/schema.sql");
-const CURRENT_SCHEMA_VERSION: i64 = 11;
+const CURRENT_SCHEMA_VERSION: i64 = 13;
 const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
 
 pub struct Database {
@@ -89,6 +89,7 @@ pub(crate) struct CapturePolicy {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum CaptureSkipReason {
     ApiKeyFilter,
+    RestoredSnapshot,
 }
 
 #[derive(Debug, Clone)]
@@ -586,6 +587,7 @@ impl CaptureSkipReason {
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::ApiKeyFilter => "api_key_filter",
+            Self::RestoredSnapshot => "restored_snapshot",
         }
     }
 }
@@ -1228,6 +1230,24 @@ fn prepare_schema(conn: &mut Connection) -> Result<()> {
                 );
             }
             ensure_image_compression_columns(&tx)?;
+            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+                .context("set PRAGMA user_version")?;
+        }
+        11 => {
+            if legacy_prerelease_schema_detected(&tx)? {
+                bail!(
+                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
+                );
+            }
+            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+                .context("set PRAGMA user_version")?;
+        }
+        12 => {
+            if legacy_prerelease_schema_detected(&tx)? {
+                bail!(
+                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
+                );
+            }
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }

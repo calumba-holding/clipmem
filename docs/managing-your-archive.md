@@ -16,8 +16,8 @@ clipmem restore 42
 clipmem restore 42 --format json
 ```
 
-The active watcher may record the restored clipboard state as a fresh
-capture event.
+The active watcher suppresses the matching restored state, so restoring
+an archived snapshot doesn't create a duplicate capture event.
 
 `restore` is macOS-only.
 

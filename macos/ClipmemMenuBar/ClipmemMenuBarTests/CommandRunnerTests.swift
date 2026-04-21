@@ -51,6 +51,22 @@ struct ReactiveRefreshTests {
         #expect(emittedChanges.value == 1)
     }
 
+    @Test func pasteboardMonitorCanMarkCurrentChangeHandled() {
+        let changeCount = IntBox(1)
+        let emittedChanges = IntBox(0)
+        let monitor = PasteboardChangeMonitor(
+            changeCount: { changeCount.value },
+            onChange: { emittedChanges.value += 1 }
+        )
+
+        monitor.pollOnce()
+        changeCount.value = 2
+        monitor.markCurrentChangeHandled()
+        monitor.pollOnce()
+
+        #expect(emittedChanges.value == 0)
+    }
+
     @Test func recentRefreshCoordinatorCoalescesRapidChanges() async {
         var refreshCount = 0
         let coordinator = RecentPreviewRefreshCoordinator(
@@ -112,6 +128,22 @@ struct ReactiveRefreshTests {
         #expect(loadCount == 1)
         #expect(appModel.clipboardHistoryRevision == 1)
         #expect(appModel.recentPreview.map(\.snapshotId) == [9])
+    }
+
+    @Test func recentPreviewRefreshReportsOnlyActualListChanges() async {
+        var loads = [[Self.item(9)], [Self.item(9)], [Self.item(10)]]
+        let appModel = AppModel {
+            loads.removeFirst()
+        }
+
+        let firstChanged = await appModel.refreshRecentPreview()
+        let secondChanged = await appModel.refreshRecentPreview()
+        let thirdChanged = await appModel.refreshRecentPreview()
+
+        #expect(firstChanged)
+        #expect(!secondChanged)
+        #expect(thirdChanged)
+        #expect(appModel.recentPreview.map(\.snapshotId) == [10])
     }
 
     private static func drainScheduledTasks() async {

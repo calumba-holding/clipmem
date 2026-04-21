@@ -13,6 +13,9 @@
     "running": false,
     "pid": null,
     "plist_path": "/Users/test/Library/LaunchAgents/homebrew.mxcl.clipmem.plist",
+    "configured_binary_path": null,
+    "running_command": null,
+    "running_binary_path": null,
     "stdout_log_path": "/opt/homebrew/var/log/clipmem.log",
     "stderr_log_path": "/opt/homebrew/var/log/clipmem.error.log"
   },
@@ -25,6 +28,9 @@
     "running": true,
     "pid": 123,
     "plist_path": "/Users/test/Library/LaunchAgents/io.openclaw.clipmem.watch.plist",
+    "configured_binary_path": "/Users/test/clipmem/target/debug/clipmem",
+    "running_command": "/Users/test/clipmem/target/debug/clipmem watch --skip-initial --db /Users/test/Library/Application Support/clipmem/clipmem.sqlite3 --interval-ms 350",
+    "running_binary_path": "/Users/test/clipmem/target/debug/clipmem",
     "stdout_log_path": "/Users/test/Library/Application Support/clipmem/logs/clipmem.stdout.log",
     "stderr_log_path": "/Users/test/Library/Application Support/clipmem/logs/clipmem.stderr.log"
   },
@@ -39,5 +45,7 @@
   "ignored_bundle_id_count": 1,
   "stale": false,
   "db_error": null,
+  "watcher_binary_mismatch": false,
+  "watcher_binary_mismatch_note": null,
   "notes": []
 }
