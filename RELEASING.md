@@ -19,6 +19,7 @@ The Rust CLI and SwiftUI menu bar app ship as separate Homebrew install surfaces
 - [`.github/workflows/ci.yml`](/Users/tristan/Projects/clipmem/.github/workflows/ci.yml) – normal CI checks
 - [`.github/workflows/release.yml`](/Users/tristan/Projects/clipmem/.github/workflows/release.yml) – tag-driven release workflow
 - [`.github/workflows/publish-crate.yml`](/Users/tristan/Projects/clipmem/.github/workflows/publish-crate.yml) – crates.io publish job
+- [`.github/workflows/clawhub-skill.yml`](/Users/tristan/Projects/clipmem/.github/workflows/clawhub-skill.yml) – ClawHub skill check and publish workflow
 - [`.github/scripts/write-menubar-cask.sh`](/Users/tristan/Projects/clipmem/.github/scripts/write-menubar-cask.sh) – generated Homebrew cask writer
 - [`macos/ClipmemMenuBar/`](/Users/tristan/Projects/clipmem/macos/ClipmemMenuBar) – native menu bar app source and tests
 

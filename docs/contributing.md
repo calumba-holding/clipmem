@@ -47,6 +47,7 @@ extras/launchd/                LaunchAgent plist template
 
 scripts/
   build_and_run_menubar.sh     Build Rust + SwiftUI app and launch
+  clawhub_skill_sync.py        Check and publish the clipboard-memory skill on ClawHub
   install_launchagent.sh       Compatibility wrapper for clipmem setup
   uninstall_launchagent.sh     Compatibility wrapper for clipmem service uninstall
   install_openclaw_skill.sh    Compatibility wrapper for clipmem agents openclaw install-skill
