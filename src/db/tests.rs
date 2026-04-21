@@ -18,6 +18,17 @@ use super::{
     RetrievalKind, SearchMode, TimelineSort, CURRENT_SCHEMA_VERSION, SCHEMA,
 };
 
+type RepresentationCompressionRow = (
+    String,
+    String,
+    Option<String>,
+    Option<i64>,
+    Option<String>,
+    i64,
+    String,
+    Vec<u8>,
+);
+
 fn temp_db_path(test_name: &str) -> std::path::PathBuf {
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1509,16 +1520,7 @@ fn lossless_webp_optimization_rewrites_image_once_and_preserves_pixels() -> Resu
             })?;
     assert_eq!(representation_count_after, representation_count_before);
 
-    let (uti, status, format, original_len, original_hash, byte_len, raw_hash, blob): (
-        String,
-        String,
-        Option<String>,
-        Option<i64>,
-        Option<String>,
-        i64,
-        String,
-        Vec<u8>,
-    ) = db.conn.query_row(
+    let (uti, status, format, original_len, original_hash, byte_len, raw_hash, blob): RepresentationCompressionRow = db.conn.query_row(
         r"
             SELECT
                 uti,

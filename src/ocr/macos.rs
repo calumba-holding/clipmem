@@ -52,7 +52,7 @@ fn recognize_text_with_vision(image_bytes: &[u8]) -> Result<String> {
     for idx in 0..observations.len() {
         let observation = observations.objectAtIndex(idx);
         let candidates = observation.topCandidates(1);
-        if candidates.len() == 0 {
+        if candidates.is_empty() {
             continue;
         }
         let candidate = candidates.objectAtIndex(0);

@@ -194,32 +194,32 @@ pub(super) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
     let homebrew_row = launchctl_row(HOMEBREW_LABEL)?;
     let direct_installed = context.direct_plist_path.is_file() || direct_row.is_some();
     let homebrew_installed = context.homebrew_plist_path.is_file() || homebrew_row.is_some();
-    let direct_status = provider_status(
-        ServiceProvider::Launchagent,
-        DIRECT_LABEL,
-        direct_installed,
-        direct_row,
-        Some(context.direct_plist_path.clone()),
-        configured_binary_path_from_plist(&context.direct_plist_path),
-        Some(context.direct_stdout_path.clone()),
-        Some(context.direct_stderr_path.clone()),
-    );
-    let homebrew_status = provider_status(
-        ServiceProvider::Homebrew,
-        HOMEBREW_LABEL,
-        homebrew_installed,
-        homebrew_row,
-        Some(context.homebrew_plist_path.clone()),
-        configured_binary_path_from_plist(&context.homebrew_plist_path),
-        context
+    let direct_status = provider_status(ProviderStatusInput {
+        provider: ServiceProvider::Launchagent,
+        label: DIRECT_LABEL,
+        installed: direct_installed,
+        row: direct_row,
+        plist_path: Some(context.direct_plist_path.clone()),
+        configured_binary_path: configured_binary_path_from_plist(&context.direct_plist_path),
+        stdout_log_path: Some(context.direct_stdout_path.clone()),
+        stderr_log_path: Some(context.direct_stderr_path.clone()),
+    });
+    let homebrew_status = provider_status(ProviderStatusInput {
+        provider: ServiceProvider::Homebrew,
+        label: HOMEBREW_LABEL,
+        installed: homebrew_installed,
+        row: homebrew_row,
+        plist_path: Some(context.homebrew_plist_path.clone()),
+        configured_binary_path: configured_binary_path_from_plist(&context.homebrew_plist_path),
+        stdout_log_path: context
             .homebrew_prefix
             .as_ref()
             .map(|prefix| prefix.join("var/log/clipmem.log")),
-        context
+        stderr_log_path: context
             .homebrew_prefix
             .as_ref()
             .map(|prefix| prefix.join("var/log/clipmem.error.log")),
-    );
+    });
     let conflict = homebrew_status.installed && direct_status.installed;
     let selection = select_provider(&context)?;
 
@@ -560,11 +560,11 @@ fn format_duration_compact(seconds: u64) -> String {
     let hour = 60 * 60;
     let minute = 60;
 
-    if seconds % day == 0 {
+    if seconds.is_multiple_of(day) {
         format!("{}d", seconds / day)
-    } else if seconds % hour == 0 {
+    } else if seconds.is_multiple_of(hour) {
         format!("{}h", seconds / hour)
-    } else if seconds % minute == 0 {
+    } else if seconds.is_multiple_of(minute) {
         format!("{}m", seconds / minute)
     } else {
         format!("{seconds}s")
@@ -766,16 +766,29 @@ fn launchctl_row(label: &str) -> Result<Option<LaunchctlRow>> {
     Ok(None)
 }
 
-fn provider_status(
+struct ProviderStatusInput {
     provider: ServiceProvider,
-    label: &str,
+    label: &'static str,
     installed: bool,
     row: Option<LaunchctlRow>,
     plist_path: Option<PathBuf>,
     configured_binary_path: Option<String>,
     stdout_log_path: Option<PathBuf>,
     stderr_log_path: Option<PathBuf>,
-) -> ServiceProviderStatus {
+}
+
+fn provider_status(input: ProviderStatusInput) -> ServiceProviderStatus {
+    let ProviderStatusInput {
+        provider,
+        label,
+        installed,
+        row,
+        plist_path,
+        configured_binary_path,
+        stdout_log_path,
+        stderr_log_path,
+    } = input;
+
     let (loaded, running, pid) = match row {
         Some(row) if row.pid.is_some() => (true, true, row.pid),
         Some(_) => (true, false, None),

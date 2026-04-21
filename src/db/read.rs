@@ -1433,7 +1433,7 @@ fn stats_params(filters: &RetrievalFilters) -> Result<StatsQueryParams> {
         until: filters.until().map(ToOwned::to_owned),
         app_like: app_like_pattern(filters),
         bundle_id: filters.bundle_id().map(|value| value.to_ascii_lowercase()),
-        kind: filters.kind().map(RetrievalKindExt::as_static_str),
+        kind: filters.kind().map(super::RetrievalKind::as_str),
         has_text: filters.has_text(),
         has_url: filters.has_url(),
         has_file_url: filters.has_file_url(),
@@ -1442,16 +1442,6 @@ fn stats_params(filters: &RetrievalFilters) -> Result<StatsQueryParams> {
         min_bytes: filters.min_bytes().map(usize_to_i64).transpose()?,
         max_bytes: filters.max_bytes().map(usize_to_i64).transpose()?,
     })
-}
-
-trait RetrievalKindExt {
-    fn as_static_str(self) -> &'static str;
-}
-
-impl RetrievalKindExt for super::RetrievalKind {
-    fn as_static_str(self) -> &'static str {
-        self.as_str()
-    }
 }
 
 #[derive(Debug)]
@@ -3075,13 +3065,14 @@ fn analyze_query(query: &str) -> QueryAnalysis {
         Some(value.trim_start_matches('/').to_ascii_lowercase())
     } else if lower.starts_with("file://") {
         Some(normalise_file_path(&trimmed).to_ascii_lowercase())
-    } else if trimmed.starts_with('/') || trimmed.starts_with("./") || trimmed.starts_with("../") {
-        Some(lower.clone())
-    } else if trimmed.contains('\\')
-        && (trimmed.starts_with(".\\")
-            || trimmed.starts_with("..\\")
-            || trimmed.starts_with('\\')
-            || trimmed.contains(":\\"))
+    } else if trimmed.starts_with('/')
+        || trimmed.starts_with("./")
+        || trimmed.starts_with("../")
+        || (trimmed.contains('\\')
+            && (trimmed.starts_with(".\\")
+                || trimmed.starts_with("..\\")
+                || trimmed.starts_with('\\')
+                || trimmed.contains(":\\")))
     {
         Some(lower.clone())
     } else {

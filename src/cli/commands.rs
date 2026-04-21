@@ -319,13 +319,7 @@ fn watch(db_path: &Path, args: &WatchArgs) -> Result<()> {
 }
 
 fn run_watch_iteration(db: &mut Database, args: &WatchArgs, state: &mut WatchState) -> Result<()> {
-    run_watch_iteration_with_capture(
-        db,
-        args,
-        state,
-        || current_change_count(),
-        || capture_snapshot(),
-    )
+    run_watch_iteration_with_capture(db, args, state, current_change_count, capture_snapshot)
 }
 
 fn run_watch_iteration_with_capture<CountFn, CaptureFn>(
@@ -1385,11 +1379,11 @@ fn format_duration_compact(seconds: u64) -> String {
     let hour = 60 * 60;
     let minute = 60;
 
-    if seconds % day == 0 {
+    if seconds.is_multiple_of(day) {
         format!("{}d", seconds / day)
-    } else if seconds % hour == 0 {
+    } else if seconds.is_multiple_of(hour) {
         format!("{}h", seconds / hour)
-    } else if seconds % minute == 0 {
+    } else if seconds.is_multiple_of(minute) {
         format!("{}m", seconds / minute)
     } else {
         format!("{seconds}s")
@@ -2002,7 +1996,7 @@ fn compute_recall(
             .unwrap_or(default_recall_threshold(results.mode_used()));
         search_was_weak = search_candidates
             .first()
-            .map_or(true, |candidate| candidate.normalized_score < threshold);
+            .is_none_or(|candidate| candidate.normalized_score < threshold);
 
         for mut candidate in search_candidates {
             if search_was_weak {

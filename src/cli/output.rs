@@ -1638,16 +1638,14 @@ fn render_confidence_label(confidence: &RecallMatchConfidence) -> &'static str {
 }
 
 fn best_text_from_hit(hit: &SearchHit) -> String {
-    hit.preview_text()
-        .trim()
-        .is_empty()
-        .then(|| {
-            hit.why_matched()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or(hit.preview_text())
-        })
-        .unwrap_or(hit.preview_text())
-        .to_string()
+    if hit.preview_text().trim().is_empty() {
+        hit.why_matched()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or(hit.preview_text())
+            .to_string()
+    } else {
+        hit.preview_text().to_string()
+    }
 }
 
 fn escape_markdown_cell(value: &str) -> String {
