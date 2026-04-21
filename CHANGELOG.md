@@ -13,6 +13,9 @@ versioning where practical.
 
 - Updated the README and menu bar app documentation screenshot to show the
   redesigned recent-clips popover.
+- Updated the ClawHub clipboard-memory skill package metadata for a corrected
+  1.3.1 publish with the current schema version 2, `recent`, and export
+  overwrite guidance.
 
 ## 0.3.4 - 2026-04-21
 
