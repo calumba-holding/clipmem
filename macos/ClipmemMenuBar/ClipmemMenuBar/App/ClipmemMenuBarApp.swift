@@ -10,7 +10,7 @@ struct ClipmemMenuBarApp: App {
     var body: some Scene {
         MenuBarExtra {
             MenuBarPanelView(appModel: appModel)
-                .frame(width: 420, height: 620)
+                .frame(width: 380, height: 500)
         } label: {
             ClipmemMenuBarLabel(
                 healthState: appModel.healthState,

@@ -97,6 +97,85 @@ struct EmptyStateView: View {
     }
 }
 
+struct HealthBanner: View {
+    let state: HealthState
+    var errorDetail: UserError? = nil
+    var isRunningAction = false
+    var actionLabel: String? = nil
+    var onAction: (() -> Void)? = nil
+
+    var body: some View {
+        if state != .healthy && state != .unknown {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: state.symbol)
+                    .foregroundStyle(state.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(errorDetail?.message ?? state.title)
+                        .font(.callout.weight(.medium))
+                        .lineLimit(2)
+                    if let recovery = errorDetail?.recovery ?? state.recoveryGuidance {
+                        Text(recovery)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                Spacer()
+                if let actionLabel, let onAction {
+                    Button(actionLabel, action: onAction)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(isRunningAction)
+                }
+            }
+            .padding(Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(state.tint.opacity(0.08), in: .rect(cornerRadius: Spacing.sm))
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(state.title). \(state.recoveryGuidance ?? "")")
+        }
+    }
+}
+
+struct UpdateBanner: View {
+    let status: UpdateStatus
+    var onCopyCommand: (() -> Void)? = nil
+    var onOpenRelease: (() -> Void)? = nil
+
+    var body: some View {
+        if status.isUpdateAvailable {
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .foregroundStyle(.blue)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Update available \u{2014} v\(status.latestVersion ?? "")")
+                        .font(.callout.weight(.medium))
+                        .lineLimit(1)
+                    Text("You have v\(status.currentVersion)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if status.shouldShowHomebrewCommand, let onCopyCommand {
+                    Button("Copy Command", action: onCopyCommand)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                } else if let onOpenRelease {
+                    Button("Open Release", action: onOpenRelease)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(status.releaseURL == nil)
+                }
+            }
+            .padding(Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.blue.opacity(0.08), in: .rect(cornerRadius: Spacing.sm))
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+}
+
 struct ErrorBanner: View {
     let message: String
     var recovery: String? = nil

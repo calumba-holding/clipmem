@@ -15,6 +15,23 @@ struct DiagnosticsView: View {
                     ErrorBanner(message: error.message, recovery: error.recovery)
                 }
 
+                GroupBox("Service") {
+                    HStack {
+                        Button("Setup", systemImage: "wrench.and.screwdriver") {
+                            Task { await appModel.runSetup() }
+                        }
+                        Button("Start", systemImage: "play.fill") {
+                            Task { await appModel.serviceAction("start") }
+                        }
+                        Button("Stop", systemImage: "stop.fill") {
+                            Task { await appModel.serviceAction("stop") }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(appModel.isRunningAction)
+                }
+
                 GroupBox("Binary and Database") {
                     VStack(alignment: .leading, spacing: Spacing.md) {
                         Grid(alignment: .leading, horizontalSpacing: Spacing.md, verticalSpacing: Spacing.sm) {
@@ -34,6 +51,10 @@ struct DiagnosticsView: View {
                             Button("Purge Older Than...", systemImage: "trash") {
                                 showManualPurge = true
                             }
+                            Button("Open Logs Folder", systemImage: "folder") {
+                                appModel.openLogsFolder()
+                            }
+                            .disabled(appModel.serviceStatus?.logPaths.isEmpty != false)
                         }
                         .buttonStyle(.bordered)
                         .disabled(appModel.isRunningAction)

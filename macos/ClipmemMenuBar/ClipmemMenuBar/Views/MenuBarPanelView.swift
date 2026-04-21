@@ -7,58 +7,35 @@ struct MenuBarPanelView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
     @State private var recentSearchQuery = ""
+    @State private var restoringItemID: Int?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.md) {
-            HStack {
-                StatusBadge(state: appModel.healthState)
-                Spacer()
-                Button("Refresh", systemImage: "arrow.clockwise") {
-                    Task { await appModel.refreshAll() }
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
-                .help("Refresh status")
+        VStack(alignment: .leading, spacing: 0) {
+            healthBanner
+                .padding([.horizontal, .top])
+
+            if appModel.updateStatus.isUpdateAvailable {
+                UpdateBanner(
+                    status: appModel.updateStatus,
+                    onCopyCommand: { appModel.copyUpgradeCommand() },
+                    onOpenRelease: { appModel.openUpdateRelease() }
+                )
+                .padding([.horizontal, .top])
             }
 
-            if let error = appModel.lastError {
-                ErrorBanner(message: error.message, recovery: error.recovery)
-            }
-            if let message = appModel.actionMessage {
-                Label(message, systemImage: "checkmark.circle")
-                    .font(.callout)
-                    .foregroundStyle(.green)
-                    .lineLimit(2)
-            }
-            updateBanner
-
-            serviceSummary
-            quickActions
-
-            Divider()
-
-            recentsHeader
             recentsSearchField
+                .padding([.horizontal, .top])
+                .padding(.bottom, Spacing.sm)
+
             recentsContent
 
             Divider()
 
-            HStack {
-                Button("Quick Recall", systemImage: "bolt") {
-                    WindowActivation.openWindow(openWindow, id: .quickRecall)
-                }
-                Button {
-                    WindowActivation.openSettings(openSettings)
-                } label: {
-                    Label("Settings", systemImage: "gearshape")
-                }
-                Spacer()
-                Button("Quit", systemImage: "power") {
-                    NSApp.terminate(nil)
-                }
-            }
+            footer
+                .padding(Spacing.md)
         }
-        .padding()
+        .animation(.easeInOut(duration: 0.25), value: appModel.healthState)
+        .animation(.easeInOut(duration: 0.25), value: appModel.updateStatus.isUpdateAvailable)
         .onAppear {
             Task {
                 await appModel.refreshRecentPreviewIfStale(maxAge: 1)
@@ -66,168 +43,70 @@ struct MenuBarPanelView: View {
         }
     }
 
-    private var serviceSummary: some View {
-        Grid(alignment: .leading, horizontalSpacing: Spacing.lg, verticalSpacing: Spacing.sm) {
-            GridRow {
-                CompactStatusMetric(title: "Watcher", value: watcherSummary)
-                CompactStatusMetric(title: "Latest", value: latestCaptureSummary)
-            }
-            GridRow {
-                CompactStatusMetric(title: "Database", value: databaseSummary)
-                CompactStatusMetric(title: "Policy", value: policySummary)
-            }
-        }
-        .font(.caption)
-    }
-
-    private var quickActions: some View {
-        HStack {
-            Button("Setup", systemImage: "wrench.and.screwdriver") {
-                Task { await appModel.runSetup() }
-            }
-            .disabled(appModel.isRunningAction)
-            Button("Start", systemImage: "play.fill") {
-                Task { await appModel.serviceAction("start") }
-            }
-            .disabled(appModel.isRunningAction)
-            Button("Stop", systemImage: "stop.fill") {
-                Task { await appModel.serviceAction("stop") }
-            }
-            .disabled(appModel.isRunningAction)
-            Menu("More", systemImage: "ellipsis.circle") {
-                Button("Compact Database") {
-                    confirmMenuAction(.compactDatabase)
-                }
-                Button("Optimize Images...") {
-                    confirmMenuAction(.optimizeImages)
-                }
-                Divider()
-                Button("Uninstall Service") {
-                    confirmMenuAction(.uninstallService)
-                }
-                Button("Run Doctor") {
-                    Task { await appModel.refreshDoctor() }
-                }
-                Button("Check for Updates") {
-                    Task { await appModel.checkForUpdates() }
-                }
-                .disabled(appModel.updateStatus.isChecking)
-                Button("Open Logs Folder") {
-                    appModel.openLogsFolder()
-                }
-                .disabled(appModel.serviceStatus?.logPaths.isEmpty != false)
-            }
-            .disabled(appModel.isRunningAction)
-            if appModel.isRunningAction {
-                ProgressView()
-                    .controlSize(.small)
-            }
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-    }
-
-    private func confirmMenuAction(_ confirmation: MenuBarConfirmation) {
-        Task { @MainActor in
-            await Task.yield()
-            guard ConfirmationAlertPresenter.confirm(confirmation) else { return }
-
-            switch confirmation {
-            case .compactDatabase:
-                await appModel.compactDatabase()
-            case .optimizeImages:
-                await appModel.optimizeImages()
-            case .uninstallService:
-                await appModel.serviceAction("uninstall")
-            }
-        }
-    }
+    // MARK: - Health Banner
 
     @ViewBuilder
-    private var updateBanner: some View {
-        if appModel.updateStatus.isUpdateAvailable {
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                HStack(alignment: .firstTextBaseline) {
-                    Label("Update Available", systemImage: "arrow.down.circle.fill")
-                        .font(.headline)
-                    Spacer()
-                    Text(appModel.updateStatus.latestVersion ?? "")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Text("Clipmem \(appModel.updateStatus.latestVersion ?? "the latest release") is available. You have \(appModel.updateStatus.currentVersion).")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                HStack {
-                    if appModel.updateStatus.shouldShowHomebrewCommand {
-                        Button("Copy Command", systemImage: "doc.on.doc") {
-                            appModel.copyUpgradeCommand()
-                        }
-                    }
-                    Button("Open Release", systemImage: "arrow.up.right.square") {
-                        appModel.openUpdateRelease()
-                    }
-                    .disabled(appModel.updateStatus.releaseURL == nil)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-            }
-            .padding(Spacing.md)
-            .background(.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: Spacing.sm))
+    private var healthBanner: some View {
+        let state = appModel.healthState
+        HealthBanner(
+            state: state,
+            errorDetail: appModel.lastError,
+            isRunningAction: appModel.isRunningAction,
+            actionLabel: healthActionLabel(for: state),
+            onAction: { healthAction(for: state) }
+        )
+    }
+
+    private func healthActionLabel(for state: HealthState) -> String? {
+        switch state {
+        case .setupNeeded: "Run Setup"
+        case .missingBinary: "Open Settings"
+        case .watcherStopped: "Start"
+        case .conflict, .error: "Diagnostics"
+        case .capturePaused: "Resume"
+        case .stale, .noRecentCaptures: "Refresh"
+        case .healthy, .unknown: nil
         }
     }
 
-    private var policySummary: String {
-        let paused = appModel.serviceStatus?.paused == true ? "paused" : "active"
-        let filter = appModel.serviceStatus?.apiKeyFilterEnabled == true ? "API-key filter on" : "API-key filter off"
-        return "\(paused), \(filter)"
-    }
-
-    private var latestCaptureSummary: String {
-        DisplayFormatters.localTimestamp(appModel.serviceStatus?.recentCaptureAt) ?? "No captures yet"
-    }
-
-    private var databaseSummary: String {
-        guard appModel.serviceStatus?.dbExists == true else { return "Missing" }
-        return DisplayFormatters.byteCount(appModel.serviceStatus?.dbSizeBytes) ?? "Size unavailable"
-    }
-
-    private var watcherSummary: String {
-        guard let status = appModel.serviceStatus else { return "Unknown" }
-        if status.conflict == true { return "Multiple watchers running" }
-        if status.launchagent?.running == true { return "LaunchAgent running" }
-        if status.homebrew?.running == true { return "Homebrew running" }
-        if status.launchagent?.installed == true || status.launchagent?.loaded == true {
-            return "LaunchAgent stopped"
-        }
-        if status.homebrew?.installed == true || status.homebrew?.loaded == true {
-            return "Homebrew stopped"
-        }
-        return "Not set up"
-    }
-
-    private var recentsHeader: some View {
-        HStack {
-            Text("Recent")
-                .font(.headline)
-            Spacer()
-            Button("Open History", systemImage: "clock.arrow.circlepath") {
-                WindowActivation.openWindow(openWindow, id: .history)
-            }
+    private func healthAction(for state: HealthState) {
+        switch state {
+        case .setupNeeded:
+            Task { await appModel.runSetup() }
+        case .missingBinary:
+            WindowActivation.openSettings(openSettings)
+        case .watcherStopped:
+            Task { await appModel.serviceAction("start") }
+        case .conflict, .error:
+            WindowActivation.openWindow(openWindow, id: .history)
+        case .capturePaused:
+            Task { await appModel.runAction(.settingsPause(false), successMessage: "Capture resumed") }
+        case .stale, .noRecentCaptures:
+            Task { await appModel.refreshAll() }
+        case .healthy, .unknown:
+            break
         }
     }
+
+    // MARK: - Search
 
     private var recentsSearchField: some View {
-        TextField("Search recents", text: $recentSearchQuery)
+        TextField("Filter recent clips\u{2026}", text: $recentSearchQuery)
             .textFieldStyle(.roundedBorder)
             .controlSize(.small)
     }
 
+    // MARK: - Clipboard Items
+
     @ViewBuilder
     private var recentsContent: some View {
         if appModel.recentPreview.isEmpty && !appModel.isRefreshing {
-            EmptyStateView(title: "No recent copies", detail: "Clipboard entries will appear here as you copy.", symbol: "clipboard")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            EmptyStateView(
+                title: "Start copying",
+                detail: "Items appear here automatically.",
+                symbol: "clipboard"
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if filteredRecentPreview.isEmpty && recentSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
             VStack(spacing: Spacing.md) {
                 EmptyStateView(
@@ -244,23 +123,85 @@ struct MenuBarPanelView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            List(filteredRecentPreview) { item in
-                ResultRowView(item: item, selected: false)
-                    .contextMenu {
-                        Button("Restore") {
-                            Task { await appModel.restore(item) }
+            List {
+                ForEach(filteredRecentPreview) { item in
+                    Button {
+                        restoringItemID = item.snapshotId
+                        Task {
+                            await appModel.restore(item)
+                            try? await Task.sleep(for: .milliseconds(200))
+                            restoringItemID = nil
+                            NSApp.deactivate()
                         }
+                    } label: {
+                        ResultRowView(item: item, selected: item.snapshotId == restoringItemID)
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu {
                         Button("Copy Plain Text") {
                             if let text = item.copyablePlainText {
                                 PasteboardActions.copyPlainText(text)
                             }
                         }
                         .disabled(item.copyablePlainText == nil)
+                        Button("Open in History") {
+                            appModel.requestHistoryFocus(
+                                snapshotID: item.snapshotId,
+                                mode: .recent,
+                                query: ""
+                            )
+                            WindowActivation.openWindow(openWindow, id: .history)
+                        }
+                        Button("Forget", role: .destructive) {
+                            Task { await appModel.forget(item) }
+                        }
                     }
+                }
             }
             .listStyle(.inset)
         }
     }
+
+    // MARK: - Footer
+
+    private var footer: some View {
+        HStack(spacing: Spacing.md) {
+            Button {
+                WindowActivation.openWindow(openWindow, id: .history)
+            } label: {
+                Label("History", systemImage: "clock.arrow.circlepath")
+            }
+            .help("Open History (\u{2318}\u{21E7}H)")
+
+            Button {
+                WindowActivation.openWindow(openWindow, id: .quickRecall)
+            } label: {
+                Label("Search", systemImage: "magnifyingglass")
+            }
+            .help("Open Search (\u{2325}\u{21E7}V)")
+
+            Spacer()
+
+            Button {
+                WindowActivation.openSettings(openSettings)
+            } label: {
+                Label("Settings", systemImage: "gearshape")
+                    .labelStyle(.iconOnly)
+            }
+            .help("Open Settings")
+
+            Button {
+                NSApp.terminate(nil)
+            } label: {
+                Label("Quit", systemImage: "power")
+                    .labelStyle(.iconOnly)
+            }
+            .help("Quit Clipmem")
+        }
+        .buttonStyle(.borderless)
+    }
+
+    // MARK: - Filtering
 
     private var filteredRecentPreview: [ClipmemItem] {
         let query = recentSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -283,23 +224,5 @@ struct MenuBarPanelView: View {
         ]
         .compactMap { $0 }
         .joined(separator: " ")
-    }
-}
-
-private struct CompactStatusMetric: View {
-    let title: String
-    let value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.caption.weight(.medium))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .help(value)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

@@ -83,6 +83,20 @@ enum HealthState: String, Sendable {
         }
     }
 
+    var recoveryGuidance: String? {
+        switch self {
+        case .healthy, .unknown: nil
+        case .setupNeeded: "Run setup to initialize the database and start capturing."
+        case .missingBinary: "The clipmem binary was not found. Check the path in Settings."
+        case .watcherStopped: "The clipboard watcher is not running."
+        case .conflict: "Multiple watcher processes detected. Open Diagnostics to resolve."
+        case .error: "The service needs attention. Open Diagnostics for details."
+        case .capturePaused: "Clipboard capture is paused. Resume to start recording again."
+        case .stale: "No captures detected recently. The watcher may need a restart."
+        case .noRecentCaptures: "The watcher is running but hasn't captured anything yet."
+        }
+    }
+
     var menuBarBadgeSymbol: String? {
         switch self {
         case .healthy:
@@ -167,6 +181,74 @@ enum ClipboardKind: String, CaseIterable, Identifiable, Codable, Hashable, Senda
         }
     }
 }
+
+// MARK: - Display Layer (UI presentation over QueryMode)
+
+enum SearchStyle: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
+    case smart
+    case exact
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .smart: "Smart"
+        case .exact: "Exact"
+        }
+    }
+
+    var queryMode: QueryMode {
+        switch self {
+        case .smart: .recall
+        case .exact: .search
+        }
+    }
+}
+
+enum DisplayMode: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
+    case search
+    case recent
+    case timeline
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .search: "Search"
+        case .recent: "Recent"
+        case .timeline: "Timeline"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .search: "magnifyingglass"
+        case .recent: "clock"
+        case .timeline: "list.bullet.rectangle"
+        }
+    }
+
+    func queryMode(searchStyle: SearchStyle) -> QueryMode {
+        switch self {
+        case .search: searchStyle.queryMode
+        case .recent: .recent
+        case .timeline: .timeline
+        }
+    }
+
+    /// Map a persisted QueryMode back to DisplayMode + SearchStyle.
+    static func from(queryMode: QueryMode) -> (displayMode: DisplayMode, searchStyle: SearchStyle) {
+        switch queryMode {
+        case .recall: (.search, .smart)
+        case .search: (.search, .exact)
+        case .recent: (.recent, .smart)
+        case .timeline: (.timeline, .smart)
+        case .diagnostics: (.recent, .smart)
+        }
+    }
+}
+
+// MARK: - Filters
 
 struct RetrievalFilterState: Equatable, Sendable {
     var hours: Int

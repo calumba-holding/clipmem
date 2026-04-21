@@ -12,6 +12,7 @@ struct ClipmemSettingsView: View {
     @State private var retentionValue = "forever"
     @State private var confirmRetention = false
     @State private var showManualPurge = false
+    @State private var confirmUninstall = false
 
     var body: some View {
         TabView {
@@ -19,9 +20,9 @@ struct ClipmemSettingsView: View {
                 TextField("clipmem binary", text: $binaryPathOverride)
                 TextField("Database path", text: $databasePathOverride)
                 Stepper("Recent window: \(defaultRecentHours) hours", value: $defaultRecentHours, in: 1...720)
-                Picker("Default mode", selection: $defaultQueryMode) {
-                    ForEach([QueryMode.recall, .search, .recent, .timeline]) { mode in
-                        Text(mode.title).tag(mode.rawValue)
+                Picker("Default mode", selection: defaultDisplayModeBinding) {
+                    ForEach(DisplayMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
                     }
                 }
                 Toggle("Enable Option-Shift-V global hotkey", isOn: $hotkeyEnabled)
@@ -37,10 +38,42 @@ struct ClipmemSettingsView: View {
                     Text(message)
                         .foregroundStyle(.secondary)
                 }
+
+                Section("Service") {
+                    LabeledContent("Status", value: appModel.healthState.title)
+                    HStack {
+                        Button("Setup", systemImage: "wrench.and.screwdriver") {
+                            Task { await appModel.runSetup() }
+                        }
+                        Button("Start", systemImage: "play.fill") {
+                            Task { await appModel.serviceAction("start") }
+                        }
+                        Button("Stop", systemImage: "stop.fill") {
+                            Task { await appModel.serviceAction("stop") }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(appModel.isRunningAction)
+
+                    Button("Uninstall Service", role: .destructive) {
+                        confirmUninstall = true
+                    }
+                    .disabled(appModel.isRunningAction)
+                }
+
                 updateSettingsSection
             }
             .formStyle(.grouped)
             .padding()
+            .confirmationDialog("Uninstall the clipmem service?", isPresented: $confirmUninstall) {
+                Button("Uninstall", role: .destructive) {
+                    Task { await appModel.serviceAction("uninstall") }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This removes the LaunchAgent / Homebrew service registration. Your clipboard database is preserved.")
+            }
             .tabItem {
                 Label("General", systemImage: "gear")
             }
@@ -150,6 +183,21 @@ struct ClipmemSettingsView: View {
         .overlay(alignment: .top) {
             ActionFeedbackOverlay(message: appModel.actionMessage)
                 .padding(.top, Spacing.sm)
+        }
+    }
+
+    private var defaultDisplayModeBinding: Binding<DisplayMode> {
+        Binding {
+            let mode = QueryMode(rawValue: defaultQueryMode) ?? .recent
+            return DisplayMode.from(queryMode: mode).displayMode
+        } set: { newDisplayMode in
+            // When setting via DisplayMode, map back to a QueryMode rawValue.
+            // .search defaults to .recall (Smart) for storage.
+            switch newDisplayMode {
+            case .search: defaultQueryMode = QueryMode.recall.rawValue
+            case .recent: defaultQueryMode = QueryMode.recent.rawValue
+            case .timeline: defaultQueryMode = QueryMode.timeline.rawValue
+            }
         }
     }
 

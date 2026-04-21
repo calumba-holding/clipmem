@@ -9,6 +9,8 @@ struct QuickRecallWindowView: View {
     @State private var quick: QuickRecallModel
     @State private var confirmForget = false
     @State private var pendingForgetItem: ClipmemItem?
+    @State private var displayMode: DisplayMode = .search
+    @State private var searchStyle: SearchStyle = .smart
 
     init(appModel: AppModel) {
         self.appModel = appModel
@@ -33,6 +35,7 @@ struct QuickRecallWindowView: View {
         }
         .task {
             queryFocused = true
+            syncMode()
             await quick.refresh()
         }
         .onMoveCommand { direction in
@@ -75,20 +78,36 @@ struct QuickRecallWindowView: View {
 
     private var header: some View {
         HStack(spacing: Spacing.md) {
-            Picker("Mode", selection: $quick.mode) {
-                ForEach([QueryMode.recall, .search, .recent, .timeline]) { mode in
+            Picker("Mode", selection: $displayMode) {
+                ForEach(DisplayMode.allCases) { mode in
                     Text(mode.title).tag(mode)
                 }
             }
             .pickerStyle(.segmented)
             .fixedSize()
-            .onChange(of: quick.mode) {
+            .onChange(of: displayMode) {
+                syncMode()
                 Task { await quick.refresh() }
             }
 
-            TextField("Search clipboard history", text: $quick.query)
+            if displayMode == .search {
+                Picker("Style", selection: $searchStyle) {
+                    Text("Smart").tag(SearchStyle.smart)
+                    Text("Exact").tag(SearchStyle.exact)
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+                .controlSize(.small)
+                .onChange(of: searchStyle) {
+                    syncMode()
+                    Task { await quick.refresh() }
+                }
+            }
+
+            TextField(searchPrompt, text: $quick.query)
                 .textFieldStyle(.roundedBorder)
                 .focused($queryFocused)
+                .disabled(displayMode == .recent || displayMode == .timeline)
                 .onSubmit {
                     Task { await quick.restoreSelected() }
                 }
@@ -97,6 +116,17 @@ struct QuickRecallWindowView: View {
                 }
         }
         .padding()
+    }
+
+    private var searchPrompt: String {
+        switch displayMode {
+        case .search:
+            searchStyle == .smart ? "Describe what you're looking for\u{2026}" : "Search for exact text\u{2026}"
+        case .recent:
+            "Recent mode uses filters"
+        case .timeline:
+            "Timeline mode uses filters"
+        }
     }
 
     private var list: some View {
@@ -119,7 +149,13 @@ struct QuickRecallWindowView: View {
             if quick.isLoading {
                 ProgressView()
             } else if quick.results.isEmpty {
-                EmptyStateView(title: "No Results", detail: "Try another query or switch modes.", symbol: "magnifyingglass")
+                EmptyStateView(
+                    title: "No matches found",
+                    detail: displayMode == .search
+                        ? "Try different keywords or switch to \(searchStyle == .smart ? "Exact" : "Smart") mode."
+                        : "Try another query or switch modes.",
+                    symbol: "magnifyingglass"
+                )
             }
         }
     }
@@ -132,12 +168,16 @@ struct QuickRecallWindowView: View {
             .keyboardShortcut(.return, modifiers: [])
             .disabled(quick.selectedItem == nil)
             .help("Restore to clipboard (Return)")
-            Button("Open", systemImage: "rectangle.stack.badge.play") {
+
+            Button("Open in History", systemImage: "rectangle.stack.badge.play") {
                 openHistory()
             }
             .keyboardShortcut("o", modifiers: .command)
             .disabled(quick.selectedItem == nil)
             .help("Open in History (\u{2318}O)")
+
+            Spacer()
+
             Button("Forget", systemImage: "trash", role: .destructive) {
                 pendingForgetItem = quick.selectedItem
                 confirmForget = true
@@ -145,22 +185,14 @@ struct QuickRecallWindowView: View {
             .keyboardShortcut(.delete, modifiers: [])
             .disabled(quick.selectedItem == nil)
             .help("Remove this item (Delete)")
-            Spacer()
-            Text("Space to preview")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-            Button("Focus Search", systemImage: "magnifyingglass") {
-                queryFocused = true
-            }
-            .keyboardShortcut("f", modifiers: .command)
-            .help("Focus search field (\u{2318}F)")
-            Button("Refresh", systemImage: "arrow.clockwise") {
-                Task { await quick.refresh() }
-            }
-            .keyboardShortcut("r", modifiers: .command)
-            .help("Refresh results (\u{2318}R)")
         }
         .padding()
+    }
+
+    // MARK: - Helpers
+
+    private func syncMode() {
+        quick.mode = displayMode.queryMode(searchStyle: searchStyle)
     }
 
     private func openHistory() {

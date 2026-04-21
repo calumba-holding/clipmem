@@ -5,11 +5,11 @@ struct ResultRowView: View {
     let selected: Bool
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .firstTextBaseline, spacing: Spacing.md) {
             Image(systemName: symbol)
                 .foregroundStyle(selected ? .white : .secondary)
                 .frame(width: 18)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(item.displayText)
                     .lineLimit(2)
                     .truncationMode(.tail)
@@ -17,10 +17,10 @@ struct ResultRowView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .help(item.displayText)
                 Text(metadata)
-                .font(.caption)
-                .foregroundStyle(selected ? .white.opacity(0.82) : .secondary)
-                .lineLimit(1)
-                .truncationMode(.tail)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(selected ? .white.opacity(0.82) : .secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Spacer()
@@ -30,9 +30,9 @@ struct ResultRowView: View {
                     .foregroundStyle(selected ? .white.opacity(0.82) : .secondary)
             }
         }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 6)
-        .background(selected ? Color.accentColor : Color.clear, in: .rect(cornerRadius: 6))
+        .padding(.vertical, Spacing.sm)
+        .padding(.horizontal, Spacing.sm)
+        .background(selected ? Color.accentColor : Color.clear, in: .rect(cornerRadius: Spacing.sm))
         .contentShape(Rectangle())
     }
 

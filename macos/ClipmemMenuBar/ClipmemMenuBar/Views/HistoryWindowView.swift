@@ -10,6 +10,8 @@ struct HistoryWindowView: View {
     @SceneStorage("history.inspector") private var inspectorPresented = false
     @SceneStorage("history.selected") private var storedSelectedID = 0
     @State private var handledHistoryOpenRequestID = 0
+    @State private var displayMode: DisplayMode = .recent
+    @State private var searchStyle: SearchStyle = .smart
 
     init(appModel: AppModel) {
         self.appModel = appModel
@@ -24,14 +26,14 @@ struct HistoryWindowView: View {
         } detail: {
             detailColumn
         }
-        .navigationTitle(history.mode.title)
+        .navigationTitle(sidebarSelection == .diagnostics ? "Diagnostics" : displayMode.title)
         .toolbar {
             ToolbarItemGroup {
                 Button("Refresh", systemImage: "arrow.clockwise") {
                     Task { await history.reload() }
                 }
                 .keyboardShortcut("r", modifiers: .command)
-                Button("Quick Recall", systemImage: "bolt") {
+                Button("Search", systemImage: "magnifyingglass") {
                     WindowActivation.openWindow(openWindow, id: .quickRecall)
                 }
                 Button("Inspector", systemImage: inspectorPresented ? "sidebar.right.fill" : "sidebar.right") {
@@ -82,37 +84,72 @@ struct HistoryWindowView: View {
         }
     }
 
+    // MARK: - Sidebar
+
+    /// Sidebar selection uses an enum that covers both DisplayMode items and diagnostics.
+    private enum SidebarItem: String, Hashable {
+        case search, recent, timeline, diagnostics
+
+        var displayMode: DisplayMode? {
+            switch self {
+            case .search: .search
+            case .recent: .recent
+            case .timeline: .timeline
+            case .diagnostics: nil
+            }
+        }
+
+        static func from(displayMode: DisplayMode) -> SidebarItem {
+            switch displayMode {
+            case .search: .search
+            case .recent: .recent
+            case .timeline: .timeline
+            }
+        }
+    }
+
+    @State private var sidebarSelection: SidebarItem = .recent
+
     private var sidebar: some View {
-        List(selection: modeSelection) {
+        List(selection: sidebarBinding) {
             Section("Browse") {
-                ForEach([QueryMode.recall, .search, .recent, .timeline]) { mode in
+                ForEach(DisplayMode.allCases) { mode in
                     Label(mode.title, systemImage: mode.symbol)
-                        .tag(mode)
+                        .tag(SidebarItem.from(displayMode: mode))
                 }
             }
             Section("System") {
                 Label(QueryMode.diagnostics.title, systemImage: QueryMode.diagnostics.symbol)
-                    .tag(QueryMode.diagnostics)
+                    .tag(SidebarItem.diagnostics)
             }
         }
         .navigationTitle("clipmem")
         .navigationSplitViewColumnWidth(min: 150, ideal: 180, max: 220)
     }
 
-    private var modeSelection: Binding<QueryMode> {
+    private var sidebarBinding: Binding<SidebarItem> {
         Binding {
-            history.mode
-        } set: { newMode in
-            guard history.mode != newMode else { return }
-            history.mode = newMode
-            storedMode = newMode.rawValue
+            sidebarSelection
+        } set: { newItem in
+            guard sidebarSelection != newItem else { return }
+            sidebarSelection = newItem
+            if let dm = newItem.displayMode {
+                displayMode = dm
+                syncMode()
+            } else {
+                // Diagnostics
+                history.mode = .diagnostics
+            }
+            storedMode = history.mode.rawValue
             Task { await history.reload() }
         }
     }
 
+    // MARK: - Content Column
+
     @ViewBuilder
     private var contentColumn: some View {
-        if history.mode == .diagnostics {
+        if sidebarSelection == .diagnostics {
             DiagnosticsView(appModel: appModel)
                 .navigationTitle("Diagnostics")
                 .navigationSplitViewColumnWidth(min: 560, ideal: 700)
@@ -123,41 +160,70 @@ struct HistoryWindowView: View {
                 Divider()
                 resultList
             }
-            .navigationTitle(history.mode.title)
+            .navigationTitle(displayMode.title)
             .navigationSplitViewColumnWidth(min: 320, ideal: 420, max: 560)
         }
     }
 
     @ViewBuilder
     private var detailColumn: some View {
-        if history.mode == .diagnostics {
+        if sidebarSelection == .diagnostics {
             EmptyStateView(title: "Diagnostics", detail: "Service and doctor output are shown in the middle column.", symbol: "stethoscope")
                 .navigationTitle("Details")
                 .navigationSplitViewColumnWidth(min: 360, ideal: 520)
         } else {
             SnapshotDetailView(detail: history.selectedDetail, fallback: history.selectedItem, isLoading: history.isLoadingDetail)
-                .navigationTitle(history.mode.title)
+                .navigationTitle(displayMode.title)
                 .navigationSplitViewColumnWidth(min: 360, ideal: 580)
         }
     }
 
+    // MARK: - Query Controls
+
     private var queryControls: some View {
         VStack(spacing: Spacing.md) {
-            HStack {
+            HStack(spacing: Spacing.sm) {
+                if displayMode == .search {
+                    Picker("Style", selection: $searchStyle) {
+                        Text("Smart").tag(SearchStyle.smart)
+                        Text("Exact").tag(SearchStyle.exact)
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                    .controlSize(.small)
+                    .onChange(of: searchStyle) {
+                        syncMode()
+                        Task { await history.reload() }
+                    }
+                }
+
                 TextField(searchPrompt, text: $history.query)
                     .textFieldStyle(.roundedBorder)
-                    .disabled(history.mode == .recent || history.mode == .timeline)
+                    .disabled(displayMode == .recent || displayMode == .timeline)
                     .onSubmit {
                         Task { await history.reload() }
                     }
                 Button("Search", systemImage: "magnifyingglass") {
                     Task { await history.reload() }
                 }
-                .disabled((history.mode == .search || history.mode == .recall) && history.query.isEmpty)
+                .disabled(displayMode == .search && history.query.isEmpty)
             }
             FilterBar(history: history)
         }
     }
+
+    private var searchPrompt: String {
+        switch displayMode {
+        case .search:
+            searchStyle == .smart ? "Describe what you want to recall" : "Search for exact text"
+        case .recent:
+            "Recent mode uses filters"
+        case .timeline:
+            "Timeline mode uses filters"
+        }
+    }
+
+    // MARK: - Results
 
     private var resultList: some View {
         VStack(spacing: 0) {
@@ -182,11 +248,11 @@ struct HistoryWindowView: View {
             .overlay {
                 if !history.isLoading && history.results.isEmpty && history.error == nil {
                     EmptyStateView(
-                        title: history.mode == .recent || history.mode == .timeline ? "No recent history" : "No results",
-                        detail: history.mode == .recent || history.mode == .timeline
+                        title: displayMode == .recent || displayMode == .timeline ? "No recent history" : "No results",
+                        detail: displayMode == .recent || displayMode == .timeline
                             ? "Start copying to build your clipboard history."
                             : "Try adjusting your filters or search query.",
-                        symbol: history.mode == .recent || history.mode == .timeline ? "clock" : "magnifyingglass"
+                        symbol: displayMode == .recent || displayMode == .timeline ? "clock" : "magnifyingglass"
                     )
                 }
             }
@@ -196,6 +262,8 @@ struct HistoryWindowView: View {
             }
         }
     }
+
+    // MARK: - Inspector
 
     private var inspector: some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
@@ -225,18 +293,20 @@ struct HistoryWindowView: View {
         .padding()
     }
 
-    private var searchPrompt: String {
-        switch history.mode {
-        case .recall: "Describe what you want to recall"
-        case .search: "Lexical search"
-        case .recent: "Recent mode uses filters"
-        case .timeline: "Timeline mode uses filters"
-        case .diagnostics: "Diagnostics"
-        }
+    // MARK: - State Management
+
+    private func syncMode() {
+        history.mode = displayMode.queryMode(searchStyle: searchStyle)
+        storedMode = history.mode.rawValue
     }
 
     private func restoreSceneState() {
-        history.mode = QueryMode(rawValue: storedMode) ?? .recent
+        let queryMode = QueryMode(rawValue: storedMode) ?? .recent
+        let (dm, ss) = DisplayMode.from(queryMode: queryMode)
+        displayMode = dm
+        searchStyle = ss
+        sidebarSelection = queryMode == .diagnostics ? .diagnostics : SidebarItem.from(displayMode: dm)
+        history.mode = queryMode
         history.query = storedQuery
         history.selectedID = storedSelectedID == 0 ? nil : storedSelectedID
     }
@@ -247,10 +317,20 @@ struct HistoryWindowView: View {
         guard request.id != handledHistoryOpenRequestID else { return false }
 
         handledHistoryOpenRequestID = request.id
-        let mode = request.mode == .diagnostics ? QueryMode.recent : request.mode
-        history.mode = mode
+
+        if request.mode == .diagnostics {
+            sidebarSelection = .diagnostics
+            history.mode = .diagnostics
+        } else {
+            let (dm, ss) = DisplayMode.from(queryMode: request.mode)
+            displayMode = dm
+            searchStyle = ss
+            sidebarSelection = SidebarItem.from(displayMode: dm)
+            history.mode = request.mode
+        }
+
         history.query = request.query
-        storedMode = mode.rawValue
+        storedMode = history.mode.rawValue
         storedQuery = request.query
         storedSelectedID = request.focusedSnapshotID ?? 0
         await history.reload(selecting: request.focusedSnapshotID)

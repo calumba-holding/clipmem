@@ -9,7 +9,27 @@ versioning where practical.
 
 ## Unreleased
 
-Changes for the next release go here.
+### Changed
+
+- Redesigned the menu bar popover to show clipboard items first. The service
+  status grid, Setup/Start/Stop buttons, and update banner are removed from
+  the popover; a compact HealthBanner now appears only when something is broken.
+- Single-click on a popover item restores it to the clipboard and dismisses
+  the popover.
+- Merged the Recall and Search modes into a single Search mode with a
+  Smart/Exact toggle. Smart uses semantic recall; Exact uses literal search.
+  The mode picker in Quick Recall and History now shows three items (Search,
+  Recent, Timeline) instead of four.
+- Relocated service controls (Setup, Start, Stop, Uninstall) to the Settings
+  General tab and Diagnostics view. Added an Open Logs Folder button to
+  Diagnostics.
+- Replaced the verbose update banner with a compact blue-tinted row that
+  matches the HealthBanner style.
+- Simplified the Quick Recall footer to Restore, Open in History, and Forget.
+  Keyboard shortcuts for Focus Search and Refresh still work.
+- Reduced the menu bar popover frame from 420x620 to 380x500.
+- Updated ResultRowView spacing to use consistent design tokens and increased
+  metadata font weight for better legibility.
 
 ## 0.3.2 - 2026-04-20
 
