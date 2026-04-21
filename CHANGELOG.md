@@ -43,19 +43,30 @@ versioning where practical.
 
 - Improved `clipmem stats` performance for whole-archive and snapshot-filtered
   reports by avoiding unnecessary temporary event tables and reusing maintained
-  snapshot aggregates instead of recomputing per-snapshot capture totals.
+  snapshot aggregates instead of recomputing per-snapshot capture totals. On a
+  5,000-snapshot, 100,000-event archive benchmark, median unfiltered stats
+  dropped from 799.8 ms to 37.5 ms, app-filtered stats dropped from 607.0 ms
+  to 224.6 ms, and kind-filtered stats dropped from 1,075.2 ms to 559.8 ms.
 - Added SQLite indexes for stats app and time-bucket aggregation so archive
   reports remain faster on larger capture histories.
 - Improved JSON output performance for `search`, `recent`, `timeline`, and
   `recall` by avoiding redundant snapshot summary hydration while building
-  list projections.
+  list projections. In an internal projection hydration benchmark over 5,000
+  snapshots and 500,000 capture events, median projection time dropped from
+  245.313 ms to 90.780 ms.
 - Improved repeated duplicate capture storage by skipping redundant app-filter
   and literal-search cache rewrites when a new event does not change those
-  cached values.
+  cached values. In warm repeated duplicate-capture runs, same-app duplicate
+  storage averaged 0.470 s before the change and 0.143 s after it.
 - Improved OCR candidate discovery on image-heavy archives by indexing image
-  representation rows and raw image hashes used by OCR queue lookups.
+  representation rows and raw image hashes used by OCR queue lookups. In an
+  image-heavy candidate-discovery benchmark, average lookup time dropped from
+  11,759.497 ms to 26.652 ms.
 - Improved purge dry-run and deletion planning on large archives by using the
-  maintained snapshot observation-time index for expiration candidate scans.
+  maintained snapshot observation-time index for expiration candidate scans. A
+  noisy 5,000-snapshot, 100,000-event dry-run benchmark showed the six-sample
+  median moving from 8.452 ms to 8.035 ms, with the fastest sample improving
+  from 6.631 ms to 4.262 ms.
 - Improved snapshot detail, export, and restore hydration for heavily recopied
   items by reusing maintained capture summary data instead of aggregating the
   full event history on every lookup. In the heavy-event snapshot lookup
