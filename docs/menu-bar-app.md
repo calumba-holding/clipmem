@@ -6,7 +6,7 @@ webview. The app keeps the Rust CLI as the source of truth by shelling
 out to `clipmem` asynchronously and decoding JSON responses from the
 same commands used by scripts and agents.
 
-![clipmem menu bar dropdown showing capture status and recent clipboard entries](clipmem-menu-bar-panel.png)
+![clipmem menu bar popover showing a filter field and recent clipboard entries](clipmem-menu-bar-panel.png)
 
 ## Install with Homebrew
 

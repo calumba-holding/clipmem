@@ -9,7 +9,10 @@ versioning where practical.
 
 ## Unreleased
 
-Changes for the next release go here.
+### Changed
+
+- Updated the README and menu bar app documentation screenshot to show the
+  redesigned recent-clips popover.
 
 ## 0.3.4 - 2026-04-21
 

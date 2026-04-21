@@ -23,7 +23,7 @@ off-device.
       <sub>Ask OpenClaw what you copied.</sub>
     </td>
     <td align="center" width="50%">
-      <img src="docs/clipmem-menu-bar-panel.png" alt="clipmem menu bar dropdown showing capture status and recent clipboard entries" width="340"><br>
+      <img src="docs/clipmem-menu-bar-panel.png" alt="clipmem menu bar popover showing a filter field and recent clipboard entries" width="340"><br>
       <sub>Browse recent clips from the menu bar.</sub>
     </td>
   </tr>
