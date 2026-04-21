@@ -215,9 +215,15 @@ impl Database {
     ) -> Result<Page<SearchHit>> {
         let limit = sanitise_limit(limit);
         let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
-        let include_matching_events = requires_matching_events(filters);
+        let use_snapshot_stats_since_filter = can_use_snapshot_stats_since_filter(filters);
+        let include_matching_events =
+            requires_matching_events(filters) && !use_snapshot_stats_since_filter;
         let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
-        let sql = recent_query(include_matching_events, use_snapshot_event_cache);
+        let sql = recent_query(
+            include_matching_events,
+            use_snapshot_event_cache,
+            use_snapshot_stats_since_filter,
+        );
         let app_like = app_like_pattern(filters);
         let bundle_id = filters.bundle_id().map(|value| value.to_ascii_lowercase());
         let kind = filters.kind().map(|value| value.as_str());
@@ -353,6 +359,10 @@ impl Database {
     }
 
     pub fn stats(&self, filters: &RetrievalFilters) -> Result<StatsReport> {
+        if *filters == RetrievalFilters::default() {
+            return self.stats_unfiltered();
+        }
+
         let params = stats_params(filters)?;
         self.conn
             .execute_batch(
@@ -403,50 +413,84 @@ impl Database {
             )
             .context("index stats matching events")?;
 
-        self.conn
-            .execute(
-                &format!(
-                    "CREATE TEMP TABLE clipmem_stats_matching_snapshots AS
-                     SELECT
-                         s.id AS snapshot_id,
-                         s.snapshot_kind AS kind,
-                         s.preview_text AS preview_text,
-                         s.total_bytes AS total_bytes,
-                         COUNT(me.id) AS capture_count,
-                         MIN(me.observed_at) AS first_observed_at,
-                         MAX(me.observed_at) AS last_observed_at,
-                         (
-                             SELECT me2.frontmost_app_name
-                             FROM clipmem_stats_matching_events me2
-                             WHERE me2.snapshot_id = s.id
-                             ORDER BY me2.observed_at DESC, me2.id DESC
-                             LIMIT 1
-                         ) AS last_frontmost_app_name,
-                         (
-                             SELECT me2.frontmost_app_bundle_id
-                             FROM clipmem_stats_matching_events me2
-                             WHERE me2.snapshot_id = s.id
-                             ORDER BY me2.observed_at DESC, me2.id DESC
-                             LIMIT 1
-                         ) AS last_frontmost_app_bundle_id
-                     FROM snapshots s
-                     JOIN clipmem_stats_matching_events me ON me.snapshot_id = s.id
-                     WHERE {snapshot_filter_clause}
-                     GROUP BY s.id",
-                    snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
-                ),
-                named_params! {
-                    ":kind": params.kind,
-                    ":has_text": params.has_text,
-                    ":has_url": params.has_url,
-                    ":has_file_url": params.has_file_url,
-                    ":has_image": params.has_image,
-                    ":has_pdf": params.has_pdf,
-                    ":min_bytes": params.min_bytes,
-                    ":max_bytes": params.max_bytes,
-                },
-            )
-            .context("materialize stats matching snapshots")?;
+        if can_use_snapshot_stats_for_stats(filters) {
+            self.conn
+                .execute(
+                    &format!(
+                        "CREATE TEMP TABLE clipmem_stats_matching_snapshots AS
+                         SELECT
+                             s.id AS snapshot_id,
+                             s.snapshot_kind AS kind,
+                             s.preview_text AS preview_text,
+                             s.total_bytes AS total_bytes,
+                             ss.capture_count AS capture_count,
+                             ss.first_observed_at AS first_observed_at,
+                             ss.last_observed_at AS last_observed_at,
+                             ss.last_frontmost_app_name AS last_frontmost_app_name,
+                             ss.last_frontmost_app_bundle_id AS last_frontmost_app_bundle_id
+                         FROM snapshots s
+                         JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+                         WHERE {snapshot_filter_clause}",
+                        snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
+                    ),
+                    named_params! {
+                        ":kind": params.kind,
+                        ":has_text": params.has_text,
+                        ":has_url": params.has_url,
+                        ":has_file_url": params.has_file_url,
+                        ":has_image": params.has_image,
+                        ":has_pdf": params.has_pdf,
+                        ":min_bytes": params.min_bytes,
+                        ":max_bytes": params.max_bytes,
+                    },
+                )
+                .context("materialize stats matching snapshots from snapshot stats")?;
+        } else {
+            self.conn
+                .execute(
+                    &format!(
+                        "CREATE TEMP TABLE clipmem_stats_matching_snapshots AS
+                         SELECT
+                             s.id AS snapshot_id,
+                             s.snapshot_kind AS kind,
+                             s.preview_text AS preview_text,
+                             s.total_bytes AS total_bytes,
+                             COUNT(me.id) AS capture_count,
+                             MIN(me.observed_at) AS first_observed_at,
+                             MAX(me.observed_at) AS last_observed_at,
+                             (
+                                 SELECT me2.frontmost_app_name
+                                 FROM clipmem_stats_matching_events me2
+                                 WHERE me2.snapshot_id = s.id
+                                 ORDER BY me2.observed_at DESC, me2.id DESC
+                                 LIMIT 1
+                             ) AS last_frontmost_app_name,
+                             (
+                                 SELECT me2.frontmost_app_bundle_id
+                                 FROM clipmem_stats_matching_events me2
+                                 WHERE me2.snapshot_id = s.id
+                                 ORDER BY me2.observed_at DESC, me2.id DESC
+                                 LIMIT 1
+                             ) AS last_frontmost_app_bundle_id
+                         FROM snapshots s
+                         JOIN clipmem_stats_matching_events me ON me.snapshot_id = s.id
+                         WHERE {snapshot_filter_clause}
+                         GROUP BY s.id",
+                        snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
+                    ),
+                    named_params! {
+                        ":kind": params.kind,
+                        ":has_text": params.has_text,
+                        ":has_url": params.has_url,
+                        ":has_file_url": params.has_file_url,
+                        ":has_image": params.has_image,
+                        ":has_pdf": params.has_pdf,
+                        ":min_bytes": params.min_bytes,
+                        ":max_bytes": params.max_bytes,
+                    },
+                )
+                .context("materialize stats matching snapshots")?;
+        }
 
         self.conn
             .execute_batch(
@@ -466,6 +510,39 @@ impl Database {
             self.load_stats_snapshot_leaderboard("total_bytes DESC, snapshot_id ASC", 5)?;
         let most_captured_snapshots =
             self.load_stats_snapshot_leaderboard("capture_count DESC, snapshot_id ASC", 5)?;
+        let most_recopied_snapshot = most_captured_snapshots.first().cloned();
+
+        Ok(StatsReport {
+            snapshot_count: overview.snapshot_count,
+            capture_event_count: overview.capture_event_count,
+            unique_app_count: overview.unique_app_count,
+            total_bytes: overview.total_bytes,
+            average_bytes_per_snapshot: overview.average_bytes_per_snapshot(),
+            average_captures_per_snapshot: overview.average_captures_per_snapshot(),
+            dedupe_ratio: overview.dedupe_ratio(),
+            first_observed_at: overview.first_observed_at,
+            last_observed_at: overview.last_observed_at,
+            archive_span_seconds: overview.archive_span_seconds,
+            most_recopied_snapshot,
+            kind_breakdown,
+            top_apps,
+            busiest_hours,
+            busiest_weekdays,
+            largest_snapshots,
+            most_captured_snapshots,
+        })
+    }
+
+    fn stats_unfiltered(&self) -> Result<StatsReport> {
+        let overview = self.load_unfiltered_stats_overview()?;
+        let kind_breakdown = self.load_unfiltered_stats_kind_breakdown()?;
+        let top_apps = self.load_unfiltered_stats_top_apps()?;
+        let busiest_hours = self.load_unfiltered_stats_hours()?;
+        let busiest_weekdays = self.load_unfiltered_stats_weekdays()?;
+        let largest_snapshots =
+            self.load_unfiltered_stats_snapshot_leaderboard("s.total_bytes DESC, s.id ASC", 5)?;
+        let most_captured_snapshots =
+            self.load_unfiltered_stats_snapshot_leaderboard("ss.capture_count DESC, s.id ASC", 5)?;
         let most_recopied_snapshot = most_captured_snapshots.first().cloned();
 
         Ok(StatsReport {
@@ -514,7 +591,7 @@ impl Database {
         &self,
         snapshot_id: i64,
     ) -> Result<Option<FlattenedTextProjection>> {
-        if self.load_snapshot_summary(snapshot_id)?.is_none() {
+        if !self.snapshot_exists(snapshot_id)? {
             return Ok(None);
         }
 
@@ -537,6 +614,18 @@ impl Database {
         Ok(Some(
             FlattenedTextProjection::from_items(&items).with_ocr(ocr.0, ocr.1),
         ))
+    }
+
+    fn snapshot_exists(&self, snapshot_id: i64) -> Result<bool> {
+        let exists = self
+            .conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM snapshots WHERE id = ?1)",
+                [snapshot_id],
+                |row| row.get::<_, i64>(0),
+            )
+            .context("check snapshot exists for projection")?;
+        Ok(exists != 0)
     }
 
     /// Collect `SQLite` and FTS5 diagnostics for the current archive database.
@@ -612,7 +701,11 @@ impl Database {
         let analysis = analyze_query(query);
         let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
         let has_temporal_event_filters = has_temporal_event_filters(filters);
-        let sql = fts_query(use_snapshot_event_cache, has_temporal_event_filters);
+        let sql = fts_query(
+            use_snapshot_event_cache,
+            has_temporal_event_filters,
+            is_simple_fts_query(&analysis),
+        );
         let app_like = app_like_pattern(filters);
         let bundle_id = filters.bundle_id().map(|value| value.to_ascii_lowercase());
         let kind = filters.kind().map(|value| value.as_str());
@@ -1133,30 +1226,56 @@ impl Database {
                 s.item_count,
                 s.total_bytes,
                 s.created_at,
-                COUNT(e.id) AS capture_count,
-                MIN(e.observed_at) AS first_observed_at,
-                MAX(e.observed_at) AS last_observed_at,
-                (
-                    SELECT ce.frontmost_app_name
-                    FROM capture_events ce
-                    WHERE ce.snapshot_id = s.id
-                    ORDER BY ce.observed_at DESC, ce.id DESC
-                    LIMIT 1
-                ) AS last_frontmost_app_name,
-                (
-                    SELECT ce.frontmost_app_bundle_id
-                    FROM capture_events ce
-                    WHERE ce.snapshot_id = s.id
-                    ORDER BY ce.observed_at DESC, ce.id DESC
-                    LIMIT 1
-                ) AS last_frontmost_app_bundle_id,
+                CASE
+                    WHEN ss.snapshot_id IS NULL THEN (
+                        SELECT COUNT(*)
+                        FROM capture_events ce
+                        WHERE ce.snapshot_id = s.id
+                    )
+                    ELSE ss.capture_count
+                END AS capture_count,
+                CASE
+                    WHEN ss.snapshot_id IS NULL THEN (
+                        SELECT MIN(ce.observed_at)
+                        FROM capture_events ce
+                        WHERE ce.snapshot_id = s.id
+                    )
+                    ELSE ss.first_observed_at
+                END AS first_observed_at,
+                CASE
+                    WHEN ss.snapshot_id IS NULL THEN (
+                        SELECT MAX(ce.observed_at)
+                        FROM capture_events ce
+                        WHERE ce.snapshot_id = s.id
+                    )
+                    ELSE ss.last_observed_at
+                END AS last_observed_at,
+                CASE
+                    WHEN ss.snapshot_id IS NULL THEN (
+                        SELECT ce.frontmost_app_name
+                        FROM capture_events ce
+                        WHERE ce.snapshot_id = s.id
+                        ORDER BY ce.observed_at DESC, ce.id DESC
+                        LIMIT 1
+                    )
+                    ELSE ss.last_frontmost_app_name
+                END AS last_frontmost_app_name,
+                CASE
+                    WHEN ss.snapshot_id IS NULL THEN (
+                        SELECT ce.frontmost_app_bundle_id
+                        FROM capture_events ce
+                        WHERE ce.snapshot_id = s.id
+                        ORDER BY ce.observed_at DESC, ce.id DESC
+                        LIMIT 1
+                    )
+                    ELSE ss.last_frontmost_app_bundle_id
+                END AS last_frontmost_app_bundle_id,
                 soc.ocr_text,
                 soc.status AS ocr_status
             FROM snapshots s
-            LEFT JOIN capture_events e ON e.snapshot_id = s.id
+            LEFT JOIN snapshot_stats ss ON ss.snapshot_id = s.id
             LEFT JOIN snapshot_ocr_cache soc ON soc.snapshot_id = s.id
             WHERE s.id = ?1
-            GROUP BY s.id
         ";
 
         rusqlite::OptionalExtension::optional(self.conn.query_row(
@@ -1373,6 +1492,201 @@ impl StatsOverview {
 }
 
 impl Database {
+    fn load_unfiltered_stats_overview(&self) -> Result<StatsOverview> {
+        self.conn
+            .query_row(
+                r"
+                SELECT
+                    (SELECT COUNT(*) FROM snapshot_stats) AS snapshot_count,
+                    (SELECT COUNT(*) FROM capture_events) AS capture_event_count,
+                    (
+                        SELECT COUNT(DISTINCT COALESCE(NULLIF(frontmost_app_name, ''), NULLIF(frontmost_app_bundle_id, ''), 'Unknown'))
+                        FROM capture_events
+                    ) AS unique_app_count,
+                    COALESCE((
+                        SELECT SUM(s.total_bytes)
+                        FROM snapshots s
+                        JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+                    ), 0) AS total_bytes,
+                    (SELECT MIN(first_observed_at) FROM snapshot_stats) AS first_observed_at,
+                    (SELECT MAX(last_observed_at) FROM snapshot_stats) AS last_observed_at,
+                    (
+                        SELECT CAST(strftime('%s', MAX(last_observed_at)) AS INTEGER) - CAST(strftime('%s', MIN(first_observed_at)) AS INTEGER)
+                        FROM snapshot_stats
+                    ) AS archive_span_seconds
+                ",
+                [],
+                |row| {
+                    Ok(StatsOverview {
+                        snapshot_count: row_usize(row, 0)?,
+                        capture_event_count: row_usize(row, 1)?,
+                        unique_app_count: row_usize(row, 2)?,
+                        total_bytes: row_usize(row, 3)?,
+                        first_observed_at: row.get(4)?,
+                        last_observed_at: row.get(5)?,
+                        archive_span_seconds: row.get(6)?,
+                    })
+                },
+            )
+            .context("load unfiltered stats overview")
+    }
+
+    fn load_unfiltered_stats_kind_breakdown(&self) -> Result<Vec<StatsKindBreakdownEntry>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                r"
+                SELECT s.snapshot_kind, COUNT(*) AS snapshot_count, COALESCE(SUM(s.total_bytes), 0) AS total_bytes
+                FROM snapshots s
+                JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+                GROUP BY s.snapshot_kind
+                ORDER BY snapshot_count DESC, s.snapshot_kind ASC
+                ",
+            )
+            .context("prepare unfiltered stats kind breakdown")?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(StatsKindBreakdownEntry {
+                    kind: row.get(0)?,
+                    snapshot_count: row_usize(row, 1)?,
+                    total_bytes: row_usize(row, 2)?,
+                })
+            })
+            .context("execute unfiltered stats kind breakdown")?;
+        collect_rows(rows).context("collect unfiltered stats kind breakdown")
+    }
+
+    fn load_unfiltered_stats_top_apps(&self) -> Result<Vec<StatsAppEntry>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                r"
+                SELECT
+                    COALESCE(NULLIF(frontmost_app_name, ''), NULLIF(frontmost_app_bundle_id, ''), 'Unknown') AS app,
+                    COUNT(*) AS capture_event_count
+                FROM capture_events
+                GROUP BY app
+                ORDER BY capture_event_count DESC, app ASC
+                LIMIT 5
+                ",
+            )
+            .context("prepare unfiltered stats top apps")?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(StatsAppEntry {
+                    app: row.get(0)?,
+                    capture_event_count: row_usize(row, 1)?,
+                })
+            })
+            .context("execute unfiltered stats top apps")?;
+        collect_rows(rows).context("collect unfiltered stats top apps")
+    }
+
+    fn load_unfiltered_stats_hours(&self) -> Result<Vec<StatsTimeBucketEntry>> {
+        self.load_unfiltered_stats_time_distribution(
+            "00",
+            24,
+            "strftime('%H', observed_at)",
+            |index| format!("{index:02}"),
+        )
+    }
+
+    fn load_unfiltered_stats_weekdays(&self) -> Result<Vec<StatsTimeBucketEntry>> {
+        self.load_unfiltered_stats_time_distribution(
+            "0",
+            7,
+            "strftime('%w', observed_at)",
+            |index| weekday_name(index).to_string(),
+        )
+    }
+
+    fn load_unfiltered_stats_time_distribution(
+        &self,
+        first_value: &str,
+        count: usize,
+        bucket_expr: &str,
+        render_bucket: impl Fn(usize) -> String,
+    ) -> Result<Vec<StatsTimeBucketEntry>> {
+        let sql = format!(
+            "WITH RECURSIVE buckets(value) AS (
+                 SELECT CAST(:first_value AS INTEGER)
+                 UNION ALL
+                 SELECT value + 1 FROM buckets WHERE value + 1 < :count
+             ),
+             counts AS (
+                 SELECT CAST({bucket_expr} AS INTEGER) AS value, COUNT(*) AS capture_event_count
+                 FROM capture_events
+                 GROUP BY value
+             )
+             SELECT buckets.value, COALESCE(counts.capture_event_count, 0)
+             FROM buckets
+             LEFT JOIN counts ON counts.value = buckets.value
+             ORDER BY buckets.value ASC"
+        );
+        let mut stmt = self
+            .conn
+            .prepare(&sql)
+            .context("prepare unfiltered stats time distribution")?;
+        let rows = stmt
+            .query_map(
+                named_params! {
+                    ":first_value": first_value,
+                    ":count": usize_to_i64(count)?,
+                },
+                |row| {
+                    let index = row_usize(row, 0)?;
+                    Ok(StatsTimeBucketEntry {
+                        bucket: render_bucket(index),
+                        capture_event_count: row_usize(row, 1)?,
+                    })
+                },
+            )
+            .context("execute unfiltered stats time distribution")?;
+        collect_rows(rows).context("collect unfiltered stats time distribution")
+    }
+
+    fn load_unfiltered_stats_snapshot_leaderboard(
+        &self,
+        ordering: &str,
+        limit: usize,
+    ) -> Result<Vec<StatsSnapshotLeaderboardEntry>> {
+        let sql = format!(
+            "SELECT
+                 s.id,
+                 ss.capture_count,
+                 s.snapshot_kind,
+                 s.preview_text,
+                 ss.last_frontmost_app_name,
+                 ss.last_frontmost_app_bundle_id,
+                 ss.last_observed_at,
+                 s.total_bytes
+             FROM snapshots s
+             JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+             ORDER BY {ordering}
+             LIMIT :limit"
+        );
+        let mut stmt = self
+            .conn
+            .prepare(&sql)
+            .context("prepare unfiltered stats snapshot leaderboard")?;
+        let rows = stmt
+            .query_map(named_params! { ":limit": usize_to_i64(limit)? }, |row| {
+                let app_name: Option<String> = row.get(4)?;
+                let app_bundle_id: Option<String> = row.get(5)?;
+                Ok(StatsSnapshotLeaderboardEntry {
+                    snapshot_id: row.get(0)?,
+                    capture_count: row_usize(row, 1)?,
+                    kind: row.get(2)?,
+                    preview_text: row.get(3)?,
+                    app_name: app_name.or(app_bundle_id),
+                    last_observed_at: row.get(6)?,
+                    total_bytes: row_usize(row, 7)?,
+                })
+            })
+            .context("execute unfiltered stats snapshot leaderboard")?;
+        collect_rows(rows).context("collect unfiltered stats snapshot leaderboard")
+    }
+
     fn load_stats_overview(&self) -> Result<StatsOverview> {
         self.conn
             .query_row(
@@ -1570,7 +1884,11 @@ fn weekday_name(index: usize) -> &'static str {
     }
 }
 
-fn recent_query(include_matching_events: bool, use_snapshot_event_cache: bool) -> String {
+fn recent_query(
+    include_matching_events: bool,
+    use_snapshot_event_cache: bool,
+    use_snapshot_stats_since_filter: bool,
+) -> String {
     format!(
         "{matching_events_cte}
          SELECT
@@ -1620,6 +1938,7 @@ fn recent_query(include_matching_events: bool, use_snapshot_event_cache: bool) -
              LEFT JOIN snapshot_event_filter_cache se ON se.snapshot_id = s.id
              WHERE {snapshot_filter_clause}
                AND {base_event_filter_clause}
+               AND {snapshot_stats_since_filter_clause}
          ) base
          WHERE (
              :cursor_last_seen_at IS NULL
@@ -1635,6 +1954,8 @@ fn recent_query(include_matching_events: bool, use_snapshot_event_cache: bool) -
             include_matching_events,
             use_snapshot_event_cache,
         ),
+        snapshot_stats_since_filter_clause =
+            snapshot_stats_since_filter_clause(use_snapshot_stats_since_filter),
         snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
     )
 }
@@ -1968,7 +2289,48 @@ fn file_path_literal_query(
     )
 }
 
-fn fts_query(use_snapshot_event_cache: bool, has_temporal_event_filters: bool) -> String {
+fn fts_query(
+    use_snapshot_event_cache: bool,
+    has_temporal_event_filters: bool,
+    use_simple_scoring: bool,
+) -> String {
+    let why_matched_expression = if use_simple_scoring {
+        "NULL"
+    } else {
+        r"CASE
+                     WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\'
+                         THEN 'Exact phrase match in best text'
+                     WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) = :query_lower
+                         THEN 'Exact text match in best text'
+                     WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :query_lower || '%') ESCAPE '\'
+                         THEN 'Phrase match in best text'
+                     ELSE NULL
+                 END"
+    };
+    let matched_fields_expression = if use_simple_scoring {
+        "'search_text'"
+    } else {
+        r"CASE
+                     WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\'
+                         THEN 'best_text' || char(30) || 'search_text'
+                     WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :query_lower || '%') ESCAPE '\'
+                         THEN 'best_text' || char(30) || 'search_text'
+                     ELSE 'search_text'
+                 END"
+    };
+    let score_expression = if use_simple_scoring {
+        "bm25(snapshots_fts)"
+    } else {
+        r"(
+                     bm25(snapshots_fts)
+                     - CASE
+                         WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\' THEN 0.2
+                         WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :query_lower || '%') ESCAPE '\' THEN 0.08
+                         ELSE 0
+                     END
+                 )"
+    };
+
     format!(
         "
          WITH search_rows AS (
@@ -1979,22 +2341,8 @@ fn fts_query(use_snapshot_event_cache: bool, has_temporal_event_filters: bool) -
                  s.snapshot_kind AS snapshot_kind,
                  s.preview_text AS preview_text,
                  s.search_text AS search_text,
-                 CASE
-                     WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\\'
-                         THEN 'Exact phrase match in best text'
-                     WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) = :query_lower
-                         THEN 'Exact text match in best text'
-                     WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :query_lower || '%') ESCAPE '\\'
-                         THEN 'Phrase match in best text'
-                     ELSE NULL
-                 END AS why_matched,
-                 CASE
-                     WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\\'
-                         THEN 'best_text' || char(30) || 'search_text'
-                     WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :query_lower || '%') ESCAPE '\\'
-                         THEN 'best_text' || char(30) || 'search_text'
-                     ELSE 'search_text'
-                 END AS matched_fields,
+                 {why_matched_expression} AS why_matched,
+                 {matched_fields_expression} AS matched_fields,
                  ss.capture_count AS capture_count,
                  ss.first_observed_at AS first_observed_at,
                  ss.last_observed_at AS last_observed_at,
@@ -2002,19 +2350,14 @@ fn fts_query(use_snapshot_event_cache: bool, has_temporal_event_filters: bool) -
                  ss.last_frontmost_app_bundle_id AS last_frontmost_app_bundle_id,
                  s.total_bytes AS total_bytes,
                  s.item_count AS item_count,
-                 (
-                     bm25(snapshots_fts)
-                     - CASE
-                         WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\\' THEN 0.2
-                         WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :query_lower || '%') ESCAPE '\\' THEN 0.08
-                         ELSE 0
-                     END
-                 ) AS score
+                 {score_expression} AS score
              FROM snapshots_fts
              JOIN snapshots s ON s.id = snapshots_fts.rowid
              JOIN snapshot_stats ss ON ss.snapshot_id = s.id
              LEFT JOIN snapshot_event_filter_cache se ON se.snapshot_id = s.id
              WHERE snapshots_fts MATCH :query
+               AND (:query_lower IS NULL OR :query_lower IS NOT NULL)
+               AND (:exact_phrase_lower IS NULL OR :exact_phrase_lower IS NOT NULL)
                AND {snapshot_filter_clause}
                AND {event_filter_where_clause}
          )
@@ -2088,6 +2431,9 @@ fn fts_query(use_snapshot_event_cache: bool, has_temporal_event_filters: bool) -
             has_temporal_event_filters,
         ),
         snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
+        why_matched_expression = why_matched_expression,
+        matched_fields_expression = matched_fields_expression,
+        score_expression = score_expression,
     )
 }
 
@@ -2284,6 +2630,17 @@ fn requires_matching_events(filters: &RetrievalFilters) -> bool {
     has_temporal_event_filters(filters)
 }
 
+fn can_use_snapshot_stats_since_filter(filters: &RetrievalFilters) -> bool {
+    (filters.since().is_some() || filters.hours().is_some())
+        && filters.until().is_none()
+        && filters.app().is_none()
+        && filters.bundle_id().is_none()
+}
+
+fn can_use_snapshot_stats_for_stats(filters: &RetrievalFilters) -> bool {
+    !has_temporal_event_filters(filters) && filters.app().is_none() && filters.bundle_id().is_none()
+}
+
 fn can_use_snapshot_event_cache(filters: &RetrievalFilters) -> bool {
     !has_temporal_event_filters(filters)
         && (filters.app().is_some() || filters.bundle_id().is_some())
@@ -2325,6 +2682,15 @@ fn base_event_filter_clause(
         snapshot_event_filter_clause(cache_alias)
     } else {
         event_filter_bind_clause().to_string()
+    }
+}
+
+fn snapshot_stats_since_filter_clause(use_snapshot_stats_since_filter: bool) -> &'static str {
+    if use_snapshot_stats_since_filter {
+        "ss.last_observed_at >= datetime(:since)
+         AND datetime(ss.last_observed_at) >= datetime(:since)"
+    } else {
+        "(:since IS NULL OR 1)"
     }
 }
 
@@ -2440,6 +2806,16 @@ fn app_like_pattern(filters: &RetrievalFilters) -> Option<String> {
     filters
         .app()
         .map(|value| format!("%{}%", escape_like_pattern(&value.to_ascii_lowercase())))
+}
+
+fn is_simple_fts_query(analysis: &QueryAnalysis) -> bool {
+    analysis.exact_phrase.is_none()
+        && !analysis.literal_preferred
+        && !analysis.trimmed.is_empty()
+        && analysis
+            .trimmed
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric())
 }
 
 fn effective_since_param(filters: &RetrievalFilters) -> Result<Option<String>> {
@@ -2809,8 +3185,8 @@ mod tests {
     use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
 
     use super::{
-        analyze_query, invalid_fts_message, literal_fts_match_query, literal_token_match_query,
-        normalise_file_path,
+        analyze_query, fts_query, invalid_fts_message, is_simple_fts_query,
+        literal_fts_match_query, literal_token_match_query, normalise_file_path,
     };
 
     fn fake_snapshot(change_count: i64, text: &str) -> crate::model::ClipboardSnapshot {
@@ -2854,6 +3230,22 @@ mod tests {
             Some("launchctl bootstrap")
         );
         assert!(!analysis.literal_preferred);
+    }
+
+    #[test]
+    fn simple_fts_query_skips_per_row_phrase_scoring() {
+        assert!(is_simple_fts_query(&analyze_query("git")));
+        assert!(!is_simple_fts_query(&analyze_query("\"git clone\"")));
+        assert!(!is_simple_fts_query(&analyze_query("git clone")));
+        assert!(!is_simple_fts_query(&analyze_query("com.apple.Terminal")));
+
+        let simple_sql = fts_query(false, false, true);
+        let phrase_sql = fts_query(false, false, false);
+
+        assert!(!simple_sql.contains("Phrase match in best text"));
+        assert!(!simple_sql.contains("THEN 0.08"));
+        assert!(phrase_sql.contains("Phrase match in best text"));
+        assert!(phrase_sql.contains("THEN 0.08"));
     }
 
     #[test]

@@ -11,11 +11,11 @@ use crate::model::{
     build_item, build_representation, build_snapshot, CaptureContext, ClipboardSnapshot,
 };
 use image::{ImageFormat, ImageReader, Rgba, RgbaImage};
-use rusqlite::params;
+use rusqlite::{named_params, params};
 
 use super::{
-    configure_connection, explain_query_plan, Database, RetrievalFilters, RetrievalKind,
-    SearchMode, TimelineSort, CURRENT_SCHEMA_VERSION, SCHEMA,
+    collect_rows, configure_connection, explain_query_plan, Database, RetrievalFilters,
+    RetrievalKind, SearchMode, TimelineSort, CURRENT_SCHEMA_VERSION, SCHEMA,
 };
 
 fn temp_db_path(test_name: &str) -> std::path::PathBuf {
@@ -45,6 +45,15 @@ fn cleanup_db(path: &std::path::Path) {
 }
 
 fn fake_snapshot(change_count: i64, text: &str) -> ClipboardSnapshot {
+    fake_snapshot_with_app(change_count, text, "Test App", "com.example.test")
+}
+
+fn fake_snapshot_with_app(
+    change_count: i64,
+    text: &str,
+    app_name: &str,
+    bundle_id: &str,
+) -> ClipboardSnapshot {
     let representation = build_representation(
         "public.utf8-plain-text".to_string(),
         None,
@@ -54,8 +63,8 @@ fn fake_snapshot(change_count: i64, text: &str) -> ClipboardSnapshot {
     let item = build_item(0, vec![representation]);
     build_snapshot(
         CaptureContext::new(change_count)
-            .with_frontmost_app_name("Test App")
-            .with_frontmost_app_bundle_id("com.example.test"),
+            .with_frontmost_app_name(app_name)
+            .with_frontmost_app_bundle_id(bundle_id),
         vec![item],
     )
 }
@@ -1767,6 +1776,156 @@ fn latest_event_query_uses_compound_capture_events_index() -> Result<()> {
     assert!(plan
         .iter()
         .any(|detail| detail.contains("idx_capture_events_snapshot_observed_id")));
+    Ok(())
+}
+
+#[test]
+fn duplicate_capture_event_cache_preserves_distinct_apps() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let terminal = fake_snapshot_with_app(1, "shared payload", "Terminal", "com.apple.Terminal");
+    let safari = fake_snapshot_with_app(2, "shared payload", "Safari", "com.apple.Safari");
+    let terminal_again =
+        fake_snapshot_with_app(3, "shared payload", "Terminal", "com.apple.Terminal");
+
+    let stored = db.store_capture(&terminal)?;
+    db.store_capture(&safari)?;
+    db.store_capture(&terminal_again)?;
+
+    let (app_names_lower, bundle_ids_lower): (String, String) = db.conn.query_row(
+        "SELECT app_names_lower, bundle_ids_lower
+         FROM snapshot_event_filter_cache
+         WHERE snapshot_id = ?1",
+        [stored.snapshot_id()],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+
+    assert_eq!(app_names_lower, "safari\u{1f}terminal");
+    assert_eq!(bundle_ids_lower, "com.apple.safari\u{1f}com.apple.terminal");
+    Ok(())
+}
+
+#[test]
+fn ocr_candidate_scan_uses_image_candidate_index() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    db.store_capture(&image_snapshot(1, vec![("public.png", vec![1, 2, 3, 4])]))?;
+
+    let plan = explain_query_plan(
+        &db.conn,
+        "SELECT DISTINCT ir.raw_sha256
+         FROM item_representations ir
+         WHERE ir.kind = 'image'
+           AND length(ir.blob_value) > 0",
+        &[],
+    )?;
+
+    assert!(plan
+        .iter()
+        .any(|detail| detail.contains("idx_item_representations_image_candidates")));
+    Ok(())
+}
+
+#[test]
+fn purge_candidate_scan_uses_snapshot_stats_time_index() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    db.store_capture(&fake_snapshot(1, "expired"))?;
+
+    let plan = explain_query_plan(
+        &db.conn,
+        "SELECT ss.snapshot_id
+         FROM snapshot_stats ss
+         WHERE ss.last_observed_at < datetime('now', printf('-%d seconds', ?1))",
+        &[&86_400_i64],
+    )?;
+
+    assert!(plan
+        .iter()
+        .any(|detail| detail.contains("idx_snapshot_stats_last_observed_snapshot")));
+    Ok(())
+}
+
+#[test]
+fn recent_since_only_filter_uses_snapshot_stats_time_index() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let old = db.store_capture(&fake_snapshot(1, "old"))?;
+    let recent = db.store_capture(&fake_snapshot(2, "recent"))?;
+
+    set_event_observed_at(&db, old.event_id(), "2026-04-19 08:00:00")?;
+    set_event_observed_at(&db, recent.event_id(), "2026-04-21 08:00:00")?;
+    db.conn.execute(
+        "UPDATE snapshot_stats SET first_observed_at = '2026-04-19 08:00:00', last_observed_at = '2026-04-19 08:00:00' WHERE snapshot_id = ?1",
+        [old.snapshot_id()],
+    )?;
+    db.conn.execute(
+        "UPDATE snapshot_stats SET first_observed_at = '2026-04-21 08:00:00', last_observed_at = '2026-04-21 08:00:00' WHERE snapshot_id = ?1",
+        [recent.snapshot_id()],
+    )?;
+
+    let filters = RetrievalFilters::new(
+        Some("2026-04-20T00:00:00Z".to_string()),
+        None,
+        None,
+        None,
+        None,
+        None,
+        false,
+        false,
+        false,
+        false,
+        false,
+        None,
+        None,
+    );
+    let page = db.recent_page(20, &filters, None)?;
+
+    assert_eq!(page.items().len(), 1);
+    assert_eq!(page.items()[0].snapshot_id(), recent.snapshot_id());
+
+    let mut stmt = db.conn.prepare(
+        "EXPLAIN QUERY PLAN
+         SELECT ss.snapshot_id
+         FROM snapshot_stats ss
+         WHERE ss.last_observed_at >= datetime(:since)
+         ORDER BY ss.last_observed_at DESC, ss.snapshot_id DESC
+         LIMIT :limit",
+    )?;
+    let rows = stmt.query_map(
+        named_params! {
+            ":since": "2026-04-20T00:00:00Z",
+            ":limit": 20_i64,
+        },
+        |row| row.get::<_, String>(3),
+    )?;
+    let plan = collect_rows(rows)?;
+
+    assert!(plan
+        .iter()
+        .any(|detail| detail.contains("idx_snapshot_stats_last_observed_snapshot")));
+    Ok(())
+}
+
+#[test]
+fn ocr_status_counts_use_status_and_text_indexes() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let stored = db.store_capture(&image_snapshot(1, vec![("public.png", vec![1, 2, 3, 4])]))?;
+    db.enqueue_ocr_for_snapshot(stored.snapshot_id())?;
+
+    let status_plan = explain_query_plan(
+        &db.conn,
+        "SELECT COUNT(*) FROM ocr_results WHERE status = 'pending'",
+        &[],
+    )?;
+    let text_plan = explain_query_plan(
+        &db.conn,
+        "SELECT COUNT(*) FROM snapshot_ocr_cache WHERE ocr_text != ''",
+        &[],
+    )?;
+
+    assert!(status_plan
+        .iter()
+        .any(|detail| detail.contains("idx_ocr_results_status")));
+    assert!(text_plan
+        .iter()
+        .any(|detail| detail.contains("idx_snapshot_ocr_cache_text_present")));
     Ok(())
 }
 

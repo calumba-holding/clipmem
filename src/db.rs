@@ -891,7 +891,7 @@ impl Database {
                 .is_err_and(|error| error.to_string().contains("no such column: kind"))
         {
             bail!(
-                "database uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
+                "database operation failed; this may be an incompatible prerelease schema. Move the database aside and run `clipmem setup`."
             );
         }
         Ok(())

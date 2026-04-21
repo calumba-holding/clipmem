@@ -1405,7 +1405,17 @@ fn open_existing_db(path: &Path) -> Result<Database> {
     }
     match Database::open_existing(path) {
         Ok(db) => {
-            db.ensure_supported_schema_shape()?;
+            if let Err(error) = db.ensure_supported_schema_shape() {
+                if error
+                    .chain()
+                    .any(|cause| cause.to_string().contains("prerelease schema"))
+                {
+                    bail!(
+                        "database operation failed; this may be an incompatible prerelease schema. Move the database aside and run `clipmem setup`."
+                    );
+                }
+                return Err(error);
+            }
             Ok(db)
         }
         Err(error) => {

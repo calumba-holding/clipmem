@@ -39,6 +39,40 @@ versioning where practical.
   still running by suppressing restore-induced duplicate events at the
   database layer and surfacing watcher binary mismatches in diagnostics.
 
+### Performance
+
+- Improved `clipmem stats` performance for whole-archive and snapshot-filtered
+  reports by avoiding unnecessary temporary event tables and reusing maintained
+  snapshot aggregates instead of recomputing per-snapshot capture totals.
+- Added SQLite indexes for stats app and time-bucket aggregation so archive
+  reports remain faster on larger capture histories.
+- Improved JSON output performance for `search`, `recent`, `timeline`, and
+  `recall` by avoiding redundant snapshot summary hydration while building
+  list projections.
+- Improved repeated duplicate capture storage by skipping redundant app-filter
+  and literal-search cache rewrites when a new event does not change those
+  cached values.
+- Improved OCR candidate discovery on image-heavy archives by indexing image
+  representation rows and raw image hashes used by OCR queue lookups.
+- Improved purge dry-run and deletion planning on large archives by using the
+  maintained snapshot observation-time index for expiration candidate scans.
+- Improved snapshot detail, export, and restore hydration for heavily recopied
+  items by reusing maintained capture summary data instead of aggregating the
+  full event history on every lookup. In the heavy-event snapshot lookup
+  benchmark, lookup time dropped from 30.347 ms to 0.406 ms.
+- Improved OCR status reporting on large OCR queues by counting status buckets
+  and snapshots with recognized text through dedicated SQLite indexes. The OCR
+  status benchmark dropped from 32.861 ms to 5.274 ms on the immediate
+  re-benchmark, with a later validation run at 13.560 ms.
+- Improved `recent --hours` queries by using maintained snapshot observation
+  timestamps instead of scanning matching capture events for since-only
+  filters. The large retrieval benchmark's `recent_24h` query dropped from
+  77.748 ms to 1.015 ms.
+- Improved simple full-text search queries by skipping per-row phrase scoring
+  checks that are only needed for quoted or multi-token searches. In the large
+  retrieval benchmark, simple FTS search dropped from 20.700 ms to 13.714 ms,
+  and app-filtered simple FTS dropped from 19.909 ms to 15.816 ms.
+
 ## 0.3.2 - 2026-04-20
 
 ### Changed

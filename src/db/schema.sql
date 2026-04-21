@@ -121,6 +121,15 @@ CREATE INDEX IF NOT EXISTS idx_capture_events_snapshot_observed_id
 CREATE INDEX IF NOT EXISTS idx_capture_events_observed_id
     ON capture_events(observed_at DESC, id DESC);
 
+CREATE INDEX IF NOT EXISTS idx_capture_events_app_group
+    ON capture_events(COALESCE(NULLIF(frontmost_app_name, ''), NULLIF(frontmost_app_bundle_id, ''), 'Unknown'));
+
+CREATE INDEX IF NOT EXISTS idx_capture_events_observed_hour
+    ON capture_events(CAST(strftime('%H', observed_at) AS INTEGER));
+
+CREATE INDEX IF NOT EXISTS idx_capture_events_observed_weekday
+    ON capture_events(CAST(strftime('%w', observed_at) AS INTEGER));
+
 CREATE INDEX IF NOT EXISTS idx_snapshot_stats_last_observed_snapshot
     ON snapshot_stats(last_observed_at DESC, snapshot_id DESC);
 
@@ -129,6 +138,20 @@ CREATE INDEX IF NOT EXISTS idx_pending_restores_created_at
 
 CREATE INDEX IF NOT EXISTS idx_snapshot_items_snapshot_id
     ON snapshot_items(snapshot_id, item_index);
+
+CREATE INDEX IF NOT EXISTS idx_item_representations_image_candidates
+    ON item_representations(kind, raw_sha256)
+    WHERE length(blob_value) > 0;
+
+CREATE INDEX IF NOT EXISTS idx_item_representations_raw_sha256_snapshot
+    ON item_representations(raw_sha256, snapshot_id);
+
+CREATE INDEX IF NOT EXISTS idx_ocr_results_status
+    ON ocr_results(status);
+
+CREATE INDEX IF NOT EXISTS idx_snapshot_ocr_cache_text_present
+    ON snapshot_ocr_cache(snapshot_id)
+    WHERE ocr_text != '';
 
 CREATE VIRTUAL TABLE IF NOT EXISTS snapshots_fts USING fts5(
     search_text,
@@ -275,7 +298,8 @@ BEFORE INSERT ON capture_events BEGIN
     SELECT CASE WHEN changes() > 0 THEN RAISE(IGNORE) END;
 END;
 
-CREATE TRIGGER IF NOT EXISTS capture_events_ai AFTER INSERT ON capture_events BEGIN
+DROP TRIGGER IF EXISTS capture_events_ai;
+CREATE TRIGGER capture_events_ai AFTER INSERT ON capture_events BEGIN
     INSERT INTO snapshot_stats (
         snapshot_id,
         capture_count,
@@ -342,28 +366,53 @@ CREATE TRIGGER IF NOT EXISTS capture_events_ai AFTER INSERT ON capture_events BE
         COALESCE(lower(new.frontmost_app_bundle_id), '')
     )
     ON CONFLICT(snapshot_id) DO UPDATE SET
-        app_names_lower = COALESCE((
-            SELECT GROUP_CONCAT(app_name, char(31))
-            FROM (
-                SELECT DISTINCT lower(frontmost_app_name) AS app_name
-                FROM capture_events
-                WHERE snapshot_id = new.snapshot_id
-                  AND frontmost_app_name IS NOT NULL
-                  AND frontmost_app_name != ''
-                ORDER BY app_name
-            )
-        ), ''),
-        bundle_ids_lower = COALESCE((
-            SELECT GROUP_CONCAT(bundle_id, char(31))
-            FROM (
-                SELECT DISTINCT lower(frontmost_app_bundle_id) AS bundle_id
-                FROM capture_events
-                WHERE snapshot_id = new.snapshot_id
-                  AND frontmost_app_bundle_id IS NOT NULL
-                  AND frontmost_app_bundle_id != ''
-                ORDER BY bundle_id
-            )
-        ), '');
+        app_names_lower = CASE
+            WHEN excluded.app_names_lower = ''
+                THEN snapshot_event_filter_cache.app_names_lower
+            WHEN snapshot_event_filter_cache.app_names_lower = ''
+                THEN excluded.app_names_lower
+            ELSE COALESCE((
+                SELECT GROUP_CONCAT(app_name, char(31))
+                FROM (
+                    SELECT DISTINCT lower(frontmost_app_name) AS app_name
+                    FROM capture_events
+                    WHERE snapshot_id = new.snapshot_id
+                      AND frontmost_app_name IS NOT NULL
+                      AND frontmost_app_name != ''
+                    ORDER BY app_name
+                )
+            ), '')
+        END,
+        bundle_ids_lower = CASE
+            WHEN excluded.bundle_ids_lower = ''
+                THEN snapshot_event_filter_cache.bundle_ids_lower
+            WHEN snapshot_event_filter_cache.bundle_ids_lower = ''
+                THEN excluded.bundle_ids_lower
+            ELSE COALESCE((
+                SELECT GROUP_CONCAT(bundle_id, char(31))
+                FROM (
+                    SELECT DISTINCT lower(frontmost_app_bundle_id) AS bundle_id
+                    FROM capture_events
+                    WHERE snapshot_id = new.snapshot_id
+                      AND frontmost_app_bundle_id IS NOT NULL
+                      AND frontmost_app_bundle_id != ''
+                    ORDER BY bundle_id
+                )
+            ), '')
+        END
+    WHERE (
+        excluded.app_names_lower != ''
+        AND instr(
+            char(31) || snapshot_event_filter_cache.app_names_lower || char(31),
+            char(31) || excluded.app_names_lower || char(31)
+        ) = 0
+    ) OR (
+        excluded.bundle_ids_lower != ''
+        AND instr(
+            char(31) || snapshot_event_filter_cache.bundle_ids_lower || char(31),
+            char(31) || excluded.bundle_ids_lower || char(31)
+        ) = 0
+    );
     INSERT INTO snapshot_literal_cache (snapshot_id, haystack)
     SELECT
         s.id,
@@ -381,7 +430,8 @@ CREATE TRIGGER IF NOT EXISTS capture_events_ai AFTER INSERT ON capture_events BE
     LEFT JOIN snapshot_stats ss ON ss.snapshot_id = s.id
     WHERE s.id = new.snapshot_id
     ON CONFLICT(snapshot_id) DO UPDATE SET
-        haystack = excluded.haystack;
+        haystack = excluded.haystack
+    WHERE snapshot_literal_cache.haystack IS NOT excluded.haystack;
 END;
 
 CREATE TRIGGER IF NOT EXISTS capture_events_au

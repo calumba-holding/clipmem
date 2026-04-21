@@ -1576,12 +1576,13 @@ fn sanitize_error_message(error: &anyhow::Error) -> String {
         .unwrap_or_else(|| "command failed".to_string());
     let lower_chain = chain_messages.join(" | ").to_ascii_lowercase();
 
-    if lower_chain.contains("no such column: kind")
+    if lower_chain.contains("prerelease schema") {
+        "database operation failed; this may be an incompatible prerelease schema. Move the database aside and run `clipmem setup`.".to_string()
+    } else if lower_chain.contains("no such column: kind")
         || lower_chain.contains("no such column: ir.kind")
         || lower_chain.contains("no such column: item_representations.kind")
     {
-        "database uses an incompatible prerelease schema; move it aside and run `clipmem setup`"
-            .to_string()
+        "database operation failed; this may be an incompatible prerelease schema. Move the database aside and run `clipmem setup`.".to_string()
     } else if lower_chain.contains("no such column:") || lower_chain.contains("sql logic error") {
         "database operation failed; this may be an incompatible prerelease schema. Move the database aside and run `clipmem setup`.".to_string()
     } else if lower_chain.contains("sqlite") {

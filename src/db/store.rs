@@ -360,7 +360,7 @@ impl Database {
                     WHERE id IN (
                         SELECT snapshot_id
                         FROM snapshot_stats
-                        WHERE datetime(last_observed_at) < datetime('now', printf('-%d seconds', ?1))
+                        WHERE last_observed_at < datetime('now', printf('-%d seconds', ?1))
                     )
                 ",
                 [older_than_seconds_i64],
@@ -668,16 +668,15 @@ impl Database {
             .query_row(
                 r"
                     SELECT
-                        COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0),
-                        COALESCE(SUM(CASE WHEN status = 'ready' THEN 1 ELSE 0 END), 0),
-                        COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0),
-                        COALESCE(SUM(CASE WHEN status = 'skipped' THEN 1 ELSE 0 END), 0),
+                        (SELECT COUNT(*) FROM ocr_results WHERE status = 'pending'),
+                        (SELECT COUNT(*) FROM ocr_results WHERE status = 'ready'),
+                        (SELECT COUNT(*) FROM ocr_results WHERE status = 'failed'),
+                        (SELECT COUNT(*) FROM ocr_results WHERE status = 'skipped'),
                         (
                             SELECT COUNT(*)
                             FROM snapshot_ocr_cache
                             WHERE ocr_text != ''
                         )
-                    FROM ocr_results
                 ",
                 [],
                 |row| {
@@ -1479,7 +1478,7 @@ fn load_purge_report(
             WITH candidates AS (
                 SELECT ss.snapshot_id
                 FROM snapshot_stats ss
-                WHERE datetime(ss.last_observed_at) < datetime('now', printf('-%d seconds', ?1))
+                WHERE ss.last_observed_at < datetime('now', printf('-%d seconds', ?1))
             )
             SELECT
                 COALESCE((SELECT COUNT(*) FROM candidates), 0) AS snapshot_count,
