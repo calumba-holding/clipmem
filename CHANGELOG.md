@@ -13,6 +13,9 @@ versioning where practical.
 
 - Fixed HTML clipboard text normalization so numeric entities like `&#39;` and
   `&#x2F;` remain searchable as their original characters instead of spaces.
+- Fixed file URL projection so `file://localhost/...` clipboard entries are
+  shown as absolute local file paths instead of paths prefixed with
+  `localhost`.
 
 ### Changed
 

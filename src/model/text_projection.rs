@@ -297,6 +297,11 @@ fn best_text_priority(kind: ClipboardKind, text: &str) -> Option<u8> {
 fn decode_file_url_path(file_url: &str) -> String {
     const PREFIX: &str = "file://";
     if let Some(remainder) = file_url.strip_prefix(PREFIX) {
+        let remainder = if remainder == "localhost" || remainder.starts_with("localhost/") {
+            &remainder["localhost".len()..]
+        } else {
+            remainder
+        };
         percent_decode(remainder)
     } else {
         file_url.to_string()
@@ -363,6 +368,25 @@ mod tests {
             &["/Users/test/Report Q2.txt".to_string()]
         );
         assert_eq!(projection.text_fragments().len(), 3);
+    }
+
+    #[test]
+    fn projection_decodes_localhost_file_urls_to_absolute_paths() {
+        let item = build_item(
+            0,
+            vec![build_representation(
+                "public.file-url".to_string(),
+                Some("file://localhost/Users/test/Report%20Q2.txt".to_string()),
+                b"file://localhost/Users/test/Report%20Q2.txt".to_vec(),
+            )],
+        );
+
+        let projection = FlattenedTextProjection::from_items(&[item]);
+
+        assert_eq!(
+            projection.file_paths(),
+            &["/Users/test/Report Q2.txt".to_string()]
+        );
     }
 
     #[test]
