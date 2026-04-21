@@ -11,6 +11,13 @@ versioning where practical.
 
 Changes for the next release go here.
 
+## 0.3.4 - 2026-04-21
+
+### Fixed
+
+- Fixed LaunchAgent status tests and crate publishing on Linux by falling back
+  to direct plist XML parsing when `plutil` is unavailable.
+
 ## 0.3.3 - 2026-04-21
 
 ### Changed

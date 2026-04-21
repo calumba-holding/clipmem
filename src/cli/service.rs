@@ -815,7 +815,7 @@ fn configured_binary_path_from_plist(plist_path: &Path) -> Option<String> {
         return None;
     }
 
-    let output = ProcessCommand::new("plutil")
+    let Some(output) = ProcessCommand::new("plutil")
         .args([
             "-extract",
             "ProgramArguments.0",
@@ -825,13 +825,44 @@ fn configured_binary_path_from_plist(plist_path: &Path) -> Option<String> {
             &plist_path.display().to_string(),
         ])
         .output()
-        .ok()?;
+        .ok()
+    else {
+        return configured_binary_path_from_plist_xml(plist_path);
+    };
     if !output.status.success() {
-        return None;
+        return configured_binary_path_from_plist_xml(plist_path);
     }
 
     let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !value.is_empty() {
+        return Some(value);
+    }
+
+    configured_binary_path_from_plist_xml(plist_path)
+}
+
+fn configured_binary_path_from_plist_xml(plist_path: &Path) -> Option<String> {
+    let plist = fs::read_to_string(plist_path).ok()?;
+    let program_args = plist.find("<key>ProgramArguments</key>")?;
+    let after_key = &plist[program_args..];
+    let array_start = after_key.find("<array")?;
+    let after_array_tag = after_key[array_start..].find('>')? + array_start + 1;
+    let array = &after_key[after_array_tag..];
+    let array_end = array.find("</array>")?;
+    let array = &array[..array_end];
+    let string_start = array.find("<string>")? + "<string>".len();
+    let string_end = array[string_start..].find("</string>")? + string_start;
+    let value = decode_plist_xml_text(array[string_start..string_end].trim());
     (!value.is_empty()).then_some(value)
+}
+
+fn decode_plist_xml_text(value: &str) -> String {
+    value
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
 }
 
 fn process_command(pid: i64) -> Option<String> {
@@ -1123,7 +1154,8 @@ fn home_dir() -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{
-        command_binary_path, configured_binary_path_from_plist, homebrew_prefix_for_binary,
+        command_binary_path, configured_binary_path_from_plist,
+        configured_binary_path_from_plist_xml, homebrew_prefix_for_binary,
         watcher_binary_mismatch_note, ServiceProvider, ServiceProviderStatus, ServiceState,
     };
     use std::path::{Path, PathBuf};
@@ -1207,6 +1239,37 @@ mod tests {
         assert_eq!(
             configured_binary_path_from_plist(&path),
             Some("/tmp/clipmem-debug".to_string())
+        );
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn launchagent_plist_xml_fallback_reports_configured_binary_path() {
+        let path = std::env::temp_dir().join(format!(
+            "clipmem-service-test-{}-{}.plist",
+            std::process::id(),
+            "configured-binary-xml"
+        ));
+        std::fs::write(
+            &path,
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+  <dict>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/tmp/clipmem&amp;debug</string>
+      <string>watch</string>
+    </array>
+  </dict>
+</plist>
+"#,
+        )
+        .expect("write test plist");
+
+        assert_eq!(
+            configured_binary_path_from_plist_xml(&path),
+            Some("/tmp/clipmem&debug".to_string())
         );
 
         let _ = std::fs::remove_file(path);
