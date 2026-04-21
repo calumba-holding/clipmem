@@ -9,6 +9,10 @@ versioning where practical.
 
 ## Unreleased
 
+Changes for the next release go here.
+
+## 0.3.3 - 2026-04-21
+
 ### Changed
 
 - Redesigned the menu bar popover to show clipboard items first. The service
