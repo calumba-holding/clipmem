@@ -16,6 +16,9 @@ versioning where practical.
 - Updated the ClawHub clipboard-memory skill package metadata for a corrected
   1.3.1 publish with the current schema version 2, `recent`, and export
   overwrite guidance.
+- Added GitHub Actions automation that checks the packaged
+  `clipboard-memory` ClawHub skill for registry drift and publishes it when
+  the repo declares a newer skill version.
 
 ## 0.3.4 - 2026-04-21
 

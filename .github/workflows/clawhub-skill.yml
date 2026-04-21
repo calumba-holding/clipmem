@@ -1,0 +1,97 @@
+name: ClawHub Skill
+
+on:
+  pull_request:
+    paths:
+      - "skills/clipboard-memory/**"
+      - "extras/openclaw/clipboard-memory/**"
+      - "extras/agent-skills/clipboard-memory/**"
+      - "scripts/clawhub_skill_sync.py"
+      - "CHANGELOG.md"
+      - ".github/workflows/clawhub-skill.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "skills/clipboard-memory/**"
+      - "extras/openclaw/clipboard-memory/**"
+      - "extras/agent-skills/clipboard-memory/**"
+      - "scripts/clawhub_skill_sync.py"
+      - "CHANGELOG.md"
+      - ".github/workflows/clawhub-skill.yml"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run a check-only pass or publish when the local skill version is newer."
+        required: true
+        default: check
+        type: choice
+        options:
+          - check
+          - publish
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check ClawHub skill
+    if: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'check') }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "lts/*"
+
+      - name: Install ClawHub CLI
+        run: npm install --global clawhub@0.9.0
+
+      - name: Verify skill package parity
+        run: cargo test --test skill_parity
+
+      - name: Check ClawHub skill state
+        run: python3 scripts/clawhub_skill_sync.py check
+
+  publish:
+    name: Publish ClawHub skill
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'publish') }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "lts/*"
+
+      - name: Install ClawHub CLI
+        run: npm install --global clawhub@0.9.0
+
+      - name: Verify skill package parity
+        run: cargo test --test skill_parity
+
+      - name: Authenticate with ClawHub
+        env:
+          CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+        run: |
+          if [ -z "${CLAWHUB_TOKEN}" ]; then
+            echo "::error::Missing required CLAWHUB_TOKEN secret." >&2
+            exit 1
+          fi
+          clawhub login --token "${CLAWHUB_TOKEN}" --no-browser
+
+      - name: Publish ClawHub skill when needed
+        run: python3 scripts/clawhub_skill_sync.py publish
