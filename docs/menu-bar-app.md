@@ -36,15 +36,14 @@ When the app launches for the first time, it:
 
 The app uses explicit SwiftUI scenes:
 
-- **MenuBarExtra** — compact status, setup/service actions, recent
-  items, quick recall, settings, and quit.
+- **MenuBarExtra** — recent items, quick recall, settings, and quit.
 - **History window** — full browsing surface with sidebar modes,
   filters, result list, detail view, and inspector actions.
 - **Quick Recall window** — keyboard-first recall, search, recent,
   and timeline access.
-- **Settings** — binary path override, database path, defaults,
-  hotkey, ignored bundle IDs, retention, pause, API-key filtering,
-  and privacy controls.
+- **Settings** — service controls, binary path override, database path,
+  defaults, hotkey, ignored bundle IDs, retention, pause, API-key
+  filtering, and privacy controls.
 
 ## Binary discovery order
 
