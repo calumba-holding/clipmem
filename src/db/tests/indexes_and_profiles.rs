@@ -344,8 +344,7 @@ fn profile_open_existing_on_large_archive() -> Result<()> {
     drop(db);
 
     eprintln!(
-        "open_existing_first={:?} open_existing_second={:?}",
-        first_open_elapsed, second_open_elapsed
+        "open_existing_first={first_open_elapsed:?} open_existing_second={second_open_elapsed:?}"
     );
 
     cleanup_db(&path);

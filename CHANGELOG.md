@@ -44,6 +44,8 @@ versioning where practical.
   so CI accepts the currently resolved dependency set.
 - Updated GitHub Actions Rust toolchain setup to use Rust 1.88 in CI,
   ClawHub skill publishing, and crate publishing verification.
+- Updated Rust 1.88 Clippy compatibility by removing Linux-only restore-plan
+  dead code and adopting inline format arguments in newly linted paths.
 - Split the oversized CLI, database, and CLI integration test sources into
   real Rust modules so the file-length lint no longer needs ratchet
   overrides for those areas.

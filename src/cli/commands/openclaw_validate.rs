@@ -217,7 +217,7 @@ pub(in crate::cli) fn ensure_executable(path: &Path) -> Result<()> {
 
     let mode = std::fs::metadata(path)?.permissions().mode() & 0o777;
     if mode & 0o111 == 0 {
-        return Err(anyhow!("mode {:o} does not include any execute bit", mode));
+        return Err(anyhow!("mode {mode:o} does not include any execute bit"));
     }
 
     Ok(())

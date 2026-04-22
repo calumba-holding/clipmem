@@ -183,8 +183,7 @@ pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {
         }
         version if version > CURRENT_SCHEMA_VERSION => {
             bail!(
-                "database schema version {version} is newer than supported version {}",
-                CURRENT_SCHEMA_VERSION
+                "database schema version {version} is newer than supported version {CURRENT_SCHEMA_VERSION}"
             );
         }
         version => {

@@ -258,7 +258,7 @@ pub(in crate::db::tests) fn seed_large_archive(
                 (snapshot_index / 60) % 60,
                 snapshot_index % 60
             );
-            let fingerprint = format!("{:064x}", snapshot_number);
+            let fingerprint = format!("{snapshot_number:064x}");
 
             insert_snapshot
                 .execute(params![fingerprint, preview_text, search_text, created_at,])?;

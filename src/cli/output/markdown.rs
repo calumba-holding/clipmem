@@ -212,7 +212,7 @@ pub(in crate::cli) fn render_recall_markdown(envelope: &RecallEnvelope) -> Strin
         render_confidence_label(&envelope.best_match_confidence),
         envelope
             .best_match_score
-            .map(|score| format!(" · score {:.3}", score))
+            .map(|score| format!(" · score {score:.3}"))
             .unwrap_or_default()
     );
     if !best.urls.is_empty() {

@@ -3,12 +3,14 @@ mod macos;
 #[cfg(not(target_os = "macos"))]
 mod unsupported;
 
+#[cfg(target_os = "macos")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RestorePlanRepresentation {
     uti: String,
     bytes: Vec<u8>,
 }
 
+#[cfg(target_os = "macos")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RestorePlanItem {
     item_index: usize,
@@ -34,9 +36,9 @@ pub use self::unsupported::capture_snapshot;
 #[cfg(not(target_os = "macos"))]
 pub use self::unsupported::current_change_count;
 #[cfg(not(target_os = "macos"))]
-#[cfg_attr(not(test), allow(unused_imports))]
-pub(crate) use self::unsupported::{build_restore_plan, restore_items};
+pub(crate) use self::unsupported::restore_items;
 
+#[cfg(target_os = "macos")]
 impl RestorePlanRepresentation {
     #[must_use]
     pub(crate) fn new(uti: String, bytes: Vec<u8>) -> Self {
@@ -54,6 +56,7 @@ impl RestorePlanRepresentation {
     }
 }
 
+#[cfg(target_os = "macos")]
 impl RestorePlanItem {
     #[must_use]
     pub(crate) fn new(item_index: usize, representations: Vec<RestorePlanRepresentation>) -> Self {
@@ -75,6 +78,7 @@ impl RestorePlanItem {
 }
 
 impl RestoreReport {
+    #[cfg(target_os = "macos")]
     #[must_use]
     pub(crate) fn new(item_count: usize, representation_count: usize, total_bytes: usize) -> Self {
         Self {
@@ -119,13 +123,18 @@ mod tests {
 
     #[test]
     fn restore_entrypoints_are_exposed() {
-        let build_restore_plan: fn(&[crate::model::ClipboardItem]) -> Vec<super::RestorePlanItem> =
-            super::build_restore_plan;
+        #[cfg(target_os = "macos")]
+        {
+            let build_restore_plan: fn(
+                &[crate::model::ClipboardItem],
+            ) -> Vec<super::RestorePlanItem> = super::build_restore_plan;
+            let _ = build_restore_plan;
+        }
+
         let restore_items: fn(
             &[crate::model::ClipboardItem],
         ) -> anyhow::Result<super::RestoreReport> = super::restore_items;
 
-        let _ = build_restore_plan;
         let _ = restore_items;
     }
 }
