@@ -11,14 +11,14 @@ HTML parsing all fit the existing shape.
 src/                           Rust source
   main.rs                      CLI entry point
   cli.rs                       Argument parsing (clap) and command dispatch
-  cli/commands.rs              Command implementations
-  cli/output.rs                Output formatting (text, JSON, JSONL, MD, TOON)
-  cli/service.rs               Service and setup management
+  cli/commands/                Command implementations
+  cli/output/                  Output formatting (text, JSON, JSONL, MD, TOON)
+  cli/service/                 Service and setup management
   cli/db_path.rs               Database path resolution
   db.rs                        Database connection and retrieval logic
   db/schema.sql                SQLite schema (tables, indexes, triggers, FTS5)
-  db/store.rs                  Insertion and storage logic
-  db/read.rs                   Query and search logic
+  db/store/                    Insertion and storage logic
+  db/read/                     Query and search logic
   capture.rs                   Public capture facade
   model/                       Data structures
     clipboard.rs               ClipboardSnapshot, ClipboardItem, ClipboardRepresentation
@@ -36,7 +36,7 @@ src/                           Rust source
 macos/ClipmemMenuBar/          Native SwiftUI menu bar app and Swift Testing suite
 
 tests/
-  cli_commands.rs              CLI integration tests
+  cli_commands/                CLI integration tests
   database_roundtrip.rs        Schema and serialization tests
   skill_parity.rs              OpenClaw skill verification
 
@@ -78,14 +78,14 @@ cargo test
 
 The file-length lint checks tracked Rust, Swift, and Rust test files. The
 default ceiling is 800 lines, with explicit per-file overrides in
-`file-length-limits.json` for the current large files. Treat those overrides as
-a ratchet, not a free pass.
+`file-length-limits.json` when necessary. Treat those overrides as a ratchet,
+not a free pass.
 
 The CI workflow hard-fails on formatting, Clippy, the file-length lint, tests,
 and crate packaging checks, so running the same commands locally keeps review
 cycles short.
 
-The CLI integration tests in `tests/cli_commands.rs` exercise every command,
+The CLI integration tests in `tests/cli_commands/` exercise every command,
 flag combination, filter, and output format.
 
 ## Build and test the menu bar app
