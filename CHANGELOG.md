@@ -51,6 +51,8 @@ versioning where practical.
   overrides for those areas.
 - Updated the README and menu bar app documentation screenshot to show the
   redesigned recent-clips popover.
+- Moved menu bar app compression and cleanup actions into a first-class
+  Settings > Storage tab, and moved Diagnostics out of History into Settings.
 - Updated the ClawHub clipboard-memory skill package metadata for a corrected
   1.3.1 publish with the current schema version 2, `recent`, and export
   overwrite guidance.

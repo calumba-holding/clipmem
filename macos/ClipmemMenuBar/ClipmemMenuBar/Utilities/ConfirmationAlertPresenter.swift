@@ -8,9 +8,9 @@ enum MenuBarConfirmation {
     var title: String {
         switch self {
         case .compactDatabase:
-            "Compact the clipmem database?"
+            "Compact database?"
         case .optimizeImages:
-            "Optimize stored images?"
+            "Compress stored images?"
         case .uninstallService:
             "Uninstall the clipmem background service?"
         }
@@ -19,9 +19,9 @@ enum MenuBarConfirmation {
     var message: String {
         switch self {
         case .compactDatabase:
-            "This reclaims SQLite and WAL disk space. Clipboard content is not changed. The operation may need temporary disk space while SQLite rebuilds the database."
+            "This reclaims unused SQLite and WAL disk space without deleting clipboard history. The operation may need temporary disk space while SQLite rebuilds the database."
         case .optimizeImages:
-            "This replaces original encoded image bytes with lossless WebP, preserves exact decoded pixels, compacts SQLite afterward to return freed pages to disk, and will never recompress already processed images."
+            "Clipmem converts eligible screenshots and images to lossless WebP only when it saves space. Image content stays visually identical, already processed images are skipped, and the database is compacted afterward."
         case .uninstallService:
             "This stops clipboard capture. Your saved history is kept. You can reinstall with Setup."
         }
@@ -32,7 +32,7 @@ enum MenuBarConfirmation {
         case .compactDatabase:
             "Compact Database"
         case .optimizeImages:
-            "Optimize Images"
+            "Compress Images"
         case .uninstallService:
             "Uninstall"
         }

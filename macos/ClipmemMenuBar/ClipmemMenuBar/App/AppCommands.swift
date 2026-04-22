@@ -101,8 +101,10 @@ enum WindowActivation {
                 let identifier = window.identifier?.rawValue ?? ""
                 return identifier == "com_apple_SwiftUI_Settings_window" || [
                     "General",
+                    "Storage",
                     "Capture",
                     "Ignored Apps",
+                    "Diagnostics",
                     "Privacy"
                 ].contains(window.title)
             }

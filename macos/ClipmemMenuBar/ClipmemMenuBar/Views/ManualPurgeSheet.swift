@@ -17,7 +17,7 @@ struct ManualPurgeSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
             VStack(alignment: .leading, spacing: Spacing.sm) {
-                Text("Purge Older Than")
+                Text("Purge Old History")
                     .font(.title3.weight(.semibold))
                 Text("Preview matching clipboard snapshots before deleting them from the local archive.")
                     .foregroundStyle(.secondary)
@@ -53,7 +53,7 @@ struct ManualPurgeSheet: View {
                     Task { await previewPurge() }
                 }
                 .disabled(trimmedOlderThan.isEmpty || appModel.isRunningAction)
-                Button("Purge", role: .destructive) {
+                Button("Purge Old History", role: .destructive) {
                     Task { await purge() }
                 }
                 .disabled(canPurge == false)

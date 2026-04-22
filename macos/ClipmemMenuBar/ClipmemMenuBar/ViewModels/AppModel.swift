@@ -10,6 +10,11 @@ struct HistoryOpenRequest: Equatable, Sendable {
     var focusedSnapshotID: Int?
 }
 
+struct SettingsOpenRequest: Equatable, Sendable {
+    var id: Int
+    var tab: SettingsTab
+}
+
 @MainActor
 @Observable
 final class AppModel {
@@ -28,11 +33,13 @@ final class AppModel {
     var isRunningAction = false
     var updateStatus = UpdateStatus.load()
     var pendingHistoryOpenRequest: HistoryOpenRequest?
+    var pendingSettingsOpenRequest: SettingsOpenRequest?
 
     @ObservationIgnored private let hotKeyManager = HotKeyManager()
     @ObservationIgnored private let updateChecker = UpdateChecker()
     @ObservationIgnored private let loadRecentPreview: @MainActor () async throws -> [ClipmemItem]
     @ObservationIgnored private var historyOpenRequestID = 0
+    @ObservationIgnored private var settingsOpenRequestID = 0
     @ObservationIgnored private var pasteboardMonitor: PasteboardChangeMonitor?
     @ObservationIgnored private var recentRefreshCoordinator: RecentPreviewRefreshCoordinator?
     @ObservationIgnored private var recentPreviewRefreshedAt: Date?
@@ -160,13 +167,13 @@ final class AppModel {
             let saved = DisplayFormatters.byteCount(report.logicalSavedBytes) ?? "\(report.logicalSavedBytes) bytes"
             let reclaimed = formatBytes(report.filesystemSavedBytes)
             if let compactError = report.compactError {
-                showActionMessage("Optimized \(report.compressedRows) images. Reduced image bytes by \(saved), but database compaction failed: \(compactError). Run Compact Database to retry.")
+                showActionMessage("Compressed \(report.compressedRows) images. Reduced image bytes by \(saved), but database compaction failed: \(compactError). Run Compact Database to retry.")
             } else if report.compactRun {
-                showActionMessage("Optimized \(report.compressedRows) images. Reduced image bytes by \(saved) and reclaimed \(reclaimed) from the database.")
+                showActionMessage("Compressed \(report.compressedRows) images. Reduced image bytes by \(saved) and reclaimed \(reclaimed) from the database.")
             } else if report.compactRecommended {
-                showActionMessage("Optimized \(report.compressedRows) images. Reduced image bytes by \(saved). Run Compact Database to return freed pages to disk.")
+                showActionMessage("Compressed \(report.compressedRows) images. Reduced image bytes by \(saved). Run Compact Database to return freed pages to disk.")
             } else {
-                showActionMessage("Optimized \(report.compressedRows) images. Reduced image bytes by \(saved).")
+                showActionMessage("Compressed \(report.compressedRows) images. Reduced image bytes by \(saved).")
             }
             await refreshStatus()
         } catch {
@@ -317,7 +324,7 @@ final class AppModel {
     }
 
     func requestHistoryFocus(snapshotID: Int, mode: QueryMode, query: String) {
-        let historyMode = mode == .diagnostics ? QueryMode.recent : mode
+        let historyMode = mode.historyCompatibleMode
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let historyQuery = switch historyMode {
         case .recall, .search:
@@ -326,6 +333,11 @@ final class AppModel {
             ""
         }
         enqueueHistoryOpenRequest(mode: historyMode, query: historyQuery, focusedSnapshotID: snapshotID)
+    }
+
+    func requestSettingsTab(_ tab: SettingsTab) {
+        settingsOpenRequestID += 1
+        pendingSettingsOpenRequest = SettingsOpenRequest(id: settingsOpenRequestID, tab: tab)
     }
 
     func configureHotkey(enabled: Bool, openQuickRecall: @escaping @MainActor () -> Void) {

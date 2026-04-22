@@ -78,7 +78,8 @@ struct MenuBarPanelView: View {
         case .watcherStopped:
             Task { await appModel.serviceAction("start") }
         case .conflict, .error:
-            WindowActivation.openWindow(openWindow, id: .history)
+            appModel.requestSettingsTab(.diagnostics)
+            WindowActivation.openSettings(openSettings)
         case .capturePaused:
             Task { await appModel.runAction(.settingsPause(false), successMessage: "Capture resumed") }
         case .stale, .noRecentCaptures:

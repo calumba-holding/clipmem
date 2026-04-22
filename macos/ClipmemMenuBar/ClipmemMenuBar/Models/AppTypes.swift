@@ -29,6 +29,10 @@ enum QueryMode: String, CaseIterable, Identifiable, Codable, Hashable, Sendable 
         case .diagnostics: "stethoscope"
         }
     }
+
+    var historyCompatibleMode: QueryMode {
+        self == .diagnostics ? .recent : self
+    }
 }
 
 enum HealthState: String, Sendable {
@@ -89,8 +93,8 @@ enum HealthState: String, Sendable {
         case .setupNeeded: "Run setup to initialize the database and start capturing."
         case .missingBinary: "The clipmem binary was not found. Check the path in Settings."
         case .watcherStopped: "The clipboard watcher is not running."
-        case .conflict: "Multiple watcher processes detected. Open Diagnostics to resolve."
-        case .error: "The service needs attention. Open Diagnostics for details."
+        case .conflict: "Multiple watcher processes detected. Open Settings > Diagnostics to resolve."
+        case .error: "The service needs attention. Open Settings > Diagnostics for details."
         case .capturePaused: "Clipboard capture is paused. Resume to start recording again."
         case .stale: "No captures detected recently. The watcher may need a restart."
         case .noRecentCaptures: "The watcher is running but hasn't captured anything yet."
@@ -134,6 +138,39 @@ enum HealthState: String, Sendable {
             .critical
         case .unknown:
             .neutral
+        }
+    }
+}
+
+enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
+    case general
+    case storage
+    case capture
+    case ignoredApps
+    case diagnostics
+    case privacy
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .storage: "Storage"
+        case .capture: "Capture"
+        case .ignoredApps: "Ignored Apps"
+        case .diagnostics: "Diagnostics"
+        case .privacy: "Privacy"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .general: "gear"
+        case .storage: "internaldrive"
+        case .capture: "hand.raised"
+        case .ignoredApps: "app.badge"
+        case .diagnostics: "stethoscope"
+        case .privacy: "lock"
         }
     }
 }

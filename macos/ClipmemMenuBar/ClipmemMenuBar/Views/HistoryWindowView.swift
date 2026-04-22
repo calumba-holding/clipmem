@@ -26,7 +26,7 @@ struct HistoryWindowView: View {
         } detail: {
             detailColumn
         }
-        .navigationTitle(sidebarSelection == .diagnostics ? "Diagnostics" : displayMode.title)
+        .navigationTitle(displayMode.title)
         .toolbar {
             ToolbarItemGroup {
                 Button("Refresh", systemImage: "arrow.clockwise") {
@@ -86,60 +86,26 @@ struct HistoryWindowView: View {
 
     // MARK: - Sidebar
 
-    /// Sidebar selection uses an enum that covers both DisplayMode items and diagnostics.
-    private enum SidebarItem: String, Hashable {
-        case search, recent, timeline, diagnostics
-
-        var displayMode: DisplayMode? {
-            switch self {
-            case .search: .search
-            case .recent: .recent
-            case .timeline: .timeline
-            case .diagnostics: nil
-            }
-        }
-
-        static func from(displayMode: DisplayMode) -> SidebarItem {
-            switch displayMode {
-            case .search: .search
-            case .recent: .recent
-            case .timeline: .timeline
-            }
-        }
-    }
-
-    @State private var sidebarSelection: SidebarItem = .recent
-
     private var sidebar: some View {
-        List(selection: sidebarBinding) {
+        List(selection: displayModeBinding) {
             Section("Browse") {
                 ForEach(DisplayMode.allCases) { mode in
                     Label(mode.title, systemImage: mode.symbol)
-                        .tag(SidebarItem.from(displayMode: mode))
+                        .tag(mode)
                 }
-            }
-            Section("System") {
-                Label(QueryMode.diagnostics.title, systemImage: QueryMode.diagnostics.symbol)
-                    .tag(SidebarItem.diagnostics)
             }
         }
         .navigationTitle("clipmem")
         .navigationSplitViewColumnWidth(min: 150, ideal: 180, max: 220)
     }
 
-    private var sidebarBinding: Binding<SidebarItem> {
+    private var displayModeBinding: Binding<DisplayMode> {
         Binding {
-            sidebarSelection
-        } set: { newItem in
-            guard sidebarSelection != newItem else { return }
-            sidebarSelection = newItem
-            if let dm = newItem.displayMode {
-                displayMode = dm
-                syncMode()
-            } else {
-                // Diagnostics
-                history.mode = .diagnostics
-            }
+            displayMode
+        } set: { newMode in
+            guard displayMode != newMode else { return }
+            displayMode = newMode
+            syncMode()
             storedMode = history.mode.rawValue
             Task { await history.reload() }
         }
@@ -147,35 +113,21 @@ struct HistoryWindowView: View {
 
     // MARK: - Content Column
 
-    @ViewBuilder
     private var contentColumn: some View {
-        if sidebarSelection == .diagnostics {
-            DiagnosticsView(appModel: appModel)
-                .navigationTitle("Diagnostics")
-                .navigationSplitViewColumnWidth(min: 560, ideal: 700)
-        } else {
-            VStack(spacing: 0) {
-                queryControls
-                    .padding()
-                Divider()
-                resultList
-            }
-            .navigationTitle(displayMode.title)
-            .navigationSplitViewColumnWidth(min: 320, ideal: 420, max: 560)
+        VStack(spacing: 0) {
+            queryControls
+                .padding()
+            Divider()
+            resultList
         }
+        .navigationTitle(displayMode.title)
+        .navigationSplitViewColumnWidth(min: 320, ideal: 420, max: 560)
     }
 
-    @ViewBuilder
     private var detailColumn: some View {
-        if sidebarSelection == .diagnostics {
-            EmptyStateView(title: "Diagnostics", detail: "Service and doctor output are shown in the middle column.", symbol: "stethoscope")
-                .navigationTitle("Details")
-                .navigationSplitViewColumnWidth(min: 360, ideal: 520)
-        } else {
-            SnapshotDetailView(detail: history.selectedDetail, fallback: history.selectedItem, isLoading: history.isLoadingDetail)
-                .navigationTitle(displayMode.title)
-                .navigationSplitViewColumnWidth(min: 360, ideal: 580)
-        }
+        SnapshotDetailView(detail: history.selectedDetail, fallback: history.selectedItem, isLoading: history.isLoadingDetail)
+            .navigationTitle(displayMode.title)
+            .navigationSplitViewColumnWidth(min: 360, ideal: 580)
     }
 
     // MARK: - Query Controls
@@ -301,12 +253,12 @@ struct HistoryWindowView: View {
     }
 
     private func restoreSceneState() {
-        let queryMode = QueryMode(rawValue: storedMode) ?? .recent
+        let queryMode = (QueryMode(rawValue: storedMode) ?? .recent).historyCompatibleMode
         let (dm, ss) = DisplayMode.from(queryMode: queryMode)
         displayMode = dm
         searchStyle = ss
-        sidebarSelection = queryMode == .diagnostics ? .diagnostics : SidebarItem.from(displayMode: dm)
         history.mode = queryMode
+        storedMode = queryMode.rawValue
         history.query = storedQuery
         history.selectedID = storedSelectedID == 0 ? nil : storedSelectedID
     }
@@ -318,16 +270,11 @@ struct HistoryWindowView: View {
 
         handledHistoryOpenRequestID = request.id
 
-        if request.mode == .diagnostics {
-            sidebarSelection = .diagnostics
-            history.mode = .diagnostics
-        } else {
-            let (dm, ss) = DisplayMode.from(queryMode: request.mode)
-            displayMode = dm
-            searchStyle = ss
-            sidebarSelection = SidebarItem.from(displayMode: dm)
-            history.mode = request.mode
-        }
+        let queryMode = request.mode.historyCompatibleMode
+        let (dm, ss) = DisplayMode.from(queryMode: queryMode)
+        displayMode = dm
+        searchStyle = ss
+        history.mode = queryMode
 
         history.query = request.query
         storedMode = history.mode.rawValue

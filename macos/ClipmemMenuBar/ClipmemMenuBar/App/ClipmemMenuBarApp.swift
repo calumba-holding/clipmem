@@ -47,7 +47,7 @@ struct ClipmemMenuBarApp: App {
 
         Settings {
             ClipmemSettingsView(appModel: appModel)
-                .frame(width: 560, height: 520)
+                .frame(width: 660, height: 560)
         }
     }
 

@@ -33,6 +33,41 @@ struct HistoryModelTests {
 
     @Test
     @MainActor
+    func requestHistoryFocusCoercesDiagnosticsToRecent() throws {
+        let appModel = AppModel(loadRecentPreview: { [] })
+
+        appModel.requestHistoryFocus(snapshotID: 42, mode: .diagnostics, query: "ignored")
+
+        let request = try #require(appModel.pendingHistoryOpenRequest)
+        #expect(request.mode == .recent)
+        #expect(request.query == "")
+        #expect(request.focusedSnapshotID == 42)
+    }
+
+    @Test
+    func diagnosticsModeIsNotHistoryCompatible() {
+        #expect(QueryMode.diagnostics.historyCompatibleMode == .recent)
+        #expect(QueryMode.search.historyCompatibleMode == .search)
+    }
+
+    @Test
+    @MainActor
+    func requestSettingsTabRecordsTabAndAdvancesID() throws {
+        let appModel = AppModel(loadRecentPreview: { [] })
+
+        appModel.requestSettingsTab(.diagnostics)
+        let firstRequest = try #require(appModel.pendingSettingsOpenRequest)
+
+        appModel.requestSettingsTab(.storage)
+        let secondRequest = try #require(appModel.pendingSettingsOpenRequest)
+
+        #expect(firstRequest.tab == .diagnostics)
+        #expect(secondRequest.id == firstRequest.id + 1)
+        #expect(secondRequest.tab == .storage)
+    }
+
+    @Test
+    @MainActor
     func repeatedHistorySearchRequestsKeepSearchModeAndAdvanceID() throws {
         let appModel = AppModel(loadRecentPreview: { [] })
 

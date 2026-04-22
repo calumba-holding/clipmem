@@ -34,7 +34,7 @@ enum ClipmemClientError: Error, LocalizedError, Equatable, Sendable {
         case .notFound:
             "This item may have been removed. Try refreshing."
         case .commandFailed:
-            "Check Diagnostics or the logs folder for details."
+            "Check Settings > Diagnostics or the logs folder for details."
         default:
             nil
         }

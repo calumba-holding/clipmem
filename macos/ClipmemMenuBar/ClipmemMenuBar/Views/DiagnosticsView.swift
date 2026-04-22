@@ -2,9 +2,6 @@ import SwiftUI
 
 struct DiagnosticsView: View {
     let appModel: AppModel
-    @State private var confirmCompact = false
-    @State private var confirmOptimizeImages = false
-    @State private var showManualPurge = false
 
     var body: some View {
         ScrollView {
@@ -16,19 +13,17 @@ struct DiagnosticsView: View {
                 }
 
                 GroupBox("Service") {
-                    HStack {
-                        Button("Setup", systemImage: "wrench.and.screwdriver") {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        DiagnosticsActionButton("Setup", systemImage: "wrench.and.screwdriver") {
                             Task { await appModel.runSetup() }
                         }
-                        Button("Start", systemImage: "play.fill") {
+                        DiagnosticsActionButton("Start", systemImage: "play.fill") {
                             Task { await appModel.serviceAction("start") }
                         }
-                        Button("Stop", systemImage: "stop.fill") {
+                        DiagnosticsActionButton("Stop", systemImage: "stop.fill") {
                             Task { await appModel.serviceAction("stop") }
                         }
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
                     .disabled(appModel.isRunningAction)
                 }
 
@@ -49,23 +44,10 @@ struct DiagnosticsView: View {
                                 .font(.callout)
                                 .textSelection(.enabled)
                         }
-                        HStack {
-                            Button("Compact Database", systemImage: "archivebox") {
-                                confirmCompact = true
-                            }
-                            Button("Optimize Images...", systemImage: "photo.stack") {
-                                confirmOptimizeImages = true
-                            }
-                            Button("Purge Older Than...", systemImage: "trash") {
-                                showManualPurge = true
-                            }
-                            Button("Open Logs Folder", systemImage: "folder") {
-                                appModel.openLogsFolder()
-                            }
-                            .disabled(appModel.serviceStatus?.logPaths.isEmpty != false)
+                        DiagnosticsActionButton("Open Logs Folder", systemImage: "folder") {
+                            appModel.openLogsFolder()
                         }
-                        .buttonStyle(.bordered)
-                        .disabled(appModel.isRunningAction)
+                        .disabled(appModel.serviceStatus?.logPaths.isEmpty != false)
                     }
                 }
 
@@ -95,24 +77,29 @@ struct DiagnosticsView: View {
             .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .confirmationDialog("Compact the clipmem database?", isPresented: $confirmCompact) {
-            Button("Compact Database") {
-                Task { await appModel.compactDatabase() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This reclaims SQLite and WAL disk space. Clipboard content is not changed. The operation may need temporary disk space while SQLite rebuilds the database.")
+        .task {
+            await appModel.refreshDoctor()
         }
-        .confirmationDialog("Optimize stored images?", isPresented: $confirmOptimizeImages) {
-            Button("Optimize Images") {
-                Task { await appModel.optimizeImages() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This replaces original encoded image bytes with lossless WebP, preserves exact decoded pixels, compacts SQLite afterward to return freed pages to disk, and will never recompress already processed images.")
+    }
+}
+
+private struct DiagnosticsActionButton: View {
+    let title: String
+    let systemImage: String
+    let action: () -> Void
+
+    init(_ title: String, systemImage: String, action: @escaping () -> Void) {
+        self.title = title
+        self.systemImage = systemImage
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .sheet(isPresented: $showManualPurge) {
-            ManualPurgeSheet(appModel: appModel, initialDuration: appModel.serviceStatus?.retention)
-        }
+        .buttonStyle(.bordered)
+        .controlSize(.regular)
     }
 }
