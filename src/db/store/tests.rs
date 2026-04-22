@@ -1,0 +1,64 @@
+use anyhow::Result;
+
+use super::Database;
+use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
+
+pub(in crate::db) fn fake_snapshot(
+    change_count: i64,
+    text: &str,
+) -> crate::model::ClipboardSnapshot {
+    build_snapshot(
+        CaptureContext::new(change_count).with_frontmost_app_name("Editor"),
+        vec![build_item(
+            0,
+            vec![build_representation(
+                "public.utf8-plain-text".to_string(),
+                None,
+                text.as_bytes().to_vec(),
+            )],
+        )],
+    )
+}
+
+#[test]
+pub(in crate::db) fn empty_snapshots_store_without_placeholder_rows() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let snapshot = build_snapshot(CaptureContext::new(9), Vec::new());
+
+    let store = db.store_capture(&snapshot)?;
+    let stored_item_count: i64 = db.conn.query_row(
+        "SELECT item_count FROM snapshots WHERE id = ?1",
+        [store.snapshot_id()],
+        |row| row.get(0),
+    )?;
+    let stored_row_count: i64 = db.conn.query_row(
+        "SELECT COUNT(*) FROM snapshot_items WHERE snapshot_id = ?1",
+        [store.snapshot_id()],
+        |row| row.get(0),
+    )?;
+
+    assert_eq!(stored_item_count, 0);
+    assert_eq!(stored_row_count, 0);
+    Ok(())
+}
+
+#[test]
+pub(in crate::db) fn duplicate_snapshots_reuse_content_row_and_append_events() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let first = fake_snapshot(1, "git status");
+    let second = fake_snapshot(2, "git status");
+
+    let first_store = db.store_capture(&first)?;
+    let second_store = db.store_capture(&second)?;
+    let event_count: i64 = db.conn.query_row(
+        "SELECT COUNT(*) FROM capture_events WHERE snapshot_id = ?1",
+        [first_store.snapshot_id()],
+        |row| row.get(0),
+    )?;
+
+    assert!(first_store.inserted_new_snapshot());
+    assert!(!second_store.inserted_new_snapshot());
+    assert_eq!(first_store.snapshot_id(), second_store.snapshot_id());
+    assert_eq!(event_count, 2);
+    Ok(())
+}

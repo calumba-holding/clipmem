@@ -40,6 +40,9 @@ versioning where practical.
 
 ### Changed
 
+- Split the oversized CLI, database, and CLI integration test sources into
+  real Rust modules so the file-length lint no longer needs ratchet
+  overrides for those areas.
 - Updated the README and menu bar app documentation screenshot to show the
   redesigned recent-clips popover.
 - Updated the ClawHub clipboard-memory skill package metadata for a corrected

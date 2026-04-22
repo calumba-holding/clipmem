@@ -9,16 +9,5 @@
       "macos/**/*.swift"
     ]
   },
-  "overrides": {
-    "src/cli.rs": 2292,
-    "src/db.rs": 1770,
-    "src/cli/commands.rs": 3183,
-    "src/cli/human.rs": 1310,
-    "src/cli/output.rs": 2179,
-    "src/cli/service.rs": 1322,
-    "src/db/read.rs": 3341,
-    "src/db/store.rs": 1585,
-    "src/db/tests.rs": 2065,
-    "tests/cli_commands.rs": 3934
-  }
+  "overrides": {}
 }

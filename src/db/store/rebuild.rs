@@ -1,0 +1,343 @@
+use super::*;
+
+pub(in crate::db) fn rebuild_snapshot_summary(
+    tx: &rusqlite::Transaction<'_>,
+    snapshot_id: i64,
+) -> Result<()> {
+    let mut stmt = tx
+        .prepare(
+            r"
+                SELECT primary_kind, preview_text, search_text, total_bytes
+                FROM snapshot_items
+                WHERE snapshot_id = ?1
+                ORDER BY item_index ASC
+            ",
+        )
+        .context("prepare optimized snapshot summary query")?;
+    let rows = stmt
+        .query_map([snapshot_id], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row_usize(row, 3)?,
+            ))
+        })
+        .context("execute optimized snapshot summary query")?;
+    let items = super::collect_rows(rows).context("collect optimized snapshot summary rows")?;
+    drop(stmt);
+
+    let item_count = items.len();
+    let total_bytes = items.iter().map(|(_, _, _, bytes)| *bytes).sum::<usize>();
+    let preview_parts = items
+        .iter()
+        .map(|(_, preview, _, _)| preview.trim())
+        .filter(|preview| !preview.is_empty())
+        .collect::<Vec<_>>();
+    let preview_text = if preview_parts.is_empty() {
+        "[empty clipboard]".to_string()
+    } else {
+        truncate_chars(&preview_parts.join(" | "), 280)
+    };
+    let search_text = items
+        .iter()
+        .map(|(_, _, search, _)| search.trim())
+        .filter(|search| !search.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    let snapshot_kind = snapshot_kind_from_item_rows(&items);
+
+    tx.execute(
+        r"
+            UPDATE snapshots
+            SET snapshot_kind = ?2,
+                preview_text = ?3,
+                search_text = ?4,
+                item_count = ?5,
+                total_bytes = ?6
+            WHERE id = ?1
+        ",
+        params![
+            snapshot_id,
+            snapshot_kind,
+            preview_text,
+            search_text,
+            usize_to_i64(item_count)?,
+            usize_to_i64(total_bytes)?
+        ],
+    )
+    .context("update optimized snapshot summary")?;
+    Ok(())
+}
+
+pub(in crate::db) fn snapshot_kind_from_item_rows(
+    items: &[(String, String, String, usize)],
+) -> String {
+    if items.is_empty() {
+        return "empty".to_string();
+    }
+
+    let first = &items[0].0;
+    if items.iter().all(|(kind, _, _, _)| kind == first) {
+        first.clone()
+    } else {
+        "mixed".to_string()
+    }
+}
+
+pub(in crate::db) fn snapshot_fingerprint_with_replacement(
+    conn: &rusqlite::Connection,
+    candidate: &ImageOptimizationCandidate,
+    replacement_uti: &str,
+    replacement_bytes: &[u8],
+) -> Result<String> {
+    recompute_snapshot_fingerprint_with(conn, candidate.snapshot_id, |item_index, uti, bytes| {
+        if item_index == candidate.item_index && uti == candidate.uti {
+            Some((replacement_uti.to_string(), replacement_bytes.to_vec()))
+        } else {
+            Some((uti.to_string(), bytes.to_vec()))
+        }
+    })
+}
+
+pub(in crate::db) fn recompute_snapshot_fingerprint(
+    conn: &rusqlite::Connection,
+    snapshot_id: i64,
+) -> Result<String> {
+    recompute_snapshot_fingerprint_with(conn, snapshot_id, |_, uti, bytes| {
+        Some((uti.to_string(), bytes.to_vec()))
+    })
+}
+
+pub(in crate::db) fn recompute_snapshot_fingerprint_with<F>(
+    conn: &rusqlite::Connection,
+    snapshot_id: i64,
+    mut representation: F,
+) -> Result<String>
+where
+    F: FnMut(i64, &str, &[u8]) -> Option<(String, Vec<u8>)>,
+{
+    use sha2::{Digest, Sha256};
+
+    let mut item_stmt = conn
+        .prepare(
+            "SELECT item_index FROM snapshot_items WHERE snapshot_id = ?1 ORDER BY item_index ASC",
+        )
+        .context("prepare snapshot fingerprint item query")?;
+    let item_rows = item_stmt
+        .query_map([snapshot_id], |row| row.get::<_, i64>(0))
+        .context("execute snapshot fingerprint item query")?;
+    let item_indices =
+        super::collect_rows(item_rows).context("collect snapshot fingerprint items")?;
+    drop(item_stmt);
+
+    let mut hasher = Sha256::new();
+    hasher.update(b"clipmem/v1");
+    for item_index in item_indices {
+        hasher.update((item_index as u64).to_be_bytes());
+        let mut rep_stmt = conn
+            .prepare(
+                r"
+                    SELECT uti, blob_value
+                    FROM item_representations
+                    WHERE snapshot_id = ?1 AND item_index = ?2
+                    ORDER BY uti ASC
+                ",
+            )
+            .context("prepare snapshot fingerprint representation query")?;
+        let rep_rows = rep_stmt
+            .query_map(params![snapshot_id, item_index], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })
+            .context("execute snapshot fingerprint representation query")?;
+        let mut reps = super::collect_rows(rep_rows)
+            .context("collect snapshot fingerprint representations")?;
+        drop(rep_stmt);
+        reps = reps
+            .into_iter()
+            .filter_map(|(uti, bytes)| representation(item_index, &uti, &bytes))
+            .collect();
+        reps.sort_by(|(left_uti, _), (right_uti, _)| left_uti.cmp(right_uti));
+
+        for (uti, bytes) in reps {
+            hasher.update((uti.len() as u64).to_be_bytes());
+            hasher.update(uti.as_bytes());
+            hasher.update((bytes.len() as u64).to_be_bytes());
+            hasher.update(bytes);
+        }
+    }
+
+    Ok(hex::encode(hasher.finalize()))
+}
+
+pub(in crate::db) fn insert_item(
+    tx: &rusqlite::Transaction<'_>,
+    snapshot_id: i64,
+    item: &ClipboardItem,
+) -> Result<()> {
+    tx.execute(
+        "INSERT INTO snapshot_items (
+            snapshot_id,
+            item_index,
+            primary_kind,
+            primary_uti,
+            preview_text,
+            search_text,
+            total_bytes
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![
+            snapshot_id,
+            usize_to_i64(item.item_index())?,
+            item.primary_kind().as_str(),
+            item.primary_uti(),
+            item.preview_text(),
+            item.search_text(),
+            usize_to_i64(item.total_bytes())?,
+        ],
+    )
+    .with_context(|| format!("insert snapshot_items row for item {}", item.item_index()))?;
+
+    for rep in item.representations() {
+        tx.execute(
+            "INSERT INTO item_representations (
+                snapshot_id,
+                item_index,
+                uti,
+                kind,
+                byte_len,
+                raw_sha256,
+                text_value,
+                blob_value,
+                image_compression_status
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'uncompressed')",
+            params![
+                snapshot_id,
+                usize_to_i64(item.item_index())?,
+                rep.uti(),
+                rep.kind().as_str(),
+                usize_to_i64(rep.byte_len())?,
+                rep.raw_sha256(),
+                rep.text_value(),
+                rep.raw_bytes(),
+            ],
+        )
+        .with_context(|| {
+            format!(
+                "insert item_representations row for item {} and uti {}",
+                item.item_index(),
+                rep.uti()
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
+pub(in crate::db) fn normalize_bundle_id(bundle_id: &str) -> Result<String> {
+    let normalized = bundle_id.trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        anyhow::bail!("bundle id cannot be empty");
+    }
+    Ok(normalized)
+}
+
+pub(in crate::db) fn delete_expired_pending_restores(conn: &rusqlite::Connection) -> Result<()> {
+    let expiry_window = format!("-{RESTORE_SUPPRESSION_WINDOW_SECONDS} seconds");
+    conn.execute(
+        "DELETE FROM pending_restores
+         WHERE datetime(created_at) < datetime('now', ?1)",
+        [expiry_window],
+    )
+    .context("delete expired pending restores")?;
+    Ok(())
+}
+
+pub(in crate::db) fn load_snapshot_deletion_report(
+    tx: &rusqlite::Transaction<'_>,
+    snapshot_id: i64,
+) -> Result<Option<SnapshotDeletionReport>> {
+    tx.query_row(
+        r"
+            SELECT
+                s.id,
+                s.item_count,
+                (
+                    SELECT COUNT(*)
+                    FROM item_representations ir
+                    WHERE ir.snapshot_id = s.id
+                ) AS representation_count,
+                (
+                    SELECT COUNT(*)
+                    FROM capture_events ce
+                    WHERE ce.snapshot_id = s.id
+                ) AS capture_event_count,
+                s.total_bytes
+            FROM snapshots s
+            WHERE s.id = ?1
+        ",
+        [snapshot_id],
+        |row| {
+            Ok(SnapshotDeletionReport::new(
+                row.get(0)?,
+                row_usize(row, 1)?,
+                row_usize(row, 2)?,
+                row_usize(row, 3)?,
+                row_usize(row, 4)?,
+            ))
+        },
+    )
+    .optional()
+    .context("load snapshot deletion report")
+}
+
+pub(in crate::db) fn load_purge_report(
+    tx: &rusqlite::Transaction<'_>,
+    older_than_seconds: u64,
+) -> Result<PurgeReport> {
+    let older_than_seconds_i64 =
+        i64::try_from(older_than_seconds).context("duration exceeds SQLite INTEGER range")?;
+    tx.query_row(
+        r"
+            WITH candidates AS (
+                SELECT ss.snapshot_id
+                FROM snapshot_stats ss
+                WHERE ss.last_observed_at < datetime('now', printf('-%d seconds', ?1))
+            )
+            SELECT
+                COALESCE((SELECT COUNT(*) FROM candidates), 0) AS snapshot_count,
+                COALESCE((
+                    SELECT SUM(s.item_count)
+                    FROM snapshots s
+                    WHERE s.id IN (SELECT snapshot_id FROM candidates)
+                ), 0) AS item_count,
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM item_representations ir
+                    WHERE ir.snapshot_id IN (SELECT snapshot_id FROM candidates)
+                ), 0) AS representation_count,
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM capture_events ce
+                    WHERE ce.snapshot_id IN (SELECT snapshot_id FROM candidates)
+                ), 0) AS capture_event_count,
+                COALESCE((
+                    SELECT SUM(s.total_bytes)
+                    FROM snapshots s
+                    WHERE s.id IN (SELECT snapshot_id FROM candidates)
+                ), 0) AS total_bytes
+        ",
+        [older_than_seconds_i64],
+        |row| {
+            Ok(PurgeReport::new(
+                older_than_seconds,
+                false,
+                row_usize(row, 0)?,
+                row_usize(row, 1)?,
+                row_usize(row, 2)?,
+                row_usize(row, 3)?,
+                row_usize(row, 4)?,
+            ))
+        },
+    )
+    .context("load purge report")
+}

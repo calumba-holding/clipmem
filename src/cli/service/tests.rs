@@ -1,0 +1,149 @@
+use super::{
+    command_binary_path, configured_binary_path_from_plist, configured_binary_path_from_plist_xml,
+    homebrew_prefix_for_binary, watcher_binary_mismatch_note, ServiceProvider,
+    ServiceProviderStatus, ServiceState,
+};
+use std::path::{Path, PathBuf};
+
+#[test]
+pub(in crate::cli) fn homebrew_prefix_matches_opt_homebrew_wrapper_path() {
+    assert_eq!(
+        homebrew_prefix_for_binary(Path::new("/opt/homebrew/bin/clipmem")),
+        Some(PathBuf::from("/opt/homebrew"))
+    );
+}
+
+#[test]
+pub(in crate::cli) fn homebrew_prefix_matches_usr_local_wrapper_path() {
+    assert_eq!(
+        homebrew_prefix_for_binary(Path::new("/usr/local/bin/clipmem")),
+        Some(PathBuf::from("/usr/local"))
+    );
+}
+
+#[test]
+pub(in crate::cli) fn homebrew_prefix_matches_opt_homebrew_cellar_path() {
+    assert_eq!(
+        homebrew_prefix_for_binary(Path::new("/opt/homebrew/Cellar/clipmem/1.2.3/bin/clipmem")),
+        Some(PathBuf::from("/opt/homebrew"))
+    );
+}
+
+#[test]
+pub(in crate::cli) fn homebrew_prefix_matches_usr_local_cellar_path() {
+    assert_eq!(
+        homebrew_prefix_for_binary(Path::new("/usr/local/Cellar/clipmem/1.2.3/bin/clipmem")),
+        Some(PathBuf::from("/usr/local"))
+    );
+}
+
+#[test]
+pub(in crate::cli) fn homebrew_prefix_rejects_non_homebrew_paths() {
+    assert_eq!(
+        homebrew_prefix_for_binary(Path::new("/Users/tristan/.cargo/bin/clipmem")),
+        None
+    );
+}
+
+#[test]
+pub(in crate::cli) fn command_binary_path_reads_first_program_argument() {
+    assert_eq!(
+        command_binary_path("/Users/test/clipmem/target/debug/clipmem watch --skip-initial"),
+        Some("/Users/test/clipmem/target/debug/clipmem".to_string())
+    );
+    assert_eq!(
+        command_binary_path("\"/Users/test/Clip Mem/clipmem\" watch"),
+        Some("/Users/test/Clip Mem/clipmem".to_string())
+    );
+}
+
+#[test]
+pub(in crate::cli) fn launchagent_plist_reports_configured_binary_path() {
+    let path = std::env::temp_dir().join(format!(
+        "clipmem-service-test-{}-{}.plist",
+        std::process::id(),
+        "configured-binary"
+    ));
+    std::fs::write(
+            &path,
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/tmp/clipmem-debug</string>
+      <string>watch</string>
+    </array>
+  </dict>
+</plist>
+"#,
+        )
+        .expect("write test plist");
+
+    assert_eq!(
+        configured_binary_path_from_plist(&path),
+        Some("/tmp/clipmem-debug".to_string())
+    );
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+pub(in crate::cli) fn launchagent_plist_xml_fallback_reports_configured_binary_path() {
+    let path = std::env::temp_dir().join(format!(
+        "clipmem-service-test-{}-{}.plist",
+        std::process::id(),
+        "configured-binary-xml"
+    ));
+    std::fs::write(
+        &path,
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+  <dict>
+    <key>ProgramArguments</key>
+    <array>
+      <string>/tmp/clipmem&amp;debug</string>
+      <string>watch</string>
+    </array>
+  </dict>
+</plist>
+"#,
+    )
+    .expect("write test plist");
+
+    assert_eq!(
+        configured_binary_path_from_plist_xml(&path),
+        Some("/tmp/clipmem&debug".to_string())
+    );
+
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+pub(in crate::cli) fn watcher_binary_mismatch_reports_configured_path() {
+    let provider = ServiceProviderStatus {
+        provider: ServiceProvider::Launchagent,
+        label: "io.openclaw.clipmem.watch".to_string(),
+        state: ServiceState::Running,
+        installed: true,
+        loaded: true,
+        running: true,
+        pid: Some(123),
+        plist_path: None,
+        configured_binary_path: Some("/opt/homebrew/bin/clipmem".to_string()),
+        running_command: None,
+        running_binary_path: None,
+        stdout_log_path: None,
+        stderr_log_path: None,
+    };
+
+    let note = watcher_binary_mismatch_note(
+        Path::new("/Users/test/clipmem/target/debug/clipmem"),
+        [&provider],
+    )
+    .expect("different watcher binary should be reported");
+
+    assert!(note.contains("launchagent watcher uses /opt/homebrew/bin/clipmem"));
+    assert!(note.contains("/Users/test/clipmem/target/debug/clipmem"));
+}

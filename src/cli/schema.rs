@@ -1,0 +1,652 @@
+use super::*;
+
+#[derive(Debug, Parser)]
+#[command(name = "clipmem")]
+#[command(version)]
+#[command(about = "macOS clipboard memory backed by SQLite")]
+#[command(after_help = ROOT_AFTER_HELP)]
+#[command(next_line_help = true)]
+pub(super) struct Cli {
+    /// Path to the `SQLite` database.
+    #[arg(long, global = true)]
+    pub(super) db: Option<PathBuf>,
+
+    #[command(subcommand)]
+    pub(super) command: Command,
+}
+
+#[derive(Debug, Subcommand)]
+pub(super) enum Command {
+    /// Manage agent-harness integrations.
+    Agents(AgentsArgs),
+    /// Initialize the database, seed one capture, and start background capture.
+    Setup(SetupArgs),
+    /// Manage the background clipmem watcher service.
+    Service(ServiceArgs),
+    /// Continuously poll the clipboard and archive observed changes.
+    Watch(WatchArgs),
+    /// Capture the current clipboard state once.
+    CaptureOnce(CaptureOnceArgs),
+    /// Search the clipboard archive.
+    Search(SearchArgs),
+    /// Show recent unique clipboard states (deduplicated by snapshot).
+    Recent(RecentArgs),
+    /// Show chronological clipboard capture events (one row per observation).
+    Timeline(TimelineArgs),
+    /// Report archive aggregates and leaderboards.
+    Stats(StatsArgs),
+    /// Recall the most likely clipboard item for an agent query.
+    Recall(RecallArgs),
+    /// Show a stored snapshot in detail.
+    Get(GetArgs),
+    /// Export one stored representation as raw bytes.
+    Export(ExportArgs),
+    /// Restore a stored snapshot back onto the clipboard.
+    Restore(RestoreArgs),
+    /// Irreversibly delete one stored snapshot and its capture history.
+    Forget(ForgetArgs),
+    /// Delete stored snapshots older than a duration.
+    Purge(PurgeArgs),
+    /// Compact database storage and optimize archived images.
+    Storage(StorageArgs),
+    /// Backfill and inspect local image OCR.
+    Ocr(OcrArgs),
+    /// View and update persistent capture policy.
+    Settings(SettingsArgs),
+    /// Print `SQLite` and FTS5 diagnostics.
+    Doctor(DoctorArgs),
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = WATCH_AFTER_HELP)]
+pub(super) struct WatchArgs {
+    /// Poll interval in milliseconds.
+    #[arg(long, default_value_t = 400)]
+    pub(super) interval_ms: u64,
+
+    /// Do not print one-line status messages for each capture.
+    #[arg(long, default_value_t = false)]
+    pub(super) quiet: bool,
+
+    /// Skip capturing the clipboard state that already exists when the watcher starts.
+    #[arg(long, default_value_t = false)]
+    pub(super) skip_initial: bool,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = SETUP_AFTER_HELP)]
+pub(super) struct SetupArgs {}
+
+#[derive(Debug, Args)]
+#[command(after_help = SERVICE_AFTER_HELP)]
+pub(super) struct ServiceArgs {
+    #[command(subcommand)]
+    pub(super) command: ServiceCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(super) enum ServiceCommand {
+    /// Start background capture using the preferred service provider.
+    Start,
+    /// Stop background capture without uninstalling the service definition when possible.
+    Stop,
+    /// Report provider state, freshness, and service wiring.
+    Status(ServiceStatusArgs),
+    /// Remove the managed service definition.
+    Uninstall,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = SERVICE_STATUS_AFTER_HELP)]
+pub(super) struct ServiceStatusArgs {
+    /// Emit service status as JSON.
+    #[arg(long, default_value_t = false)]
+    pub(super) json: bool,
+
+    /// Emit service status as polished terminal output.
+    #[arg(long, default_value_t = false)]
+    pub(super) human: bool,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = CAPTURE_ONCE_AFTER_HELP)]
+pub(super) struct CaptureOnceArgs {
+    /// Emit the captured snapshot as JSON.
+    #[arg(long, default_value_t = false)]
+    pub(super) json: bool,
+
+    /// Emit the captured snapshot as polished terminal output.
+    #[arg(long, default_value_t = false)]
+    pub(super) human: bool,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = SEARCH_AFTER_HELP)]
+pub(super) struct SearchArgs {
+    /// Query string for the selected search mode. Auto mode handles URLs, paths, bundle ids, exact phrases, and shell fragments more robustly.
+    pub(super) query: String,
+
+    /// Search mode to execute.
+    #[arg(long, value_enum, default_value_t = SearchMode::Auto)]
+    pub(super) mode: SearchMode,
+
+    /// Maximum number of results.
+    #[arg(long, default_value_t = 10, value_parser = parse_bounded_limit)]
+    pub(super) limit: usize,
+
+    /// Resume a paginated result set using the opaque `next_cursor` from a prior response.
+    #[arg(long)]
+    pub(super) cursor: Option<String>,
+
+    #[command(flatten)]
+    pub(super) filters: RetrievalFilterArgs,
+
+    #[command(flatten)]
+    pub(super) output: OutputArgs,
+}
+
+#[derive(Debug, Clone, Args)]
+pub(super) struct RetrievalFilterArgs {
+    /// Include captures observed at or after this RFC3339 timestamp. When combined with `--hours`, this takes precedence.
+    #[arg(long, value_parser = parse_rfc3339_timestamp)]
+    pub(super) since: Option<String>,
+
+    /// Include captures observed at or before this RFC3339 timestamp.
+    #[arg(long, value_parser = parse_rfc3339_timestamp)]
+    pub(super) until: Option<String>,
+
+    /// Restrict results to the most recent N hours unless `--since` is provided.
+    #[arg(long)]
+    pub(super) hours: Option<u32>,
+
+    /// Filter by recorded frontmost app name using a case-insensitive substring match.
+    #[arg(long)]
+    pub(super) app: Option<String>,
+
+    /// Filter by recorded frontmost bundle id using a case-insensitive exact match.
+    #[arg(long)]
+    pub(super) bundle_id: Option<String>,
+
+    /// Filter by clipboard content shape. `file` means file URLs; `other` means mixed or empty snapshots.
+    #[arg(long, value_enum)]
+    pub(super) kind: Option<RetrievalKind>,
+
+    /// Require at least one non-empty text-like representation.
+    #[arg(long, default_value_t = false)]
+    pub(super) has_text: bool,
+
+    /// Require at least one URL representation.
+    #[arg(long, default_value_t = false)]
+    pub(super) has_url: bool,
+
+    /// Require at least one file URL representation.
+    #[arg(long, default_value_t = false)]
+    pub(super) has_file_url: bool,
+
+    /// Require at least one image representation.
+    #[arg(long, default_value_t = false)]
+    pub(super) has_image: bool,
+
+    /// Require at least one PDF representation.
+    #[arg(long, default_value_t = false)]
+    pub(super) has_pdf: bool,
+
+    /// Require snapshot size to be at least this many bytes.
+    #[arg(long, value_parser = parse_nonnegative_bytes)]
+    pub(super) min_bytes: Option<usize>,
+
+    /// Require snapshot size to be at most this many bytes.
+    #[arg(long, value_parser = parse_nonnegative_bytes)]
+    pub(super) max_bytes: Option<usize>,
+}
+
+impl RetrievalFilterArgs {
+    pub(super) fn normalized(&self) -> std::result::Result<RetrievalFilters, clap::Error> {
+        validate_time_window(self.since.as_deref(), self.until.as_deref())?;
+        validate_byte_window(self.min_bytes, self.max_bytes)?;
+
+        let app = normalize_nonempty_filter_value(self.app.as_deref(), "--app")?;
+        let bundle_id = normalize_nonempty_filter_value(self.bundle_id.as_deref(), "--bundle-id")?;
+        let since = self.since.clone();
+        let hours = if self.since.is_some() {
+            None
+        } else {
+            self.hours
+        };
+
+        Ok(RetrievalFilters::new(
+            since,
+            self.until.clone(),
+            hours,
+            app,
+            bundle_id,
+            self.kind,
+            self.has_text,
+            self.has_url,
+            self.has_file_url,
+            self.has_image,
+            self.has_pdf,
+            self.min_bytes,
+            self.max_bytes,
+        ))
+    }
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = RECENT_AFTER_HELP)]
+pub(super) struct RecentArgs {
+    /// Maximum number of results.
+    #[arg(long, default_value_t = 10, value_parser = parse_bounded_limit)]
+    pub(super) limit: usize,
+
+    /// Resume a paginated result set using the opaque `next_cursor` from a prior response.
+    #[arg(long)]
+    pub(super) cursor: Option<String>,
+
+    #[command(flatten)]
+    pub(super) filters: RetrievalFilterArgs,
+
+    #[command(flatten)]
+    pub(super) output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = TIMELINE_AFTER_HELP)]
+pub(super) struct TimelineArgs {
+    /// Maximum number of results.
+    #[arg(long, default_value_t = 10, value_parser = parse_bounded_limit)]
+    pub(super) limit: usize,
+
+    /// Resume a paginated result set using the opaque `next_cursor` from a prior response.
+    #[arg(long)]
+    pub(super) cursor: Option<String>,
+
+    /// Sort timeline events chronologically ascending or descending.
+    #[arg(long, value_enum, default_value_t = TimelineSort::Desc)]
+    pub(super) sort: TimelineSort,
+
+    #[command(flatten)]
+    pub(super) filters: RetrievalFilterArgs,
+
+    #[command(flatten)]
+    pub(super) output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = STATS_AFTER_HELP)]
+pub(super) struct StatsArgs {
+    #[command(flatten)]
+    pub(super) filters: RetrievalFilterArgs,
+
+    #[command(flatten)]
+    pub(super) output: StatsOutputArgs,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = RECALL_AFTER_HELP)]
+pub(super) struct RecallArgs {
+    /// Optional query describing the clipboard item to recall.
+    pub(super) query: Option<String>,
+
+    /// Search mode to use when a query is present.
+    #[arg(long, value_enum, default_value_t = SearchMode::Auto)]
+    pub(super) mode: SearchMode,
+
+    /// Maximum number of ranked candidates to consider.
+    #[arg(long, default_value_t = 5, value_parser = parse_bounded_limit)]
+    pub(super) limit: usize,
+
+    /// Expand the best candidate text instead of returning the compact form.
+    #[arg(long, default_value_t = false)]
+    pub(super) full: bool,
+
+    /// Force quoted best-text output when text is available.
+    #[arg(long, default_value_t = false)]
+    pub(super) quote: bool,
+
+    /// Minimum normalized match score before search is treated as strong enough on its own.
+    #[arg(long, value_parser = parse_normalized_score)]
+    pub(super) min_score: Option<f64>,
+
+    /// Bias ranking toward recency.
+    #[arg(long, default_value_t = false)]
+    pub(super) prefer_recent: bool,
+
+    /// Bias ranking toward clipboard events from the matching app or bundle id.
+    #[arg(long)]
+    pub(super) prefer_app: Option<String>,
+
+    #[command(flatten)]
+    pub(super) filters: RetrievalFilterArgs,
+
+    #[command(flatten)]
+    pub(super) output: RecallOutputArgs,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = GET_AFTER_HELP)]
+pub(super) struct GetArgs {
+    /// Snapshot identifier.
+    pub(super) snapshot_id: i64,
+
+    /// Number of recent events to include.
+    #[arg(long, default_value_t = 10, value_parser = parse_bounded_limit)]
+    pub(super) events: usize,
+
+    #[command(flatten)]
+    pub(super) filters: RetrievalFilterArgs,
+
+    #[command(flatten)]
+    pub(super) output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = EXPORT_AFTER_HELP)]
+pub(super) struct ExportArgs {
+    /// Snapshot identifier.
+    pub(super) snapshot_id: i64,
+
+    /// Item index inside the stored snapshot.
+    #[arg(long)]
+    pub(super) item: usize,
+
+    /// Representation UTI to export.
+    #[arg(long)]
+    pub(super) uti: String,
+
+    /// Destination path for the raw bytes.
+    #[arg(long)]
+    pub(super) out: PathBuf,
+
+    /// Replace an existing regular file at the destination path.
+    #[arg(long, default_value_t = false)]
+    pub(super) force: bool,
+
+    #[command(flatten)]
+    pub(super) filters: RetrievalFilterArgs,
+
+    #[command(flatten)]
+    pub(super) output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = RESTORE_AFTER_HELP)]
+pub(super) struct RestoreArgs {
+    /// Snapshot identifier.
+    pub(super) snapshot_id: i64,
+
+    #[command(flatten)]
+    pub(super) output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = FORGET_AFTER_HELP)]
+pub(super) struct ForgetArgs {
+    /// Snapshot identifier.
+    pub(super) snapshot_id: i64,
+
+    #[command(flatten)]
+    pub(super) output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = PURGE_AFTER_HELP)]
+pub(super) struct PurgeArgs {
+    /// Delete snapshots whose last observation is older than this duration (`Nd`, `Nh`, `Nm`).
+    #[arg(long, value_parser = parse_duration_value)]
+    pub(super) older_than: DurationValue,
+
+    /// Report what would be deleted without deleting anything.
+    #[arg(long, default_value_t = false)]
+    pub(super) dry_run: bool,
+
+    #[command(flatten)]
+    pub(super) output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = STORAGE_AFTER_HELP)]
+pub(super) struct StorageArgs {
+    #[command(subcommand)]
+    pub(super) command: StorageCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(super) enum StorageCommand {
+    /// Reclaim SQLite database and WAL disk space.
+    Compact(StorageCompactArgs),
+    /// Convert eligible archived images to lossless WebP.
+    OptimizeImages(StorageOptimizeImagesArgs),
+}
+
+#[derive(Debug, Args)]
+pub(super) struct StorageCompactArgs {
+    /// Report database size and freelist state without running VACUUM.
+    #[arg(long, default_value_t = false)]
+    pub(super) dry_run: bool,
+
+    #[command(flatten)]
+    pub(super) output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
+pub(super) struct StorageOptimizeImagesArgs {
+    /// Report eligible rows and estimated savings without changing image bytes.
+    #[arg(long, default_value_t = false)]
+    pub(super) dry_run: bool,
+
+    /// Do not compact SQLite storage after optimizing images.
+    #[arg(long, default_value_t = false)]
+    pub(super) no_compact: bool,
+
+    /// Maximum number of unprocessed image rows to scan.
+    #[arg(long, default_value_t = 25, value_parser = parse_bounded_limit)]
+    pub(super) limit: usize,
+
+    #[command(flatten)]
+    pub(super) output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = OCR_AFTER_HELP)]
+pub(super) struct OcrArgs {
+    #[command(subcommand)]
+    pub(super) command: OcrCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(super) enum OcrCommand {
+    /// Report OCR queue and result counts.
+    Status(OcrStatusArgs),
+    /// Process pending OCR candidates.
+    Run(OcrRunArgs),
+}
+
+#[derive(Debug, Args)]
+pub(super) struct OcrStatusArgs {
+    #[command(flatten)]
+    pub(super) output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
+pub(super) struct OcrRunArgs {
+    /// Maximum number of pending image hashes to process.
+    #[arg(long, default_value_t = 25, value_parser = parse_bounded_limit)]
+    pub(super) limit: usize,
+
+    /// Restrict processing to one snapshot id.
+    #[arg(long)]
+    pub(super) snapshot: Option<i64>,
+
+    /// Requeue failed OCR hashes before processing.
+    #[arg(long, default_value_t = false)]
+    pub(super) retry_failed: bool,
+
+    #[command(flatten)]
+    pub(super) output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = SETTINGS_AFTER_HELP)]
+pub(super) struct SettingsArgs {
+    #[command(subcommand)]
+    pub(super) command: SettingsCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(super) enum SettingsCommand {
+    /// Show the current capture policy.
+    Show(SettingsShowArgs),
+    /// Persistently pause or resume capture.
+    Pause(SettingsPauseArgs),
+    /// Enable or disable API-key-like clipboard filtering.
+    ApiKeyFilter(SettingsApiKeyFilterArgs),
+    /// Enable or disable automatic OCR for copied images.
+    Ocr(SettingsOcrArgs),
+    /// Set retention to a duration or `forever`.
+    Retention(SettingsRetentionArgs),
+    /// Manage ignored bundle identifiers.
+    Ignore(SettingsIgnoreArgs),
+}
+
+#[derive(Debug, Args)]
+pub(super) struct SettingsShowArgs {
+    #[command(flatten)]
+    pub(super) output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
+pub(super) struct SettingsPauseArgs {
+    /// `on` pauses capture, `off` resumes it.
+    pub(super) state: PauseState,
+}
+
+#[derive(Debug, Args)]
+pub(super) struct SettingsApiKeyFilterArgs {
+    /// `on` skips clipboard snapshots that look like API keys, `off` stores them normally.
+    pub(super) state: PauseState,
+}
+
+#[derive(Debug, Args)]
+pub(super) struct SettingsOcrArgs {
+    /// `on` enables automatic OCR for image captures, `off` disables it.
+    pub(super) state: PauseState,
+}
+
+#[derive(Debug, Args)]
+pub(super) struct SettingsRetentionArgs {
+    /// Retain snapshots for this duration, or `forever` to disable automatic pruning.
+    #[arg(value_parser = parse_retention_value)]
+    pub(super) value: RetentionValue,
+}
+
+#[derive(Debug, Args)]
+pub(super) struct SettingsIgnoreArgs {
+    #[command(subcommand)]
+    pub(super) command: SettingsIgnoreCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(super) enum SettingsIgnoreCommand {
+    /// Add a bundle identifier to the ignore list.
+    Add(SettingsIgnoreBundleArgs),
+    /// Remove a bundle identifier from the ignore list.
+    Remove(SettingsIgnoreBundleArgs),
+    /// List ignored bundle identifiers.
+    List(SettingsIgnoreListArgs),
+}
+
+#[derive(Debug, Args)]
+pub(super) struct SettingsIgnoreBundleArgs {
+    /// Bundle identifier to add or remove.
+    pub(super) bundle_id: String,
+}
+
+#[derive(Debug, Args)]
+pub(super) struct SettingsIgnoreListArgs {
+    #[command(flatten)]
+    pub(super) output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = DOCTOR_AFTER_HELP)]
+pub(super) struct DoctorArgs {
+    /// Emit diagnostics as JSON.
+    #[arg(long, default_value_t = false)]
+    pub(super) json: bool,
+
+    /// Emit diagnostics as polished terminal output.
+    #[arg(long, default_value_t = false)]
+    pub(super) human: bool,
+}
+
+#[derive(Debug, Args)]
+pub(super) struct AgentsArgs {
+    #[command(subcommand)]
+    pub(super) command: AgentsCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(super) enum AgentsCommand {
+    /// Manage OpenClaw skill integration.
+    Openclaw(OpenClawArgs),
+}
+
+#[derive(Debug, Args)]
+pub(super) struct OpenClawArgs {
+    #[command(subcommand)]
+    pub(super) command: OpenClawCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(super) enum OpenClawCommand {
+    /// Install the packaged clipboard-memory skill into OpenClaw.
+    InstallSkill(OpenClawInstallSkillArgs),
+    /// Remove an installed OpenClaw clipboard-memory skill.
+    UninstallSkill(OpenClawUninstallSkillArgs),
+    /// Print the packaged OpenClaw skill content.
+    #[command(after_help = OPENCLAW_PRINT_AFTER_HELP)]
+    PrintSkill,
+    /// Check host PATH, installed skill state, metadata, and sandbox guidance.
+    Doctor(OpenClawDoctorArgs),
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = OPENCLAW_INSTALL_AFTER_HELP)]
+pub(super) struct OpenClawInstallSkillArgs {
+    /// Install into the shared OpenClaw skill directory instead of the active workspace.
+    #[arg(long, default_value_t = false)]
+    pub(super) shared: bool,
+
+    /// Write the skill into this exact destination directory.
+    #[arg(long)]
+    pub(super) dest: Option<PathBuf>,
+
+    /// Replace an existing skill directory if one is already present.
+    #[arg(long, default_value_t = false)]
+    pub(super) force: bool,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = OPENCLAW_UNINSTALL_AFTER_HELP)]
+pub(super) struct OpenClawUninstallSkillArgs {
+    /// Remove from the shared OpenClaw skill directory instead of the active workspace.
+    #[arg(long, default_value_t = false)]
+    pub(super) shared: bool,
+
+    /// Remove the skill from this exact destination directory.
+    #[arg(long)]
+    pub(super) dest: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = OPENCLAW_DOCTOR_AFTER_HELP)]
+pub(super) struct OpenClawDoctorArgs {
+    /// Check the shared OpenClaw skill directory instead of the active workspace.
+    #[arg(long, default_value_t = false)]
+    pub(super) shared: bool,
+
+    /// Check this exact destination directory instead of resolving the default target.
+    #[arg(long)]
+    pub(super) dest: Option<PathBuf>,
+}
