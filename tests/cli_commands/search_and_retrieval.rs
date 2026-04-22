@@ -324,6 +324,56 @@ fn search_handles_url_bundle_id_path_and_shell_queries_with_explanations() -> Re
 }
 
 #[test]
+fn literal_search_includes_app_name_matches_when_text_fast_path_hits() -> Result<()> {
+    let path = temp_db_path("search-app-name-with-text-hit");
+    let ids = seed_database(
+        &path,
+        &[
+            app_text_snapshot(
+                1,
+                "Visual Studio Code",
+                "com.microsoft.VSCode",
+                "release notes",
+            ),
+            text_snapshot(2, "Visual Studio Code settings"),
+        ],
+    )?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "search",
+        "--mode",
+        "literal",
+        "--format",
+        "json",
+        "Visual Studio Code",
+    ]);
+    let payload: Value = serde_json::from_slice(&output.stdout)?;
+    let results = payload["results"]
+        .as_array()
+        .expect("results should be an array");
+
+    assert!(output.status.success(), "{}", stderr_text(&output));
+    assert!(results
+        .iter()
+        .any(|row| row["snapshot_id"].as_i64() == Some(ids[1])));
+    let app_name_row = results
+        .iter()
+        .find(|row| row["snapshot_id"].as_i64() == Some(ids[0]))
+        .expect("literal search should include app-name-only matches");
+    assert_eq!(app_name_row["why_matched"].as_str(), Some("App name match"));
+    assert!(app_name_row["matched_fields"]
+        .as_array()
+        .expect("matched_fields should be an array")
+        .iter()
+        .any(|value| value.as_str() == Some("app_name")));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
 fn search_exact_phrase_query_prefers_exact_phrase_hits() -> Result<()> {
     let path = temp_db_path("search-exact-phrase");
     let ids = seed_database(

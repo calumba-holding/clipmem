@@ -26,6 +26,8 @@ versioning where practical.
 
 ### Fixed
 
+- Fixed literal search so app-name-only matches are included even when another
+  clipboard item's text also matches the query.
 - Fixed the file-length lint so it checks tracked source files only, rejects
   stale ratchet overrides, and ignores untracked local scratch or generated
   files.

@@ -5,7 +5,7 @@ use crate::model::{build_item, build_representation, build_snapshot, CaptureCont
 
 use super::{
     analyze_query, fts_query, invalid_fts_message, is_simple_fts_query, literal_fts_match_query,
-    literal_token_match_query, normalise_file_path,
+    normalise_file_path,
 };
 
 pub(in crate::db) fn fake_snapshot(
@@ -98,10 +98,6 @@ pub(in crate::db) fn literal_fts_match_query_skips_like_escaped_inputs() {
             .path_fragment
             .as_deref(),
         Some("/tmp/repo/42/cargo.toml")
-    );
-    assert_eq!(
-        literal_token_match_query(&analyze_query("/tmp/repo/42/Cargo.toml")).as_deref(),
-        Some("\"tmp\" AND \"repo\" AND \"42\" AND \"cargo\" AND \"toml\"")
     );
 }
 

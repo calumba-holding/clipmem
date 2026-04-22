@@ -530,39 +530,3 @@ pub(in crate::db) fn literal_fts_match_query(analysis: &QueryAnalysis) -> Option
 
     Some(format!("\"{}\"", candidate.replace('"', "\"\"")))
 }
-
-pub(in crate::db) fn literal_token_match_query(analysis: &QueryAnalysis) -> Option<String> {
-    let is_url_like =
-        analysis.lower.starts_with("http://") || analysis.lower.starts_with("https://");
-    let is_bundle_id_like = analysis.lower.contains('.')
-        && !analysis.lower.contains(' ')
-        && !is_url_like
-        && !analysis.lower.contains('/')
-        && !analysis.lower.contains('\\')
-        && !analysis.lower.starts_with("~/");
-    if is_url_like || is_bundle_id_like {
-        return None;
-    }
-
-    if analysis.trimmed.contains('%')
-        || analysis.trimmed.contains('_')
-        || analysis.trimmed.contains('\\')
-    {
-        return None;
-    }
-
-    let tokens = analysis
-        .lower
-        .split(|ch: char| !ch.is_ascii_alphanumeric())
-        .filter(|token| {
-            !token.is_empty() && (token.len() >= 2 || token.chars().all(|ch| ch.is_ascii_digit()))
-        })
-        .map(|token| format!("\"{token}\""))
-        .collect::<Vec<_>>();
-
-    if tokens.len() < 2 {
-        None
-    } else {
-        Some(tokens.join(" AND "))
-    }
-}

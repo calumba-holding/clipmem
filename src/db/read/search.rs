@@ -37,58 +37,6 @@ pub(in crate::db) const FAST_FILE_PATH_LITERAL_QUERY: &str = r"
     ORDER BY score DESC, ss.last_observed_at DESC, s.id DESC
     LIMIT :limit
 ";
-pub(in crate::db) const FAST_TEXT_LITERAL_QUERY: &str = r"
-    SELECT
-        s.id AS snapshot_id,
-        ss.last_event_id AS event_id,
-        s.sha256 AS sha256,
-        s.snapshot_kind AS snapshot_kind,
-        s.preview_text AS preview_text,
-        s.search_text AS search_text,
-        CASE
-            WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\' THEN 'Exact phrase match in best text'
-            WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) = :query_lower THEN 'Exact text match in best text'
-            WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :prefix_like ESCAPE '\' THEN 'Prefix match in best text'
-            ELSE 'Literal text match in best text'
-        END AS why_matched,
-        CASE
-            WHEN lower(COALESCE(NULLIF(s.preview_text, ''), '')) LIKE :like ESCAPE '\' THEN 'best_text'
-            WHEN lower(COALESCE(s.preview_text, '')) LIKE :like ESCAPE '\' THEN 'preview_text'
-            ELSE 'search_text'
-        END AS matched_fields,
-        ss.capture_count AS capture_count,
-        ss.first_observed_at AS first_observed_at,
-        ss.last_observed_at AS last_observed_at,
-        ss.last_frontmost_app_name AS last_frontmost_app_name,
-        ss.last_frontmost_app_bundle_id AS last_frontmost_app_bundle_id,
-        COALESCE(sp.urls, '') AS urls,
-        COALESCE(sp.file_urls, '') AS file_urls,
-        s.total_bytes AS total_bytes,
-        s.item_count AS item_count,
-        (
-            CASE WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\' THEN 0.98 ELSE 0 END +
-            CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) = :query_lower THEN 0.96 ELSE 0 END +
-            CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :prefix_like ESCAPE '\' THEN 0.88 ELSE 0 END +
-            CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :like ESCAPE '\' THEN 0.78 ELSE 0 END +
-            CASE WHEN lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\' THEN 0.72 ELSE 0 END +
-            CASE
-                WHEN datetime(ss.last_observed_at) >= datetime('now', '-24 hours') THEN 0.05
-                WHEN datetime(ss.last_observed_at) >= datetime('now', '-7 days') THEN 0.02
-                ELSE 0
-            END
-        ) AS score
-    FROM snapshots_fts
-    JOIN snapshots s ON s.id = snapshots_fts.rowid
-    JOIN snapshot_stats ss ON ss.snapshot_id = snapshots_fts.rowid
-    LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = snapshots_fts.rowid
-    WHERE snapshots_fts MATCH :token_match
-      AND (
-          lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\'
-          OR lower(COALESCE(s.preview_text, '')) LIKE :like ESCAPE '\'
-      )
-    ORDER BY score DESC, ss.last_observed_at DESC, s.id DESC
-    LIMIT :limit
-";
 
 #[derive(Debug, Clone)]
 pub(in crate::db) struct QueryAnalysis {
@@ -300,16 +248,6 @@ impl Database {
                 return Ok(results);
             }
         }
-        if cursor.is_none() && *filters == RetrievalFilters::default() {
-            if let Some(token_match) = literal_token_match_query(&analysis) {
-                let results =
-                    self.search_unfiltered_text_literal_page(&analysis, &token_match, limit)?;
-                if !results.hits().is_empty() {
-                    return Ok(results);
-                }
-            }
-        }
-
         let like = format!("%{}%", escape_like_pattern(&analysis.trimmed));
         let include_matching_events = requires_matching_events(filters);
         let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
@@ -654,41 +592,5 @@ impl Database {
                 SearchResults::new(SearchMode::Literal, page.into_items(), has_more)
             })
             .context("collect unfiltered file-path literal search rows")
-    }
-
-    fn search_unfiltered_text_literal_page(
-        &self,
-        analysis: &QueryAnalysis,
-        token_match: &str,
-        limit: usize,
-    ) -> Result<SearchResults> {
-        let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
-        let like = format!("%{}%", escape_like_pattern(&analysis.trimmed));
-        let prefix_like = format!("{}%", escape_like_pattern(&analysis.lower));
-        let mut stmt = self
-            .conn
-            .prepare(FAST_TEXT_LITERAL_QUERY)
-            .context("prepare unfiltered text literal search query")?;
-        let rows = stmt
-            .query_map(
-                named_params! {
-                    ":token_match" : token_match,
-                    ":query_lower" : analysis.lower.as_str(),
-                    ":like" : like.as_str(),
-                    ":prefix_like" : prefix_like.as_str(),
-                    ":exact_phrase_lower" : analysis.exact_phrase.as_deref(),
-                    ":limit" : fetch_limit,
-                },
-                map_scored_search_hit_row,
-            )
-            .context("execute unfiltered text literal search query")?;
-
-        collect_rows(rows)
-            .map(|hits| paginate_rows(hits, limit))
-            .map(|page| {
-                let has_more = page.has_more();
-                SearchResults::new(SearchMode::Literal, page.into_items(), has_more)
-            })
-            .context("collect unfiltered text literal search rows")
     }
 }
