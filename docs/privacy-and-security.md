@@ -31,7 +31,7 @@ clipmem enforces strict file permissions at runtime:
 - Database and logs: `0600` (owner read/write only)
 
 These permissions are enforced by the managed service setup flow and
-checked at runtime in `src/db.rs::harden_path_permissions`.
+checked at runtime in `src/db/core.rs::harden_path_permissions`.
 
 ## Encryption
 
