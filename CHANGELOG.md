@@ -40,6 +40,8 @@ versioning where practical.
 
 ### Changed
 
+- Raised the pinned Rust toolchain and minimum supported Rust version to 1.88
+  so CI accepts the currently resolved dependency set.
 - Split the oversized CLI, database, and CLI integration test sources into
   real Rust modules so the file-length lint no longer needs ratchet
   overrides for those areas.

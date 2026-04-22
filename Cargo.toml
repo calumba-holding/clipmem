@@ -8,7 +8,7 @@ repository = "https://github.com/tristanmanchester/clipmem"
 homepage = "https://github.com/tristanmanchester/clipmem"
 documentation = "https://docs.rs/clipmem"
 readme = "README.md"
-rust-version = "1.87"
+rust-version = "1.88"
 categories = ["command-line-utilities", "database"]
 keywords = ["clipboard", "sqlite", "macos", "cli", "search"]
 
