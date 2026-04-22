@@ -32,6 +32,9 @@ The Rust CLI and SwiftUI menu bar app ship as separate Homebrew install surfaces
 3. Run local checks:
 
    ```bash
+   cargo fmt --all --check
+   cargo clippy --all-targets --all-features -- -D warnings
+   python3 scripts/check_file_lengths.py
    cargo test
    cargo publish --dry-run --locked
    cargo package --list
@@ -60,9 +63,10 @@ The Rust CLI and SwiftUI menu bar app ship as separate Homebrew install surfaces
    - the menu bar app opens from `/Applications` and resolves `/opt/homebrew/bin/clipmem`
    - launch at login is enabled by default and can be disabled in Settings
 
-## Current release artifacts
+## Release artifacts
 
-For `0.2.5`, `dist plan --allow-dirty` reports these CLI artifacts:
+`dist plan --allow-dirty` reports the CLI artifacts for the version being
+released. The current artifact set includes:
 
 - `source.tar.gz`
 - `source.tar.gz.sha256`
@@ -80,7 +84,10 @@ The generated Homebrew formula installs the `clipmem` binary for Apple Silicon. 
 
 ## Menu bar app release
 
-The release workflow builds `ClipmemMenuBar.app` with `Release` configuration on `macos-14`, signs it with Developer ID Application, notarizes it with `notarytool`, staples the notarization ticket, uploads the final zip to the GitHub Release, and publishes `Casks/clipmem-app.rb` to the tap.
+The release workflow builds `ClipmemMenuBar.app` with `Release` configuration
+on `macos-15`, signs it with Developer ID Application, notarizes it with
+`notarytool`, staples the notarization ticket, uploads the final zip to the
+GitHub Release, and publishes `Casks/clipmem-app.rb` to the tap.
 
 Required GitHub secrets:
 
@@ -119,13 +126,20 @@ The crates.io Trusted Publisher for `clipmem` should be configured as:
 
 ## Current CI checks
 
-Normal CI in [`.github/workflows/ci.yml`](/Users/tristan/Projects/clipmem/.github/workflows/ci.yml) runs:
+Normal CI in
+[`.github/workflows/ci.yml`](/Users/tristan/Projects/clipmem/.github/workflows/ci.yml)
+runs the Linux Rust validation:
 
+- `cargo fmt --all --check`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- `python3 scripts/check_file_lengths.py`
 - `cargo test`
 - `cargo publish --dry-run --locked`
 - `cargo package --list`
 
-The release publish workflow reruns the same validation before publishing.
+CI also runs `cargo clippy --all-targets --all-features -- -D warnings` and
+`cargo test` on `macos-15` so macOS-gated Rust code is validated. The release
+publish workflow reruns the Linux release validation before publishing.
 
 ## Notes
 

@@ -261,23 +261,16 @@ impl ToonSnapshotRowProjection {
             Value::String(self.first_seen_at.clone()),
             Value::String(self.last_seen_at.clone()),
             Value::String(self.kind.clone()),
-            self.app_name
-                .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null),
+            self.app_name.clone().map_or(Value::Null, Value::String),
             self.app_bundle_id
                 .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null),
+                .map_or(Value::Null, Value::String),
             Value::String(self.display_text.clone()),
             Value::from(self.capture_count as u64),
             Value::from(self.item_count as u64),
             Value::from(self.total_bytes as u64),
-            self.score.map(Value::from).unwrap_or(Value::Null),
-            self.why_matched
-                .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null),
+            self.score.map_or(Value::Null, Value::from),
+            self.why_matched.clone().map_or(Value::Null, Value::String),
         ]
     }
 }
@@ -335,14 +328,10 @@ impl ToonTimelineRowProjection {
             Value::String(self.observed_at.clone()),
             Value::from(self.change_count),
             Value::String(self.kind.clone()),
-            self.app_name
-                .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null),
+            self.app_name.clone().map_or(Value::Null, Value::String),
             self.app_bundle_id
                 .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null),
+                .map_or(Value::Null, Value::String),
             Value::String(self.display_text.clone()),
             Value::from(self.item_count as u64),
             Value::from(self.total_bytes as u64),
@@ -417,23 +406,16 @@ impl ToonRecallRowProjection {
             Value::String(self.first_seen_at.clone()),
             Value::String(self.last_seen_at.clone()),
             Value::String(self.kind.clone()),
-            self.app_name
-                .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null),
+            self.app_name.clone().map_or(Value::Null, Value::String),
             self.app_bundle_id
                 .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null),
+                .map_or(Value::Null, Value::String),
             Value::String(self.display_text.clone()),
             Value::from(self.capture_count as u64),
             Value::from(self.item_count as u64),
             Value::from(self.total_bytes as u64),
-            self.score.map(Value::from).unwrap_or(Value::Null),
-            self.why_matched
-                .clone()
-                .map(Value::String)
-                .unwrap_or(Value::Null),
+            self.score.map_or(Value::Null, Value::from),
+            self.why_matched.clone().map_or(Value::Null, Value::String),
         ]
     }
 }
@@ -851,21 +833,19 @@ pub(super) fn render_stats_text(stats: &StatsReport) -> String {
         stats
             .first_observed_at
             .as_deref()
-            .map(format_utc_timestamp)
-            .unwrap_or("none".to_string()),
+            .map_or("none".to_string(), format_utc_timestamp),
         stats
             .last_observed_at
             .as_deref()
-            .map(format_utc_timestamp)
-            .unwrap_or("none".to_string())
+            .map_or("none".to_string(), format_utc_timestamp)
     );
     let _ = writeln!(
         out,
         "  archive span: {}",
-        stats
-            .archive_span_seconds
-            .map(|seconds| format_duration_seconds(seconds.max(0) as u64))
-            .unwrap_or_else(|| "0s".to_string())
+        stats.archive_span_seconds.map_or_else(
+            || "0s".to_string(),
+            |seconds| { format_duration_seconds(seconds.max(0) as u64) }
+        )
     );
     push_blank_line(&mut out);
 
@@ -894,17 +874,19 @@ pub(super) fn render_stats_text(stats: &StatsReport) -> String {
     push_blank_line(&mut out);
 
     let _ = writeln!(out, "Activity patterns");
-    let busiest_hour = peak_bucket(&stats.busiest_hours)
-        .map(|entry| {
+    let busiest_hour = peak_bucket(&stats.busiest_hours).map_or_else(
+        || "none".to_string(),
+        |entry| {
             format!(
                 "{}:00 UTC ({} events)",
                 entry.bucket, entry.capture_event_count
             )
-        })
-        .unwrap_or_else(|| "none".to_string());
-    let busiest_weekday = peak_bucket(&stats.busiest_weekdays)
-        .map(|entry| format!("{} ({} events)", entry.bucket, entry.capture_event_count))
-        .unwrap_or_else(|| "none".to_string());
+        },
+    );
+    let busiest_weekday = peak_bucket(&stats.busiest_weekdays).map_or_else(
+        || "none".to_string(),
+        |entry| format!("{} ({} events)", entry.bucket, entry.capture_event_count),
+    );
     let _ = writeln!(out, "  Busiest hour: {busiest_hour}");
     let _ = writeln!(out, "  Busiest weekday: {busiest_weekday}");
     push_blank_line(&mut out);
@@ -1126,8 +1108,7 @@ fn render_list_markdown(envelope: &ListEnvelope) -> String {
             ListRow::Snapshot(row) => {
                 let score = row
                     .score
-                    .map(|value| format!("{value:.3}"))
-                    .unwrap_or_else(|| "null".to_string());
+                    .map_or_else(|| "null".to_string(), |value| format!("{value:.3}"));
                 let _ = writeln!(
                     out,
                     "| {} | {} | {} | {} | {} | {} |",
@@ -1354,8 +1335,7 @@ fn render_list_toon(envelope: &ListEnvelope) -> String {
         &envelope
             .next_cursor
             .as_ref()
-            .map(|value| Value::String(value.clone()))
-            .unwrap_or(Value::Null),
+            .map_or(Value::Null, |value| Value::String(value.clone())),
         0,
     );
 
@@ -1405,11 +1385,7 @@ fn render_recall_toon(envelope: &RecallEnvelope) -> String {
     render_toon_entry(
         &mut out,
         "query",
-        &envelope
-            .query
-            .clone()
-            .map(Value::String)
-            .unwrap_or(Value::Null),
+        &envelope.query.clone().map_or(Value::Null, Value::String),
         0,
     );
     render_toon_entry(
@@ -1421,10 +1397,7 @@ fn render_recall_toon(envelope: &RecallEnvelope) -> String {
     render_toon_entry(
         &mut out,
         "best_match_score",
-        &envelope
-            .best_match_score
-            .map(Value::from)
-            .unwrap_or(Value::Null),
+        &envelope.best_match_score.map_or(Value::Null, Value::from),
         0,
     );
     render_toon_entry(
@@ -1629,7 +1602,7 @@ fn render_filter_pairs(filters: &Value) -> String {
         .join(", ")
 }
 
-fn render_confidence_label(confidence: &RecallMatchConfidence) -> &'static str {
+const fn render_confidence_label(confidence: &RecallMatchConfidence) -> &'static str {
     match confidence {
         RecallMatchConfidence::High => "high",
         RecallMatchConfidence::Medium => "medium",

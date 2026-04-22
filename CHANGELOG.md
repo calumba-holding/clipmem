@@ -9,8 +9,29 @@ versioning where practical.
 
 ## Unreleased
 
+### Added
+
+- Added a file-length lint with CI enforcement so oversized Rust and Swift
+  source files fail fast, while existing large files are pinned behind
+  explicit per-file limits that can be ratcheted down over time.
+- Added stricter Rust lint gates with `cargo fmt --check` and
+  `cargo clippy --all-targets --all-features -- -D warnings` in CI and release
+  verification, while keeping the lightweight Python file-length lint as a
+  separate check.
+- Added a pinned Rust 1.87.0 toolchain file and macOS Rust CI coverage so
+  Clippy and tests also run against macOS-gated source.
+
 ### Fixed
 
+- Fixed the file-length lint so it checks tracked source files only, rejects
+  stale ratchet overrides, and ignores untracked local scratch or generated
+  files.
+- Fixed release publishing workflow permissions for crates.io Trusted
+  Publishing and removed an unused reusable-workflow input.
+- Fixed `clipmem stats --format` parsing so unsupported formats are rejected by
+  the parser instead of being advertised as valid stats formats.
+- Fixed `clipmem service status` so database inspection failures are reported
+  in the status payload instead of aborting the whole command.
 - Fixed HTML clipboard text normalization so numeric entities like `&#39;` and
   `&#x2F;` remain searchable as their original characters instead of spaces.
 - Fixed file URL projection so `file://localhost/...` clipboard entries are
@@ -27,6 +48,8 @@ versioning where practical.
 - Added GitHub Actions automation that checks the packaged
   `clipboard-memory` ClawHub skill for registry drift and publishes it when
   the repo declares a newer skill version.
+- Updated release documentation to include the new local lint checks, current
+  macOS runner, and version-neutral release artifact guidance.
 
 ## 0.3.4 - 2026-04-21
 

@@ -67,14 +67,26 @@ Build the Rust CLI (requires Rust 1.87+):
 cargo build --release
 ```
 
-Run the test suite:
+Run the local validation suite before opening a PR:
 
 ```bash
+cargo fmt --all --check
+cargo clippy --all-targets --all-features -- -D warnings
+python3 scripts/check_file_lengths.py
 cargo test
 ```
 
-The CLI integration tests in `tests/cli_commands.rs` exercise every
-command, flag combination, filter, and output format.
+The file-length lint checks tracked Rust, Swift, and Rust test files. The
+default ceiling is 800 lines, with explicit per-file overrides in
+`file-length-limits.json` for the current large files. Treat those overrides as
+a ratchet, not a free pass.
+
+The CI workflow hard-fails on formatting, Clippy, the file-length lint, tests,
+and crate packaging checks, so running the same commands locally keeps review
+cycles short.
+
+The CLI integration tests in `tests/cli_commands.rs` exercise every command,
+flag combination, filter, and output format.
 
 ## Build and test the menu bar app
 

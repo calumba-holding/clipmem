@@ -648,7 +648,7 @@ fn timeline(db_path: &Path, args: &TimelineArgs) -> Result<()> {
 }
 
 fn stats(db_path: &Path, args: &StatsArgs) -> Result<()> {
-    let format = require_stats_format(args.output.resolved()?)?;
+    let format = args.output.resolved()?;
     let filters = normalize_retrieval_filters(&args.filters)?;
     let db = open_existing_db(db_path)?;
     let report = anyhow::Context::context(db.stats(&filters), "stats query failed")?;
@@ -1179,17 +1179,6 @@ fn require_text_or_json(format: OutputFormat, command_name: &str) -> Result<Outp
         OutputFormat::Text | OutputFormat::Json | OutputFormat::Human => Ok(format),
         other => Err(UnsupportedFormatError::new(format!(
             "{command_name} only supports `text`, `json`, and `human` output, got `{}`",
-            other.as_str()
-        ))
-        .into()),
-    }
-}
-
-fn require_stats_format(format: StatsOutputFormat) -> Result<StatsOutputFormat> {
-    match format {
-        StatsOutputFormat::Text | StatsOutputFormat::Json | StatsOutputFormat::Human => Ok(format),
-        other => Err(UnsupportedFormatError::new(format!(
-            "stats only supports `text`, `json`, and `human` output, got `{}`",
             other.as_str()
         ))
         .into()),

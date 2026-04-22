@@ -799,8 +799,8 @@ fn stats_rejects_unsupported_formats() -> Result<()> {
             "--format",
             format,
         ]);
-        assert_eq!(status_code(&output), 4);
-        assert!(stderr_text(&output).contains("stats only supports"));
+        assert_eq!(status_code(&output), 2);
+        assert!(stderr_text(&output).contains("invalid value"));
     }
 
     cleanup_db(&db_path);

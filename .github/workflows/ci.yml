@@ -24,14 +24,25 @@ jobs:
           )
 
           for pattern in "${forbidden_patterns[@]}"; do
-            if rg -n --glob '*.yml' "$pattern" .github/workflows; then
+            if rg -n --glob '*.yml' --glob '*.yaml' "$pattern" .github/workflows; then
               echo "forbidden workflow pattern detected: $pattern" >&2
               exit 1
             fi
           done
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.87.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Enforce file length limits
+        run: python3 scripts/check_file_lengths.py
 
       - name: Run tests
         run: cargo test
@@ -41,6 +52,24 @@ jobs:
 
       - name: List packaged files
         run: cargo package --list
+
+  rust-macos:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.87.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run tests
+        run: cargo test
 
   menubar-app:
     runs-on: macos-15

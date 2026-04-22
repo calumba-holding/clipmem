@@ -2,15 +2,14 @@ name: Publish crate
 
 on:
   workflow_call:
-    inputs:
-      plan:
-        required: true
-        type: string
 
 jobs:
   publish-crate:
     runs-on: ubuntu-latest
     environment: release
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Checkout repository
@@ -19,7 +18,9 @@ jobs:
           fetch-depth: 0
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.87.0
+        with:
+          components: rustfmt, clippy
 
       - name: Validate release tag
         env:
@@ -73,6 +74,9 @@ jobs:
 
       - name: Run release verification
         run: |
+          cargo fmt --all --check
+          cargo clippy --all-targets --all-features -- -D warnings
+          python3 scripts/check_file_lengths.py
           cargo test
           cargo publish --dry-run --locked
           cargo package --list

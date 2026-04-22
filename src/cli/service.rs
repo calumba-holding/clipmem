@@ -1,7 +1,6 @@
-use std::env;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
+use std::{env, fmt::Write as _, fs};
 
 use anyhow::{anyhow, bail, Context, Result};
 use serde::Serialize;
@@ -138,7 +137,7 @@ pub(super) fn setup(db_path: &Path) -> Result<SetupReport> {
     ensure_supported()?;
     let context = build_context(db_path)?;
     let status = status_report(db_path)?;
-    let selection = select_provider(&context)?;
+    let selection = select_provider(&context);
     ensure_no_conflict(&status)?;
     let seed_capture = seed_capture(db_path)?;
     let action = start_with_provider(&context, &selection)?;
@@ -152,7 +151,7 @@ pub(super) fn start(db_path: &Path) -> Result<ServiceActionReport> {
     ensure_supported()?;
     let context = build_context(db_path)?;
     let status = status_report(db_path)?;
-    let selection = select_provider(&context)?;
+    let selection = select_provider(&context);
     ensure_no_conflict(&status)?;
     start_with_provider(&context, &selection)
 }
@@ -221,7 +220,7 @@ pub(super) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
             .map(|prefix| prefix.join("var/log/clipmem.error.log")),
     });
     let conflict = homebrew_status.installed && direct_status.installed;
-    let selection = select_provider(&context)?;
+    let selection = select_provider(&context);
 
     let db_exists = context.db_path.is_file();
     let db_size_bytes = if db_exists {
@@ -241,20 +240,21 @@ pub(super) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
         ignored_bundle_id_count,
         db_error,
     ) = if db_exists {
-        match Database::open_existing(&context.db_path) {
-            Ok(db) => {
-                let policy = db.capture_policy()?;
-                (
-                    db.latest_capture_observed_at()?,
-                    Some(db.has_capture_within_hours(SERVICE_FRESHNESS_HOURS)?),
-                    Some(policy.settings().paused()),
-                    Some(policy.settings().api_key_filter_enabled()),
-                    policy.settings().retention_seconds(),
-                    Some(render_retention_value(policy.settings())),
-                    Some(policy.ignored_bundle_id_count()),
-                    None,
-                )
-            }
+        match Database::open_existing(&context.db_path).and_then(|db| {
+            let policy = db.capture_policy()?;
+            Ok((
+                db.latest_capture_observed_at()?,
+                Some(db.has_capture_within_hours(SERVICE_FRESHNESS_HOURS)?),
+                Some(policy.settings().paused()),
+                Some(policy.settings().api_key_filter_enabled()),
+                policy.settings().retention_seconds(),
+                Some(render_retention_value(policy.settings())),
+                Some(policy.ignored_bundle_id_count()),
+            ))
+        }) {
+            Ok(fields) => (
+                fields.0, fields.1, fields.2, fields.3, fields.4, fields.5, fields.6, None,
+            ),
             Err(error) => (
                 None,
                 None,
@@ -323,133 +323,137 @@ pub(super) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
 pub(super) fn render_setup_text(report: &SetupReport) -> String {
     let mut out = String::new();
     out.push_str("clipmem setup completed\n");
-    out.push_str(&format!(
+    let _ = write!(
+        out,
         "provider: {}\nlabel: {}\nbinary: {}\ndatabase: {}\nseed_capture: {}\n",
         report.action.provider.as_str(),
         report.action.label,
         report.action.binary_path.display(),
         report.action.db_path.display(),
         render_seed_capture_outcome(report.seed_capture)
-    ));
+    );
     out.push_str("\nNext steps:\n");
     out.push_str("  clipmem service status\n");
     out.push_str("  clipmem doctor\n");
     for note in &report.action.notes {
-        out.push_str(&format!("  note: {note}\n"));
+        let _ = writeln!(out, "  note: {note}");
     }
     out
 }
 
 pub(super) fn render_service_action_text(report: &ServiceActionReport) -> String {
     let mut out = String::new();
-    out.push_str(&format!("clipmem service {} completed\n", report.action));
-    out.push_str(&format!(
+    let _ = writeln!(out, "clipmem service {} completed", report.action);
+    let _ = write!(
+        out,
         "provider: {}\nlabel: {}\nbinary: {}\ndatabase: {}\n",
         report.provider.as_str(),
         report.label,
         report.binary_path.display(),
         report.db_path.display(),
-    ));
+    );
     for note in &report.notes {
-        out.push_str(&format!("note: {note}\n"));
+        let _ = writeln!(out, "note: {note}");
     }
     out
 }
 
 pub(super) fn render_service_status_text(report: &ServiceStatusReport) -> String {
     let mut out = String::new();
-    out.push_str(&format!("binary: {}\n", report.binary_path));
-    out.push_str(&format!("database: {}\n", report.db_path));
-    out.push_str(&format!(
-        "preferred provider: {} ({})\n",
+    let _ = writeln!(out, "binary: {}", report.binary_path);
+    let _ = writeln!(out, "database: {}", report.db_path);
+    let _ = writeln!(
+        out,
+        "preferred provider: {} ({})",
         report.preferred_provider, report.preferred_provider_reason
-    ));
+    );
     out.push('\n');
     render_provider_status(&mut out, &report.homebrew);
     out.push('\n');
     render_provider_status(&mut out, &report.launchagent);
     out.push('\n');
-    out.push_str(&format!("database exists: {}\n", report.db_exists));
+    let _ = writeln!(out, "database exists: {}", report.db_exists);
     if let Some(db_size_bytes) = report.db_size_bytes {
-        out.push_str(&format!("database size: {db_size_bytes} bytes\n"));
+        let _ = writeln!(out, "database size: {db_size_bytes} bytes");
     }
     if let Some(recent_capture_at) = &report.recent_capture_at {
-        out.push_str(&format!("latest capture: {recent_capture_at}\n"));
+        let _ = writeln!(out, "latest capture: {recent_capture_at}");
     } else {
         out.push_str("latest capture: none\n");
     }
     if let Some(fresh) = report.recent_capture_within_last_hour {
-        out.push_str(&format!("capture within last hour: {fresh}\n"));
+        let _ = writeln!(out, "capture within last hour: {fresh}");
     } else {
         out.push_str("capture within last hour: unknown\n");
     }
     if let Some(paused) = report.paused {
-        out.push_str(&format!("paused: {paused}\n"));
+        let _ = writeln!(out, "paused: {paused}");
     } else {
         out.push_str("paused: unknown\n");
     }
     if let Some(enabled) = report.api_key_filter_enabled {
-        out.push_str(&format!("api key filter: {enabled}\n"));
+        let _ = writeln!(out, "api key filter: {enabled}");
     } else {
         out.push_str("api key filter: unknown\n");
     }
     if let Some(retention) = &report.retention {
-        out.push_str(&format!("retention: {retention}\n"));
+        let _ = writeln!(out, "retention: {retention}");
     } else {
         out.push_str("retention: unknown\n");
     }
     if let Some(count) = report.ignored_bundle_id_count {
-        out.push_str(&format!("ignored bundle ids: {count}\n"));
+        let _ = writeln!(out, "ignored bundle ids: {count}");
     } else {
         out.push_str("ignored bundle ids: unknown\n");
     }
-    out.push_str(&format!("stale: {}\n", report.stale));
-    out.push_str(&format!(
-        "watcher binary mismatch: {}\n",
+    let _ = writeln!(out, "stale: {}", report.stale);
+    let _ = writeln!(
+        out,
+        "watcher binary mismatch: {}",
         report.watcher_binary_mismatch
-    ));
+    );
     if let Some(note) = &report.watcher_binary_mismatch_note {
-        out.push_str(&format!("watcher binary mismatch note: {note}\n"));
+        let _ = writeln!(out, "watcher binary mismatch note: {note}");
     }
     if let Some(db_error) = &report.db_error {
-        out.push_str(&format!("database error: {db_error}\n"));
+        let _ = writeln!(out, "database error: {db_error}");
     }
     if !report.notes.is_empty() {
         out.push_str("\nNotes:\n");
         for note in &report.notes {
-            out.push_str(&format!("  - {note}\n"));
+            let _ = writeln!(out, "  - {note}");
         }
     }
     out
 }
 
 fn render_provider_status(out: &mut String, status: &ServiceProviderStatus) {
-    out.push_str(&format!("{} service:\n", status.provider.as_str()));
-    out.push_str(&format!("  label: {}\n", status.label));
-    out.push_str(&format!("  state: {:?}\n", status.state));
-    out.push_str(&format!("  installed: {}\n", status.installed));
-    out.push_str(&format!("  loaded: {}\n", status.loaded));
-    out.push_str(&format!("  running: {}\n", status.running));
+    let _ = writeln!(out, "{} service:", status.provider.as_str());
+    let _ = writeln!(out, "  label: {}", status.label);
+    let _ = writeln!(out, "  state: {:?}", status.state);
+    let _ = writeln!(out, "  installed: {}", status.installed);
+    let _ = writeln!(out, "  loaded: {}", status.loaded);
+    let _ = writeln!(out, "  running: {}", status.running);
     if let Some(pid) = status.pid {
-        out.push_str(&format!("  pid: {pid}\n"));
+        let _ = writeln!(out, "  pid: {pid}");
     }
     if let Some(path) = &status.plist_path {
-        out.push_str(&format!("  plist: {path}\n"));
+        let _ = writeln!(out, "  plist: {path}");
     }
     if let Some(path) = &status.configured_binary_path {
-        out.push_str(&format!("  configured binary: {path}\n"));
+        let _ = writeln!(out, "  configured binary: {path}");
     }
     if let Some(path) = &status.running_binary_path {
-        out.push_str(&format!("  running binary: {path}\n"));
+        let _ = writeln!(out, "  running binary: {path}");
     }
     if let Some(command) = &status.running_command {
-        out.push_str(&format!("  running command: {command}\n"));
+        let _ = writeln!(out, "  running command: {command}");
     }
     if let Some(path) = &status.stdout_log_path {
-        out.push_str(&format!("  stdout log: {path}\n"));
+        let _ = writeln!(out, "  stdout log: {path}");
     }
     if let Some(path) = &status.stderr_log_path {
-        out.push_str(&format!("  stderr log: {path}\n"));
+        let _ = writeln!(out, "  stderr log: {path}");
     }
 }
 
@@ -493,18 +497,18 @@ fn build_context(db_path: &Path) -> Result<ServiceContext> {
     })
 }
 
-fn select_provider(context: &ServiceContext) -> Result<ProviderSelection> {
+fn select_provider(context: &ServiceContext) -> ProviderSelection {
     let mut notes = Vec::new();
     if let Some(brew_path) = &context.brew_path {
         if context.homebrew_prefix.is_some() {
             if brew_services_available(brew_path) && brew_services_can_manage_clipmem(brew_path) {
-                return Ok(ProviderSelection {
+                return ProviderSelection {
                     provider: ServiceProvider::Homebrew,
                     reason:
                         "current binary is the Homebrew formula and `brew services` is available"
                             .to_string(),
                     notes,
-                });
+                };
             }
             notes.push(
                 "Homebrew install detected, but `brew services` cannot manage the clipmem formula; falling back to a direct LaunchAgent.".to_string(),
@@ -519,11 +523,11 @@ fn select_provider(context: &ServiceContext) -> Result<ProviderSelection> {
         ));
     }
 
-    Ok(ProviderSelection {
+    ProviderSelection {
         provider: ServiceProvider::Launchagent,
         reason: "using the direct per-user LaunchAgent managed by clipmem".to_string(),
         notes,
-    })
+    }
 }
 
 fn ensure_no_conflict(status: &ServiceStatusReport) -> Result<()> {
@@ -540,11 +544,10 @@ fn conflict_message() -> String {
 fn render_retention_value(settings: &CaptureSettings) -> String {
     settings
         .retention_seconds()
-        .map(format_duration_compact)
-        .unwrap_or_else(|| "forever".to_string())
+        .map_or_else(|| "forever".to_string(), format_duration_compact)
 }
 
-fn render_seed_capture_outcome(outcome: SeedCaptureOutcome) -> &'static str {
+const fn render_seed_capture_outcome(outcome: SeedCaptureOutcome) -> &'static str {
     match outcome {
         SeedCaptureOutcome::Stored => "stored",
         SeedCaptureOutcome::Skipped(CaptureSkipReason::ApiKeyFilter) => "skipped_api_key_filter",
@@ -917,15 +920,16 @@ fn watcher_binary_mismatch_note<'a>(
         if !(provider.installed || provider.loaded || provider.running) {
             continue;
         }
-        let candidates: Vec<&str> = if let Some(running) = provider.running_binary_path.as_deref() {
-            vec![running]
-        } else {
-            provider
-                .configured_binary_path
-                .iter()
-                .map(String::as_str)
-                .collect()
-        };
+        let candidates: Vec<&str> = provider.running_binary_path.as_deref().map_or_else(
+            || {
+                provider
+                    .configured_binary_path
+                    .iter()
+                    .map(String::as_str)
+                    .collect()
+            },
+            |running| vec![running],
+        );
         for candidate in candidates {
             if !paths_equivalent(current_binary_path, Path::new(candidate)) {
                 return Some(format!(

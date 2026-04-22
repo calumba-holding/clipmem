@@ -305,7 +305,7 @@ pub struct CliError {
 
 impl CliError {
     #[must_use]
-    pub fn exit_code(&self) -> CliExitCode {
+    pub const fn exit_code(&self) -> CliExitCode {
         self.exit_code
     }
 
@@ -378,9 +378,6 @@ impl RecallOutputFormat {
 pub(super) enum StatsOutputFormat {
     Text,
     Json,
-    Jsonl,
-    Md,
-    Toon,
     Human,
 }
 
@@ -390,9 +387,6 @@ impl StatsOutputFormat {
         match self {
             Self::Text => "text",
             Self::Json => "json",
-            Self::Jsonl => "jsonl",
-            Self::Md => "md",
-            Self::Toon => "toon",
             Self::Human => "human",
         }
     }
