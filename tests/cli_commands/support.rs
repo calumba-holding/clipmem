@@ -416,6 +416,40 @@ pub(crate) fn write_openclaw_skill_package(skill_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn write_hermes_skill_package(skill_dir: &Path) -> Result<()> {
+    fs::create_dir_all(skill_dir.join("references"))?;
+    fs::create_dir_all(skill_dir.join("scripts"))?;
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        include_str!("../../extras/hermes/clipboard-memory/SKILL.md"),
+    )?;
+    fs::write(
+        skill_dir.join("references/commands.md"),
+        include_str!("../../extras/hermes/clipboard-memory/references/commands.md"),
+    )?;
+    fs::write(
+        skill_dir.join("references/troubleshooting.md"),
+        include_str!("../../extras/hermes/clipboard-memory/references/troubleshooting.md"),
+    )?;
+    fs::write(
+        skill_dir.join("references/json-schema.md"),
+        include_str!("../../extras/hermes/clipboard-memory/references/json-schema.md"),
+    )?;
+    fs::write(
+        skill_dir.join("references/examples.md"),
+        include_str!("../../extras/hermes/clipboard-memory/references/examples.md"),
+    )?;
+    fs::write(
+        skill_dir.join("references/setup-check.md"),
+        include_str!("../../extras/hermes/clipboard-memory/references/setup-check.md"),
+    )?;
+    write_executable(
+        &skill_dir.join("scripts/check-setup.sh"),
+        include_str!("../../extras/hermes/clipboard-memory/scripts/check-setup.sh"),
+    )?;
+    Ok(())
+}
+
 #[cfg(target_os = "macos")]
 pub(crate) fn write_stateful_launchctl_stub(bin_dir: &Path, state_dir: &Path) -> Result<()> {
     let state_dir = state_dir.display().to_string();

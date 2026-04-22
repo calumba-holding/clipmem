@@ -1,9 +1,9 @@
 # Agent integration
 
-clipmem is designed as a JSON-first CLI that agents — OpenClaw and
-others — can call directly. You can also install a packaged skill that
-gives agents structured knowledge of clipmem's commands, filters, and
-output schemas.
+clipmem is designed as a JSON-first CLI that agents such as OpenClaw
+and Hermes Agent can call directly. You can also install packaged
+skills that give agents structured knowledge of clipmem's commands,
+filters, and output schemas.
 
 ## Install the OpenClaw skill
 
@@ -37,7 +37,37 @@ Or to a specific destination:
 clipmem agents openclaw install-skill --dest /path/to/skill --force
 ```
 
+## Install the Hermes Agent skill
+
+Install the packaged Hermes Agent skill using the CLI rather than
+copying files manually:
+
+```bash
+clipmem agents hermes install-skill
+```
+
+By default this installs into the Hermes local skills tree:
+
+```
+~/.hermes/skills/productivity/clipboard-memory
+```
+
+To install into a specific destination, pass the exact skill directory:
+
+```bash
+clipmem agents hermes install-skill --dest /path/to/clipboard-memory --force
+```
+
+Hermes can also scan shared skill directories when they are configured
+under `skills.external_dirs` in `~/.hermes/config.yaml`. Use `--dest`
+when you want clipmem to write directly into one of those directories.
+
 ## What the skill ships
+
+The OpenClaw, Hermes Agent, and portable packages ship the same
+command references and setup checker. Runtime-specific package metadata
+and troubleshooting guidance live in each package's `SKILL.md` and
+`references/troubleshooting.md`.
 
 ```
 SKILL.md
@@ -49,35 +79,53 @@ references/troubleshooting.md
 scripts/check-setup.sh
 ```
 
-The packaged skill points agents at the JSON-first retrieval commands:
+The packaged skills point agents at the JSON-first retrieval commands:
 
-- `clipmem recall "<query>" --format json` — start here
-- `clipmem recall --prefer-recent --hours 24 --format json` — for
+- `clipmem recall "<query>" --format json` - start here
+- `clipmem recall --prefer-recent --hours 24 --format json` - for
   recent items without a specific query
-- `clipmem timeline ... --format json` — when chronology matters
-- `clipmem search ... --format json` — when direct lexical matching
+- `clipmem timeline ... --format json` - when chronology matters
+- `clipmem search ... --format json` - when direct lexical matching
   matters
-- `clipmem get <snapshot-id> --format json` — when deeper nested
+- `clipmem get <snapshot-id> --format json` - when deeper nested
   detail is needed
 
 ## Manage the skill
 
-Check integration health:
+Check OpenClaw integration health:
 
 ```bash
 clipmem agents openclaw doctor
 ```
 
-Print the packaged SKILL.md for inspection:
+Check Hermes Agent integration health:
+
+```bash
+clipmem agents hermes doctor
+```
+
+Print the packaged OpenClaw SKILL.md for inspection:
 
 ```bash
 clipmem agents openclaw print-skill
 ```
 
-Uninstall the skill:
+Print the packaged Hermes Agent SKILL.md for inspection:
+
+```bash
+clipmem agents hermes print-skill
+```
+
+Uninstall the OpenClaw skill:
 
 ```bash
 clipmem agents openclaw uninstall-skill
+```
+
+Uninstall the Hermes Agent skill:
+
+```bash
+clipmem agents hermes uninstall-skill
 ```
 
 ## Troubleshooting
@@ -97,6 +145,14 @@ clipmem agents openclaw doctor
 openclaw sandbox explain   # when available
 ```
 
+Hermes must also be able to see both the skill directory and the
+`clipmem` binary from its own runtime environment. Start with:
+
+```bash
+clipmem agents hermes doctor
+hermes skills list          # when Hermes is installed
+```
+
 For empty results, sandbox visibility, or binary-only snapshots where
 exact text isn't available, see
 [troubleshooting](troubleshooting.md).
@@ -112,14 +168,16 @@ Once the skill is installed, agents can handle prompts like:
 
 ## Skill packaging
 
-The skill exists in three locations within the repository:
+The skill exists in four locations within the repository:
 
-- `skills/clipboard-memory/` — the canonical cross-agent skill source
+- `skills/clipboard-memory/` - the canonical cross-agent skill source
   that repo-based installers discover from the root.
-- `extras/openclaw/clipboard-memory/` — the OpenClaw-native package
+- `extras/openclaw/clipboard-memory/` - the OpenClaw-native package
   installed by `clipmem agents openclaw install-skill`.
-- `extras/agent-skills/clipboard-memory/` — a portable packaging
-  mirror for generic agent-skill runtimes beyond OpenClaw.
+- `extras/hermes/clipboard-memory/` - the Hermes Agent-native package
+  installed by `clipmem agents hermes install-skill`.
+- `extras/agent-skills/clipboard-memory/` - a portable packaging mirror
+  for generic agent-skill runtimes beyond native targets.
 
 For compatibility, `./scripts/install_openclaw_skill.sh` still exists
 as a thin wrapper around

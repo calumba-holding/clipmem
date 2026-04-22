@@ -11,10 +11,10 @@
 A searchable, local-only clipboard history for macOS. `clipmem` watches the
 system clipboard, archives every observed state into a local SQLite database,
 and exposes retrieval commands that return human-readable text or structured
-JSON — designed so agents (OpenClaw and others) can recall things you've
-copied. It can also run opt-in local OCR for copied images using Apple Vision,
-so screenshots and image-only clips become searchable without sending image data
-off-device.
+JSON — designed so agents (OpenClaw, Hermes Agent, and others) can recall
+things you've copied. It can also run opt-in local OCR for copied images using
+Apple Vision, so screenshots and image-only clips become searchable without
+sending image data off-device.
 
 <table>
   <tr>
@@ -75,7 +75,7 @@ See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough.
 - [Output formats](docs/output-formats.md) — JSON envelope, TOON, exit codes, and script-friendly guarantees
 - [Managing your archive](docs/managing-your-archive.md) — restore, delete, export, and capture policy
 - [Command reference](docs/command-reference.md) — exhaustive flag-level reference for every command
-- [Agent integration](docs/agent-integration.md) — OpenClaw skill installation and agent usage
+- [Agent integration](docs/agent-integration.md) — OpenClaw, Hermes Agent, and portable skill usage
 - [Menu bar app](docs/menu-bar-app.md) — native SwiftUI menu bar frontend
 - [Privacy and security](docs/privacy-and-security.md) — local-only guarantees, file permissions, and uninstall
 - [Architecture](docs/architecture.md) — capture model, deduplication, search strategy, and limitations

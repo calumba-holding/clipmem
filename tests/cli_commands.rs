@@ -7,6 +7,8 @@ pub(crate) use self::support::*;
 mod formats_and_settings;
 #[path = "cli_commands/help_and_stats.rs"]
 mod help_and_stats;
+#[path = "cli_commands/hermes_agents.rs"]
+mod hermes_agents;
 #[path = "cli_commands/pagination_and_exports.rs"]
 mod pagination_and_exports;
 #[path = "cli_commands/recall_and_human.rs"]

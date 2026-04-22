@@ -258,3 +258,34 @@ Examples:
 Notes:
   - Reports are written to stdout.
   - A nonzero exit code means required OpenClaw integration checks failed.";
+
+pub(super) const HERMES_INSTALL_AFTER_HELP: &str = "\
+Examples:
+  clipmem agents hermes install-skill
+  clipmem agents hermes install-skill --dest /tmp/clipboard-memory --force
+
+Notes:
+  - Default install target is ~/.hermes/skills/productivity/clipboard-memory.
+  - `--dest` installs into the exact directory you provide.";
+
+pub(super) const HERMES_UNINSTALL_AFTER_HELP: &str = "\
+Examples:
+  clipmem agents hermes uninstall-skill
+  clipmem agents hermes uninstall-skill --dest /tmp/clipboard-memory";
+
+pub(super) const HERMES_PRINT_AFTER_HELP: &str = "\
+Examples:
+  clipmem agents hermes print-skill
+
+Notes:
+  - Prints the packaged Hermes Agent SKILL.md to stdout for inspection or templating.";
+
+pub(super) const HERMES_DOCTOR_AFTER_HELP: &str = "\
+Examples:
+  clipmem agents hermes doctor
+  clipmem agents hermes doctor --dest /tmp/clipboard-memory
+
+Notes:
+  - Reports are written to stdout.
+  - A nonzero exit code means required Hermes Agent integration checks failed.
+  - Missing `hermes` is reported as a warning so package validation can still pass.";

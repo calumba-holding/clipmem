@@ -226,6 +226,7 @@ fn portable_and_canonical_skill_packages_are_present() -> Result<()> {
     for root in [
         Path::new("skills/clipboard-memory"),
         Path::new("extras/agent-skills/clipboard-memory"),
+        Path::new("extras/hermes/clipboard-memory"),
     ] {
         assert!(root.join("SKILL.md").is_file());
         assert!(root.join("references/commands.md").is_file());

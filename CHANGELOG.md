@@ -11,6 +11,9 @@ versioning where practical.
 
 ### Added
 
+- Added native Hermes Agent support with a packaged `clipboard-memory`
+  skill, `clipmem agents hermes` install, uninstall, print, and doctor
+  commands, and documentation for the default Hermes skill path.
 - Added a file-length lint with CI enforcement so oversized Rust and Swift
   source files fail fast, while existing large files are pinned behind
   explicit per-file limits that can be ratcheted down over time.

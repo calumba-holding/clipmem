@@ -590,6 +590,8 @@ pub(super) struct AgentsArgs {
 pub(super) enum AgentsCommand {
     /// Manage OpenClaw skill integration.
     Openclaw(OpenClawArgs),
+    /// Manage Hermes Agent skill integration.
+    Hermes(HermesArgs),
 }
 
 #[derive(Debug, Args)]
@@ -646,6 +648,53 @@ pub(super) struct OpenClawDoctorArgs {
     #[arg(long, default_value_t = false)]
     pub(super) shared: bool,
 
+    /// Check this exact destination directory instead of resolving the default target.
+    #[arg(long)]
+    pub(super) dest: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+pub(super) struct HermesArgs {
+    #[command(subcommand)]
+    pub(super) command: HermesCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(super) enum HermesCommand {
+    /// Install the packaged clipboard-memory skill into Hermes Agent.
+    InstallSkill(HermesInstallSkillArgs),
+    /// Remove an installed Hermes Agent clipboard-memory skill.
+    UninstallSkill(HermesUninstallSkillArgs),
+    /// Print the packaged Hermes Agent skill content.
+    #[command(after_help = HERMES_PRINT_AFTER_HELP)]
+    PrintSkill,
+    /// Check host PATH, installed skill state, metadata, and Hermes discovery.
+    Doctor(HermesDoctorArgs),
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = HERMES_INSTALL_AFTER_HELP)]
+pub(super) struct HermesInstallSkillArgs {
+    /// Write the skill into this exact destination directory.
+    #[arg(long)]
+    pub(super) dest: Option<PathBuf>,
+
+    /// Replace an existing skill directory if one is already present.
+    #[arg(long, default_value_t = false)]
+    pub(super) force: bool,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = HERMES_UNINSTALL_AFTER_HELP)]
+pub(super) struct HermesUninstallSkillArgs {
+    /// Remove the skill from this exact destination directory.
+    #[arg(long)]
+    pub(super) dest: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+#[command(after_help = HERMES_DOCTOR_AFTER_HELP)]
+pub(super) struct HermesDoctorArgs {
     /// Check this exact destination directory instead of resolving the default target.
     #[arg(long)]
     pub(super) dest: Option<PathBuf>,

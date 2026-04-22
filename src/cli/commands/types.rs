@@ -115,6 +115,8 @@ pub(in crate::cli) struct RecallComputation {
 pub(in crate::cli) const OPENCLAW_SKILL_NAME: &str = "clipboard-memory";
 pub(in crate::cli) const OPENCLAW_SHARED_ROOT: &str = ".openclaw/skills";
 pub(in crate::cli) const OPENCLAW_WORKSPACE_ROOT: &str = ".openclaw/workspace";
+pub(in crate::cli) const HERMES_SKILL_NAME: &str = "clipboard-memory";
+pub(in crate::cli) const HERMES_SKILL_ROOT: &str = ".hermes/skills/productivity";
 
 pub(in crate::cli) const OPENCLAW_SKILL_MD: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -146,10 +148,39 @@ pub(in crate::cli) const OPENCLAW_CHECK_SETUP_SH: &str = include_str!(concat!(
 ));
 
 #[derive(Debug, Clone, Copy)]
-pub(in crate::cli) struct PackagedOpenClawFile {
+pub(in crate::cli) struct PackagedSkillFile {
     pub(in crate::cli) relative_path: &'static str,
     pub(in crate::cli) contents: &'static str,
 }
+
+pub(in crate::cli) const HERMES_SKILL_MD: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/hermes/clipboard-memory/SKILL.md"
+));
+pub(in crate::cli) const HERMES_COMMANDS_REF: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/hermes/clipboard-memory/references/commands.md"
+));
+pub(in crate::cli) const HERMES_TROUBLESHOOTING_REF: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/hermes/clipboard-memory/references/troubleshooting.md"
+));
+pub(in crate::cli) const HERMES_JSON_SCHEMA_REF: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/hermes/clipboard-memory/references/json-schema.md"
+));
+pub(in crate::cli) const HERMES_EXAMPLES_REF: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/hermes/clipboard-memory/references/examples.md"
+));
+pub(in crate::cli) const HERMES_SETUP_CHECK_REF: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/hermes/clipboard-memory/references/setup-check.md"
+));
+pub(in crate::cli) const HERMES_CHECK_SETUP_SH: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/hermes/clipboard-memory/scripts/check-setup.sh"
+));
 
 #[derive(Debug, Clone)]
 pub(in crate::cli) struct OpenClawDoctorReport {
@@ -170,4 +201,10 @@ pub(in crate::cli) enum OpenClawDoctorStatus {
     Ok,
     Warn,
     Fail,
+}
+
+#[derive(Debug, Clone)]
+pub(in crate::cli) struct HermesDoctorReport {
+    pub(in crate::cli) target_dir: PathBuf,
+    pub(in crate::cli) checks: Vec<OpenClawDoctorCheck>,
 }

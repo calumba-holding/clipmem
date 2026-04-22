@@ -60,33 +60,33 @@ pub(in crate::cli) fn packaged_openclaw_skill() -> String {
     OPENCLAW_SKILL_MD.to_string()
 }
 
-pub(in crate::cli) fn packaged_openclaw_files() -> &'static [PackagedOpenClawFile] {
+pub(in crate::cli) fn packaged_openclaw_files() -> &'static [PackagedSkillFile] {
     &[
-        PackagedOpenClawFile {
+        PackagedSkillFile {
             relative_path: "SKILL.md",
             contents: OPENCLAW_SKILL_MD,
         },
-        PackagedOpenClawFile {
+        PackagedSkillFile {
             relative_path: "references/commands.md",
             contents: OPENCLAW_COMMANDS_REF,
         },
-        PackagedOpenClawFile {
+        PackagedSkillFile {
             relative_path: "references/troubleshooting.md",
             contents: OPENCLAW_TROUBLESHOOTING_REF,
         },
-        PackagedOpenClawFile {
+        PackagedSkillFile {
             relative_path: "references/json-schema.md",
             contents: OPENCLAW_JSON_SCHEMA_REF,
         },
-        PackagedOpenClawFile {
+        PackagedSkillFile {
             relative_path: "references/examples.md",
             contents: OPENCLAW_EXAMPLES_REF,
         },
-        PackagedOpenClawFile {
+        PackagedSkillFile {
             relative_path: "references/setup-check.md",
             contents: OPENCLAW_SETUP_CHECK_REF,
         },
-        PackagedOpenClawFile {
+        PackagedSkillFile {
             relative_path: "scripts/check-setup.sh",
             contents: OPENCLAW_CHECK_SETUP_SH,
         },
@@ -94,10 +94,17 @@ pub(in crate::cli) fn packaged_openclaw_files() -> &'static [PackagedOpenClawFil
 }
 
 pub(in crate::cli) fn install_openclaw_package(target_dir: &Path) -> Result<()> {
+    install_packaged_skill(target_dir, packaged_openclaw_files())
+}
+
+pub(in crate::cli) fn install_packaged_skill(
+    target_dir: &Path,
+    files: &[PackagedSkillFile],
+) -> Result<()> {
     std::fs::create_dir_all(target_dir)
         .with_context(|| format!("failed to create {}", target_dir.display()))?;
 
-    for file in packaged_openclaw_files() {
+    for file in files {
         let path = target_dir.join(file.relative_path);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)

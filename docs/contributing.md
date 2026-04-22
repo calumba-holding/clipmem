@@ -38,10 +38,11 @@ macos/ClipmemMenuBar/          Native SwiftUI menu bar app and Swift Testing sui
 tests/
   cli_commands/                CLI integration tests
   database_roundtrip.rs        Schema and serialization tests
-  skill_parity.rs              OpenClaw skill verification
+  skill_parity.rs              Agent skill package verification
 
 skills/clipboard-memory/       Canonical public skill content
 extras/openclaw/               OpenClaw-native skill package
+extras/hermes/                 Hermes Agent-native skill package
 extras/agent-skills/           Portable skill package mirror
 extras/launchd/                LaunchAgent plist template
 

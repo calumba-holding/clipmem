@@ -42,19 +42,22 @@ use super::service::{
 };
 use super::{
     AgentsArgs, AgentsCommand, CaptureOnceArgs, Command, DoctorArgs, ExportArgs, ForgetArgs,
-    GetArgs, OcrArgs, OcrCommand, OcrRunArgs, OcrStatusArgs, OpenClawArgs, OpenClawCommand,
-    OpenClawDoctorArgs, OpenClawInstallSkillArgs, OpenClawUninstallSkillArgs, OutputFormat,
-    PurgeArgs, RecallArgs, RecentArgs, RestoreArgs, RetrievalFilterArgs, SearchArgs, ServiceArgs,
-    ServiceCommand, ServiceStatusArgs, SettingsApiKeyFilterArgs, SettingsArgs, SettingsCommand,
-    SettingsIgnoreArgs, SettingsIgnoreCommand, SettingsIgnoreListArgs, SettingsOcrArgs,
-    SettingsPauseArgs, SettingsRetentionArgs, SettingsShowArgs, SetupArgs, StatsArgs,
-    StatsOutputFormat, StorageArgs, StorageCommand, StorageCompactArgs, StorageOptimizeImagesArgs,
-    TimelineArgs, WatchArgs,
+    GetArgs, HermesArgs, HermesCommand, HermesDoctorArgs, HermesInstallSkillArgs,
+    HermesUninstallSkillArgs, OcrArgs, OcrCommand, OcrRunArgs, OcrStatusArgs, OpenClawArgs,
+    OpenClawCommand, OpenClawDoctorArgs, OpenClawInstallSkillArgs, OpenClawUninstallSkillArgs,
+    OutputFormat, PurgeArgs, RecallArgs, RecentArgs, RestoreArgs, RetrievalFilterArgs, SearchArgs,
+    ServiceArgs, ServiceCommand, ServiceStatusArgs, SettingsApiKeyFilterArgs, SettingsArgs,
+    SettingsCommand, SettingsIgnoreArgs, SettingsIgnoreCommand, SettingsIgnoreListArgs,
+    SettingsOcrArgs, SettingsPauseArgs, SettingsRetentionArgs, SettingsShowArgs, SetupArgs,
+    StatsArgs, StatsOutputFormat, StorageArgs, StorageCommand, StorageCompactArgs,
+    StorageOptimizeImagesArgs, TimelineArgs, WatchArgs,
 };
 
 mod cursor;
 mod entry;
 mod filters;
+mod hermes_manage;
+mod hermes_validate;
 mod mutate;
 mod openclaw_manage;
 mod openclaw_validate;
@@ -66,6 +69,8 @@ mod types;
 pub(super) use self::cursor::*;
 pub(super) use self::entry::run_command;
 pub(super) use self::filters::*;
+pub(super) use self::hermes_manage::*;
+pub(super) use self::hermes_validate::*;
 pub(super) use self::mutate::*;
 pub(super) use self::openclaw_manage::*;
 pub(super) use self::openclaw_validate::*;

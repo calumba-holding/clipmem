@@ -66,6 +66,7 @@ pub(in crate::cli) fn service_status(db_path: &Path, args: &ServiceStatusArgs) -
 pub(in crate::cli) fn agents(args: &AgentsArgs) -> Result<()> {
     match &args.command {
         AgentsCommand::Openclaw(args) => openclaw(args),
+        AgentsCommand::Hermes(args) => hermes(args),
     }
 }
 
@@ -78,5 +79,17 @@ pub(in crate::cli) fn openclaw(args: &OpenClawArgs) -> Result<()> {
             Ok(())
         }
         OpenClawCommand::Doctor(args) => openclaw_doctor(args),
+    }
+}
+
+pub(in crate::cli) fn hermes(args: &HermesArgs) -> Result<()> {
+    match &args.command {
+        HermesCommand::InstallSkill(args) => hermes_install_skill(args),
+        HermesCommand::UninstallSkill(args) => hermes_uninstall_skill(args),
+        HermesCommand::PrintSkill => {
+            print!("{}", packaged_hermes_skill());
+            Ok(())
+        }
+        HermesCommand::Doctor(args) => hermes_doctor(args),
     }
 }

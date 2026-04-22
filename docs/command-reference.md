@@ -42,6 +42,10 @@ subcommand. For conceptual explanations and usage guidance, see
 | `agents openclaw uninstall-skill` | — | — | Remove installed skill |
 | `agents openclaw print-skill` | — | — | Print SKILL.md to stdout |
 | `agents openclaw doctor` | `text` | — | Integration health check |
+| `agents hermes install-skill` | — | — | Install packaged Hermes skill |
+| `agents hermes uninstall-skill` | — | — | Remove installed Hermes skill |
+| `agents hermes print-skill` | — | — | Print Hermes SKILL.md to stdout |
+| `agents hermes doctor` | `text` | — | Hermes integration health check |
 
 ## Global flags
 
@@ -571,6 +575,53 @@ clipmem agents openclaw doctor --shared
 ```
 
 A nonzero exit code means required integration checks failed.
+
+### `clipmem agents hermes install-skill`
+
+Install the packaged clipboard-memory skill into Hermes Agent.
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--dest` | path | — | Install to a specific directory |
+| `--force` | flag | — | Replace an existing skill directory |
+
+```bash
+clipmem agents hermes install-skill
+clipmem agents hermes install-skill --dest /path/to/clipboard-memory --force
+```
+
+Without `--dest`, the command installs to
+`~/.hermes/skills/productivity/clipboard-memory`.
+
+### `clipmem agents hermes uninstall-skill`
+
+Remove an installed Hermes Agent skill directory.
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--dest` | path | — | Remove from a specific directory |
+
+### `clipmem agents hermes print-skill`
+
+Print the packaged Hermes Agent `SKILL.md` to stdout for inspection.
+
+### `clipmem agents hermes doctor`
+
+Check host PATH, installed skill state, Hermes metadata, and live
+Hermes skill discovery when the `hermes` binary is available.
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--dest` | path | — | Check a specific directory |
+
+```bash
+clipmem agents hermes doctor
+clipmem agents hermes doctor --dest /path/to/clipboard-memory
+```
+
+A missing `hermes` binary is reported as a warning so package
+validation can still pass. A nonzero exit code means required
+integration checks failed.
 
 ---
 

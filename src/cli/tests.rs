@@ -56,6 +56,7 @@ fn agents_openclaw_commands_parse_install_and_doctor_flags() {
                 }
                 other => panic!("expected install-skill command, got {other:?}"),
             },
+            other => panic!("expected openclaw command, got {other:?}"),
         },
         other => panic!("expected agents command, got {other:?}"),
     }
@@ -77,6 +78,80 @@ fn agents_openclaw_commands_parse_install_and_doctor_flags() {
                 }
                 other => panic!("expected doctor command, got {other:?}"),
             },
+            other => panic!("expected openclaw command, got {other:?}"),
+        },
+        other => panic!("expected agents command, got {other:?}"),
+    }
+}
+
+#[test]
+fn agents_hermes_commands_parse_install_doctor_print_and_uninstall() {
+    let install_cli = Cli::parse_from([
+        "clipmem",
+        "agents",
+        "hermes",
+        "install-skill",
+        "--dest",
+        "/tmp/clipboard-memory",
+        "--force",
+    ]);
+
+    match install_cli.command {
+        Command::Agents(args) => match args.command {
+            super::AgentsCommand::Hermes(args) => match args.command {
+                super::HermesCommand::InstallSkill(args) => {
+                    assert_eq!(args.dest, Some(PathBuf::from("/tmp/clipboard-memory")));
+                    assert!(args.force);
+                }
+                other => panic!("expected install-skill command, got {other:?}"),
+            },
+            other => panic!("expected hermes command, got {other:?}"),
+        },
+        other => panic!("expected agents command, got {other:?}"),
+    }
+
+    let doctor_cli = Cli::parse_from([
+        "clipmem",
+        "agents",
+        "hermes",
+        "doctor",
+        "--dest",
+        "/tmp/clipboard-memory",
+    ]);
+    match doctor_cli.command {
+        Command::Agents(args) => match args.command {
+            super::AgentsCommand::Hermes(args) => match args.command {
+                super::HermesCommand::Doctor(args) => {
+                    assert_eq!(args.dest, Some(PathBuf::from("/tmp/clipboard-memory")));
+                }
+                other => panic!("expected doctor command, got {other:?}"),
+            },
+            other => panic!("expected hermes command, got {other:?}"),
+        },
+        other => panic!("expected agents command, got {other:?}"),
+    }
+
+    let print_cli = Cli::parse_from(["clipmem", "agents", "hermes", "print-skill"]);
+    match print_cli.command {
+        Command::Agents(args) => match args.command {
+            super::AgentsCommand::Hermes(args) => {
+                assert!(matches!(args.command, super::HermesCommand::PrintSkill));
+            }
+            other => panic!("expected hermes command, got {other:?}"),
+        },
+        other => panic!("expected agents command, got {other:?}"),
+    }
+
+    let uninstall_cli = Cli::parse_from(["clipmem", "agents", "hermes", "uninstall-skill"]);
+    match uninstall_cli.command {
+        Command::Agents(args) => match args.command {
+            super::AgentsCommand::Hermes(args) => {
+                assert!(matches!(
+                    args.command,
+                    super::HermesCommand::UninstallSkill(_)
+                ));
+            }
+            other => panic!("expected hermes command, got {other:?}"),
         },
         other => panic!("expected agents command, got {other:?}"),
     }
