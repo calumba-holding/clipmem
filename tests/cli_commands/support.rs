@@ -281,6 +281,7 @@ pub(crate) fn run_cli_with_env(args: &[&str], envs: &[(&str, &str)]) -> process:
         .expect("clipmem binary should execute with env")
 }
 
+#[cfg(target_os = "macos")]
 pub(crate) fn run_cli_with_owned_env(args: &[&str], envs: &[(String, String)]) -> process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_clipmem"));
     command.args(args);
@@ -415,6 +416,7 @@ pub(crate) fn write_openclaw_skill_package(skill_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
 pub(crate) fn write_stateful_launchctl_stub(bin_dir: &Path, state_dir: &Path) -> Result<()> {
     let state_dir = state_dir.display().to_string();
     let script = format!(
@@ -463,6 +465,7 @@ exit 0
     write_executable(&bin_dir.join("launchctl"), &script)
 }
 
+#[cfg(target_os = "macos")]
 pub(crate) fn write_stateful_brew_stub(
     bin_dir: &Path,
     state_dir: &Path,
@@ -499,6 +502,7 @@ exit 0
     write_executable(&bin_dir.join("brew"), &script)
 }
 
+#[cfg(target_os = "macos")]
 pub(crate) fn write_brew_stub_without_clipmem_service(
     bin_dir: &Path,
     state_dir: &Path,

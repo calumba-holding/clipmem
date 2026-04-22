@@ -272,13 +272,11 @@ fn shared_references_are_byte_identical_across_variants() {
         let portable = read_file(&portable_pkg().join(rel));
         assert_eq!(
             canonical, openclaw,
-            "{} diverged between canonical and OpenClaw variants",
-            rel
+            "{rel} diverged between canonical and OpenClaw variants"
         );
         assert_eq!(
             canonical, portable,
-            "{} diverged between canonical and portable variants",
-            rel
+            "{rel} diverged between canonical and portable variants"
         );
     }
 }
