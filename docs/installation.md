@@ -10,7 +10,7 @@ package. Intel Macs and source builds are supported through Cargo.
   compile on other platforms for development, but capture won't work.
 - **Apple Silicon** — required for the prebuilt Homebrew package (target
   `aarch64-apple-darwin`). Intel Macs can use `cargo install` instead.
-- **Rust 1.87+** — required only if you're building from source.
+- **Rust 1.88+** — required only if you're building from source.
 
 ## Homebrew (CLI only)
 

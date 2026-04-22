@@ -61,7 +61,7 @@ development, but actual capture and restore only work on macOS.
 
 ## Build and test
 
-Build the Rust CLI (requires Rust 1.87+):
+Build the Rust CLI (requires Rust 1.88+):
 
 ```bash
 cargo build --release

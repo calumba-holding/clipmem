@@ -6,7 +6,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/clipmem.svg)](https://crates.io/crates/clipmem)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Rust 1.87+](https://img.shields.io/badge/rust-1.87%2B-orange.svg)](https://www.rust-lang.org)
+[![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
 
 A searchable, local-only clipboard history for macOS. `clipmem` watches the
 system clipboard, archives every observed state into a local SQLite database,
@@ -33,7 +33,7 @@ off-device.
 
 - **macOS** — clipboard capture uses `NSPasteboard` via `objc2`
 - **Apple Silicon** for the prebuilt Homebrew package
-- **Rust 1.87+** for building from source
+- **Rust 1.88+** for building from source
 
 ## Install
 
