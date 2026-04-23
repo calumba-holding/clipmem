@@ -164,7 +164,7 @@ pub(in crate::cli) fn compute_recall(
     let alternatives = ranked
         .into_iter()
         .skip(1)
-        .take(args.limit)
+        .take(args.limit.saturating_sub(1))
         .collect::<Vec<_>>();
     let why_selected = build_recall_why_selected(
         &best,

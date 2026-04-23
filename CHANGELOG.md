@@ -9,6 +9,12 @@ versioning where practical.
 
 ## Unreleased
 
+### Fixed
+
+- Fixed `clipmem recall --limit` so weak-search fallback output counts the
+  best candidate toward the requested limit instead of returning one extra
+  alternative.
+
 ## 0.4.1 - 2026-04-23
 
 ### Fixed

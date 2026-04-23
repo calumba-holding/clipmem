@@ -347,6 +347,47 @@ fn recall_json_falls_back_to_recent_when_search_is_weak() -> Result<()> {
 }
 
 #[test]
+fn recall_limit_counts_best_candidate_when_falling_back_to_recent() -> Result<()> {
+    let path = temp_db_path("recall-fallback-limit");
+    seed_database(
+        &path,
+        &[
+            text_snapshot(1, "git status"),
+            app_text_snapshot(
+                2,
+                "Preview",
+                "com.apple.Preview",
+                "Meeting notes from today",
+            ),
+        ],
+    )?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "recall",
+        "git",
+        "--mode",
+        "literal",
+        "--format",
+        "json",
+        "--limit",
+        "1",
+        "--min-score",
+        "0.95",
+        "--prefer-recent",
+    ]);
+    let payload: Value =
+        serde_json::from_slice(&output.stdout).expect("recall fallback JSON should parse");
+
+    assert!(output.status.success());
+    assert_eq!(payload["alternatives"].as_array().map(Vec::len), Some(0));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
 fn recall_without_query_returns_recent_candidates() -> Result<()> {
     let path = temp_db_path("recall-no-query");
     let ids = seed_database(
