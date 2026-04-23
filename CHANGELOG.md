@@ -9,6 +9,8 @@ versioning where practical.
 
 ## Unreleased
 
+## 0.4.1 - 2026-04-23
+
 ### Fixed
 
 - Fixed menu bar app version drift by syncing the checked-in Xcode bundle
