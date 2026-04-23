@@ -43,7 +43,8 @@ The app uses explicit SwiftUI scenes:
   and timeline access.
 - **Settings** — service controls, binary path override, database path,
   defaults, hotkey, ignored bundle IDs, retention, pause, API-key
-  filtering, and privacy controls.
+  filtering, privacy controls, storage maintenance (compress images,
+  compact database, purge old history), and diagnostics.
 
 ## Binary discovery order
 
