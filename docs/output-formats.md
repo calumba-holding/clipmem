@@ -212,4 +212,4 @@ different ID) from "database locked" (retry with backoff) from
 - [Command reference](command-reference.md) — exhaustive flag-level
   reference for every command
 - [Agent integration](agent-integration.md) — use clipmem with
-  OpenClaw and other agent runtimes
+  OpenClaw, Hermes Agent, and other agent runtimes

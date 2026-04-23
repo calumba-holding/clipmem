@@ -8,7 +8,7 @@ metadata:
   variant: "canonical"
 ---
 
-Use this skill to recover clipboard history from the local `clipmem` archive. The OpenClaw-native packaging variant lives at `extras/openclaw/clipboard-memory/`; the portable packaging mirror lives at `extras/agent-skills/clipboard-memory/`.
+Use this skill to recover clipboard history from the local `clipmem` archive. The OpenClaw-native packaging variant lives at `extras/openclaw/clipboard-memory/`; the Hermes Agent-native package lives at `extras/hermes/clipboard-memory/`; the portable packaging mirror lives at `extras/agent-skills/clipboard-memory/`.
 
 # Clipboard Memory
 
