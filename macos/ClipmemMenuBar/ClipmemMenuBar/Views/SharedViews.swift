@@ -1,16 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-// MARK: - Design Constants
-
-enum Spacing {
-    static let xs: CGFloat = 4
-    static let sm: CGFloat = 8
-    static let md: CGFloat = 12
-    static let lg: CGFloat = 16
-    static let xl: CGFloat = 24
-}
-
 // MARK: - Utilities
 
 func humanReadableType(_ uti: String) -> String {
@@ -33,6 +23,13 @@ enum DisplayFormatters {
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: date)
+    }
+
+    static func relativeTimestamp(_ value: String?) -> String? {
+        guard let date = parseTimestamp(value) else { return nil }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: .now)
     }
 
     static func byteCount(_ bytes: Int?) -> String? {
@@ -77,7 +74,7 @@ struct StatusBadge: View {
         Label(state.title, systemImage: state.symbol)
             .symbolVariant(.fill)
             .foregroundStyle(state.tint)
-            .font(.headline)
+            .font(DesignType.sectionHeader)
             .labelStyle(.titleAndIcon)
             .accessibilityLabel(state.title)
     }
@@ -87,13 +84,64 @@ struct EmptyStateView: View {
     let title: String
     let detail: String
     let symbol: String
+    var compact: Bool = false
 
     var body: some View {
-        ContentUnavailableView {
-            Label(title, systemImage: symbol)
-        } description: {
-            Text(detail)
+        if compact {
+            VStack(spacing: Spacing.sm) {
+                Image(systemName: symbol)
+                    .font(.title2)
+                    .foregroundStyle(.secondary)
+                Text(title)
+                    .font(DesignType.bodySecondary)
+                    .fontWeight(.medium)
+                Text(detail)
+                    .font(DesignType.rowMeta)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding()
+        } else {
+            ContentUnavailableView {
+                Label(title, systemImage: symbol)
+            } description: {
+                Text(detail)
+            }
         }
+    }
+}
+
+// MARK: - Banner System
+
+struct BannerContainer<Actions: View>: View {
+    let icon: String
+    let tint: Color
+    let title: String
+    var detail: String? = nil
+    var pulse: Bool = false
+    @ViewBuilder var actions: () -> Actions
+
+    var body: some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: icon)
+                .foregroundStyle(tint)
+                .symbolEffect(.pulse, options: .repeating, isActive: pulse)
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(title)
+                    .font(DesignType.bodySecondary.weight(.medium))
+                    .lineLimit(2)
+                if let detail {
+                    Text(detail)
+                        .font(DesignType.rowMeta)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+            Spacer()
+            actions()
+        }
+        .bannerStyle(tint: tint)
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
 }
 
@@ -106,21 +154,13 @@ struct HealthBanner: View {
 
     var body: some View {
         if state != .healthy && state != .unknown {
-            HStack(spacing: Spacing.sm) {
-                Image(systemName: state.symbol)
-                    .foregroundStyle(state.tint)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(errorDetail?.message ?? state.title)
-                        .font(.callout.weight(.medium))
-                        .lineLimit(2)
-                    if let recovery = errorDetail?.recovery ?? state.recoveryGuidance {
-                        Text(recovery)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                }
-                Spacer()
+            BannerContainer(
+                icon: state.symbol,
+                tint: state.tint,
+                title: errorDetail?.message ?? state.title,
+                detail: errorDetail?.recovery ?? state.recoveryGuidance,
+                pulse: state == .error || state == .conflict || state == .missingBinary
+            ) {
                 if let actionLabel, let onAction {
                     Button(actionLabel, action: onAction)
                         .buttonStyle(.bordered)
@@ -128,10 +168,6 @@ struct HealthBanner: View {
                         .disabled(isRunningAction)
                 }
             }
-            .padding(Spacing.md)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(state.tint.opacity(0.08), in: .rect(cornerRadius: Spacing.sm))
-            .transition(.move(edge: .top).combined(with: .opacity))
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(state.title). \(state.recoveryGuidance ?? "")")
         }
@@ -145,18 +181,12 @@ struct UpdateBanner: View {
 
     var body: some View {
         if status.isUpdateAvailable {
-            HStack(spacing: Spacing.sm) {
-                Image(systemName: "arrow.down.circle.fill")
-                    .foregroundStyle(.blue)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Update available \u{2014} v\(status.latestVersion ?? "")")
-                        .font(.callout.weight(.medium))
-                        .lineLimit(1)
-                    Text("You have v\(status.currentVersion)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
+            BannerContainer(
+                icon: "arrow.down.circle.fill",
+                tint: .blue,
+                title: "Update available \u{2014} v\(status.latestVersion ?? "")",
+                detail: "You have v\(status.currentVersion)"
+            ) {
                 if status.shouldShowHomebrewCommand, let onCopyCommand {
                     Button("Copy Command", action: onCopyCommand)
                         .buttonStyle(.bordered)
@@ -168,10 +198,6 @@ struct UpdateBanner: View {
                         .disabled(status.releaseURL == nil)
                 }
             }
-            .padding(Spacing.md)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.blue.opacity(0.08), in: .rect(cornerRadius: Spacing.sm))
-            .transition(.move(edge: .top).combined(with: .opacity))
         }
     }
 }
@@ -179,37 +205,46 @@ struct UpdateBanner: View {
 struct ErrorBanner: View {
     let message: String
     var recovery: String? = nil
+    var onRetry: (() -> Void)? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            Label(message, systemImage: "exclamationmark.triangle")
-                .font(.callout)
-                .foregroundStyle(.red)
-                .lineLimit(3)
-            if let recovery {
-                Text(recovery)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+        BannerContainer(
+            icon: "exclamationmark.triangle",
+            tint: .red,
+            title: message,
+            detail: recovery,
+            pulse: true
+        ) {
+            if let onRetry {
+                Button("Retry", action: onRetry)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
             }
         }
-        .padding(Spacing.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.red.opacity(0.08), in: .rect(cornerRadius: Spacing.sm))
     }
 }
 
 struct ActionFeedbackOverlay: View {
     let message: String?
+    var isSuccess: Bool = true
 
     var body: some View {
         if let message {
-            Text(message)
-                .font(.callout.weight(.medium))
-                .padding(.horizontal, Spacing.lg)
-                .padding(.vertical, Spacing.sm)
-                .background(.regularMaterial, in: Capsule())
-                .transition(.move(edge: .top).combined(with: .opacity))
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: isSuccess ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .foregroundStyle(isSuccess ? .green : .orange)
+                Text(message)
+                    .font(DesignType.bodySecondary.weight(.medium))
+            }
+            .padding(.horizontal, Spacing.lg)
+            .padding(.vertical, Spacing.sm)
+            .glassOverlay(cornerRadius: 20)
+            .transition(
+                .asymmetric(
+                    insertion: .move(edge: .top).combined(with: .opacity).animation(DesignAnimation.entrance),
+                    removal: .opacity.animation(DesignAnimation.exit)
+                )
+            )
         }
     }
 }
@@ -239,7 +274,7 @@ struct FieldRow: View {
                 Text(title)
                     .foregroundStyle(.secondary)
                     .gridColumnAlignment(.trailing)
-                Text("—")
+                Text("\u{2014}")
                     .foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -251,11 +286,20 @@ struct FilterBar: View {
     @Bindable var history: HistoryModel
     @State private var showAdvanced = false
 
+    private static let timeRanges: [(String, Int)] = [
+        ("1h", 1), ("6h", 6), ("24h", 24), ("48h", 48),
+        ("7d", 168), ("30d", 720),
+    ]
+
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
             HStack(spacing: Spacing.md) {
-                Stepper("Hours: \(history.filters.hours)", value: $history.filters.hours, in: 1...720)
-                    .fixedSize()
+                Picker("Time", selection: $history.filters.hours) {
+                    ForEach(Self.timeRanges, id: \.1) { label, hours in
+                        Text(label).tag(hours)
+                    }
+                }
+                .fixedSize()
                 Picker("Kind", selection: $history.filters.kind) {
                     Text("Any").tag(ClipboardKind?.none)
                     ForEach(ClipboardKind.allCases) { kind in
@@ -264,13 +308,13 @@ struct FilterBar: View {
                 }
                 .fixedSize()
                 Button {
-                    withAnimation { showAdvanced.toggle() }
+                    withAnimation(DesignAnimation.standard) { showAdvanced.toggle() }
                 } label: {
                     HStack(spacing: Spacing.xs) {
                         Label("Filters", systemImage: showAdvanced ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
                         if history.filters.activeAdvancedFilterCount > 0 {
                             Text("\(history.filters.activeAdvancedFilterCount)")
-                                .font(.caption2.weight(.bold))
+                                .font(DesignType.badge)
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
@@ -281,32 +325,36 @@ struct FilterBar: View {
                 .buttonStyle(.borderless)
             }
             if showAdvanced {
-                HStack(spacing: Spacing.md) {
-                    TextField("Application name", text: $history.filters.appName)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(minWidth: 100)
-                    TextField("App identifier", text: $history.filters.bundleID)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(minWidth: 100)
-                }
-                HStack(spacing: Spacing.md) {
-                    Toggle("Text", isOn: $history.filters.hasText)
-                    Toggle("URL", isOn: $history.filters.hasURL)
-                    Toggle("File", isOn: $history.filters.hasFile)
-                    Toggle("Image", isOn: $history.filters.hasImage)
-                    Toggle("PDF", isOn: $history.filters.hasPDF)
-                    Spacer()
-                    if history.filters.activeAdvancedFilterCount > 0 {
-                        Button("Reset") {
-                            history.filters.resetAdvanced()
+                DisclosureGroup("Advanced Filters") {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        HStack(spacing: Spacing.md) {
+                            TextField("Application name", text: $history.filters.appName)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(minWidth: 100)
+                            TextField("App identifier", text: $history.filters.bundleID)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(minWidth: 100)
                         }
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(.secondary)
+                        HStack(spacing: Spacing.md) {
+                            Toggle("Text", isOn: $history.filters.hasText)
+                            Toggle("URL", isOn: $history.filters.hasURL)
+                            Toggle("File", isOn: $history.filters.hasFile)
+                            Toggle("Image", isOn: $history.filters.hasImage)
+                            Toggle("PDF", isOn: $history.filters.hasPDF)
+                            Spacer()
+                            if history.filters.activeAdvancedFilterCount > 0 {
+                                Button("Reset") {
+                                    history.filters.resetAdvanced()
+                                }
+                                .buttonStyle(.borderless)
+                                .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
             }
         }
         .toggleStyle(.checkbox)
-        .font(.callout)
+        .font(DesignType.bodySecondary)
     }
 }

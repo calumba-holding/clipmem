@@ -23,8 +23,12 @@ struct QuickRecallWindowView: View {
             Divider()
             list
             if let error = quick.error {
-                ErrorBanner(message: error.message, recovery: error.recovery)
-                    .padding()
+                ErrorBanner(
+                    message: error.message,
+                    recovery: error.recovery,
+                    onRetry: { Task { await quick.refresh() } }
+                )
+                .padding()
             }
             Divider()
             footer
@@ -76,44 +80,75 @@ struct QuickRecallWindowView: View {
         }
     }
 
-    private var header: some View {
-        HStack(spacing: Spacing.md) {
-            Picker("Mode", selection: $displayMode) {
-                ForEach(DisplayMode.allCases) { mode in
-                    Text(mode.title).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .fixedSize()
-            .onChange(of: displayMode) {
-                syncMode()
-                Task { await quick.refresh() }
-            }
+    // MARK: - Header
 
-            if displayMode == .search {
-                Picker("Style", selection: $searchStyle) {
-                    Text("Smart").tag(SearchStyle.smart)
-                    Text("Exact").tag(SearchStyle.exact)
+    private var header: some View {
+        VStack(spacing: Spacing.md) {
+            HStack(spacing: Spacing.md) {
+                Picker("Mode", selection: $displayMode) {
+                    ForEach(DisplayMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
                 }
                 .pickerStyle(.segmented)
                 .fixedSize()
-                .controlSize(.small)
-                .onChange(of: searchStyle) {
+                .onChange(of: displayMode) {
                     syncMode()
                     Task { await quick.refresh() }
                 }
+
+                if displayMode == .search {
+                    Picker("Style", selection: $searchStyle) {
+                        Text("Smart").tag(SearchStyle.smart)
+                        Text("Exact").tag(SearchStyle.exact)
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                    .controlSize(.small)
+                    .onChange(of: searchStyle) {
+                        syncMode()
+                        Task { await quick.refresh() }
+                    }
+                }
+
+                Spacer()
             }
 
-            TextField(searchPrompt, text: $quick.query)
-                .textFieldStyle(.roundedBorder)
-                .focused($queryFocused)
-                .disabled(displayMode == .recent || displayMode == .timeline)
-                .onSubmit {
-                    Task { await quick.restoreSelected() }
+            HStack(spacing: Spacing.sm) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.tertiary)
+                TextField(searchPrompt, text: $quick.query)
+                    .textFieldStyle(.plain)
+                    .font(.title3)
+                    .focused($queryFocused)
+                    .disabled(displayMode == .recent || displayMode == .timeline)
+                    .onSubmit {
+                        Task { await quick.restoreSelected() }
+                    }
+                    .onChange(of: quick.query) {
+                        quick.queryChanged()
+                    }
+                if !quick.query.isEmpty {
+                    Button {
+                        quick.query = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.borderless)
                 }
-                .onChange(of: quick.query) {
-                    quick.queryChanged()
-                }
+            }
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.sm)
+            .background(.quaternary, in: .rect(cornerRadius: DesignRadius.md))
+
+            if !quick.results.isEmpty {
+                Text("\(quick.results.count) result\(quick.results.count == 1 ? "" : "s")")
+                    .font(DesignType.rowMeta)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .transition(.opacity)
+            }
         }
         .padding()
     }
@@ -128,6 +163,8 @@ struct QuickRecallWindowView: View {
             "Timeline mode uses filters"
         }
     }
+
+    // MARK: - List
 
     private var list: some View {
         List(selection: $quick.selectedID) {
@@ -148,43 +185,63 @@ struct QuickRecallWindowView: View {
         .overlay {
             if quick.isLoading {
                 ProgressView()
+                    .transition(.opacity)
             } else if quick.results.isEmpty {
                 EmptyStateView(
                     title: "No matches found",
                     detail: displayMode == .search
                         ? "Try different keywords or switch to \(searchStyle == .smart ? "Exact" : "Smart") mode."
                         : "Try another query or switch modes.",
-                    symbol: "magnifyingglass"
+                    symbol: "magnifyingglass",
+                    compact: true
                 )
             }
         }
     }
 
-    private var footer: some View {
-        HStack {
-            Button("Restore", systemImage: "arrow.uturn.backward.square") {
-                Task { await quick.restoreSelected() }
-            }
-            .keyboardShortcut(.return, modifiers: [])
-            .disabled(quick.selectedItem == nil)
-            .help("Restore to clipboard (Return)")
+    // MARK: - Footer
 
-            Button("Open in History", systemImage: "rectangle.stack.badge.play") {
-                openHistory()
+    private var footer: some View {
+        HStack(spacing: Spacing.lg) {
+            VStack(spacing: Spacing.xxs) {
+                Button("Restore", systemImage: "arrow.uturn.backward.square") {
+                    Task { await quick.restoreSelected() }
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.return, modifiers: [])
+                .disabled(quick.selectedItem == nil)
+                Text("Return")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
             }
-            .keyboardShortcut("o", modifiers: .command)
-            .disabled(quick.selectedItem == nil)
-            .help("Open in History (\u{2318}O)")
+
+            VStack(spacing: Spacing.xxs) {
+                Button("Open in History", systemImage: "rectangle.stack.badge.play") {
+                    openHistory()
+                }
+                .buttonStyle(.bordered)
+                .keyboardShortcut("o", modifiers: .command)
+                .disabled(quick.selectedItem == nil)
+                Text("\u{2318}O")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+            }
 
             Spacer()
 
-            Button("Forget", systemImage: "trash", role: .destructive) {
-                pendingForgetItem = quick.selectedItem
-                confirmForget = true
+            VStack(spacing: Spacing.xxs) {
+                Button("Forget", systemImage: "trash", role: .destructive) {
+                    pendingForgetItem = quick.selectedItem
+                    confirmForget = true
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.red)
+                .keyboardShortcut(.delete, modifiers: [])
+                .disabled(quick.selectedItem == nil)
+                Text("Delete")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
             }
-            .keyboardShortcut(.delete, modifiers: [])
-            .disabled(quick.selectedItem == nil)
-            .help("Remove this item (Delete)")
         }
         .padding()
     }

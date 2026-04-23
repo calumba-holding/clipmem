@@ -18,7 +18,7 @@ struct ManualPurgeSheet: View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 Text("Purge Old History")
-                    .font(.title3.weight(.semibold))
+                    .font(DesignType.windowTitle)
                 Text("Preview matching clipboard snapshots before deleting them from the local archive.")
                     .foregroundStyle(.secondary)
             }
@@ -91,7 +91,7 @@ struct ManualPurgeSheet: View {
             }
             .padding(Spacing.md)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: Spacing.sm))
+            .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: DesignRadius.md))
         } else {
             ContentUnavailableView {
                 Label("Preview Required", systemImage: "eye")

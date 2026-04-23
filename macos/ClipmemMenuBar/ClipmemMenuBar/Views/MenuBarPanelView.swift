@@ -8,6 +8,7 @@ struct MenuBarPanelView: View {
     @Environment(\.openSettings) private var openSettings
     @State private var recentSearchQuery = ""
     @State private var restoringItemID: Int?
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -34,9 +35,14 @@ struct MenuBarPanelView: View {
             footer
                 .padding(Spacing.md)
         }
-        .animation(.easeInOut(duration: 0.25), value: appModel.healthState)
-        .animation(.easeInOut(duration: 0.25), value: appModel.updateStatus.isUpdateAvailable)
+        .overlay(alignment: .top) {
+            ActionFeedbackOverlay(message: appModel.actionMessage)
+                .padding(.top, Spacing.sm)
+        }
+        .animation(DesignAnimation.standard, value: appModel.healthState)
+        .animation(DesignAnimation.standard, value: appModel.updateStatus.isUpdateAvailable)
         .onAppear {
+            searchFocused = true
             Task {
                 await appModel.refreshRecentPreviewIfStale(maxAge: 1)
             }
@@ -92,20 +98,42 @@ struct MenuBarPanelView: View {
     // MARK: - Search
 
     private var recentsSearchField: some View {
-        TextField("Filter recent clips\u{2026}", text: $recentSearchQuery)
-            .textFieldStyle(.roundedBorder)
-            .controlSize(.small)
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.tertiary)
+                .font(.system(size: DesignIcon.small))
+            TextField("Filter recent clips\u{2026}", text: $recentSearchQuery)
+                .textFieldStyle(.plain)
+                .focused($searchFocused)
+            if !recentSearchQuery.isEmpty {
+                Button {
+                    recentSearchQuery = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+        .background(.quaternary, in: Capsule())
+        .controlSize(.small)
     }
 
     // MARK: - Clipboard Items
 
     @ViewBuilder
     private var recentsContent: some View {
-        if appModel.recentPreview.isEmpty && !appModel.isRefreshing {
+        if appModel.isRefreshing && appModel.recentPreview.isEmpty {
+            ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if appModel.recentPreview.isEmpty && !appModel.isRefreshing {
             EmptyStateView(
                 title: "Start copying",
                 detail: "Items appear here automatically.",
-                symbol: "clipboard"
+                symbol: "clipboard",
+                compact: true
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if filteredRecentPreview.isEmpty && recentSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
@@ -113,7 +141,8 @@ struct MenuBarPanelView: View {
                 EmptyStateView(
                     title: "No matching recents",
                     detail: "Search the full archive in History.",
-                    symbol: "magnifyingglass"
+                    symbol: "magnifyingglass",
+                    compact: true
                 )
                 Button("Open History Search", systemImage: "arrow.up.right.square") {
                     appModel.requestHistorySearch(query: recentSearchQuery)
@@ -173,6 +202,7 @@ struct MenuBarPanelView: View {
                 Label("History", systemImage: "clock.arrow.circlepath")
             }
             .help("Open History (\u{2318}\u{21E7}H)")
+            .symbolEffect(.bounce, value: appModel.clipboardHistoryRevision)
 
             Button {
                 WindowActivation.openWindow(openWindow, id: .quickRecall)
@@ -182,6 +212,9 @@ struct MenuBarPanelView: View {
             .help("Open Search (\u{2325}\u{21E7}V)")
 
             Spacer()
+
+            Divider()
+                .frame(height: 16)
 
             Button {
                 WindowActivation.openSettings(openSettings)

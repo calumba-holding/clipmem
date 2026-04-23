@@ -28,6 +28,17 @@ struct HistoryWindowView: View {
         }
         .navigationTitle(displayMode.title)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: Spacing.sm) {
+                    Text(displayMode.title)
+                        .font(DesignType.bodySecondary.weight(.medium))
+                    if !history.results.isEmpty {
+                        Text("\u{2014} \(history.results.count) item\(history.results.count == 1 ? "" : "s")")
+                            .font(DesignType.bodySecondary)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
             ToolbarItemGroup {
                 Button("Refresh", systemImage: "arrow.clockwise") {
                     Task { await history.reload() }
@@ -94,9 +105,36 @@ struct HistoryWindowView: View {
                         .tag(mode)
                 }
             }
+            if let status = appModel.serviceStatus {
+                Section("Statistics") {
+                    LabeledContent("Database", value: DisplayFormatters.byteCount(status.dbSizeBytes) ?? "\u{2014}")
+                        .font(DesignType.rowMeta)
+                    if let retention = status.retention {
+                        LabeledContent("Retention", value: retention)
+                            .font(DesignType.rowMeta)
+                    }
+                }
+            }
         }
         .navigationTitle("clipmem")
-        .navigationSplitViewColumnWidth(min: 150, ideal: 180, max: 220)
+        .navigationSplitViewColumnWidth(min: 150, ideal: 200, max: 220)
+        .safeAreaInset(edge: .bottom) {
+            sidebarStatusIndicator
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+        }
+    }
+
+    private var sidebarStatusIndicator: some View {
+        HStack(spacing: Spacing.sm) {
+            Circle()
+                .fill(appModel.healthState.tint)
+                .frame(width: 8, height: 8)
+            Text(appModel.healthState.title)
+                .font(DesignType.rowMeta)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
     }
 
     private var displayModeBinding: Binding<DisplayMode> {
@@ -160,6 +198,9 @@ struct HistoryWindowView: View {
                 }
                 .disabled(displayMode == .search && history.query.isEmpty)
             }
+            .padding(Spacing.md)
+            .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: DesignRadius.md))
+
             FilterBar(history: history)
         }
     }
@@ -180,13 +221,23 @@ struct HistoryWindowView: View {
     private var resultList: some View {
         VStack(spacing: 0) {
             if let error = history.error {
-                ErrorBanner(message: error.message, recovery: error.recovery)
-                    .padding()
+                ErrorBanner(
+                    message: error.message,
+                    recovery: error.recovery,
+                    onRetry: { Task { await history.reload() } }
+                )
+                .padding()
             }
             List(selection: $history.selectedID) {
                 ForEach(history.results) { item in
                     ResultRowView(item: item, selected: item.snapshotId == history.selectedID)
                         .tag(item.snapshotId)
+                        .onAppear {
+                            if item.snapshotId == history.results.last?.snapshotId,
+                               history.nextCursor != nil {
+                                Task { await history.loadMore() }
+                            }
+                        }
                 }
                 if history.nextCursor != nil {
                     Button("Load More", systemImage: "arrow.down.circle") {
@@ -220,8 +271,19 @@ struct HistoryWindowView: View {
     private var inspector: some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
             Text("Inspector")
-                .font(.headline)
+                .font(DesignType.sectionHeader)
             if let selected = history.selectedItem {
+                Text(selected.displayText)
+                    .font(DesignType.bodySecondary)
+                    .lineLimit(2)
+                    .foregroundStyle(.secondary)
+
+                Divider()
+
+                Text("Metadata")
+                    .font(DesignType.rowMeta.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
                 Grid(alignment: .leading, horizontalSpacing: Spacing.md, verticalSpacing: Spacing.sm) {
                     FieldRow(title: "Snapshot", value: String(selected.snapshotId))
                     FieldRow(title: "Event", value: selected.eventId.map(String.init))
@@ -230,6 +292,13 @@ struct HistoryWindowView: View {
                     FieldRow(title: "Matched", value: selected.matchedFields?.joined(separator: ", "))
                     FieldRow(title: "Why", value: selected.whyMatched)
                 }
+
+                Divider()
+
+                Text("Actions")
+                    .font(DesignType.rowMeta.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
                 ItemActionButtons(
                     item: selected,
                     detail: history.selectedDetail,
@@ -243,6 +312,7 @@ struct HistoryWindowView: View {
             Spacer()
         }
         .padding()
+        .background(.ultraThinMaterial)
     }
 
     // MARK: - State Management

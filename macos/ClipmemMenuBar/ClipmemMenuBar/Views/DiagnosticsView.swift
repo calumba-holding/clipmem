@@ -3,6 +3,8 @@ import SwiftUI
 struct DiagnosticsView: View {
     let appModel: AppModel
 
+    @State private var confirmUninstall = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.lg) {
@@ -14,6 +16,8 @@ struct DiagnosticsView: View {
 
                 GroupBox("Service") {
                     VStack(alignment: .leading, spacing: Spacing.sm) {
+                        LabeledContent("Status", value: appModel.healthState.title)
+                            .font(DesignType.bodySecondary)
                         DiagnosticsActionButton("Setup", systemImage: "wrench.and.screwdriver") {
                             Task { await appModel.runSetup() }
                         }
@@ -23,6 +27,11 @@ struct DiagnosticsView: View {
                         DiagnosticsActionButton("Stop", systemImage: "stop.fill") {
                             Task { await appModel.serviceAction("stop") }
                         }
+                        Divider()
+                        Button("Uninstall Service", role: .destructive) {
+                            confirmUninstall = true
+                        }
+                        .disabled(appModel.isRunningAction)
                     }
                     .disabled(appModel.isRunningAction)
                 }
@@ -41,7 +50,7 @@ struct DiagnosticsView: View {
                            let note = appModel.serviceStatus?.watcherBinaryMismatchNote {
                             Label(note, systemImage: "exclamationmark.triangle.fill")
                                 .foregroundStyle(.orange)
-                                .font(.callout)
+                                .font(DesignType.bodySecondary)
                                 .textSelection(.enabled)
                         }
                         DiagnosticsActionButton("Open Logs Folder", systemImage: "folder") {
@@ -76,6 +85,14 @@ struct DiagnosticsView: View {
             }
             .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .confirmationDialog("Uninstall the clipmem service?", isPresented: $confirmUninstall) {
+            Button("Uninstall Service", role: .destructive) {
+                Task { await appModel.serviceAction("uninstall") }
+            }
+            Button("Keep Service", role: .cancel) {}
+        } message: {
+            Text("This removes the LaunchAgent or Homebrew service registration. Your clipboard database is preserved.")
         }
         .task {
             await appModel.refreshDoctor()

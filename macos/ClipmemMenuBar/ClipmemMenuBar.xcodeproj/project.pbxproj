@@ -43,6 +43,7 @@
 		B00000000000000000000034 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000036 /* Assets.xcassets */; };
 		B00000000000000000000035 /* ManualPurgeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000037 /* ManualPurgeSheet.swift */; };
 		B00000000000000000000036 /* HistoryModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000038 /* HistoryModelTests.swift */; };
+		B00000000000000000000037 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000039 /* DesignSystem.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -94,6 +95,7 @@
 		A00000000000000000000036 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Resources/Assets.xcassets; sourceTree = "<group>"; };
 		A00000000000000000000037 /* ManualPurgeSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/ManualPurgeSheet.swift; sourceTree = "<group>"; };
 		A00000000000000000000038 /* HistoryModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipmemMenuBarTests/HistoryModelTests.swift; sourceTree = "<group>"; };
+		A00000000000000000000039 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/DesignSystem.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -133,6 +135,7 @@
 				A00000000000000000000031 /* LoginItemController.swift */,
 				A00000000000000000000014 /* PasteboardActions.swift */,
 				A00000000000000000000035 /* ConfirmationAlertPresenter.swift */,
+				A00000000000000000000039 /* DesignSystem.swift */,
 				A00000000000000000000015 /* SharedViews.swift */,
 				A00000000000000000000016 /* ResultRowView.swift */,
 				A00000000000000000000017 /* ItemActionButtons.swift */,
@@ -273,6 +276,7 @@
 				B00000000000000000000031,
 				B00000000000000000000033,
 				B00000000000000000000035,
+				B00000000000000000000037,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -16,7 +16,6 @@ struct ClipmemSettingsView: View {
     @State private var confirmCompact = false
     @State private var confirmCompressImages = false
     @State private var showManualPurge = false
-    @State private var confirmUninstall = false
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -57,44 +56,47 @@ struct ClipmemSettingsView: View {
         }
     }
 
+    // MARK: - General Tab
+
     private var generalTab: some View {
         Form {
-            TextField("clipmem binary", text: $binaryPathOverride)
-            TextField("Database path", text: $databasePathOverride)
-            Stepper("Recent window: \(defaultRecentHours) hours", value: $defaultRecentHours, in: 1...720)
-            Picker("Default mode", selection: defaultDisplayModeBinding) {
-                ForEach(DisplayMode.allCases) { mode in
-                    Text(mode.title).tag(mode)
-                }
-            }
-            Toggle("Enable Option-Shift-V global hotkey", isOn: $hotkeyEnabled)
-            if let message = appModel.hotkeyMessage {
-                Text(message)
-                    .foregroundStyle(.orange)
-            }
-            Toggle("Open Clipmem at login", isOn: launchAtLoginBinding)
-            if let message = appModel.launchAtLoginError?.message {
-                Text(message)
-                    .foregroundStyle(.orange)
-            } else if let message = appModel.launchAtLoginStatus.message {
-                Text(message)
+            Section("Paths") {
+                TextField("clipmem binary", text: $binaryPathOverride)
+                TextField("Database path", text: $databasePathOverride)
+                Text("Leave blank to use the default paths.")
+                    .font(DesignType.rowMeta)
                     .foregroundStyle(.secondary)
             }
 
-            serviceSection
+            Section("Preferences") {
+                Stepper("Recent window: \(defaultRecentHours) hours", value: $defaultRecentHours, in: 1...720)
+                Picker("Default mode", selection: defaultDisplayModeBinding) {
+                    ForEach(DisplayMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                Toggle("Enable Option-Shift-V global hotkey", isOn: $hotkeyEnabled)
+                if let message = appModel.hotkeyMessage {
+                    Text(message)
+                        .foregroundStyle(.orange)
+                }
+                Toggle("Open Clipmem at login", isOn: launchAtLoginBinding)
+                if let message = appModel.launchAtLoginError?.message {
+                    Text(message)
+                        .foregroundStyle(.orange)
+                } else if let message = appModel.launchAtLoginStatus.message {
+                    Text(message)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             updateSettingsSection
         }
         .formStyle(.grouped)
         .padding()
-        .confirmationDialog("Uninstall the clipmem service?", isPresented: $confirmUninstall) {
-            Button("Uninstall Service", role: .destructive) {
-                Task { await appModel.serviceAction("uninstall") }
-            }
-            Button("Keep Service", role: .cancel) {}
-        } message: {
-            Text("This removes the LaunchAgent or Homebrew service registration. Your clipboard database is preserved.")
-        }
     }
+
+    // MARK: - Storage Tab
 
     private var storageTab: some View {
         ScrollView {
@@ -108,7 +110,7 @@ struct ClipmemSettingsView: View {
                         }
 
                         Text("Copied screenshots and image-heavy clips can take significant disk space. Compression keeps the archive searchable while reducing eligible stored image bytes.")
-                            .font(.callout)
+                            .font(DesignType.bodySecondary)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -119,7 +121,7 @@ struct ClipmemSettingsView: View {
                     detail: "Convert eligible stored screenshots and images to lossless WebP when it saves space, then compact the database.",
                     systemImage: "photo.stack",
                     buttonTitle: "Compress Images",
-                    disabled: appModel.isRunningAction
+                    isRunning: appModel.isRunningAction
                 ) {
                     confirmCompressImages = true
                 }
@@ -129,7 +131,7 @@ struct ClipmemSettingsView: View {
                     detail: "Return unused SQLite and WAL pages to disk without changing clipboard history.",
                     systemImage: "archivebox",
                     buttonTitle: "Compact Database",
-                    disabled: appModel.isRunningAction
+                    isRunning: appModel.isRunningAction
                 ) {
                     confirmCompact = true
                 }
@@ -140,7 +142,7 @@ struct ClipmemSettingsView: View {
                     systemImage: "trash",
                     buttonTitle: "Purge Old History...",
                     role: .destructive,
-                    disabled: appModel.isRunningAction
+                    isRunning: appModel.isRunningAction
                 ) {
                     showManualPurge = true
                 }
@@ -169,18 +171,25 @@ struct ClipmemSettingsView: View {
         }
     }
 
+    // MARK: - Capture Tab
+
     private var captureTab: some View {
         Form {
             Toggle("Pause capture", isOn: pauseBinding)
             Toggle("API-key filter", isOn: apiKeyFilterBinding)
             Toggle("OCR for copied images", isOn: ocrBinding)
-            HStack {
-                TextField("Retention", text: $retentionValue)
-                Button("Apply") {
-                    confirmRetention = true
+            LabeledContent("Retention") {
+                HStack {
+                    TextField("Duration", text: $retentionValue)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Apply") {
+                        confirmRetention = true
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
             }
             Text("Use values like 30d, 12h, 15m, or forever.")
+                .font(DesignType.rowMeta)
                 .foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
@@ -198,6 +207,8 @@ struct ClipmemSettingsView: View {
         }
     }
 
+    // MARK: - Ignored Apps Tab
+
     private var ignoredAppsTab: some View {
         VStack(alignment: .leading, spacing: Spacing.md) {
             HStack {
@@ -207,32 +218,48 @@ struct ClipmemSettingsView: View {
                 }
                 .disabled(newIgnoredBundleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            List {
-                ForEach(appModel.settingsReport?.ignoredBundleIds ?? [], id: \.self) { bundleID in
-                    HStack {
-                        Text(bundleID)
-                            .textSelection(.enabled)
-                        Spacer()
-                        Button("Remove", systemImage: "minus.circle") {
-                            Task {
-                                await appModel.runAction(.settingsIgnoreRemove(bundleID))
-                                await appModel.refreshSettings()
+            let ignoredApps = appModel.settingsReport?.ignoredBundleIds ?? []
+            if ignoredApps.isEmpty {
+                EmptyStateView(
+                    title: "No apps ignored",
+                    detail: "Add bundle identifiers above to exclude apps from capture.",
+                    symbol: "app.badge",
+                    compact: true
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List {
+                    ForEach(ignoredApps, id: \.self) { bundleID in
+                        HStack {
+                            Text(bundleID)
+                                .textSelection(.enabled)
+                            Spacer()
+                            Button("Remove", systemImage: "minus.circle") {
+                                Task {
+                                    await appModel.runAction(.settingsIgnoreRemove(bundleID))
+                                    await appModel.refreshSettings()
+                                }
                             }
+                            .labelStyle(.iconOnly)
+                            .help("Remove \(bundleID)")
                         }
-                        .labelStyle(.iconOnly)
-                        .help("Remove \(bundleID)")
                     }
                 }
             }
             Text("The menu bar app adds io.openclaw.clipmem.menubar by default to avoid self-capture noise.")
+                .font(DesignType.rowMeta)
                 .foregroundStyle(.secondary)
         }
         .padding()
     }
 
+    // MARK: - Diagnostics Tab
+
     private var diagnosticsTab: some View {
         DiagnosticsView(appModel: appModel)
     }
+
+    // MARK: - Privacy Tab
 
     private var privacyTab: some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
@@ -261,28 +288,58 @@ struct ClipmemSettingsView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var serviceSection: some View {
-        Section("Service") {
-            LabeledContent("Status", value: appModel.healthState.title)
-            VStack(alignment: .leading, spacing: Spacing.sm) {
-                SettingsActionButton("Setup", systemImage: "wrench.and.screwdriver") {
-                    Task { await appModel.runSetup() }
-                }
-                SettingsActionButton("Start", systemImage: "play.fill") {
-                    Task { await appModel.serviceAction("start") }
-                }
-                SettingsActionButton("Stop", systemImage: "stop.fill") {
-                    Task { await appModel.serviceAction("stop") }
-                }
-            }
-            .disabled(appModel.isRunningAction)
+    // MARK: - Updates Section
 
-            Button("Uninstall Service", role: .destructive) {
-                confirmUninstall = true
+    @ViewBuilder
+    private var updateSettingsSection: some View {
+        Section("Updates") {
+            LabeledContent("Current version", value: appModel.updateStatus.currentVersion)
+            LabeledContent("Latest checked version", value: appModel.updateStatus.latestVersion ?? "Not checked")
+            LabeledContent("Last checked", value: lastUpdateCheckDescription)
+
+            HStack {
+                Button("Check for Updates", systemImage: "arrow.clockwise") {
+                    Task { await appModel.checkForUpdates() }
+                }
+                .disabled(appModel.updateStatus.isChecking)
+                if appModel.updateStatus.isChecking {
+                    ProgressView()
+                        .controlSize(.small)
+                }
             }
-            .disabled(appModel.isRunningAction)
+
+            if appModel.updateStatus.isUpdateAvailable {
+                if appModel.updateStatus.shouldShowHomebrewCommand {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Text("Update with Homebrew")
+                            .font(DesignType.sectionHeader)
+                        Text(UpdateChecker.homebrewUpgradeCommand)
+                            .font(DesignType.rowMeta.monospaced())
+                            .textSelection(.enabled)
+                        Button("Copy Upgrade Command", systemImage: "doc.on.doc") {
+                            appModel.copyUpgradeCommand()
+                        }
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: Spacing.sm) {
+                        Text("Download from GitHub Releases")
+                            .font(DesignType.sectionHeader)
+                        Button("Open Release", systemImage: "arrow.up.right.square") {
+                            appModel.openUpdateRelease()
+                        }
+                        .disabled(appModel.updateStatus.releaseURL == nil)
+                    }
+                }
+            }
+
+            if let message = appModel.updateStatus.errorMessage {
+                Text(message)
+                    .foregroundStyle(.orange)
+            }
         }
     }
+
+    // MARK: - Bindings
 
     private var defaultDisplayModeBinding: Binding<DisplayMode> {
         Binding {
@@ -346,61 +403,14 @@ struct ClipmemSettingsView: View {
         appModel.serviceStatus?.dbPath ?? databasePathOverride
     }
 
-    @ViewBuilder
-    private var updateSettingsSection: some View {
-        Section("Updates") {
-            LabeledContent("Current version", value: appModel.updateStatus.currentVersion)
-            LabeledContent("Latest checked version", value: appModel.updateStatus.latestVersion ?? "Not checked")
-            LabeledContent("Last checked", value: lastUpdateCheckDescription)
-
-            HStack {
-                Button("Check for Updates", systemImage: "arrow.clockwise") {
-                    Task { await appModel.checkForUpdates() }
-                }
-                .disabled(appModel.updateStatus.isChecking)
-                if appModel.updateStatus.isChecking {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-            }
-
-            if appModel.updateStatus.isUpdateAvailable {
-                if appModel.updateStatus.shouldShowHomebrewCommand {
-                    VStack(alignment: .leading, spacing: Spacing.sm) {
-                        Text("Update with Homebrew")
-                            .font(.headline)
-                        Text(UpdateChecker.homebrewUpgradeCommand)
-                            .font(.caption.monospaced())
-                            .textSelection(.enabled)
-                        Button("Copy Upgrade Command", systemImage: "doc.on.doc") {
-                            appModel.copyUpgradeCommand()
-                        }
-                    }
-                } else {
-                    VStack(alignment: .leading, spacing: Spacing.sm) {
-                        Text("Download from GitHub Releases")
-                            .font(.headline)
-                        Button("Open Release", systemImage: "arrow.up.right.square") {
-                            appModel.openUpdateRelease()
-                        }
-                        .disabled(appModel.updateStatus.releaseURL == nil)
-                    }
-                }
-            }
-
-            if let message = appModel.updateStatus.errorMessage {
-                Text(message)
-                    .foregroundStyle(.orange)
-            }
-        }
-    }
-
     private var lastUpdateCheckDescription: String {
         guard let lastCheckedAt = appModel.updateStatus.lastCheckedAt else {
             return "Never"
         }
         return lastCheckedAt.formatted(date: .abbreviated, time: .shortened)
     }
+
+    // MARK: - Helpers
 
     private func refreshSettingsSurface() async {
         await appModel.refreshSettings()
@@ -426,13 +436,15 @@ struct ClipmemSettingsView: View {
     }
 }
 
+// MARK: - Storage Action Row
+
 private struct StorageActionRow: View {
     let title: String
     let detail: String
     let systemImage: String
     let buttonTitle: String
     var role: ButtonRole?
-    var disabled = false
+    var isRunning = false
     let action: () -> Void
 
     var body: some View {
@@ -445,49 +457,33 @@ private struct StorageActionRow: View {
 
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(title)
-                    .font(.headline)
+                    .font(DesignType.sectionHeader)
                 Text(detail)
-                    .font(.callout)
+                    .font(DesignType.bodySecondary)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: Spacing.lg)
 
+            if isRunning {
+                ProgressView()
+                    .controlSize(.small)
+            }
+
             Button(buttonTitle, role: role, action: action)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
                 .fixedSize(horizontal: true, vertical: false)
-                .disabled(disabled)
+                .disabled(isRunning)
         }
         .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: .rect(cornerRadius: Spacing.sm))
+        .background(.regularMaterial, in: .rect(cornerRadius: DesignRadius.md))
         .accessibilityElement(children: .combine)
     }
 
     private var isDestructive: Bool {
         role != nil
-    }
-}
-
-private struct SettingsActionButton: View {
-    let title: String
-    let systemImage: String
-    let action: () -> Void
-
-    init(_ title: String, systemImage: String, action: @escaping () -> Void) {
-        self.title = title
-        self.systemImage = systemImage
-        self.action = action
-    }
-
-    var body: some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.regular)
     }
 }
