@@ -9,6 +9,8 @@ versioning where practical.
 
 ## Unreleased
 
+## 0.4.0 - 2026-04-23
+
 ### Added
 
 - Added native Hermes Agent support with a packaged `clipboard-memory`
@@ -21,7 +23,7 @@ versioning where practical.
   `cargo clippy --all-targets --all-features -- -D warnings` in CI and release
   verification, while keeping the lightweight Python file-length lint as a
   separate check.
-- Added a pinned Rust 1.87.0 toolchain file and macOS Rust CI coverage so
+- Added a pinned Rust 1.88.0 toolchain file and macOS Rust CI coverage so
   Clippy and tests also run against macOS-gated source.
 
 ### Fixed
