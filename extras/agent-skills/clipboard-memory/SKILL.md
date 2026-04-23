@@ -8,7 +8,7 @@ metadata:
   variant: "portable"
 ---
 
-Recall what the user copied on this Mac before reaching for generic search. `clipmem` maintains a local, privacy-preserving SQLite archive of every clipboard state macOS emits, and exposes a JSON-first CLI built for agents. The canonical public copy lives at `skills/clipboard-memory/`; the OpenClaw-native packaging variant lives at `extras/openclaw/clipboard-memory/`.
+Recall what the user copied on this Mac before reaching for generic search. `clipmem` maintains a local, privacy-preserving SQLite archive of every clipboard state macOS emits, and exposes a JSON-first CLI built for agents. The canonical public copy lives at `skills/clipboard-memory/`; the OpenClaw-native packaging variant lives at `extras/openclaw/clipboard-memory/`; the Hermes Agent-native package lives at `extras/hermes/clipboard-memory/`.
 
 ## Use this skill when
 

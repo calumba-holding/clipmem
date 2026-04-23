@@ -141,10 +141,11 @@ To completely remove clipmem and all its data:
 clipmem service uninstall
 ```
 
-2. Remove the OpenClaw skill if you installed it:
+2. Remove installed agent skills if you installed them:
 
 ```bash
 clipmem agents openclaw uninstall-skill
+clipmem agents hermes uninstall-skill
 ```
 
 3. Delete the database and logs:
