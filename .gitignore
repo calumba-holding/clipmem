@@ -3,6 +3,7 @@ __pycache__/
 .DS_Store
 .desloppify/
 .agents/
+.claude/
 AGENTS.md
 scorecard.png
 skills-lock.json

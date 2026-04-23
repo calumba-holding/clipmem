@@ -16,6 +16,8 @@ versioning where practical.
 - Fixed menu bar app version drift by syncing the checked-in Xcode bundle
   version to `Cargo.toml` and adding CI/release checks that fail when they
   differ.
+- Fixed crate packaging by removing a local agent skill symlink from the
+  published source set.
 
 ## 0.4.0 - 2026-04-23
 
