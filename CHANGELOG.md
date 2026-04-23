@@ -28,6 +28,8 @@ versioning where practical.
 
 - Fixed literal search so app-name-only matches are included even when another
   clipboard item's text also matches the query.
+- Fixed the CI workflow installer guard so it uses runner-provided tools
+  instead of skipping checks when `rg` is unavailable.
 - Fixed the file-length lint so it checks tracked source files only, rejects
   stale ratchet overrides, and ignores untracked local scratch or generated
   files.

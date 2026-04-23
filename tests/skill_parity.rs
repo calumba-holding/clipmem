@@ -189,8 +189,7 @@ fn hermes_skill_preserves_hermes_metadata() {
     ] {
         assert!(
             frontmatter.contains(tag),
-            "hermes metadata missing tag '{}'",
-            tag
+            "hermes metadata missing tag '{tag}'"
         );
     }
 }

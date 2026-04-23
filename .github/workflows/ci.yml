@@ -24,7 +24,7 @@ jobs:
           )
 
           for pattern in "${forbidden_patterns[@]}"; do
-            if rg -n --glob '*.yml' --glob '*.yaml' "$pattern" .github/workflows; then
+            if find .github/workflows -type f \( -name '*.yml' -o -name '*.yaml' \) -exec grep -En -- "$pattern" {} +; then
               echo "forbidden workflow pattern detected: $pattern" >&2
               exit 1
             fi
