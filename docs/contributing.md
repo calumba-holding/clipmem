@@ -74,6 +74,7 @@ Run the local validation suite before opening a PR:
 cargo fmt --all --check
 cargo clippy --all-targets --all-features -- -D warnings
 python3 scripts/check_file_lengths.py
+python3 scripts/check_version_sync.py
 cargo test
 ```
 
