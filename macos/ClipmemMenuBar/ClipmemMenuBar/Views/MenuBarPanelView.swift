@@ -6,6 +6,7 @@ struct MenuBarPanelView: View {
 
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var recentSearchQuery = ""
     @State private var restoringItemID: Int?
     @FocusState private var searchFocused: Bool
@@ -102,17 +103,23 @@ struct MenuBarPanelView: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.tertiary)
                 .font(.system(size: DesignIcon.small))
+                .padding(.leading, 2)
             TextField("Filter recent clips\u{2026}", text: $recentSearchQuery)
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
             if !recentSearchQuery.isEmpty {
                 Button {
-                    recentSearchQuery = ""
+                    withAnimation(DesignAnimation.quick) {
+                        recentSearchQuery = ""
+                    }
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.borderless)
+                .frame(minWidth: 28, minHeight: 28)
+                .contentShape(Rectangle())
+                .transition(.scale(scale: 0.25).combined(with: .opacity))
             }
         }
         .padding(.horizontal, Spacing.md)
@@ -154,7 +161,7 @@ struct MenuBarPanelView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             List {
-                ForEach(filteredRecentPreview) { item in
+                ForEach(Array(filteredRecentPreview.enumerated()), id: \.element.id) { index, item in
                     Button {
                         restoringItemID = item.snapshotId
                         Task {
@@ -167,6 +174,8 @@ struct MenuBarPanelView: View {
                         ResultRowView(item: item, selected: item.snapshotId == restoringItemID)
                     }
                     .buttonStyle(.plain)
+                    .pressable()
+                    .animation(DesignAnimation.staggerDelay(index: index, reduceMotion: reduceMotion), value: filteredRecentPreview.count)
                     .contextMenu {
                         Button("Copy Plain Text") {
                             if let text = item.copyablePlainText {
@@ -222,6 +231,8 @@ struct MenuBarPanelView: View {
                 Label("Settings", systemImage: "gearshape")
                     .labelStyle(.iconOnly)
             }
+            .frame(minWidth: 32, minHeight: 32)
+            .contentShape(Rectangle())
             .help("Open Settings")
 
             Button {
@@ -230,6 +241,8 @@ struct MenuBarPanelView: View {
                 Label("Quit", systemImage: "power")
                     .labelStyle(.iconOnly)
             }
+            .frame(minWidth: 32, minHeight: 32)
+            .contentShape(Rectangle())
             .help("Quit Clipmem")
         }
         .buttonStyle(.borderless)

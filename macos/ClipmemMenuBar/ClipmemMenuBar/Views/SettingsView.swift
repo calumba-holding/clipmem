@@ -480,6 +480,7 @@ private struct StorageActionRow: View {
         .padding(Spacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.regularMaterial, in: .rect(cornerRadius: DesignRadius.md))
+        .pressable()
         .accessibilityElement(children: .combine)
     }
 

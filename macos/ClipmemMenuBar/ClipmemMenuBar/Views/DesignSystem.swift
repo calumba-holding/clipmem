@@ -92,6 +92,14 @@ enum DesignAnimation {
     static let quick = Animation.spring(duration: 0.25, bounce: 0.1)
     static let entrance = Animation.spring(duration: 0.4, bounce: 0.2)
     static let exit = Animation.easeOut(duration: 0.2)
+
+    /// Stagger delay for enter animations, capped at `maxIndex` items.
+    /// Returns `nil` when reduce motion is enabled.
+    static func staggerDelay(index: Int, maxIndex: Int = 8, reduceMotion: Bool) -> Animation? {
+        guard reduceMotion == false else { return nil }
+        let capped = min(index, maxIndex)
+        return standard.delay(Double(capped) * 0.05)
+    }
 }
 
 // MARK: - View Modifiers
@@ -103,15 +111,17 @@ struct CardStyle: ViewModifier {
         content
             .background(DesignColor.surfaceGrouped, in: .rect(cornerRadius: DesignRadius.md))
             .shadow(
-                color: isHovered ? DesignShadow.subtleColor : .clear,
-                radius: DesignShadow.subtleRadius,
-                y: DesignShadow.subtleY
+                color: isHovered ? DesignShadow.subtleColor : Color.black.opacity(0.03),
+                radius: isHovered ? DesignShadow.subtleRadius : 1,
+                y: isHovered ? DesignShadow.subtleY : 0.5
             )
             .onHover { isHovered = $0 }
             .animation(DesignAnimation.quick, value: isHovered)
     }
 }
 
+/// Banner outer radius = `DesignRadius.md` (8). Inner content is flush (radius 0).
+/// Padding is `Spacing.md` (12). Concentric relationship: outerR(8) = innerR(0) + padding(12) — satisfied.
 struct BannerStyle: ViewModifier {
     let tint: Color
 
@@ -128,6 +138,8 @@ struct BannerStyle: ViewModifier {
     }
 }
 
+/// Row highlight radius = `DesignRadius.lg` (12). Inner icon circle radius = 13 (26/2).
+/// Row padding = `Spacing.sm` (8). Concentric ideal: 13 + 8 = 21 — 12 is the optical compromise.
 struct RowHighlightStyle: ViewModifier {
     let selected: Bool
     @State private var isHovered = false
@@ -140,7 +152,7 @@ struct RowHighlightStyle: ViewModifier {
                 selected
                     ? Color.accentColor
                     : (isHovered ? Color.primary.opacity(0.04) : Color.clear),
-                in: .rect(cornerRadius: DesignRadius.md)
+                in: .rect(cornerRadius: DesignRadius.lg)
             )
             .contentShape(Rectangle())
             .onHover { isHovered = $0 }
@@ -154,10 +166,23 @@ struct GlassOverlay: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(.ultraThinMaterial, in: .rect(cornerRadius: cornerRadius))
-            .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .stroke(.primary.opacity(0.08), lineWidth: 0.5)
-            }
+            .shadow(color: .black.opacity(0.06), radius: 1, y: 0.5)
+    }
+}
+
+struct PressableStyle: ViewModifier {
+    @GestureState private var isPressed = false
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(isPressed ? 0.96 : 1.0)
+            .animation(DesignAnimation.quick, value: isPressed)
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: .infinity)
+                    .updating($isPressed) { current, state, _ in
+                        state = current
+                    }
+            )
     }
 }
 
@@ -178,5 +203,9 @@ extension View {
 
     func glassOverlay(cornerRadius: CGFloat = DesignRadius.lg) -> some View {
         modifier(GlassOverlay(cornerRadius: cornerRadius))
+    }
+
+    func pressable() -> some View {
+        modifier(PressableStyle())
     }
 }

@@ -5,17 +5,32 @@ struct SnapshotDetailView: View {
     let fallback: ClipmemItem?
     var isLoading: Bool = false
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var visibleSections = 0
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.xl) {
                 if let detail {
-                    textSection(detail)
-                    Divider()
-                    metadataSection(detail)
-                    Divider()
-                    representationsSection(detail)
-                    Divider()
-                    eventsSection(detail)
+                    if visibleSections >= 1 {
+                        textSection(detail)
+                            .transition(.opacity)
+                    }
+                    if visibleSections >= 2 {
+                        Divider()
+                        metadataSection(detail)
+                            .transition(.opacity)
+                    }
+                    if visibleSections >= 3 {
+                        Divider()
+                        representationsSection(detail)
+                            .transition(.opacity)
+                    }
+                    if visibleSections >= 4 {
+                        Divider()
+                        eventsSection(detail)
+                            .transition(.opacity)
+                    }
                 } else if let fallback {
                     Text(fallback.displayText)
                         .textSelection(.enabled)
@@ -35,6 +50,28 @@ struct SnapshotDetailView: View {
             if isLoading && detail == nil && fallback != nil {
                 loadingSkeleton
                     .padding()
+            }
+        }
+        .onChange(of: detail?.snapshotId) {
+            revealSections()
+        }
+        .task {
+            revealSections()
+        }
+    }
+
+    private func revealSections() {
+        if reduceMotion || detail == nil {
+            visibleSections = 4
+            return
+        }
+        visibleSections = 0
+        Task { @MainActor in
+            for section in 1...4 {
+                try? await Task.sleep(for: .milliseconds(100))
+                withAnimation(DesignAnimation.standard) {
+                    visibleSections = section
+                }
             }
         }
     }
@@ -65,6 +102,7 @@ struct SnapshotDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(Spacing.md)
                     .background(Color(.textBackgroundColor), in: .rect(cornerRadius: DesignRadius.md))
+                    .shadow(color: .black.opacity(0.04), radius: 2, y: 1)
             } else {
                 ContentUnavailableView("No Extracted Text", systemImage: "shippingbox", description: Text("This snapshot appears to be binary, image, PDF, or otherwise has no extracted text. Metadata and export actions are available."))
             }
@@ -112,6 +150,7 @@ struct SnapshotDetailView: View {
                                 Text(representation.kind ?? "unknown")
                                     .lineLimit(1)
                                 Text("\(representation.byteLen) bytes")
+                                    .monospacedDigit()
                                     .lineLimit(1)
                             }
                             .font(DesignType.rowMeta)

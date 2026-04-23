@@ -5,8 +5,9 @@ struct ResultRowView: View {
     let selected: Bool
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: Spacing.md) {
+        HStack(alignment: .top, spacing: Spacing.md) {
             iconView
+                .padding(.top, Spacing.xxs)
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(item.displayText)
                     .lineLimit(2)

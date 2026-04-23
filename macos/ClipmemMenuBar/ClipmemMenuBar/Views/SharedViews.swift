@@ -141,7 +141,12 @@ struct BannerContainer<Actions: View>: View {
             actions()
         }
         .bannerStyle(tint: tint)
-        .transition(.move(edge: .top).combined(with: .opacity))
+        .transition(
+            .asymmetric(
+                insertion: .move(edge: .top).combined(with: .opacity),
+                removal: .opacity.combined(with: .offset(y: -8))
+            )
+        )
     }
 }
 
@@ -315,10 +320,12 @@ struct FilterBar: View {
                         if history.filters.activeAdvancedFilterCount > 0 {
                             Text("\(history.filters.activeAdvancedFilterCount)")
                                 .font(DesignType.badge)
+                                .monospacedDigit()
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
                                 .background(.blue, in: Capsule())
+                                .transition(.scale(scale: 0.25).combined(with: .opacity))
                         }
                     }
                 }

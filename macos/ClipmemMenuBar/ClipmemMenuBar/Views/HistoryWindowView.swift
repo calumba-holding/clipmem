@@ -4,6 +4,7 @@ struct HistoryWindowView: View {
     let appModel: AppModel
 
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var history: HistoryModel
     @SceneStorage("history.mode") private var storedMode = QueryMode.recent.rawValue
     @SceneStorage("history.query") private var storedQuery = ""
@@ -35,6 +36,7 @@ struct HistoryWindowView: View {
                     if !history.results.isEmpty {
                         Text("\u{2014} \(history.results.count) item\(history.results.count == 1 ? "" : "s")")
                             .font(DesignType.bodySecondary)
+                            .monospacedDigit()
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -229,9 +231,10 @@ struct HistoryWindowView: View {
                 .padding()
             }
             List(selection: $history.selectedID) {
-                ForEach(history.results) { item in
+                ForEach(Array(history.results.enumerated()), id: \.element.id) { index, item in
                     ResultRowView(item: item, selected: item.snapshotId == history.selectedID)
                         .tag(item.snapshotId)
+                        .animation(DesignAnimation.staggerDelay(index: index, reduceMotion: reduceMotion), value: history.results.count)
                         .onAppear {
                             if item.snapshotId == history.results.last?.snapshotId,
                                history.nextCursor != nil {

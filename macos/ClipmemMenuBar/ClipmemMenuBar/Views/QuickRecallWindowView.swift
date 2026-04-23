@@ -5,6 +5,7 @@ struct QuickRecallWindowView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var queryFocused: Bool
     @State private var quick: QuickRecallModel
     @State private var confirmForget = false
@@ -130,12 +131,17 @@ struct QuickRecallWindowView: View {
                     }
                 if !quick.query.isEmpty {
                     Button {
-                        quick.query = ""
+                        withAnimation(DesignAnimation.quick) {
+                            quick.query = ""
+                        }
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.tertiary)
                     }
                     .buttonStyle(.borderless)
+                    .frame(minWidth: 28, minHeight: 28)
+                    .contentShape(Rectangle())
+                    .transition(.scale(scale: 0.25).combined(with: .opacity))
                 }
             }
             .padding(.horizontal, Spacing.md)
@@ -145,6 +151,7 @@ struct QuickRecallWindowView: View {
             if !quick.results.isEmpty {
                 Text("\(quick.results.count) result\(quick.results.count == 1 ? "" : "s")")
                     .font(DesignType.rowMeta)
+                    .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .transition(.opacity)
@@ -168,9 +175,11 @@ struct QuickRecallWindowView: View {
 
     private var list: some View {
         List(selection: $quick.selectedID) {
-            ForEach(quick.results) { item in
+            ForEach(Array(quick.results.enumerated()), id: \.element.id) { index, item in
                 ResultRowView(item: item, selected: item.snapshotId == quick.selectedID)
                     .tag(item.snapshotId)
+                    .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .top)))
+                    .animation(DesignAnimation.staggerDelay(index: index, reduceMotion: reduceMotion), value: quick.results.count)
                     .contextMenu {
                         Button("Restore") { Task { await appModel.restore(item) } }
                         Button("Open in History") { openHistory(item: item) }
@@ -214,6 +223,7 @@ struct QuickRecallWindowView: View {
                     .font(.system(size: 9))
                     .foregroundStyle(.tertiary)
             }
+            .pressable()
 
             VStack(spacing: Spacing.xxs) {
                 Button("Open in History", systemImage: "rectangle.stack.badge.play") {
