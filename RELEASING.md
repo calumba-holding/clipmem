@@ -35,6 +35,7 @@ The Rust CLI and SwiftUI menu bar app ship as separate Homebrew install surfaces
    cargo fmt --all --check
    cargo clippy --all-targets --all-features -- -D warnings
    python3 scripts/check_file_lengths.py
+   python3 scripts/check_version_sync.py
    cargo test
    cargo publish --dry-run --locked
    cargo package --list
@@ -133,6 +134,7 @@ runs the Linux Rust validation:
 - `cargo fmt --all --check`
 - `cargo clippy --all-targets --all-features -- -D warnings`
 - `python3 scripts/check_file_lengths.py`
+- `python3 scripts/check_version_sync.py`
 - `cargo test`
 - `cargo publish --dry-run --locked`
 - `cargo package --list`

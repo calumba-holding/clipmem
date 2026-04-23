@@ -9,6 +9,12 @@ versioning where practical.
 
 ## Unreleased
 
+### Fixed
+
+- Fixed menu bar app version drift by syncing the checked-in Xcode bundle
+  version to `Cargo.toml` and adding CI/release checks that fail when they
+  differ.
+
 ## 0.4.0 - 2026-04-23
 
 ### Added

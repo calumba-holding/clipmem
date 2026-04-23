@@ -197,6 +197,7 @@ PLIST
 
 echo "Building Rust backend..."
 cargo build --manifest-path "$ROOT_DIR/Cargo.toml"
+python3 "$ROOT_DIR/scripts/check_version_sync.py"
 
 if [[ "$START_WATCHER" == "1" ]]; then
   stop_dev_watcher
