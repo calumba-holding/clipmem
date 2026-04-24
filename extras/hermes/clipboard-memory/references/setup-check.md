@@ -36,7 +36,13 @@ clipmem setup
 brew services start clipmem
 ```
 
-## 4. Hermes Agent integration (optional)
+## 4. Agent integration (optional)
+
+If the agent is OpenClaw, also check:
+
+```bash
+clipmem agents openclaw doctor
+```
 
 If the agent is Hermes Agent, also check:
 
@@ -54,6 +60,6 @@ Expect every check to report `[OK]`. `[FAIL]` lines include remediation steps.
 | `doctor` exits non-zero | database lock, corruption, or permission issue |
 | `service status --json` reports `stale: true` | no recent captures and no background watcher running |
 | FTS query errors | `fts5_create_virtual_table_ok: false` — switch to `--mode literal` |
-| Agent can't see the archive | PATH or file-access scope; check agent's environment configuration |
+| Sandboxed agent can't see the archive | PATH or file-access scope; rerun `openclaw sandbox explain` |
 
 See `scripts/check-setup.sh` for the executable version with categorised exit codes (0 healthy, 1 watcher stale, 2 binary missing, 3 doctor failed).
