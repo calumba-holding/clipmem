@@ -58,6 +58,10 @@ Pick the narrowest command that answers the question. Always pass `--format json
 | `agents openclaw install-skill` | — | — | Write packaged skill files to disk |
 | `agents openclaw print-skill` | — | — | Print embedded `SKILL.md` to stdout |
 | `agents openclaw uninstall-skill` | — | — | Remove installed skill directory |
+| `agents hermes doctor` | text | — | Hermes integration health: PATH, skill discovery |
+| `agents hermes install-skill` | — | — | Write packaged Hermes skill to disk |
+| `agents hermes print-skill` | — | — | Print embedded Hermes `SKILL.md` to stdout |
+| `agents hermes uninstall-skill` | — | — | Remove installed Hermes skill directory |
 
 `--json` is a compatibility alias for `--format json` on `search`, `recent`, `timeline`, `get`, `storage compact`, `storage optimize-images`, `ocr status`, `ocr run`, `capture-once`, and `doctor`.
 
