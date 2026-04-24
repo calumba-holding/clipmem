@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use super::Database;
+use crate::db::RetrievalFilters;
 use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
 
 pub(in crate::db) fn fake_snapshot(
@@ -60,5 +61,48 @@ pub(in crate::db) fn duplicate_snapshots_reuse_content_row_and_append_events() -
     assert!(!second_store.inserted_new_snapshot());
     assert_eq!(first_store.snapshot_id(), second_store.snapshot_id());
     assert_eq!(event_count, 2);
+    Ok(())
+}
+
+#[test]
+pub(in crate::db) fn deferred_representation_cache_keeps_file_urls_searchable() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let snapshot = build_snapshot(
+        CaptureContext::new(1)
+            .with_frontmost_app_name("Finder")
+            .with_frontmost_app_bundle_id("com.apple.finder"),
+        vec![build_item(
+            0,
+            vec![
+                build_representation(
+                    "public.file-url-a".to_string(),
+                    Some("file:///tmp/clipmem-one.txt".to_string()),
+                    b"file:///tmp/clipmem-one.txt".to_vec(),
+                ),
+                build_representation(
+                    "public.file-url-b".to_string(),
+                    Some("file:///tmp/clipmem-two.txt".to_string()),
+                    b"file:///tmp/clipmem-two.txt".to_vec(),
+                ),
+            ],
+        )],
+    );
+
+    let stored = db.store_capture(&snapshot)?;
+    let (file_urls, deferred): (String, i64) = db.conn.query_row(
+        "SELECT sp.file_urls, cs.representation_cache_deferred
+         FROM snapshot_projection_cache sp
+         CROSS JOIN clipmem_settings cs
+         WHERE sp.snapshot_id = ?1 AND cs.id = 1",
+        [stored.snapshot_id()],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    let results = db.search_auto("/tmp/clipmem-two.txt", 10, &RetrievalFilters::default())?;
+
+    assert_eq!(deferred, 0);
+    assert!(file_urls.contains("file:///tmp/clipmem-one.txt"));
+    assert!(file_urls.contains("file:///tmp/clipmem-two.txt"));
+    assert_eq!(results.hits().len(), 1);
+    assert_eq!(results.hits()[0].snapshot_id(), stored.snapshot_id());
     Ok(())
 }

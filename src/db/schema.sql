@@ -81,7 +81,8 @@ CREATE TABLE IF NOT EXISTS clipmem_settings (
     paused            INTEGER NOT NULL DEFAULT 0 CHECK (paused IN (0, 1)),
     retention_seconds INTEGER CHECK (retention_seconds IS NULL OR retention_seconds >= 0),
     api_key_filter_enabled INTEGER NOT NULL DEFAULT 0 CHECK (api_key_filter_enabled IN (0, 1)),
-    ocr_enabled       INTEGER NOT NULL DEFAULT 0 CHECK (ocr_enabled IN (0, 1))
+    ocr_enabled       INTEGER NOT NULL DEFAULT 0 CHECK (ocr_enabled IN (0, 1)),
+    representation_cache_deferred INTEGER NOT NULL DEFAULT 0 CHECK (representation_cache_deferred IN (0, 1))
 );
 
 CREATE TABLE IF NOT EXISTS ignored_bundle_ids (
@@ -621,7 +622,13 @@ CREATE TRIGGER IF NOT EXISTS capture_events_ad AFTER DELETE ON capture_events BE
         haystack = excluded.haystack;
 END;
 
-CREATE TRIGGER IF NOT EXISTS item_representations_ai AFTER INSERT ON item_representations BEGIN
+DROP TRIGGER IF EXISTS item_representations_ai;
+CREATE TRIGGER item_representations_ai AFTER INSERT ON item_representations
+WHEN NOT EXISTS (
+    SELECT 1 FROM clipmem_settings
+    WHERE id = 1 AND representation_cache_deferred = 1
+)
+BEGIN
     INSERT INTO snapshot_projection_cache (snapshot_id, urls, file_urls)
     VALUES (new.snapshot_id, '', '')
     ON CONFLICT(snapshot_id) DO NOTHING;
@@ -672,7 +679,13 @@ CREATE TRIGGER IF NOT EXISTS item_representations_ai AFTER INSERT ON item_repres
         haystack = excluded.haystack;
 END;
 
-CREATE TRIGGER IF NOT EXISTS item_representations_au AFTER UPDATE ON item_representations BEGIN
+DROP TRIGGER IF EXISTS item_representations_au;
+CREATE TRIGGER item_representations_au AFTER UPDATE ON item_representations
+WHEN NOT EXISTS (
+    SELECT 1 FROM clipmem_settings
+    WHERE id = 1 AND representation_cache_deferred = 1
+)
+BEGIN
     INSERT INTO snapshot_projection_cache (snapshot_id, urls, file_urls)
     VALUES (new.snapshot_id, '', '')
     ON CONFLICT(snapshot_id) DO NOTHING;
@@ -768,7 +781,13 @@ CREATE TRIGGER IF NOT EXISTS item_representations_au AFTER UPDATE ON item_repres
         haystack = excluded.haystack;
 END;
 
-CREATE TRIGGER IF NOT EXISTS item_representations_ad AFTER DELETE ON item_representations BEGIN
+DROP TRIGGER IF EXISTS item_representations_ad;
+CREATE TRIGGER item_representations_ad AFTER DELETE ON item_representations
+WHEN NOT EXISTS (
+    SELECT 1 FROM clipmem_settings
+    WHERE id = 1 AND representation_cache_deferred = 1
+)
+BEGIN
     UPDATE snapshot_projection_cache
     SET
         urls = COALESCE((

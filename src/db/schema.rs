@@ -174,6 +174,15 @@ pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
+        13 => {
+            if legacy_prerelease_schema_detected(&tx)? {
+                bail!(
+                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
+                );
+            }
+            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+                .context("set PRAGMA user_version")?;
+        }
         CURRENT_SCHEMA_VERSION => {
             if legacy_prerelease_schema_detected(&tx)? {
                 bail!(
@@ -193,6 +202,7 @@ pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {
 
     ensure_ocr_enabled_setting_column(&tx)?;
     ensure_image_compression_columns(&tx)?;
+    ensure_representation_cache_deferred_column(&tx)?;
     tx.execute(
         "INSERT OR IGNORE INTO clipmem_settings (id, paused, retention_seconds, api_key_filter_enabled, ocr_enabled) VALUES (1, 0, NULL, 0, 0)",
         [],
@@ -290,6 +300,30 @@ pub(in crate::db) fn ensure_image_compression_columns(conn: &Connection) -> Resu
         "image_compression_reason",
         "ALTER TABLE item_representations ADD COLUMN image_compression_reason TEXT",
     )?;
+    Ok(())
+}
+
+pub(in crate::db) fn ensure_representation_cache_deferred_column(conn: &Connection) -> Result<()> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(clipmem_settings)")
+        .context("prepare clipmem_settings table info query")?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .context("query clipmem_settings columns")?;
+    let columns = collect_rows(rows).context("collect clipmem_settings columns")?;
+
+    if columns
+        .iter()
+        .any(|column| column == "representation_cache_deferred")
+    {
+        return Ok(());
+    }
+
+    conn.execute(
+        "ALTER TABLE clipmem_settings ADD COLUMN representation_cache_deferred INTEGER NOT NULL DEFAULT 0 CHECK (representation_cache_deferred IN (0, 1))",
+        [],
+    )
+    .context("add representation_cache_deferred column")?;
     Ok(())
 }
 

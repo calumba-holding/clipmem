@@ -47,10 +47,13 @@ impl Database {
             .context("insert snapshot row")?;
 
         let snapshot_id = if let Some(id) = inserted_snapshot_id {
+            set_representation_cache_deferred(&tx, true)?;
             for item in snapshot.items() {
                 insert_item(&tx, id, item)
                     .with_context(|| format!("insert snapshot item {}", item.item_index()))?;
             }
+            rebuild_snapshot_projection_cache_for_snapshot(&tx, id)?;
+            set_representation_cache_deferred(&tx, false)?;
 
             id
         } else {

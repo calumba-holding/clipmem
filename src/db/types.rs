@@ -1,7 +1,7 @@
 use super::*;
 
 pub(super) const SCHEMA: &str = include_str!("schema.sql");
-pub(super) const CURRENT_SCHEMA_VERSION: i64 = 13;
+pub(super) const CURRENT_SCHEMA_VERSION: i64 = 14;
 pub(super) const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
 
 pub struct Database {

@@ -629,3 +629,73 @@ fn schema_version_13_adds_pending_restore_backstop() -> Result<()> {
     cleanup_db(&path);
     Ok(())
 }
+
+#[test]
+fn schema_version_14_adds_representation_cache_deferral_column() -> Result<()> {
+    let path = temp_db_path("representation-cache-deferral-migration");
+    let parent = path.parent().expect("temporary path should have a parent");
+    std::fs::create_dir_all(parent)?;
+
+    let conn = rusqlite::Connection::open(&path)?;
+    conn.execute_batch(
+        r"
+        CREATE TABLE clipmem_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            paused INTEGER NOT NULL DEFAULT 0 CHECK (paused IN (0, 1)),
+            retention_seconds INTEGER CHECK (retention_seconds IS NULL OR retention_seconds >= 0),
+            api_key_filter_enabled INTEGER NOT NULL DEFAULT 0 CHECK (api_key_filter_enabled IN (0, 1)),
+            ocr_enabled INTEGER NOT NULL DEFAULT 0 CHECK (ocr_enabled IN (0, 1))
+        );
+        CREATE TABLE item_representations (
+            snapshot_id INTEGER NOT NULL,
+            item_index INTEGER NOT NULL,
+            uti TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            byte_len INTEGER NOT NULL,
+            raw_sha256 TEXT NOT NULL,
+            text_value TEXT,
+            blob_value BLOB NOT NULL,
+            image_compression_status TEXT NOT NULL DEFAULT 'uncompressed',
+            image_compression_format TEXT,
+            image_compressed_at TEXT,
+            image_original_byte_len INTEGER,
+            image_original_raw_sha256 TEXT,
+            image_compression_reason TEXT,
+            PRIMARY KEY (snapshot_id, item_index, uti)
+        );
+        CREATE TRIGGER item_representations_ai AFTER INSERT ON item_representations BEGIN
+            SELECT 1;
+        END;
+        PRAGMA user_version = 13;
+    ",
+    )?;
+    drop(conn);
+
+    let db = Database::open_existing(&path)?;
+    let version: i64 = db
+        .conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let columns = db
+        .conn
+        .prepare("PRAGMA table_info(clipmem_settings)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let deferred: i64 = db.conn.query_row(
+        "SELECT representation_cache_deferred FROM clipmem_settings WHERE id = 1",
+        [],
+        |row| row.get(0),
+    )?;
+    let trigger_sql: String = db.conn.query_row(
+        "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'item_representations_ai'",
+        [],
+        |row| row.get(0),
+    )?;
+
+    assert_eq!(version, CURRENT_SCHEMA_VERSION);
+    assert!(columns.contains(&"representation_cache_deferred".to_string()));
+    assert_eq!(deferred, 0);
+    assert!(trigger_sql.contains("representation_cache_deferred"));
+
+    cleanup_db(&path);
+    Ok(())
+}

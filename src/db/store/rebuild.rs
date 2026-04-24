@@ -233,6 +233,71 @@ pub(in crate::db) fn insert_item(
     Ok(())
 }
 
+pub(in crate::db) fn set_representation_cache_deferred(
+    tx: &rusqlite::Transaction<'_>,
+    deferred: bool,
+) -> Result<()> {
+    tx.execute(
+        "UPDATE clipmem_settings SET representation_cache_deferred = ?1 WHERE id = 1",
+        [if deferred { 1_i64 } else { 0_i64 }],
+    )
+    .context("update representation cache deferral flag")?;
+    Ok(())
+}
+
+pub(in crate::db) fn rebuild_snapshot_projection_cache_for_snapshot(
+    tx: &rusqlite::Transaction<'_>,
+    snapshot_id: i64,
+) -> Result<()> {
+    tx.execute(
+        r"
+        INSERT INTO snapshot_projection_cache (snapshot_id, urls, file_urls)
+        SELECT
+            s.id,
+            COALESCE(uv.urls, ''),
+            COALESCE(fv.file_urls, '')
+        FROM snapshots s
+        LEFT JOIN (
+            SELECT
+                snapshot_id,
+                GROUP_CONCAT(text_value, char(31)) AS urls
+            FROM (
+                SELECT DISTINCT snapshot_id, text_value
+                FROM item_representations
+                WHERE snapshot_id = ?1
+                  AND kind = 'url'
+                  AND text_value IS NOT NULL
+                  AND text_value != ''
+                ORDER BY text_value
+            )
+            GROUP BY snapshot_id
+        ) uv ON uv.snapshot_id = s.id
+        LEFT JOIN (
+            SELECT
+                snapshot_id,
+                GROUP_CONCAT(text_value, char(31)) AS file_urls
+            FROM (
+                SELECT DISTINCT snapshot_id, text_value
+                FROM item_representations
+                WHERE snapshot_id = ?1
+                  AND kind = 'file_url'
+                  AND text_value IS NOT NULL
+                  AND text_value != ''
+                ORDER BY text_value
+            )
+            GROUP BY snapshot_id
+        ) fv ON fv.snapshot_id = s.id
+        WHERE s.id = ?1
+        ON CONFLICT(snapshot_id) DO UPDATE SET
+            urls = excluded.urls,
+            file_urls = excluded.file_urls
+        ",
+        [snapshot_id],
+    )
+    .context("rebuild snapshot projection cache")?;
+    Ok(())
+}
+
 pub(in crate::db) fn normalize_bundle_id(bundle_id: &str) -> Result<String> {
     let normalized = bundle_id.trim().to_ascii_lowercase();
     if normalized.is_empty() {

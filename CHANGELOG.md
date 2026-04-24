@@ -15,6 +15,13 @@ versioning where practical.
   best candidate toward the requested limit instead of returning one extra
   alternative.
 
+### Performance
+
+- Improved storage of new snapshots with many file URL representations by
+  deferring representation-derived cache rebuilds until the snapshot rows are
+  inserted. In a 1,000-file-url capture benchmark, median store time dropped
+  from 3.565 s to 52.203 ms.
+
 ## 0.4.1 - 2026-04-23
 
 ### Fixed
