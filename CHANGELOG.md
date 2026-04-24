@@ -11,6 +11,8 @@ versioning where practical.
 
 ### Fixed
 
+- Fixed file path search so local paths containing spaces match percent-encoded
+  `file://` clipboard entries.
 - Fixed `clipmem recall --limit` so weak-search fallback output counts the
   best candidate toward the requested limit instead of returning one extra
   alternative.

@@ -27,6 +27,25 @@ pub(in crate::db) fn fake_snapshot(
     )
 }
 
+pub(in crate::db) fn fake_file_snapshot(
+    change_count: i64,
+    file_url: &str,
+) -> crate::model::ClipboardSnapshot {
+    build_snapshot(
+        CaptureContext::new(change_count)
+            .with_frontmost_app_name("Finder")
+            .with_frontmost_app_bundle_id("com.apple.finder"),
+        vec![build_item(
+            0,
+            vec![build_representation(
+                "public.file-url".to_string(),
+                Some(file_url.to_string()),
+                file_url.as_bytes().to_vec(),
+            )],
+        )],
+    )
+}
+
 pub(in crate::db) fn unfiltered() -> RetrievalFilters {
     RetrievalFilters::default()
 }
@@ -124,6 +143,31 @@ pub(in crate::db) fn search_auto_uses_literal_matching_for_wildcard_queries() ->
     assert_eq!(results.mode_used(), SearchMode::Literal);
     assert_eq!(results.hits().len(), 1);
     assert_eq!(results.hits()[0].preview_text(), "Discount: 50%");
+    Ok(())
+}
+
+#[test]
+pub(in crate::db) fn file_path_search_matches_paths_with_spaces() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+
+    db.store_capture(&fake_file_snapshot(
+        1,
+        "file:///Users/test/work/foo-bar.txt",
+    ))?;
+    let spaced = db.store_capture(&fake_file_snapshot(
+        2,
+        "file:///Users/test/work/foo%20bar.txt",
+    ))?;
+
+    let results = db.search_auto("/Users/test/work/foo bar.txt", 10, &unfiltered())?;
+
+    assert_eq!(results.mode_used(), SearchMode::Literal);
+    assert_eq!(results.hits().len(), 1);
+    assert_eq!(results.hits()[0].snapshot_id(), spaced.snapshot_id());
+    assert_eq!(
+        results.hits()[0].file_paths(),
+        &["/Users/test/work/foo bar.txt".to_string()]
+    );
     Ok(())
 }
 

@@ -461,9 +461,9 @@ pub(in crate::db) fn analyze_query(query: &str) -> QueryAnalysis {
         || punctuation_heavy
         || shell_fragment;
     let path_fragment = if let Some(value) = trimmed.strip_prefix("~/") {
-        Some(value.trim_start_matches('/').to_ascii_lowercase())
+        Some(file_url_cache_path_fragment(value.trim_start_matches('/')))
     } else if lower.starts_with("file://") {
-        Some(normalise_file_path(&trimmed).to_ascii_lowercase())
+        Some(file_url_cache_path_fragment(&normalise_file_path(&trimmed)))
     } else if trimmed.starts_with('/')
         || trimmed.starts_with("./")
         || trimmed.starts_with("../")
@@ -473,7 +473,7 @@ pub(in crate::db) fn analyze_query(query: &str) -> QueryAnalysis {
                 || trimmed.starts_with('\\')
                 || trimmed.contains(":\\")))
     {
-        Some(lower.clone())
+        Some(file_url_cache_path_fragment(&trimmed))
     } else {
         None
     }
@@ -486,6 +486,10 @@ pub(in crate::db) fn analyze_query(query: &str) -> QueryAnalysis {
         literal_preferred,
         path_fragment,
     }
+}
+
+pub(in crate::db) fn file_url_cache_path_fragment(value: &str) -> String {
+    value.to_ascii_lowercase().replace(' ', "%20")
 }
 
 pub(in crate::db) fn is_invalid_fts_query(error: &SqlError) -> bool {
