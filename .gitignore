@@ -4,6 +4,7 @@ __pycache__/
 .desloppify/
 .agents/
 .claude/
+.compound-engineering/*.yaml
 AGENTS.md
 scorecard.png
 skills-lock.json
