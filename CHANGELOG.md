@@ -14,6 +14,11 @@ versioning where practical.
 - Added a documented solution for the file URL capture storage performance
   fix, including the trigger deferral pattern and benchmark results.
 
+### Changed
+
+- Updated the ClawHub clipboard-memory skill package to 1.3.2 so the revised
+  command and setup-check references can publish cleanly.
+
 ### Fixed
 
 - Fixed file path search so local paths containing spaces match percent-encoded
