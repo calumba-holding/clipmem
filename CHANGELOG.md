@@ -9,6 +9,11 @@ versioning where practical.
 
 ## Unreleased
 
+### Added
+
+- Added a documented solution for the file URL capture storage performance
+  fix, including the trigger deferral pattern and benchmark results.
+
 ### Fixed
 
 - Fixed file path search so local paths containing spaces match percent-encoded
