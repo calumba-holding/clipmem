@@ -489,7 +489,16 @@ pub(in crate::db) fn analyze_query(query: &str) -> QueryAnalysis {
 }
 
 pub(in crate::db) fn file_url_cache_path_fragment(value: &str) -> String {
-    value.to_ascii_lowercase().replace(' ', "%20")
+    value
+        .to_ascii_lowercase()
+        .bytes()
+        .map(|byte| match byte {
+            b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' | b':' => {
+                (byte as char).to_string()
+            }
+            _ => format!("%{byte:02x}"),
+        })
+        .collect()
 }
 
 pub(in crate::db) fn is_invalid_fts_query(error: &SqlError) -> bool {

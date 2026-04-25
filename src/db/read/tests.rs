@@ -172,6 +172,27 @@ pub(in crate::db) fn file_path_search_matches_paths_with_spaces() -> Result<()> 
 }
 
 #[test]
+pub(in crate::db) fn file_path_search_matches_percent_encoded_path_characters() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+
+    let stored = db.store_capture(&fake_file_snapshot(
+        1,
+        "file:///Users/test/work/release%231.txt",
+    ))?;
+
+    let results = db.search_auto("/Users/test/work/release#1.txt", 10, &unfiltered())?;
+
+    assert_eq!(results.mode_used(), SearchMode::Literal);
+    assert_eq!(results.hits().len(), 1);
+    assert_eq!(results.hits()[0].snapshot_id(), stored.snapshot_id());
+    assert_eq!(
+        results.hits()[0].file_paths(),
+        &["/Users/test/work/release#1.txt".to_string()]
+    );
+    Ok(())
+}
+
+#[test]
 pub(in crate::db) fn find_snapshot_hydrates_nested_items_and_recent_events() -> Result<()> {
     let mut db = Database::open_in_memory()?;
     let snapshot = build_snapshot(
