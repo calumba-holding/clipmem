@@ -288,6 +288,7 @@ struct ErrorBanner: View {
 struct ActionFeedbackOverlay: View {
     let message: String?
     var isSuccess: Bool = true
+    var transitionEdge: Edge = .top
 
     var body: some View {
         if let message {
@@ -299,10 +300,11 @@ struct ActionFeedbackOverlay: View {
             }
             .padding(.horizontal, Spacing.lg)
             .padding(.vertical, Spacing.sm)
+            .frame(maxWidth: 560)
             .glassOverlay(cornerRadius: 20)
             .transition(
                 .asymmetric(
-                    insertion: .move(edge: .top).combined(with: .opacity).animation(DesignAnimation.entrance),
+                    insertion: .move(edge: transitionEdge).combined(with: .opacity).animation(DesignAnimation.entrance),
                     removal: .opacity.animation(DesignAnimation.exit)
                 )
             )

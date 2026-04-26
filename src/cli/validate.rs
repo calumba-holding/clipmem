@@ -59,6 +59,7 @@ pub(super) fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
                 args.output.resolved()?;
             }
             StorageCommand::OptimizeImages(args) => {
+                validate_optimize_images_progress(args)?;
                 args.output.resolved()?;
             }
         },
@@ -85,6 +86,23 @@ pub(super) fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
         }
     }
 
+    Ok(())
+}
+
+fn validate_optimize_images_progress(
+    args: &StorageOptimizeImagesArgs,
+) -> std::result::Result<(), clap::Error> {
+    if let Some(progress) = args.progress {
+        if args.output.format.is_some() || args.output.json || args.output.human {
+            return Err(Cli::command().error(
+                ErrorKind::ArgumentConflict,
+                format!(
+                    "`--progress {}` cannot be combined with `--format`, `--json`, or `--human`",
+                    progress.as_str()
+                ),
+            ));
+        }
+    }
     Ok(())
 }
 

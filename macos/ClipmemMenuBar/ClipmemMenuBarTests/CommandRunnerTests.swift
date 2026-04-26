@@ -30,6 +30,80 @@ struct CommandRunnerTests {
             Issue.record("Expected CancellationError, got \(error).")
         }
     }
+
+    @Test func streamingRunEmitsStdoutLinesBeforeCompletion() async throws {
+        let script = "printf 'one\\n'; sleep 0.1; printf 'two\\n'"
+        let lines = LockedStringList()
+
+        let result = try await CommandRunner().runStreaming(
+            executable: "/bin/sh",
+            arguments: ["-c", script]
+        ) { line in
+            lines.append(line)
+        }
+
+        #expect(result.exitCode == 0)
+        #expect(lines.values() == ["one", "two"])
+        #expect(String(data: result.stdout, encoding: .utf8) == "one\ntwo\n")
+    }
+
+    @Test func streamingRunPropagatesLineHandlerErrors() async throws {
+        let task = Task {
+            try await CommandRunner().runStreaming(
+                executable: "/bin/sh",
+                arguments: ["-c", "printf 'bad\\n'; sleep 30"]
+            ) { _ in
+                throw ClipmemClientError.decodingFailed("bad line")
+            }
+        }
+
+        do {
+            _ = try await task.value
+            Issue.record("Expected line handler failure.")
+        } catch let error as ClipmemClientError {
+            #expect(error == .decodingFailed("bad line"))
+        } catch {
+            Issue.record("Expected decoding failure, got \(error).")
+        }
+    }
+
+    @Test func streamingRunCancellationTerminatesRunningProcess() async throws {
+        let task = Task {
+            try await CommandRunner().runStreaming(
+                executable: "/bin/sh",
+                arguments: ["-c", "sleep 30"]
+            ) { _ in }
+        }
+
+        try await Task.sleep(for: .milliseconds(100))
+        task.cancel()
+
+        do {
+            _ = try await task.value
+            Issue.record("Expected cancellation to throw.")
+        } catch is CancellationError {
+        } catch {
+            Issue.record("Expected CancellationError, got \(error).")
+        }
+    }
+
+    private final class LockedStringList: @unchecked Sendable {
+        private let lock = NSLock()
+        private var strings: [String] = []
+
+        func append(_ string: String) {
+            lock.lock()
+            strings.append(string)
+            lock.unlock()
+        }
+
+        func values() -> [String] {
+            lock.lock()
+            let values = strings
+            lock.unlock()
+            return values
+        }
+    }
 }
 
 @MainActor

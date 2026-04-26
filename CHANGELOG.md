@@ -11,11 +11,16 @@ versioning where practical.
 
 ### Added
 
+- Added live progress for menu bar image compression and a public
+  `clipmem storage optimize-images --progress jsonl` stream for image
+  optimization progress events.
 - Added a documented solution for the file URL capture storage performance
   fix, including the trigger deferral pattern and benchmark results.
 
 ### Changed
 
+- Moved settings action feedback to the bottom of the window and kept storage
+  maintenance success messages visible longer so results are easier to read.
 - Updated the ClawHub clipboard-memory skill package to 1.3.2 so the revised
   command and setup-check references can publish cleanly.
 

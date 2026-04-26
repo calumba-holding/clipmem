@@ -147,6 +147,14 @@ pub(in crate::cli) fn storage_optimize_images(
     db_path: &Path,
     args: &StorageOptimizeImagesArgs,
 ) -> Result<()> {
+    if matches!(args.progress, Some(ProgressFormat::Jsonl)) {
+        let mut db = open_existing_db(db_path)?;
+        db.optimize_images_with_progress(args.dry_run, args.limit, !args.no_compact, |event| {
+            print_json_line(&event)
+        })?;
+        return Ok(());
+    }
+
     let format = require_text_or_json(args.output.resolved()?, "storage optimize-images")?;
     let mut db = open_existing_db(db_path)?;
     let report = db.optimize_images(args.dry_run, args.limit, !args.no_compact)?;

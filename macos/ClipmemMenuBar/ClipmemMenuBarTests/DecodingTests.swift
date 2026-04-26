@@ -161,6 +161,40 @@ struct DecodingTests {
         #expect(optimize.compactRecommended == false)
     }
 
+    @Test func imageOptimizationProgressEventsDecode() throws {
+        let events = try [
+            #"{"type":"started","total_rows":3}"#,
+            #"{"type":"scanning","scanned_rows":1,"total_rows":3,"compressed_rows":1,"skipped_rows":0,"conflict_count":0}"#,
+            #"{"type":"compacting","scanned_rows":3,"total_rows":3,"compressed_rows":2,"skipped_rows":1,"conflict_count":0}"#,
+            #"{"type":"complete","report":{"dry_run":false,"format":"webp_lossless","scanned_rows":3,"compressed_rows":2,"skipped_rows":1,"conflict_count":0,"original_bytes":100,"optimized_bytes":40,"logical_saved_bytes":60,"compact_run":true,"compact":null,"compact_error":null,"filesystem_saved_bytes":0,"filesystem_growth_bytes":0,"compact_recommended":false}}"#,
+        ].map { line in
+            try ClipmemClient.decoder.decode(ImageOptimizationProgressEvent.self, from: Data(line.utf8))
+        }
+
+        #expect(events[0] == .started(totalRows: 3))
+        #expect(events[1] == .scanning(ImageOptimizationProgressSnapshot(
+            scannedRows: 1,
+            totalRows: 3,
+            compressedRows: 1,
+            skippedRows: 0,
+            conflictCount: 0
+        )))
+        #expect(events[2] == .compacting(ImageOptimizationProgressSnapshot(
+            scannedRows: 3,
+            totalRows: 3,
+            compressedRows: 2,
+            skippedRows: 1,
+            conflictCount: 0
+        )))
+        if case .complete(let report) = events[3] {
+            #expect(report.scannedRows == 3)
+            #expect(report.compressedRows == 2)
+            #expect(report.compactRun == true)
+        } else {
+            Issue.record("Expected complete progress event.")
+        }
+    }
+
     private func decode<T: Decodable>(_ type: T.Type, _ name: String) throws -> T {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

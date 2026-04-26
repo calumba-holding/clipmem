@@ -13,7 +13,8 @@ use crate::sensitive;
 use super::{
     collect_rows, pragma_usize, row_usize, sanitise_limit, storage_file_sizes, usize_to_i64,
     CapturePolicy, CaptureSettings, CaptureSkipReason, CaptureStoreOutcome, Database,
-    ImageOptimizationReport, OcrCandidate, OcrStatusReport, PurgeReport, SnapshotDeletionReport,
+    ImageOptimizationProgressEvent, ImageOptimizationReport, OcrCandidate, OcrStatusReport,
+    PurgeReport, SnapshotDeletionReport,
 };
 
 mod capture_and_settings;

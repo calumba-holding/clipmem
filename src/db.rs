@@ -21,9 +21,10 @@ use self::core::*;
 use self::schema::*;
 pub(crate) use self::types::{
     CapturePolicy, CaptureSettings, CaptureSkipReason, CaptureStoreOutcome,
-    ImageOptimizationReport, OcrCandidate, OcrRunReport, OcrStatusReport, Page, PurgeReport,
-    RecentCursorState, SearchCursorState, SnapshotDeletionReport, StorageCheckpointReport,
-    StorageCompactReport, StorageFileSizes, TimelineCursorState,
+    ImageOptimizationProgressEvent, ImageOptimizationReport, OcrCandidate, OcrRunReport,
+    OcrStatusReport, Page, PurgeReport, RecentCursorState, SearchCursorState,
+    SnapshotDeletionReport, StorageCheckpointReport, StorageCompactReport, StorageFileSizes,
+    TimelineCursorState,
 };
 pub use self::types::{
     Database, RetrievalFilters, RetrievalKind, SearchMode, SearchResults, StatsAppEntry,

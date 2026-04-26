@@ -31,7 +31,7 @@ scripts and agents.
 | `forget` | `text` | `text`, `json`, `human` |
 | `purge` | `text` | `text`, `json`, `human` |
 | `storage compact` | `text` | `text`, `json`, `human` |
-| `storage optimize-images` | `text` | `text`, `json`, `human` |
+| `storage optimize-images` | `text` | `text`, `json`, `human`; progress stream via `--progress jsonl` |
 | `settings show` | `text` | `text`, `json`, `human` |
 | `settings ignore list` | `text` | `text`, `json`, `human` |
 | `ocr status` | `text` | `text`, `json`, `human` |
@@ -178,6 +178,9 @@ Action commands return structured output when you request JSON:
 - `storage optimize-images --format json` — scanned, compressed,
   skipped, conflict, byte-savings, auto-compaction, and filesystem
   savings fields
+- `storage optimize-images --progress jsonl` — progress records with
+  `started`, `scanning`, `compacting`, and `complete` events, where the
+  final event wraps the same report fields as `--format json`
 - `export --format json` — destination path, byte count, UTI, item
   index, snapshot ID, and representation hash
 

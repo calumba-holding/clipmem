@@ -380,12 +380,23 @@ impl Database {
         limit: usize,
         auto_compact: bool,
     ) -> Result<ImageOptimizationReport> {
+        self.optimize_images_with_progress(dry_run, limit, auto_compact, |_| Ok(()))
+    }
+
+    pub(crate) fn optimize_images_with_progress(
+        &mut self,
+        dry_run: bool,
+        limit: usize,
+        auto_compact: bool,
+        mut progress: impl FnMut(ImageOptimizationProgressEvent) -> Result<()>,
+    ) -> Result<ImageOptimizationReport> {
         let initial_file_bytes = if database_path_is_file_backed(&self.path) {
             Some(super::storage_file_sizes(&self.path)?.total_bytes())
         } else {
             None
         };
         let candidates = load_image_optimization_candidates(&self.conn, limit)?;
+        let total_rows = candidates.len();
         let mut report = ImageOptimizationReport {
             dry_run,
             format: IMAGE_OPTIMIZATION_FORMAT,
@@ -403,6 +414,7 @@ impl Database {
             filesystem_growth_bytes: 0,
             compact_recommended: false,
         };
+        progress(ImageOptimizationProgressEvent::Started { total_rows })?;
 
         for candidate in candidates {
             report.scanned_rows += 1;
@@ -413,6 +425,11 @@ impl Database {
                     if !dry_run {
                         mark_image_optimization_skipped(&self.conn, &candidate, reason)?;
                     }
+                    Self::emit_image_optimization_scan_progress(
+                        &mut progress,
+                        &report,
+                        total_rows,
+                    )?;
                     continue;
                 }
             };
@@ -423,6 +440,7 @@ impl Database {
                 if !dry_run {
                     mark_image_optimization_skipped(&self.conn, &candidate, "not_smaller")?;
                 }
+                Self::emit_image_optimization_scan_progress(&mut progress, &report, total_rows)?;
                 continue;
             }
 
@@ -432,6 +450,7 @@ impl Database {
                 if !dry_run {
                     mark_image_optimization_skipped(&self.conn, &candidate, "conflict")?;
                 }
+                Self::emit_image_optimization_scan_progress(&mut progress, &report, total_rows)?;
                 continue;
             }
 
@@ -444,12 +463,20 @@ impl Database {
             if !dry_run {
                 replace_image_with_optimized_webp(&mut self.conn, &candidate, optimized)?;
             }
+            Self::emit_image_optimization_scan_progress(&mut progress, &report, total_rows)?;
         }
 
         if !dry_run && auto_compact && database_path_is_file_backed(&self.path) {
             let compact_wanted = report.compact_recommended || storage_compaction_would_help(self)?;
             if compact_wanted {
                 report.compact_run = true;
+                progress(ImageOptimizationProgressEvent::Compacting {
+                    scanned_rows: report.scanned_rows,
+                    total_rows,
+                    compressed_rows: report.compressed_rows,
+                    skipped_rows: report.skipped_rows,
+                    conflict_count: report.conflict_count,
+                })?;
                 match self.compact_storage(false) {
                     Ok(compact) => {
                         if let Some(initial) = initial_file_bytes {
@@ -479,7 +506,24 @@ impl Database {
             }
         }
 
+        progress(ImageOptimizationProgressEvent::Complete {
+            report: report.clone(),
+        })?;
         Ok(report)
+    }
+
+    fn emit_image_optimization_scan_progress(
+        progress: &mut impl FnMut(ImageOptimizationProgressEvent) -> Result<()>,
+        report: &ImageOptimizationReport,
+        total_rows: usize,
+    ) -> Result<()> {
+        progress(ImageOptimizationProgressEvent::Scanning {
+            scanned_rows: report.scanned_rows,
+            total_rows,
+            compressed_rows: report.compressed_rows,
+            skipped_rows: report.skipped_rows,
+            conflict_count: report.conflict_count,
+        })
     }
 
     pub(crate) fn enqueue_ocr_for_snapshot(&mut self, snapshot_id: i64) -> Result<usize> {

@@ -155,10 +155,12 @@ Examples:
   clipmem storage optimize-images --dry-run --format json
   clipmem storage optimize-images --no-compact --format json
   clipmem storage optimize-images --limit 50 --format json
+  clipmem storage optimize-images --progress jsonl
 
 Notes:
   - `compact` reclaims SQLite and WAL disk space without changing clipboard content.
   - `optimize-images` converts eligible stored image bytes to lossless WebP, then compacts SQLite storage by default.
+  - `optimize-images --progress jsonl` streams machine-readable progress events.
   - Use `--no-compact` when batching optimization runs and compacting once at the end.";
 
 pub(super) const SETTINGS_AFTER_HELP: &str = "\

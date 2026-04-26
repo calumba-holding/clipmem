@@ -174,6 +174,31 @@ pub(crate) struct ImageOptimizationReport {
     pub(crate) compact_recommended: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub(crate) enum ImageOptimizationProgressEvent {
+    Started {
+        total_rows: usize,
+    },
+    Scanning {
+        scanned_rows: usize,
+        total_rows: usize,
+        compressed_rows: usize,
+        skipped_rows: usize,
+        conflict_count: usize,
+    },
+    Compacting {
+        scanned_rows: usize,
+        total_rows: usize,
+        compressed_rows: usize,
+        skipped_rows: usize,
+        conflict_count: usize,
+    },
+    Complete {
+        report: ImageOptimizationReport,
+    },
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct SearchResults {
     pub(in crate::db) mode_used: SearchMode,

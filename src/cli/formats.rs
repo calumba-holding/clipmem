@@ -62,6 +62,20 @@ impl StatsOutputFormat {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(super) enum ProgressFormat {
+    Jsonl,
+}
+
+impl ProgressFormat {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Jsonl => "jsonl",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct DurationValue {
     pub(in crate::cli) raw: String,

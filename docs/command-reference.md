@@ -21,7 +21,7 @@ subcommand. For conceptual explanations and usage guidance, see
 | `forget <ID>` | `text` | — | Hard-delete one snapshot and its history |
 | `purge` | `text` | — | Delete old snapshots by age |
 | `storage compact` | `text` | — | Reclaim SQLite and WAL disk space |
-| `storage optimize-images` | `text` | — | Convert eligible images to lossless WebP |
+| `storage optimize-images` | `text` | — | Convert eligible images to lossless WebP; stream progress with `--progress jsonl` |
 | `settings show` | `text` | no | Show capture policy |
 | `settings pause` | `text` | — | Pause or resume capture |
 | `settings api-key-filter` | `text` | — | Enable or disable API key filtering |
@@ -323,6 +323,7 @@ metadata.
 | `--dry-run` | flag | — | Estimate work and savings without changing rows |
 | `--no-compact` | flag | — | Skip the automatic SQLite compaction step |
 | `--limit` | 1-250 | 25 | Maximum unprocessed image rows to scan |
+| `--progress` | `jsonl` | — | Stream progress events as newline-delimited JSON |
 | `--format` | `text\|json\|human` | `text` | Output format |
 | `--json` | flag | — | Alias for `--format json` |
 | `--human` | flag | — | Alias for `--format human` |
@@ -333,6 +334,7 @@ clipmem storage optimize-images --human
 clipmem storage optimize-images --dry-run --format json
 clipmem storage optimize-images --no-compact --limit 50 --format json
 clipmem storage optimize-images --limit 50 --format json
+clipmem storage optimize-images --progress jsonl
 ```
 
 Rows already marked `compressed` or `skipped` are not retried by
@@ -340,6 +342,13 @@ normal runs. JSON output reports scanned rows, compressed rows,
 skipped rows, conflicts, original bytes, optimized bytes, logical
 bytes saved, whether compaction ran, filesystem bytes reclaimed, and
 whether database compaction is still recommended.
+
+`--progress jsonl` streams newline-delimited JSON records to stdout and
+cannot be combined with `--format`, `--json`, or `--human`. Progress
+records include `started`, `scanning`, `compacting`, and `complete`
+events. The `scanning` percentage is based on scanned image candidates,
+while the final `complete.report` contains the same fields as
+`--format json`.
 
 ---
 

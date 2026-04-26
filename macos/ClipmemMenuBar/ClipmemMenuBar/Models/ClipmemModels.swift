@@ -325,6 +325,110 @@ struct ImageOptimizationOutput: Decodable, Equatable, Sendable {
     var compactRecommended: Bool
 }
 
+enum ImageOptimizationProgressEvent: Decodable, Equatable, Sendable {
+    case started(totalRows: Int)
+    case scanning(ImageOptimizationProgressSnapshot)
+    case compacting(ImageOptimizationProgressSnapshot)
+    case complete(ImageOptimizationOutput)
+
+    fileprivate enum CodingKeys: String, CodingKey {
+        case type
+        case totalRows
+        case scannedRows
+        case compressedRows
+        case skippedRows
+        case conflictCount
+        case report
+    }
+
+    private enum EventType: String, Decodable {
+        case started
+        case scanning
+        case compacting
+        case complete
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(EventType.self, forKey: .type) {
+        case .started:
+            self = .started(totalRows: try container.decode(Int.self, forKey: .totalRows))
+        case .scanning:
+            self = .scanning(try ImageOptimizationProgressSnapshot(container: container))
+        case .compacting:
+            self = .compacting(try ImageOptimizationProgressSnapshot(container: container))
+        case .complete:
+            self = .complete(try container.decode(ImageOptimizationOutput.self, forKey: .report))
+        }
+    }
+}
+
+struct ImageOptimizationProgressSnapshot: Decodable, Equatable, Sendable {
+    var scannedRows: Int
+    var totalRows: Int
+    var compressedRows: Int
+    var skippedRows: Int
+    var conflictCount: Int
+
+    init(
+        scannedRows: Int,
+        totalRows: Int,
+        compressedRows: Int,
+        skippedRows: Int,
+        conflictCount: Int
+    ) {
+        self.scannedRows = scannedRows
+        self.totalRows = totalRows
+        self.compressedRows = compressedRows
+        self.skippedRows = skippedRows
+        self.conflictCount = conflictCount
+    }
+
+    fileprivate init(container: KeyedDecodingContainer<ImageOptimizationProgressEvent.CodingKeys>) throws {
+        scannedRows = try container.decode(Int.self, forKey: .scannedRows)
+        totalRows = try container.decode(Int.self, forKey: .totalRows)
+        compressedRows = try container.decode(Int.self, forKey: .compressedRows)
+        skippedRows = try container.decode(Int.self, forKey: .skippedRows)
+        conflictCount = try container.decode(Int.self, forKey: .conflictCount)
+    }
+}
+
+struct ImageOptimizationProgressState: Equatable, Sendable {
+    enum Phase: Equatable, Sendable {
+        case scanning
+        case compacting
+    }
+
+    var phase: Phase
+    var scannedRows: Int
+    var totalRows: Int
+    var compressedRows: Int
+    var skippedRows: Int
+    var conflictCount: Int
+
+    var fractionCompleted: Double? {
+        guard phase == .scanning, totalRows > 0 else { return nil }
+        return min(1, max(0, Double(scannedRows) / Double(totalRows)))
+    }
+
+    var statusText: String {
+        switch phase {
+        case .scanning:
+            if totalRows > 0 {
+                "Scanned \(scannedRows) of \(totalRows) images"
+            } else {
+                "Looking for images to optimize"
+            }
+        case .compacting:
+            "Compacting database..."
+        }
+    }
+
+    var detailText: String {
+        "Compressed \(compressedRows) · Skipped \(skippedRows) · Conflicts \(conflictCount)"
+    }
+}
+
 enum JSONValue: Decodable, Equatable, Hashable, Sendable {
     case string(String)
     case int(Int)

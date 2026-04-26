@@ -443,6 +443,10 @@ pub(super) struct StorageOptimizeImagesArgs {
     #[arg(long, default_value_t = 25, value_parser = parse_bounded_limit)]
     pub(super) limit: usize,
 
+    /// Stream progress events as newline-delimited JSON.
+    #[arg(long, value_enum)]
+    pub(super) progress: Option<ProgressFormat>,
+
     #[command(flatten)]
     pub(super) output: OutputArgs,
 }

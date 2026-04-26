@@ -5,8 +5,8 @@ use clap::Parser;
 use crate::db::{SearchMode, TimelineSort};
 
 use super::{
-    classify_command_error, Cli, CliExitCode, Command, OutputFormat, RecallOutputFormat,
-    RetentionValue,
+    classify_command_error, Cli, CliExitCode, Command, OutputFormat, ProgressFormat,
+    RecallOutputFormat, RetentionValue,
 };
 
 #[test]
@@ -564,6 +564,41 @@ fn storage_commands_parse_expected_arguments() {
         },
         other => panic!("expected storage command, got {other:?}"),
     }
+
+    let progress_cli = Cli::parse_from([
+        "clipmem",
+        "storage",
+        "optimize-images",
+        "--progress",
+        "jsonl",
+    ]);
+    match progress_cli.command {
+        Command::Storage(args) => match args.command {
+            super::StorageCommand::OptimizeImages(args) => {
+                assert_eq!(args.progress, Some(ProgressFormat::Jsonl));
+            }
+            other => panic!("expected storage optimize-images command, got {other:?}"),
+        },
+        other => panic!("expected storage command, got {other:?}"),
+    }
+}
+
+#[test]
+fn storage_optimize_images_progress_rejects_output_format_flags() {
+    let error = super::run_from([
+        "clipmem",
+        "storage",
+        "optimize-images",
+        "--progress",
+        "jsonl",
+        "--format",
+        "json",
+    ])
+    .expect_err("progress output should reject explicit output format");
+
+    assert!(error
+        .to_string()
+        .contains("`--progress jsonl` cannot be combined"));
 }
 
 #[test]

@@ -108,6 +108,7 @@ but original encoded container metadata is not preserved.
 clipmem storage optimize-images --dry-run --format json
 clipmem storage optimize-images --limit 50 --format json
 clipmem storage optimize-images --no-compact --limit 50 --format json
+clipmem storage optimize-images --progress jsonl
 ```
 
 Only image rows marked `uncompressed` are considered. Rows converted

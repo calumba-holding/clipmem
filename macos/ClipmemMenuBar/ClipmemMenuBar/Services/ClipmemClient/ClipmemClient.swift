@@ -131,6 +131,31 @@ struct ClipmemClient: Sendable {
         try await decode(ImageOptimizationOutput.self, from: .storageOptimizeImages(dryRun: dryRun, limit: limit))
     }
 
+    func storageOptimizeImagesWithProgress(
+        dryRun: Bool,
+        limit: Int?,
+        onProgress: @escaping @Sendable (ImageOptimizationProgressEvent) async -> Void
+    ) async throws -> ImageOptimizationOutput {
+        let reportBox = LockedBox<ImageOptimizationOutput>()
+        try await runStreaming(.storageOptimizeImagesProgress(dryRun: dryRun, limit: limit)) { line in
+            let data = Data(line.utf8)
+            let event: ImageOptimizationProgressEvent
+            do {
+                event = try Self.decoder.decode(ImageOptimizationProgressEvent.self, from: data)
+            } catch {
+                throw ClipmemClientError.decodingFailed("Could not decode clipmem progress JSON for storage optimize-images.")
+            }
+            if case .complete(let report) = event {
+                reportBox.set(report)
+            }
+            await onProgress(event)
+        }
+        guard let report = reportBox.value() else {
+            throw ClipmemClientError.decodingFailed("clipmem storage optimize-images finished without a final progress report.")
+        }
+        return report
+    }
+
     func export(snapshotID: Int, itemIndex: Int, uti: String, destination: String, force: Bool) async throws -> ExportOutput {
         try await decode(ExportOutput.self, from: .export(snapshotID: snapshotID, itemIndex: itemIndex, uti: uti, destination: destination, force: force))
     }
@@ -173,6 +198,29 @@ struct ClipmemClient: Sendable {
         return result
     }
 
+    private func runStreaming(
+        _ command: ClipmemCommand,
+        onStdoutLine: @escaping @Sendable (String) async throws -> Void
+    ) async throws {
+        let resolver = BinaryResolver(userOverride: configuration.binaryOverride)
+        guard let binary = resolver.resolve() else {
+            throw ClipmemClientError.binaryNotFound(resolver.candidates())
+        }
+        let arguments = command.withDatabase(configuration.databaseOverride).arguments
+        AppLoggers.commands.info("Running clipmem command: \(arguments.first ?? "unknown", privacy: .public)")
+        let result = try await runner.runStreaming(
+            executable: binary,
+            arguments: arguments,
+            onStdoutLine: onStdoutLine
+        )
+        if Task.isCancelled {
+            throw CancellationError()
+        }
+        guard result.exitCode == 0 else {
+            throw mapFailure(result)
+        }
+    }
+
     private func mapFailure(_ result: CommandResult) -> ClipmemClientError {
         let message = result.stderrText.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallback = message.isEmpty ? "clipmem command failed with exit code \(result.exitCode)." : message
@@ -197,4 +245,22 @@ struct ClipmemClient: Sendable {
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return decoder
     }()
+}
+
+private final class LockedBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedValue: Value?
+
+    func set(_ value: Value) {
+        lock.lock()
+        storedValue = value
+        lock.unlock()
+    }
+
+    func value() -> Value? {
+        lock.lock()
+        let value = storedValue
+        lock.unlock()
+        return value
+    }
 }

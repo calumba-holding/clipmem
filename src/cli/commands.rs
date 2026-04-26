@@ -32,10 +32,10 @@ use super::human::{
 };
 use super::output::{
     emit_get_output, emit_json_or_text, emit_list_output, emit_recall_output, generated_at_now,
-    render_capture_once_text, render_doctor_text, render_hits_text, render_search_results_text,
-    render_snapshot_text, render_stats_text, render_timeline_text, GetEnvelope, ListEnvelope,
-    ListRow, RecallEnvelope, RecallMatchConfidence, RecallOutputRow, StatsEnvelope,
-    UnsupportedFormatError, OUTPUT_SCHEMA_VERSION,
+    print_json_line, render_capture_once_text, render_doctor_text, render_hits_text,
+    render_search_results_text, render_snapshot_text, render_stats_text, render_timeline_text,
+    GetEnvelope, ListEnvelope, ListRow, RecallEnvelope, RecallMatchConfidence, RecallOutputRow,
+    StatsEnvelope, UnsupportedFormatError, OUTPUT_SCHEMA_VERSION,
 };
 use super::service::{
     self, render_service_action_text, render_service_status_text, render_setup_text,
@@ -45,12 +45,12 @@ use super::{
     GetArgs, HermesArgs, HermesCommand, HermesDoctorArgs, HermesInstallSkillArgs,
     HermesUninstallSkillArgs, OcrArgs, OcrCommand, OcrRunArgs, OcrStatusArgs, OpenClawArgs,
     OpenClawCommand, OpenClawDoctorArgs, OpenClawInstallSkillArgs, OpenClawUninstallSkillArgs,
-    OutputFormat, PurgeArgs, RecallArgs, RecentArgs, RestoreArgs, RetrievalFilterArgs, SearchArgs,
-    ServiceArgs, ServiceCommand, ServiceStatusArgs, SettingsApiKeyFilterArgs, SettingsArgs,
-    SettingsCommand, SettingsIgnoreArgs, SettingsIgnoreCommand, SettingsIgnoreListArgs,
-    SettingsOcrArgs, SettingsPauseArgs, SettingsRetentionArgs, SettingsShowArgs, SetupArgs,
-    StatsArgs, StatsOutputFormat, StorageArgs, StorageCommand, StorageCompactArgs,
-    StorageOptimizeImagesArgs, TimelineArgs, WatchArgs,
+    OutputFormat, ProgressFormat, PurgeArgs, RecallArgs, RecentArgs, RestoreArgs,
+    RetrievalFilterArgs, SearchArgs, ServiceArgs, ServiceCommand, ServiceStatusArgs,
+    SettingsApiKeyFilterArgs, SettingsArgs, SettingsCommand, SettingsIgnoreArgs,
+    SettingsIgnoreCommand, SettingsIgnoreListArgs, SettingsOcrArgs, SettingsPauseArgs,
+    SettingsRetentionArgs, SettingsShowArgs, SetupArgs, StatsArgs, StatsOutputFormat, StorageArgs,
+    StorageCommand, StorageCompactArgs, StorageOptimizeImagesArgs, TimelineArgs, WatchArgs,
 };
 
 mod cursor;

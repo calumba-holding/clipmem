@@ -31,6 +31,7 @@ final class AppModel {
     var launchAtLoginError: UserError?
     var isRefreshing = false
     var isRunningAction = false
+    var imageOptimizationProgress: ImageOptimizationProgressState?
     var updateStatus = UpdateStatus.load()
     var pendingHistoryOpenRequest: HistoryOpenRequest?
     var pendingSettingsOpenRequest: SettingsOpenRequest?
@@ -149,7 +150,10 @@ final class AppModel {
         do {
             let report = try await client.storageCompact(dryRun: false)
             lastError = nil
-            showActionMessage("Compacted database. Reclaimed \(formatBytes(report.reclaimedBytes)).")
+            showActionMessage(
+                "Compacted database. Reclaimed \(formatBytes(report.reclaimedBytes)).",
+                duration: .seconds(8)
+            )
             await refreshStatus()
         } catch {
             lastError = UserError(error)
@@ -160,25 +164,79 @@ final class AppModel {
     func optimizeImages() async {
         isRunningAction = true
         actionMessage = nil
-        defer { isRunningAction = false }
+        imageOptimizationProgress = nil
+        defer {
+            isRunningAction = false
+            imageOptimizationProgress = nil
+        }
         do {
-            let report = try await client.storageOptimizeImages(dryRun: false, limit: nil)
+            let report = try await client.storageOptimizeImagesWithProgress(dryRun: false, limit: nil) { event in
+                await MainActor.run {
+                    self.applyImageOptimizationProgress(event)
+                }
+            }
             lastError = nil
             let saved = DisplayFormatters.byteCount(report.logicalSavedBytes) ?? "\(report.logicalSavedBytes) bytes"
             let reclaimed = formatBytes(report.filesystemSavedBytes)
             if let compactError = report.compactError {
-                showActionMessage("Compressed \(report.compressedRows) images. Reduced image bytes by \(saved), but database compaction failed: \(compactError). Run Compact Database to retry.")
+                showActionMessage(
+                    "Compressed \(report.compressedRows) images. Reduced image bytes by \(saved), but database compaction failed: \(compactError). Run Compact Database to retry.",
+                    duration: .seconds(8)
+                )
             } else if report.compactRun {
-                showActionMessage("Compressed \(report.compressedRows) images. Reduced image bytes by \(saved) and reclaimed \(reclaimed) from the database.")
+                showActionMessage(
+                    "Compressed \(report.compressedRows) images. Reduced image bytes by \(saved) and reclaimed \(reclaimed) from the database.",
+                    duration: .seconds(8)
+                )
             } else if report.compactRecommended {
-                showActionMessage("Compressed \(report.compressedRows) images. Reduced image bytes by \(saved). Run Compact Database to return freed pages to disk.")
+                showActionMessage(
+                    "Compressed \(report.compressedRows) images. Reduced image bytes by \(saved). Run Compact Database to return freed pages to disk.",
+                    duration: .seconds(8)
+                )
             } else {
-                showActionMessage("Compressed \(report.compressedRows) images. Reduced image bytes by \(saved).")
+                showActionMessage(
+                    "Compressed \(report.compressedRows) images. Reduced image bytes by \(saved).",
+                    duration: .seconds(8)
+                )
             }
             await refreshStatus()
         } catch {
             lastError = UserError(error)
             actionMessage = nil
+        }
+    }
+
+    private func applyImageOptimizationProgress(_ event: ImageOptimizationProgressEvent) {
+        switch event {
+        case .started(let totalRows):
+            imageOptimizationProgress = ImageOptimizationProgressState(
+                phase: .scanning,
+                scannedRows: 0,
+                totalRows: totalRows,
+                compressedRows: 0,
+                skippedRows: 0,
+                conflictCount: 0
+            )
+        case .scanning(let snapshot):
+            imageOptimizationProgress = ImageOptimizationProgressState(
+                phase: .scanning,
+                scannedRows: snapshot.scannedRows,
+                totalRows: snapshot.totalRows,
+                compressedRows: snapshot.compressedRows,
+                skippedRows: snapshot.skippedRows,
+                conflictCount: snapshot.conflictCount
+            )
+        case .compacting(let snapshot):
+            imageOptimizationProgress = ImageOptimizationProgressState(
+                phase: .compacting,
+                scannedRows: snapshot.scannedRows,
+                totalRows: snapshot.totalRows,
+                compressedRows: snapshot.compressedRows,
+                skippedRows: snapshot.skippedRows,
+                conflictCount: snapshot.conflictCount
+            )
+        case .complete:
+            break
         }
     }
 
@@ -215,7 +273,10 @@ final class AppModel {
         do {
             let report = try await client.purge(olderThan: threshold, dryRun: false)
             lastError = nil
-            showActionMessage("Purged \(formatCount(report.snapshotCount, singular: "snapshot")) older than \(threshold). Removed \(formatBytes(UInt64(report.totalBytes))).")
+            showActionMessage(
+                "Purged \(formatCount(report.snapshotCount, singular: "snapshot")) older than \(threshold). Removed \(formatBytes(UInt64(report.totalBytes))).",
+                duration: .seconds(8)
+            )
             await refreshStatus()
             await refreshSettings()
             _ = await refreshRecentPreview()
@@ -374,11 +435,11 @@ final class AppModel {
 
     // MARK: - Private
 
-    private func showActionMessage(_ message: String?) {
+    private func showActionMessage(_ message: String?, duration: Duration = .seconds(2.5)) {
         actionMessage = message
         if let message {
             Task {
-                try? await Task.sleep(for: .seconds(2.5))
+                try? await Task.sleep(for: duration)
                 if self.actionMessage == message {
                     withAnimation { self.actionMessage = nil }
                 }

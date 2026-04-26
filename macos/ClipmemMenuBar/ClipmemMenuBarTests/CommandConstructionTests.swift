@@ -25,6 +25,8 @@ struct CommandConstructionTests {
         #expect(ClipmemCommand.storageCompact(dryRun: true).arguments.contains("--dry-run"))
         #expect(ClipmemCommand.storageOptimizeImages(dryRun: false, limit: 50).arguments == ["storage", "optimize-images", "--format", "json", "--limit", "50"])
         #expect(ClipmemCommand.storageOptimizeImages(dryRun: true, limit: nil).arguments.contains("--dry-run"))
+        #expect(ClipmemCommand.storageOptimizeImagesProgress(dryRun: false, limit: 50).arguments == ["storage", "optimize-images", "--progress", "jsonl", "--limit", "50"])
+        #expect(ClipmemCommand.storageOptimizeImagesProgress(dryRun: true, limit: nil).arguments.contains("--dry-run"))
     }
 
     @Test func filtersAppendExpectedFlags() {

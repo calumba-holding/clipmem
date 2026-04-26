@@ -408,6 +408,100 @@ fn storage_optimize_images_limit_processes_uncompressed_rows() -> Result<()> {
 }
 
 #[test]
+fn storage_optimize_images_progress_jsonl_reports_scan_progress() -> Result<()> {
+    let path = temp_db_path("storage-optimize-images-progress-jsonl");
+    seed_database(
+        &path,
+        &[
+            image_snapshot(1, b"not actually a png"),
+            image_snapshot(2, b"also not actually a png"),
+        ],
+    )?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "storage",
+        "optimize-images",
+        "--dry-run",
+        "--progress",
+        "jsonl",
+    ]);
+    let stdout = stdout_text(&output);
+    let events = stdout
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).expect("progress line should parse"))
+        .collect::<Vec<_>>();
+
+    assert!(output.status.success(), "{}", stderr_text(&output));
+    assert_eq!(events.len(), 4);
+    assert_eq!(events[0]["type"].as_str(), Some("started"));
+    assert_eq!(events[0]["total_rows"].as_u64(), Some(2));
+    assert_eq!(events[1]["type"].as_str(), Some("scanning"));
+    assert_eq!(events[1]["scanned_rows"].as_u64(), Some(1));
+    assert_eq!(events[1]["total_rows"].as_u64(), Some(2));
+    assert_eq!(events[1]["skipped_rows"].as_u64(), Some(1));
+    assert_eq!(events[2]["type"].as_str(), Some("scanning"));
+    assert_eq!(events[2]["scanned_rows"].as_u64(), Some(2));
+    assert_eq!(events[2]["skipped_rows"].as_u64(), Some(2));
+    assert_eq!(events[3]["type"].as_str(), Some("complete"));
+    assert_eq!(events[3]["report"]["scanned_rows"].as_u64(), Some(2));
+    assert_eq!(events[3]["report"]["skipped_rows"].as_u64(), Some(2));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn storage_optimize_images_progress_jsonl_handles_empty_candidates() -> Result<()> {
+    let path = temp_db_path("storage-optimize-images-progress-empty");
+    let _db = Database::open_or_init(&path)?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "storage",
+        "optimize-images",
+        "--progress",
+        "jsonl",
+    ]);
+    let stdout = stdout_text(&output);
+    let events = stdout
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).expect("progress line should parse"))
+        .collect::<Vec<_>>();
+
+    assert!(output.status.success(), "{}", stderr_text(&output));
+    assert_eq!(events.len(), 3);
+    assert_eq!(events[0]["type"].as_str(), Some("started"));
+    assert_eq!(events[0]["total_rows"].as_u64(), Some(0));
+    assert_eq!(events[1]["type"].as_str(), Some("compacting"));
+    assert_eq!(events[1]["scanned_rows"].as_u64(), Some(0));
+    assert_eq!(events[1]["total_rows"].as_u64(), Some(0));
+    assert_eq!(events[2]["type"].as_str(), Some("complete"));
+    assert_eq!(events[2]["report"]["scanned_rows"].as_u64(), Some(0));
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn storage_optimize_images_progress_jsonl_rejects_format_flags() {
+    let output = run_cli(&[
+        "storage",
+        "optimize-images",
+        "--progress",
+        "jsonl",
+        "--format",
+        "json",
+    ]);
+
+    assert_eq!(status_code(&output), 2);
+    assert!(stderr_text(&output).contains("`--progress jsonl` cannot be combined"));
+    assert!(stdout_text(&output).is_empty());
+}
+
+#[test]
 #[cfg(target_os = "macos")]
 fn service_status_reports_capture_policy_in_text_and_json() -> Result<()> {
     let path = temp_db_path("service-status-policy");

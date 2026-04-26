@@ -66,6 +66,96 @@ struct CommandRunner: Sendable {
             runningProcess.terminate()
         }
     }
+
+    func runStreaming(
+        executable: String,
+        arguments: [String],
+        onStdoutLine: @escaping @Sendable (String) async throws -> Void
+    ) async throws -> CommandResult {
+        let runningProcess = RunningProcess()
+        let cancellationState = CancellationState()
+        return try await withTaskCancellationHandler {
+            try await Task.detached(priority: .userInitiated) {
+                let process = Process()
+                let stdout = Pipe()
+                let stderr = Pipe()
+                let stderrReader = PipeReader(fileHandle: stderr.fileHandleForReading)
+
+                process.executableURL = URL(fileURLWithPath: executable)
+                process.arguments = arguments
+                process.standardOutput = stdout
+                process.standardError = stderr
+                runningProcess.set(process)
+                defer { runningProcess.clear() }
+
+                stderrReader.start()
+                do {
+                    try cancellationState.checkCancellation()
+                    try process.run()
+                    let stdoutData = try await Self.consumeStdout(
+                        from: stdout.fileHandleForReading,
+                        cancellationState: cancellationState,
+                        onStdoutLine: onStdoutLine
+                    )
+                    process.waitUntilExit()
+                    let stderrData = stderrReader.wait()
+                    try cancellationState.checkCancellation()
+                    return CommandResult(exitCode: process.terminationStatus, stdout: stdoutData, stderr: stderrData)
+                } catch {
+                    process.terminate()
+                    stdout.fileHandleForWriting.closeFile()
+                    stderr.fileHandleForWriting.closeFile()
+                    if process.isRunning {
+                        process.waitUntilExit()
+                    }
+                    _ = stderrReader.wait()
+                    throw error
+                }
+            }.value
+        } onCancel: {
+            cancellationState.cancel()
+            runningProcess.terminate()
+        }
+    }
+
+    private static func consumeStdout(
+        from fileHandle: FileHandle,
+        cancellationState: CancellationState,
+        onStdoutLine: @escaping @Sendable (String) async throws -> Void
+    ) async throws -> Data {
+        var output = Data()
+        var pending = Data()
+
+        while true {
+            try cancellationState.checkCancellation()
+            let chunk = fileHandle.availableData
+            if chunk.isEmpty {
+                break
+            }
+            output.append(chunk)
+            pending.append(chunk)
+
+            while let newline = pending.firstIndex(of: 0x0A) {
+                let lineData = pending[..<newline]
+                pending.removeSubrange(...newline)
+                guard let line = String(data: lineData, encoding: .utf8) else {
+                    throw ClipmemClientError.decodingFailed("Could not decode clipmem progress output.")
+                }
+                if !line.isEmpty {
+                    try await onStdoutLine(line)
+                }
+            }
+        }
+
+        if !pending.isEmpty {
+            guard let line = String(data: pending, encoding: .utf8) else {
+                throw ClipmemClientError.decodingFailed("Could not decode clipmem progress output.")
+            }
+            try await onStdoutLine(line)
+        }
+
+        return output
+    }
 }
 
 // Accessed by a cancellation handler and a worker task, so access is synchronized.

@@ -43,9 +43,9 @@ struct ClipmemSettingsView: View {
                 .tag(SettingsTab.privacy)
                 .tabItem { Label(SettingsTab.privacy.title, systemImage: SettingsTab.privacy.symbol) }
         }
-        .overlay(alignment: .top) {
-            ActionFeedbackOverlay(message: appModel.actionMessage)
-                .padding(.top, Spacing.sm)
+        .overlay(alignment: .bottom) {
+            ActionFeedbackOverlay(message: appModel.actionMessage, transitionEdge: .bottom)
+                .padding(.bottom, Spacing.lg)
         }
         .task {
             applyPendingSettingsOpenRequestIfNeeded()
@@ -121,7 +121,8 @@ struct ClipmemSettingsView: View {
                     detail: "Convert eligible stored screenshots and images to lossless WebP when it saves space, then compact the database.",
                     systemImage: "photo.stack",
                     buttonTitle: "Compress Images",
-                    isRunning: appModel.isRunningAction
+                    isRunning: appModel.isRunningAction,
+                    progress: appModel.imageOptimizationProgress
                 ) {
                     confirmCompressImages = true
                 }
@@ -445,6 +446,7 @@ private struct StorageActionRow: View {
     let buttonTitle: String
     var role: ButtonRole?
     var isRunning = false
+    var progress: ImageOptimizationProgressState?
     let action: () -> Void
 
     var body: some View {
@@ -462,11 +464,30 @@ private struct StorageActionRow: View {
                     .font(DesignType.bodySecondary)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let progress {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        if let fractionCompleted = progress.fractionCompleted {
+                            ProgressView(value: fractionCompleted)
+                                .progressViewStyle(.linear)
+                                .frame(maxWidth: 320)
+                        } else {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                        Text(progress.statusText)
+                            .font(DesignType.rowMeta.weight(.medium))
+                            .foregroundStyle(.primary)
+                        Text(progress.detailText)
+                            .font(DesignType.rowMeta)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.top, Spacing.xs)
+                }
             }
 
             Spacer(minLength: Spacing.lg)
 
-            if isRunning {
+            if isRunning && progress == nil {
                 ProgressView()
                     .controlSize(.small)
             }
