@@ -31,6 +31,10 @@ versioning where practical.
 
 ### Performance
 
+- Improved menu bar row rendering by reusing timestamp formatters instead of
+  constructing new date formatters for each row. In a 10,000-row timestamp
+  formatting benchmark, median formatting time dropped from 5.701 s to
+  1.394 s.
 - Improved unfiltered `stats` snapshot leaderboards by indexing the largest
   snapshot and most-captured ordering paths. In a 50,000-snapshot leaderboard
   benchmark, largest snapshot selection dropped from 5.300 ms to 6.416 us and

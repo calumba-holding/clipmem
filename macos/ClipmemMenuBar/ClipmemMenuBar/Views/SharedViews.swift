@@ -17,7 +17,7 @@ enum DisplayFormatters {
         locale: Locale = .current
     ) -> String? {
         guard let date = parseTimestamp(value) else { return nil }
-        let formatter = DateFormatter()
+        let formatter = FormatterPool.localTimestampFormatter
         formatter.locale = locale
         formatter.timeZone = timeZone
         formatter.dateStyle = .medium
@@ -27,9 +27,7 @@ enum DisplayFormatters {
 
     static func relativeTimestamp(_ value: String?) -> String? {
         guard let date = parseTimestamp(value) else { return nil }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: .now)
+        return FormatterPool.relativeTimestampFormatter.localizedString(for: date, relativeTo: .now)
     }
 
     static func byteCount(_ bytes: Int?) -> String? {
@@ -46,22 +44,80 @@ enum DisplayFormatters {
             return date
         }
 
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return formatter.date(from: value)
+        return FormatterPool.sqliteTimestampParser.date(from: value)
     }
 
     private static func iso8601Date(from value: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatter.date(from: value) {
+        if let date = FormatterPool.iso8601FractionalSecondsParser.date(from: value) {
             return date
         }
 
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.date(from: value)
+        return FormatterPool.iso8601Parser.date(from: value)
+    }
+}
+
+private enum FormatterPool {
+    private static let localTimestampFormatterKey = "io.openclaw.clipmem.localTimestampFormatter"
+    private static let relativeTimestampFormatterKey = "io.openclaw.clipmem.relativeTimestampFormatter"
+    private static let sqliteTimestampParserKey = "io.openclaw.clipmem.sqliteTimestampParser"
+    private static let iso8601ParserKey = "io.openclaw.clipmem.iso8601Parser"
+    private static let iso8601FractionalSecondsParserKey = "io.openclaw.clipmem.iso8601FractionalSecondsParser"
+
+    static var localTimestampFormatter: DateFormatter {
+        threadLocalFormatter(forKey: localTimestampFormatterKey) {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .medium
+            formatter.timeStyle = .short
+            return formatter
+        }
+    }
+
+    static var relativeTimestampFormatter: RelativeDateTimeFormatter {
+        threadLocalFormatter(forKey: relativeTimestampFormatterKey) {
+            let formatter = RelativeDateTimeFormatter()
+            formatter.unitsStyle = .abbreviated
+            return formatter
+        }
+    }
+
+    static var sqliteTimestampParser: DateFormatter {
+        threadLocalFormatter(forKey: sqliteTimestampParserKey) {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+            return formatter
+        }
+    }
+
+    static var iso8601Parser: ISO8601DateFormatter {
+        threadLocalFormatter(forKey: iso8601ParserKey) {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime]
+            return formatter
+        }
+    }
+
+    static var iso8601FractionalSecondsParser: ISO8601DateFormatter {
+        threadLocalFormatter(forKey: iso8601FractionalSecondsParserKey) {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return formatter
+        }
+    }
+
+    private static func threadLocalFormatter<T: AnyObject>(
+        forKey key: String,
+        make: () -> T
+    ) -> T {
+        let dictionary = Thread.current.threadDictionary
+        if let formatter = dictionary[key] as? T {
+            return formatter
+        }
+
+        let formatter = make()
+        dictionary[key] = formatter
+        return formatter
     }
 }
 
