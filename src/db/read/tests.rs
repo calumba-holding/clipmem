@@ -127,6 +127,10 @@ pub(in crate::db) fn file_urls_decode_to_paths() {
         "/Users/test/Documents/hello world.txt"
     );
     assert_eq!(
+        normalise_file_path("file://LOCALHOST/Users/test/Documents/hello%20world.txt"),
+        "/Users/test/Documents/hello world.txt"
+    );
+    assert_eq!(
         normalise_file_path("/Users/test/Documents/hello world.txt"),
         "/Users/test/Documents/hello world.txt"
     );
@@ -188,6 +192,27 @@ pub(in crate::db) fn file_path_search_matches_percent_encoded_path_characters() 
     assert_eq!(
         results.hits()[0].file_paths(),
         &["/Users/test/work/release#1.txt".to_string()]
+    );
+    Ok(())
+}
+
+#[test]
+pub(in crate::db) fn file_path_search_handles_case_insensitive_localhost_authority() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+
+    let stored = db.store_capture(&fake_file_snapshot(
+        1,
+        "file://LOCALHOST/Users/test/work/report%20draft.txt",
+    ))?;
+
+    let results = db.search_auto("/Users/test/work/report draft.txt", 10, &unfiltered())?;
+
+    assert_eq!(results.mode_used(), SearchMode::Literal);
+    assert_eq!(results.hits().len(), 1);
+    assert_eq!(results.hits()[0].snapshot_id(), stored.snapshot_id());
+    assert_eq!(
+        results.hits()[0].file_paths(),
+        &["/Users/test/work/report draft.txt".to_string()]
     );
     Ok(())
 }

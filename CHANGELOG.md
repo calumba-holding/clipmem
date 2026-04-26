@@ -9,6 +9,12 @@ versioning where practical.
 
 ## Unreleased
 
+### Fixed
+
+- Fixed file URL path normalization so `file://localhost/...` clipboard
+  entries decode and search correctly even when the `localhost` authority or
+  URL scheme uses uppercase characters.
+
 ## 0.4.2 - 2026-04-26
 
 ### Added

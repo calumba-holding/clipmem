@@ -383,8 +383,12 @@ pub(in crate::db) fn normalise_file_path(value: &str) -> String {
 }
 
 pub(in crate::db) fn decode_file_url_path(value: &str) -> Option<String> {
-    let rest = value.strip_prefix("file://")?;
-    let rest = rest.strip_prefix("localhost").unwrap_or(rest);
+    const PREFIX: &str = "file://";
+    if !has_ascii_prefix(value, PREFIX) {
+        return None;
+    }
+
+    let rest = strip_localhost_authority(&value[PREFIX.len()..]);
 
     if rest.is_empty() {
         None
@@ -393,6 +397,24 @@ pub(in crate::db) fn decode_file_url_path(value: &str) -> Option<String> {
     } else {
         Some(rest.to_string())
     }
+}
+
+fn strip_localhost_authority(value: &str) -> &str {
+    const LOCALHOST: &str = "localhost";
+    if has_ascii_prefix(value, LOCALHOST)
+        && (value.len() == LOCALHOST.len() || value.as_bytes()[LOCALHOST.len()] == b'/')
+    {
+        &value[LOCALHOST.len()..]
+    } else {
+        value
+    }
+}
+
+fn has_ascii_prefix(value: &str, prefix: &str) -> bool {
+    value
+        .as_bytes()
+        .get(..prefix.len())
+        .is_some_and(|candidate| candidate.eq_ignore_ascii_case(prefix.as_bytes()))
 }
 
 pub(in crate::db) fn percent_decode(value: &str) -> String {

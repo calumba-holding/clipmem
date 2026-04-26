@@ -296,16 +296,31 @@ fn best_text_priority(kind: ClipboardKind, text: &str) -> Option<u8> {
 
 fn decode_file_url_path(file_url: &str) -> String {
     const PREFIX: &str = "file://";
-    if let Some(remainder) = file_url.strip_prefix(PREFIX) {
-        let remainder = if remainder == "localhost" || remainder.starts_with("localhost/") {
-            &remainder["localhost".len()..]
-        } else {
-            remainder
-        };
+    if has_ascii_prefix(file_url, PREFIX) {
+        let remainder = &file_url[PREFIX.len()..];
+        let remainder = strip_localhost_authority(remainder);
         percent_decode(remainder)
     } else {
         file_url.to_string()
     }
+}
+
+fn strip_localhost_authority(value: &str) -> &str {
+    const LOCALHOST: &str = "localhost";
+    if has_ascii_prefix(value, LOCALHOST)
+        && (value.len() == LOCALHOST.len() || value.as_bytes()[LOCALHOST.len()] == b'/')
+    {
+        &value[LOCALHOST.len()..]
+    } else {
+        value
+    }
+}
+
+fn has_ascii_prefix(value: &str, prefix: &str) -> bool {
+    value
+        .as_bytes()
+        .get(..prefix.len())
+        .is_some_and(|candidate| candidate.eq_ignore_ascii_case(prefix.as_bytes()))
 }
 
 fn percent_decode(value: &str) -> String {
@@ -378,6 +393,25 @@ mod tests {
                 "public.file-url".to_string(),
                 Some("file://localhost/Users/test/Report%20Q2.txt".to_string()),
                 b"file://localhost/Users/test/Report%20Q2.txt".to_vec(),
+            )],
+        );
+
+        let projection = FlattenedTextProjection::from_items(&[item]);
+
+        assert_eq!(
+            projection.file_paths(),
+            &["/Users/test/Report Q2.txt".to_string()]
+        );
+    }
+
+    #[test]
+    fn projection_decodes_localhost_file_urls_case_insensitively() {
+        let item = build_item(
+            0,
+            vec![build_representation(
+                "public.file-url".to_string(),
+                Some("file://LOCALHOST/Users/test/Report%20Q2.txt".to_string()),
+                b"file://LOCALHOST/Users/test/Report%20Q2.txt".to_vec(),
             )],
         );
 
