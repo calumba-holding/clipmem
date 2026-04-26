@@ -31,6 +31,9 @@ versioning where practical.
 
 ### Performance
 
+- Improved pending OCR candidate discovery by indexing the queue in retry
+  order. In a 50,000-row pending OCR benchmark, median candidate selection
+  dropped from 3.664 ms to 8.666 us.
 - Improved `optimize-images` candidate discovery on image-heavy archives by
   indexing the uncompressed image queue in the same order the optimizer scans
   it. In a 50,000-image candidate benchmark, median discovery time dropped

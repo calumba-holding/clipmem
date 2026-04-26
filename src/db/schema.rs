@@ -174,7 +174,7 @@ pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
-        13 | 14 => {
+        13..=15 => {
             if legacy_prerelease_schema_detected(&tx)? {
                 bail!(
                     "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"

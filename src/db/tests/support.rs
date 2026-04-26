@@ -397,6 +397,39 @@ pub(in crate::db::tests) fn seed_image_optimization_candidate_archive(
     Ok(())
 }
 
+pub(in crate::db::tests) fn seed_pending_ocr_candidate_archive(
+    db: &mut Database,
+    pending_count: usize,
+) -> Result<()> {
+    let tx = db
+        .conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+    {
+        let mut insert = tx.prepare(
+            "INSERT INTO ocr_results (raw_sha256, status, updated_at)
+             VALUES (?1, 'pending', ?2)",
+        )?;
+
+        for index in 0..pending_count {
+            let observed_at = format!(
+                "2026-04-17 {:02}:{:02}:{:02}",
+                12usize.saturating_sub((index / 3600) % 12),
+                (index / 60) % 60,
+                index % 60
+            );
+            insert.execute(params![
+                format!("{:064x}", 20_000_000 + index + 1),
+                observed_at,
+            ])?;
+        }
+    }
+
+    tx.execute_batch("ANALYZE")?;
+    tx.commit()?;
+    Ok(())
+}
+
 pub(in crate::db::tests) fn median_profile_run<F>(
     runs: usize,
     mut f: F,

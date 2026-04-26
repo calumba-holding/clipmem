@@ -150,6 +150,9 @@ CREATE INDEX IF NOT EXISTS idx_item_representations_raw_sha256_snapshot
 CREATE INDEX IF NOT EXISTS idx_ocr_results_status
     ON ocr_results(status);
 
+CREATE INDEX IF NOT EXISTS idx_ocr_results_pending_queue
+    ON ocr_results(status, updated_at ASC, raw_sha256 ASC);
+
 CREATE INDEX IF NOT EXISTS idx_snapshot_ocr_cache_text_present
     ON snapshot_ocr_cache(snapshot_id)
     WHERE ocr_text != '';

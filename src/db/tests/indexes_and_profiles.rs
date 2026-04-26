@@ -220,6 +220,31 @@ fn ocr_status_counts_use_status_and_text_indexes() -> Result<()> {
 }
 
 #[test]
+fn pending_ocr_candidate_query_uses_pending_queue_index() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    db.store_capture(&image_snapshot(1, vec![("public.png", vec![1, 2, 3, 4])]))?;
+    db.next_ocr_candidates(25, None, false)?;
+
+    let plan = explain_query_plan(
+        &db.conn,
+        "SELECT o.raw_sha256
+         FROM ocr_results o
+         WHERE o.status = 'pending'
+         ORDER BY o.updated_at ASC, o.raw_sha256 ASC
+         LIMIT ?1",
+        &[&25_i64],
+    )?;
+
+    assert!(plan
+        .iter()
+        .any(|detail| detail.contains("idx_ocr_results_pending_queue")));
+    assert!(plan
+        .iter()
+        .all(|detail| !detail.contains("USE TEMP B-TREE FOR ORDER BY")));
+    Ok(())
+}
+
+#[test]
 fn image_optimization_candidate_query_uses_queue_index() -> Result<()> {
     let mut db = Database::open_in_memory()?;
     db.store_capture(&image_snapshot(1, vec![("public.png", vec![1, 2, 3, 4])]))?;
@@ -242,6 +267,44 @@ fn image_optimization_candidate_query_uses_queue_index() -> Result<()> {
     assert!(plan
         .iter()
         .all(|detail| !detail.contains("USE TEMP B-TREE FOR ORDER BY")));
+    Ok(())
+}
+
+#[test]
+#[ignore = "profiling harness for pending OCR candidate discovery"]
+fn profile_pending_ocr_candidate_query() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    seed_pending_ocr_candidate_archive(&mut db, 50_000)?;
+    let sql = r"
+        SELECT o.raw_sha256
+        FROM ocr_results o
+        WHERE o.status = 'pending'
+        ORDER BY o.updated_at ASC, o.raw_sha256 ASC
+        LIMIT ?1
+    ";
+
+    db.conn
+        .execute("DROP INDEX IF EXISTS idx_ocr_results_pending_queue", [])?;
+    db.conn.execute_batch("ANALYZE")?;
+    let before = median_profile_run(7, || {
+        let mut stmt = db.conn.prepare(sql)?;
+        let rows = stmt.query_map([25_i64], |row| row.get::<_, String>(0))?;
+        collect_rows(rows).map(|rows| rows.len())
+    })?;
+
+    db.conn.execute(
+        "CREATE INDEX idx_ocr_results_pending_queue
+         ON ocr_results(status, updated_at ASC, raw_sha256 ASC)",
+        [],
+    )?;
+    db.conn.execute_batch("ANALYZE")?;
+    let after = median_profile_run(7, || {
+        let mut stmt = db.conn.prepare(sql)?;
+        let rows = stmt.query_map([25_i64], |row| row.get::<_, String>(0))?;
+        collect_rows(rows).map(|rows| rows.len())
+    })?;
+
+    eprintln!("pending_ocr_candidates_before={before:?} after={after:?}");
     Ok(())
 }
 
