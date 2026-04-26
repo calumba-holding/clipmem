@@ -507,7 +507,7 @@ impl Database {
         }
 
         progress(ImageOptimizationProgressEvent::Complete {
-            report: report.clone(),
+            report: Box::new(report.clone()),
         })?;
         Ok(report)
     }

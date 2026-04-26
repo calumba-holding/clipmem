@@ -195,7 +195,7 @@ pub(crate) enum ImageOptimizationProgressEvent {
         conflict_count: usize,
     },
     Complete {
-        report: ImageOptimizationReport,
+        report: Box<ImageOptimizationReport>,
     },
 }
 
