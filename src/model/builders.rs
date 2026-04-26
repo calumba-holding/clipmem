@@ -47,26 +47,26 @@ pub fn build_representation(
     string_value: Option<String>,
     raw_bytes: Vec<u8>,
 ) -> ClipboardRepresentation {
-    let decoded_raw_text = decode_text_bytes_strict(&raw_bytes);
-    let clean_string_value = string_value
-        .as_deref()
-        .filter(|text| is_searchable_text_fragment(text))
-        .map(ToOwned::to_owned);
+    let clean_string_value = string_value.filter(|text| is_searchable_text_fragment(text));
     let kind = classify_uti(&uti, clean_string_value.is_some());
-    let decoded_text = clean_string_value
-        .or_else(|| {
-            decoded_raw_text
-                .as_deref()
-                .filter(|text| is_searchable_text_fragment(text))
-                .map(ToOwned::to_owned)
-        })
-        .or_else(|| {
-            if kind.is_textual() {
-                decode_text_bytes_lossy(&raw_bytes).filter(|text| is_searchable_text_fragment(text))
-            } else {
-                decoded_raw_text
-            }
-        });
+
+    let decoded_text = if clean_string_value.is_some() {
+        clean_string_value
+    } else {
+        let decoded_raw_text = decode_text_bytes_strict(&raw_bytes);
+        decoded_raw_text
+            .as_ref()
+            .filter(|text| is_searchable_text_fragment(text))
+            .map(ToString::to_string)
+            .or_else(|| {
+                if kind.is_textual() {
+                    decode_text_bytes_lossy(&raw_bytes)
+                        .filter(|text| is_searchable_text_fragment(text))
+                } else {
+                    decoded_raw_text
+                }
+            })
+    };
 
     ClipboardRepresentation::new(uti, kind, hash_bytes(&raw_bytes), decoded_text, raw_bytes)
 }
@@ -250,15 +250,15 @@ pub(crate) fn is_searchable_text_fragment(text: &str) -> bool {
         return false;
     }
 
-    let total = trimmed.chars().count();
-    if total == 0 {
-        return false;
+    let mut total = 0;
+    let mut disruptive_controls = 0;
+    for ch in trimmed.chars() {
+        total += 1;
+        if ch.is_control() && !matches!(ch, '\n' | '\r' | '\t') {
+            disruptive_controls += 1;
+        }
     }
 
-    let disruptive_controls = trimmed
-        .chars()
-        .filter(|ch| ch.is_control() && !matches!(ch, '\n' | '\r' | '\t'))
-        .count();
     ratio_at_most(disruptive_controls, total, 1, 20)
 }
 

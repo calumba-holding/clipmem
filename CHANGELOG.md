@@ -31,6 +31,11 @@ versioning where practical.
 
 ### Performance
 
+- Improved text clipboard capture normalization by trusting an already
+  searchable pasteboard string before decoding the same raw UTF-8 bytes and by
+  avoiding an extra string copy in representation construction. In an 80-item,
+  256 KiB text representation benchmark, median construction time dropped from
+  64.894 ms to 60.672 ms.
 - Improved human-readable CLI rendering for large clipboard previews by
   truncating table cells with bounded scanning and replacing newlines without
   copying the full source text. In a 10,000-cell long-preview benchmark,
