@@ -9,6 +9,8 @@ versioning where practical.
 
 ## Unreleased
 
+## 0.4.2 - 2026-04-26
+
 ### Added
 
 - Added live progress for menu bar image compression and a public
