@@ -1,7 +1,7 @@
 use super::*;
 
 pub(in crate::cli) fn render_list_toon(envelope: &ListEnvelope) -> String {
-    let mut out = String::new();
+    let mut out = String::with_capacity(estimated_list_toon_capacity(envelope));
     render_toon_entry(
         &mut out,
         "schema_version",
@@ -49,12 +49,9 @@ pub(in crate::cli) fn render_list_toon(envelope: &ListEnvelope) -> String {
             ListRow::Snapshot(row) => ToonSnapshotRowProjection::from_row(row).values(),
             ListRow::Timeline(row) => ToonTimelineRowProjection::from_row(row).values(),
         };
-        let encoded = values
-            .iter()
-            .map(encode_toon_scalar)
-            .collect::<Vec<_>>()
-            .join("\t");
-        let _ = writeln!(out, "  {encoded}");
+        out.push_str("  ");
+        push_toon_scalars_tab_separated(&mut out, &values);
+        out.push('\n');
     }
 
     out
@@ -132,12 +129,9 @@ pub(in crate::cli) fn render_recall_rows_toon(
     );
     for row in rows {
         let values = ToonRecallRowProjection::from_row(row).values();
-        let encoded = values
-            .iter()
-            .map(encode_toon_scalar)
-            .collect::<Vec<_>>()
-            .join("\t");
-        let _ = writeln!(out, "  {encoded}");
+        out.push_str("  ");
+        push_toon_scalars_tab_separated(out, &values);
+        out.push('\n');
     }
 }
 
@@ -150,7 +144,9 @@ pub(in crate::cli) fn render_toon_entry(out: &mut String, key: &str, value: &Val
         }
         Value::Array(array) => render_toon_array(out, Some(key), array, indent),
         _ => {
-            let _ = writeln!(out, "{padding}{key}: {}", encode_toon_scalar(value));
+            let _ = write!(out, "{padding}{key}: ");
+            push_toon_scalar(out, value);
+            out.push('\n');
         }
     }
 }
@@ -186,12 +182,9 @@ pub(in crate::cli) fn render_toon_array(
             return;
         }
 
-        let encoded = values
-            .iter()
-            .map(encode_toon_scalar)
-            .collect::<Vec<_>>()
-            .join("\t");
-        let _ = writeln!(out, "{key_prefix}[#{}\t]: {encoded}", values.len());
+        let _ = write!(out, "{key_prefix}[#{}\t]: ", values.len());
+        push_toon_scalars_tab_separated(out, values);
+        out.push('\n');
         return;
     }
 
@@ -210,7 +203,9 @@ pub(in crate::cli) fn render_toon_list_item(out: &mut String, value: &Value, ind
             render_toon_array(out, None, array, indent + 2);
         }
         _ => {
-            let _ = writeln!(out, "{padding}- {}", encode_toon_scalar(value));
+            let _ = write!(out, "{padding}- ");
+            push_toon_scalar(out, value);
+            out.push('\n');
         }
     }
 }
@@ -237,11 +232,9 @@ pub(in crate::cli) fn render_toon_object_list_item(
             render_toon_array(out, None, array, indent + 4);
         }
         _ => {
-            let _ = writeln!(
-                out,
-                "{padding}- {first_key}: {}",
-                encode_toon_scalar(first_value)
-            );
+            let _ = write!(out, "{padding}- {first_key}: ");
+            push_toon_scalar(out, first_value);
+            out.push('\n');
         }
     }
 
@@ -250,19 +243,23 @@ pub(in crate::cli) fn render_toon_object_list_item(
     }
 }
 
-pub(in crate::cli) fn encode_toon_scalar(value: &Value) -> String {
+pub(in crate::cli) fn push_toon_scalar(out: &mut String, value: &Value) {
     match value {
-        Value::Null => "null".to_string(),
-        Value::Bool(flag) => flag.to_string(),
-        Value::Number(number) => number.to_string(),
-        Value::String(text) => encode_toon_string(text),
+        Value::Null => out.push_str("null"),
+        Value::Bool(flag) => {
+            let _ = write!(out, "{flag}");
+        }
+        Value::Number(number) => {
+            let _ = write!(out, "{number}");
+        }
+        Value::String(text) => push_toon_string(out, text),
         Value::Array(_) | Value::Object(_) => {
-            unreachable!("encode_toon_scalar only accepts primitive TOON values")
+            unreachable!("push_toon_scalar only accepts primitive TOON values")
         }
     }
 }
 
-pub(in crate::cli) fn encode_toon_string(text: &str) -> String {
+pub(in crate::cli) fn push_toon_string(out: &mut String, text: &str) {
     if text.is_empty()
         || text.contains('\t')
         || text.contains('\n')
@@ -273,16 +270,34 @@ pub(in crate::cli) fn encode_toon_string(text: &str) -> String {
         || text.starts_with(' ')
         || text.ends_with(' ')
     {
-        let escaped = text
-            .replace('\\', "\\\\")
-            .replace('"', "\\\"")
-            .replace('\n', "\\n")
-            .replace('\r', "\\r")
-            .replace('\t', "\\t");
-        format!("\"{escaped}\"")
+        out.push('"');
+        for character in text.chars() {
+            match character {
+                '\\' => out.push_str("\\\\"),
+                '"' => out.push_str("\\\""),
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                '\t' => out.push_str("\\t"),
+                other => out.push(other),
+            }
+        }
+        out.push('"');
     } else {
-        text.to_string()
+        out.push_str(text);
     }
+}
+
+pub(in crate::cli) fn push_toon_scalars_tab_separated(out: &mut String, values: &[Value]) {
+    for (index, value) in values.iter().enumerate() {
+        if index > 0 {
+            out.push('\t');
+        }
+        push_toon_scalar(out, value);
+    }
+}
+
+fn estimated_list_toon_capacity(envelope: &ListEnvelope) -> usize {
+    384 + envelope.results.len().saturating_mul(192)
 }
 
 pub(in crate::cli) fn render_filter_pairs(filters: &Value) -> String {

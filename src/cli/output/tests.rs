@@ -1,4 +1,6 @@
-use serde_json::json;
+use serde_json::{json, Value};
+use std::fmt::Write;
+use std::time::{Duration, Instant};
 
 use crate::db::{SearchMode, SearchResults};
 use crate::model::{
@@ -10,9 +12,10 @@ use super::super::commands::{CaptureOnceOutput, CaptureOnceStoredOutput};
 use super::{
     render_capture_once_text, render_doctor_text, render_get_markdown, render_hits_text,
     render_list_markdown, render_list_toon, render_recall_markdown, render_recall_toon,
-    render_search_results_text, render_snapshot_text, render_timeline_text, GetEnvelope,
-    ListEnvelope, ListRow, RecallEnvelope, RecallMatchConfidence, RecallOutputRow, SnapshotListRow,
-    TimelineListRow, OUTPUT_SCHEMA_VERSION,
+    render_search_results_text, render_snapshot_text, render_timeline_text, write_json_pretty,
+    GetEnvelope, ListEnvelope, ListRow, RecallEnvelope, RecallMatchConfidence, RecallOutputRow,
+    SnapshotListRow, TimelineListRow, ToonSnapshotRowProjection, ToonTimelineRowProjection,
+    OUTPUT_SCHEMA_VERSION,
 };
 
 #[test]
@@ -449,4 +452,176 @@ pub(in crate::cli) fn timeline_toon_uses_scalar_projection_display_text_fallback
     assert!(toon.contains("git preview"));
     assert!(!toon.contains("best_text_uti"));
     assert!(!toon.contains("sha256"));
+}
+
+#[test]
+#[ignore = "profiling harness for CLI JSON serialization"]
+pub(in crate::cli) fn profile_json_output_serialization() {
+    let envelope = large_list_envelope(10_000);
+
+    let before = median_duration(7, || {
+        let json = serde_json::to_string_pretty(&envelope).expect("serialize envelope to string");
+        assert!(json.len() > 1_000_000);
+    });
+    let after = median_duration(7, || {
+        let mut out = Vec::new();
+        write_json_pretty(&mut out, &envelope).expect("stream envelope to writer");
+        assert!(out.len() > 1_000_000);
+    });
+
+    eprintln!("json_output_string_before={before:?} json_output_writer_after={after:?}");
+}
+
+#[test]
+#[ignore = "profiling harness for CLI TOON rendering"]
+pub(in crate::cli) fn profile_toon_output_rendering() {
+    let envelope = large_list_envelope(10_000);
+
+    let before = median_duration(7, || {
+        let toon = render_list_toon_join_encoded_for_profile(&envelope);
+        assert!(toon.len() > 1_000_000);
+    });
+    let after = median_duration(7, || {
+        let toon = render_list_toon(&envelope);
+        assert!(toon.len() > 1_000_000);
+    });
+
+    eprintln!("toon_output_join_before={before:?} toon_output_stream_after={after:?}");
+}
+
+fn median_duration(runs: usize, mut f: impl FnMut()) -> Duration {
+    let mut samples = Vec::with_capacity(runs);
+    for _ in 0..runs {
+        let started = Instant::now();
+        f();
+        samples.push(started.elapsed());
+    }
+    samples.sort();
+    samples[samples.len() / 2]
+}
+
+fn large_list_envelope(row_count: usize) -> ListEnvelope {
+    let results = (0..row_count)
+        .map(|index| {
+            ListRow::Snapshot(SnapshotListRow {
+                snapshot_id: index as i64 + 1,
+                event_id: index as i64 + 10_000,
+                sha256: format!("{:064x}", index + 1),
+                kind: "plain_text".to_string(),
+                observed_at: "2026-04-17T10:00:00Z".to_string(),
+                first_seen_at: "2026-04-17T09:00:00Z".to_string(),
+                last_seen_at: "2026-04-17T10:00:00Z".to_string(),
+                app_name: Some("Terminal".to_string()),
+                app_bundle_id: Some("com.apple.Terminal".to_string()),
+                best_text: format!("git status output row {index} with enough text to resemble a real clipboard row"),
+                best_text_uti: Some("public.utf8-plain-text".to_string()),
+                text_fragments: Vec::new(),
+                urls: vec![format!("https://example.com/{index}")],
+                file_paths: vec![format!("/Users/test/repo/{index}/Cargo.toml")],
+                html_text: None,
+                rtf_text: None,
+                ocr_text: None,
+                ocr_status: None,
+                text_summary: format!("git status summary {index}"),
+                preview_text: format!("git status preview {index}"),
+                item_count: 1,
+                total_bytes: 128,
+                capture_count: 1,
+                score: Some(0.42),
+                why_matched: Some("Exact text match".to_string()),
+                matched_fields: vec!["best_text".to_string(), "search_text".to_string()],
+            })
+        })
+        .collect();
+
+    ListEnvelope {
+        schema_version: OUTPUT_SCHEMA_VERSION,
+        command: "search",
+        generated_at: "2026-04-17T10:00:00Z".to_string(),
+        applied_filters: json!({
+            "query": "git",
+            "requested_mode": "auto",
+            "mode_used": "literal",
+            "limit": row_count,
+        }),
+        truncated: false,
+        next_cursor: None,
+        results,
+    }
+}
+
+fn render_list_toon_join_encoded_for_profile(envelope: &ListEnvelope) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "schema_version: {}", envelope.schema_version);
+    let _ = writeln!(out, "command: {}", envelope.command);
+    let _ = writeln!(out, "generated_at: {}", envelope.generated_at);
+    let _ = writeln!(out, "applied_filters: {}", envelope.applied_filters);
+    let _ = writeln!(out, "truncated: {}", envelope.truncated);
+    let _ = writeln!(
+        out,
+        "next_cursor: {}",
+        envelope.next_cursor.as_deref().unwrap_or("null")
+    );
+
+    let fields = if envelope.command == "timeline" {
+        ToonTimelineRowProjection::FIELDS.as_slice()
+    } else {
+        ToonSnapshotRowProjection::FIELDS.as_slice()
+    };
+    let _ = writeln!(
+        out,
+        "results[#{}\t]{{{}}}:",
+        envelope.results.len(),
+        fields.join("\t")
+    );
+
+    for row in &envelope.results {
+        let values = match row {
+            ListRow::Snapshot(row) => ToonSnapshotRowProjection::from_row(row).values(),
+            ListRow::Timeline(row) => ToonTimelineRowProjection::from_row(row).values(),
+        };
+        let encoded = values
+            .iter()
+            .map(encode_toon_scalar_for_profile)
+            .collect::<Vec<_>>()
+            .join("\t");
+        let _ = writeln!(out, "  {encoded}");
+    }
+
+    out
+}
+
+fn encode_toon_scalar_for_profile(value: &Value) -> String {
+    match value {
+        Value::Null => "null".to_string(),
+        Value::Bool(flag) => flag.to_string(),
+        Value::Number(number) => number.to_string(),
+        Value::String(text) => encode_toon_string_for_profile(text),
+        Value::Array(_) | Value::Object(_) => {
+            unreachable!("profile scalar encoder only accepts primitive values")
+        }
+    }
+}
+
+fn encode_toon_string_for_profile(text: &str) -> String {
+    if text.is_empty()
+        || text.contains('\t')
+        || text.contains('\n')
+        || text.contains('\r')
+        || text.contains(':')
+        || text.contains('"')
+        || text.contains('\\')
+        || text.starts_with(' ')
+        || text.ends_with(' ')
+    {
+        let escaped = text
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r")
+            .replace('\t', "\\t");
+        format!("\"{escaped}\"")
+    } else {
+        text.to_string()
+    }
 }

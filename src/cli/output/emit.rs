@@ -50,8 +50,7 @@ pub(in crate::cli) fn emit_get_output(format: OutputFormat, envelope: &GetEnvelo
         OutputFormat::Text => unreachable!("get text output uses the legacy text renderer"),
         OutputFormat::Json => print_json(envelope),
         OutputFormat::Jsonl => {
-            println!("{}", serde_json::to_string(envelope)?);
-            Ok(())
+            print_json_line(envelope)
         }
         OutputFormat::Md => {
             print!("{}", render_get_markdown(envelope));

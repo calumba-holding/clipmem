@@ -31,6 +31,14 @@ versioning where practical.
 
 ### Performance
 
+- Improved large TOON CLI output rendering by streaming row fields directly
+  into the output buffer instead of allocating encoded fields before joining
+  them. In a 10,000-row TOON rendering benchmark, median render time dropped
+  from 19.614 ms to 8.554 ms.
+- Improved large JSON and JSONL CLI output by writing serialized values
+  directly to stdout instead of first materializing each line as a `String`.
+  In a 10,000-row pretty JSON serialization benchmark, median serialization
+  time dropped from 9.527 ms to 8.462 ms.
 - Improved menu bar row rendering by reusing timestamp formatters instead of
   constructing new date formatters for each row. In a 10,000-row timestamp
   formatting benchmark, median formatting time dropped from 5.701 s to
