@@ -6,7 +6,6 @@ struct MenuBarPanelView: View {
 
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var recentSearchQuery = ""
     @State private var restoringItemID: Int?
     @FocusState private var searchFocused: Bool
@@ -109,9 +108,7 @@ struct MenuBarPanelView: View {
                 .focused($searchFocused)
             if !recentSearchQuery.isEmpty {
                 Button {
-                    withAnimation(DesignAnimation.quick) {
-                        recentSearchQuery = ""
-                    }
+                    recentSearchQuery = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.tertiary)
@@ -119,7 +116,6 @@ struct MenuBarPanelView: View {
                 .buttonStyle(.borderless)
                 .frame(minWidth: 28, minHeight: 28)
                 .contentShape(Rectangle())
-                .transition(.scale(scale: 0.25).combined(with: .opacity))
             }
         }
         .padding(.horizontal, Spacing.md)
@@ -160,44 +156,60 @@ struct MenuBarPanelView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            List {
-                ForEach(Array(filteredRecentPreview.enumerated()), id: \.element.id) { index, item in
-                    Button {
-                        restoringItemID = item.snapshotId
-                        Task {
-                            await appModel.restore(item)
-                            try? await Task.sleep(for: .milliseconds(200))
-                            restoringItemID = nil
-                            NSApp.deactivate()
-                        }
-                    } label: {
-                        ResultRowView(item: item, selected: item.snapshotId == restoringItemID)
-                    }
-                    .buttonStyle(.plain)
-                    .pressable()
-                    .animation(DesignAnimation.staggerDelay(index: index, reduceMotion: reduceMotion), value: filteredRecentPreview.count)
-                    .contextMenu {
-                        Button("Copy Plain Text") {
-                            if let text = item.copyablePlainText {
-                                PasteboardActions.copyPlainText(text)
-                            }
-                        }
-                        .disabled(item.copyablePlainText == nil)
-                        Button("Open in History") {
-                            appModel.requestHistoryFocus(
-                                snapshotID: item.snapshotId,
-                                mode: .recent,
-                                query: ""
-                            )
-                            WindowActivation.openWindow(openWindow, id: .history)
-                        }
-                        Button("Forget", role: .destructive) {
-                            Task { await appModel.forget(item) }
-                        }
+            ScrollView(.vertical) {
+                VStack(spacing: 0) {
+                    ForEach(filteredRecentPreview, id: \.id) { item in
+                        recentRow(for: item)
                     }
                 }
+                .padding(.vertical, Spacing.xs)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .listStyle(.inset)
+            .scrollIndicators(.visible)
+            .disablesScrollElasticity()
+            .transaction { transaction in
+                transaction.animation = nil
+            }
+        }
+    }
+
+    private func recentRow(for item: ClipmemItem) -> some View {
+        Button {
+            restoringItemID = item.snapshotId
+            Task {
+                await appModel.restore(item)
+                try? await Task.sleep(for: .milliseconds(200))
+                restoringItemID = nil
+                NSApp.deactivate()
+            }
+        } label: {
+            ResultRowView(
+                item: item,
+                selected: item.snapshotId == restoringItemID,
+                animatedHighlight: false
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button("Copy Plain Text") {
+                if let text = item.copyablePlainText {
+                    PasteboardActions.copyPlainText(text)
+                }
+            }
+            .disabled(item.copyablePlainText == nil)
+            Button("Open in History") {
+                appModel.requestHistoryFocus(
+                    snapshotID: item.snapshotId,
+                    mode: .recent,
+                    query: ""
+                )
+                WindowActivation.openWindow(openWindow, id: .history)
+            }
+            Button("Forget", role: .destructive) {
+                Task { await appModel.forget(item) }
+            }
         }
     }
 

@@ -21,6 +21,8 @@ versioning where practical.
 
 ### Fixed
 
+- Fixed menu bar popover scrolling so the recent-items scrollbar keeps a
+  stable size and the top edge no longer rubber-bands with a flicker.
 - Fixed file path search so displayed local paths containing percent-encoded
   characters such as `#` match their stored `file://` clipboard entries.
 - Fixed file path search so local paths containing spaces match percent-encoded

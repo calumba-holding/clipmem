@@ -142,10 +142,11 @@ struct BannerStyle: ViewModifier {
 /// Row padding = `Spacing.sm` (8). Concentric ideal: 13 + 8 = 21 — 12 is the optical compromise.
 struct RowHighlightStyle: ViewModifier {
     let selected: Bool
+    var animated = true
     @State private var isHovered = false
 
     func body(content: Content) -> some View {
-        content
+        let row = content
             .padding(.vertical, Spacing.sm)
             .padding(.horizontal, Spacing.sm)
             .background(
@@ -156,7 +157,12 @@ struct RowHighlightStyle: ViewModifier {
             )
             .contentShape(Rectangle())
             .onHover { isHovered = $0 }
-            .animation(DesignAnimation.quick, value: isHovered)
+
+        if animated {
+            row.animation(DesignAnimation.quick, value: isHovered)
+        } else {
+            row
+        }
     }
 }
 
@@ -197,8 +203,8 @@ extension View {
         modifier(BannerStyle(tint: tint))
     }
 
-    func rowHighlightStyle(selected: Bool) -> some View {
-        modifier(RowHighlightStyle(selected: selected))
+    func rowHighlightStyle(selected: Bool, animated: Bool = true) -> some View {
+        modifier(RowHighlightStyle(selected: selected, animated: animated))
     }
 
     func glassOverlay(cornerRadius: CGFloat = DesignRadius.lg) -> some View {

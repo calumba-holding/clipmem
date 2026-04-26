@@ -3,6 +3,7 @@ import SwiftUI
 struct ResultRowView: View {
     let item: ClipmemItem
     let selected: Bool
+    var animatedHighlight = true
 
     var body: some View {
         HStack(alignment: .top, spacing: Spacing.md) {
@@ -21,7 +22,7 @@ struct ResultRowView: View {
             Spacer()
             scoreView
         }
-        .rowHighlightStyle(selected: selected)
+        .rowHighlightStyle(selected: selected, animated: animatedHighlight)
     }
 
     // MARK: - Icon
