@@ -21,7 +21,7 @@ versioning where practical.
 
 - Moved settings action feedback to the bottom of the window and kept storage
   maintenance success messages visible longer so results are easier to read.
-- Updated the ClawHub clipboard-memory skill package to 1.3.2 so the revised
+- Updated the ClawHub clipboard-memory skill package to 1.3.3 so the revised
   command and setup-check references can publish cleanly.
 
 ### Fixed
