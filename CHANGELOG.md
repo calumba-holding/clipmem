@@ -31,6 +31,10 @@ versioning where practical.
 
 ### Performance
 
+- Improved snapshot detail hydration by loading all item representations with
+  one grouped query instead of issuing one representation query per clipboard
+  item. In a 1,000-item, 2,000-representation snapshot hydration benchmark,
+  median item hydration time dropped from 1.298 ms to 911 us.
 - Improved `recall` candidate ranking by avoiding per-candidate lowercase
   allocations during literal scoring and preferred-app matching. In a
   20,000-candidate literal scoring benchmark, median scoring time dropped from
