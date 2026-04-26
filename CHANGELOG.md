@@ -31,6 +31,10 @@ versioning where practical.
 
 ### Performance
 
+- Improved search and timeline row mapping for file-heavy clipboard entries by
+  normalizing aggregated file paths in one pass and skipping percent-decoder
+  work for unescaped `file://` URLs. In a 20,000-path row-mapping benchmark,
+  median normalization time dropped from 3.574 ms to 1.185 ms.
 - Improved snapshot detail hydration by loading all item representations with
   one grouped query instead of issuing one representation query per clipboard
   item. In a 1,000-item, 2,000-representation snapshot hydration benchmark,
