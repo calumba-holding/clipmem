@@ -323,3 +323,94 @@ pub(in crate::db::tests) fn seed_large_archive(
     tx.commit()?;
     Ok(())
 }
+
+pub(in crate::db::tests) fn seed_image_optimization_candidate_archive(
+    db: &mut Database,
+    image_count: usize,
+) -> Result<()> {
+    let tx = db
+        .conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+    let blob = vec![0_u8; 128];
+    {
+        let mut insert_snapshot = tx.prepare(
+            "INSERT INTO snapshots (
+                sha256,
+                snapshot_kind,
+                preview_text,
+                search_text,
+                item_count,
+                total_bytes,
+                created_at
+            ) VALUES (?1, 'image', ?2, ?2, 1, ?3, '2026-04-17 12:00:00')",
+        )?;
+        let mut insert_item = tx.prepare(
+            "INSERT INTO snapshot_items (
+                snapshot_id,
+                item_index,
+                primary_kind,
+                primary_uti,
+                preview_text,
+                search_text,
+                total_bytes
+            ) VALUES (?1, 0, 'image', 'public.png', ?2, ?2, ?3)",
+        )?;
+        let mut insert_representation = tx.prepare(
+            "INSERT INTO item_representations (
+                snapshot_id,
+                item_index,
+                uti,
+                kind,
+                byte_len,
+                raw_sha256,
+                text_value,
+                blob_value,
+                image_compression_status
+            ) VALUES (?1, 0, 'public.png', 'image', ?2, ?3, NULL, ?4, ?5)",
+        )?;
+
+        for index in 0..image_count {
+            let number = index + 1;
+            let byte_len = 128_i64 + ((image_count - index) % 4096) as i64;
+            let preview = format!("image candidate {number}");
+            insert_snapshot.execute(params![format!("{number:064x}"), preview, byte_len,])?;
+            let snapshot_id = tx.last_insert_rowid();
+            insert_item.execute(params![snapshot_id, preview, byte_len])?;
+            let status = if index % 5 == 0 {
+                "compressed"
+            } else {
+                "uncompressed"
+            };
+            insert_representation.execute(params![
+                snapshot_id,
+                byte_len,
+                format!("{:064x}", 10_000_000 + number),
+                &blob,
+                status,
+            ])?;
+        }
+    }
+
+    tx.execute_batch("ANALYZE")?;
+    tx.commit()?;
+    Ok(())
+}
+
+pub(in crate::db::tests) fn median_profile_run<F>(
+    runs: usize,
+    mut f: F,
+) -> Result<std::time::Duration>
+where
+    F: FnMut() -> Result<usize>,
+{
+    let mut elapsed = Vec::with_capacity(runs);
+    for _ in 0..runs {
+        let started = Instant::now();
+        let count = f()?;
+        assert_eq!(count, 25);
+        elapsed.push(started.elapsed());
+    }
+    elapsed.sort();
+    Ok(elapsed[elapsed.len() / 2])
+}

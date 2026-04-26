@@ -220,6 +220,32 @@ fn ocr_status_counts_use_status_and_text_indexes() -> Result<()> {
 }
 
 #[test]
+fn image_optimization_candidate_query_uses_queue_index() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    db.store_capture(&image_snapshot(1, vec![("public.png", vec![1, 2, 3, 4])]))?;
+
+    let plan = explain_query_plan(
+        &db.conn,
+        "SELECT snapshot_id, item_index, uti, byte_len, raw_sha256, blob_value
+         FROM item_representations
+         WHERE kind = 'image'
+           AND image_compression_status = 'uncompressed'
+           AND length(blob_value) > 0
+         ORDER BY byte_len DESC, snapshot_id ASC, item_index ASC, uti ASC
+         LIMIT ?1",
+        &[&25_i64],
+    )?;
+
+    assert!(plan
+        .iter()
+        .any(|detail| detail.contains("idx_item_representations_image_optimization_queue")));
+    assert!(plan
+        .iter()
+        .all(|detail| !detail.contains("USE TEMP B-TREE FOR ORDER BY")));
+    Ok(())
+}
+
+#[test]
 #[ignore = "profiling harness for large retrieval workloads"]
 fn profile_large_retrieval_queries() -> Result<()> {
     let mut db = Database::open_in_memory()?;
@@ -322,6 +348,73 @@ fn profile_large_retrieval_queries() -> Result<()> {
         search_fts_app.hits().len()
     );
 
+    Ok(())
+}
+
+#[test]
+#[ignore = "profiling harness for image optimization candidate discovery"]
+fn profile_image_optimization_candidate_query() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    seed_image_optimization_candidate_archive(&mut db, 50_000)?;
+    let sql = r"
+        SELECT snapshot_id, item_index, uti, byte_len, raw_sha256, blob_value
+        FROM item_representations
+        WHERE kind = 'image'
+          AND image_compression_status = 'uncompressed'
+          AND length(blob_value) > 0
+        ORDER BY byte_len DESC, snapshot_id ASC, item_index ASC, uti ASC
+        LIMIT ?1
+    ";
+
+    db.conn.execute(
+        "DROP INDEX IF EXISTS idx_item_representations_image_optimization_queue",
+        [],
+    )?;
+    db.conn.execute_batch("ANALYZE")?;
+    let before = median_profile_run(7, || {
+        let mut stmt = db.conn.prepare(sql)?;
+        let rows = stmt.query_map([25_i64], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, Vec<u8>>(5)?,
+            ))
+        })?;
+        collect_rows(rows).map(|rows| rows.len())
+    })?;
+
+    db.conn.execute(
+        "CREATE INDEX idx_item_representations_image_optimization_queue
+         ON item_representations(
+             image_compression_status,
+             byte_len DESC,
+             snapshot_id ASC,
+             item_index ASC,
+             uti ASC
+         )
+         WHERE kind = 'image' AND length(blob_value) > 0",
+        [],
+    )?;
+    db.conn.execute_batch("ANALYZE")?;
+    let after = median_profile_run(7, || {
+        let mut stmt = db.conn.prepare(sql)?;
+        let rows = stmt.query_map([25_i64], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, Vec<u8>>(5)?,
+            ))
+        })?;
+        collect_rows(rows).map(|rows| rows.len())
+    })?;
+
+    eprintln!("image_optimization_candidates_before={before:?} after={after:?}");
     Ok(())
 }
 

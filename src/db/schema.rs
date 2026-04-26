@@ -174,7 +174,7 @@ pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {
             tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
                 .context("set PRAGMA user_version")?;
         }
-        13 => {
+        13 | 14 => {
             if legacy_prerelease_schema_detected(&tx)? {
                 bail!(
                     "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
@@ -202,6 +202,7 @@ pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {
 
     ensure_ocr_enabled_setting_column(&tx)?;
     ensure_image_compression_columns(&tx)?;
+    ensure_image_optimization_queue_index(&tx)?;
     ensure_representation_cache_deferred_column(&tx)?;
     tx.execute(
         "INSERT OR IGNORE INTO clipmem_settings (id, paused, retention_seconds, api_key_filter_enabled, ocr_enabled) VALUES (1, 0, NULL, 0, 0)",
@@ -300,6 +301,25 @@ pub(in crate::db) fn ensure_image_compression_columns(conn: &Connection) -> Resu
         "image_compression_reason",
         "ALTER TABLE item_representations ADD COLUMN image_compression_reason TEXT",
     )?;
+    Ok(())
+}
+
+pub(in crate::db) fn ensure_image_optimization_queue_index(conn: &Connection) -> Result<()> {
+    conn.execute(
+        r"
+        CREATE INDEX IF NOT EXISTS idx_item_representations_image_optimization_queue
+            ON item_representations(
+                image_compression_status,
+                byte_len DESC,
+                snapshot_id ASC,
+                item_index ASC,
+                uti ASC
+            )
+            WHERE kind = 'image' AND length(blob_value) > 0
+        ",
+        [],
+    )
+    .context("create image optimization queue index")?;
     Ok(())
 }
 

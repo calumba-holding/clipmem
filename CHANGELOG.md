@@ -31,6 +31,10 @@ versioning where practical.
 
 ### Performance
 
+- Improved `optimize-images` candidate discovery on image-heavy archives by
+  indexing the uncompressed image queue in the same order the optimizer scans
+  it. In a 50,000-image candidate benchmark, median discovery time dropped
+  from 5.603 ms to 19.583 us.
 - Improved storage of new snapshots with many file URL representations by
   deferring representation-derived cache rebuilds until the snapshot rows are
   inserted. In a 1,000-file-url capture benchmark, median store time dropped
