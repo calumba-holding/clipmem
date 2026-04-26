@@ -31,6 +31,11 @@ versioning where practical.
 
 ### Performance
 
+- Improved API key filtering for large clipboard text by scanning contextual
+  token lines with a rolling lookahead instead of collecting every line and
+  allocating lowercase cue copies. In a 25,000-line contextual-token benchmark,
+  median scan time dropped from 47.261 ms to 19.064 ms; in the no-match
+  benchmark, median scan time dropped from 53.462 ms to 24.458 ms.
 - Improved rich text clipboard normalization by parsing RTF directly from the
   input stream instead of first copying it into a character vector and
   allocating control words. In a 20,000-token RTF extraction benchmark, median

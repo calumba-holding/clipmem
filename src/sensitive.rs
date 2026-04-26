@@ -35,34 +35,61 @@ fn has_strong_api_key_signature(text: &str) -> bool {
 }
 
 fn has_contextual_token_match(text: &str) -> bool {
-    let lines = text.lines().map(str::trim).collect::<Vec<_>>();
-    for (index, line) in lines.iter().enumerate() {
-        if line.is_empty() {
-            continue;
-        }
+    let mut lines = text.lines().map(str::trim);
+    let Some(mut line) = lines.next() else {
+        return false;
+    };
 
-        let cue_nearby = [
-            index.saturating_sub(1),
-            index,
-            (index + 1).min(lines.len() - 1),
-        ]
-        .into_iter()
-        .any(|candidate| contains_context_cue(lines[candidate]));
-        if !cue_nearby {
-            continue;
-        }
+    let mut previous_has_cue = false;
+    let mut current_has_cue = contains_context_cue(line);
+    let mut next_line = lines.next();
+    let mut next_has_cue = next_line.is_some_and(contains_context_cue);
 
-        if token_candidates(line).any(is_contextual_secret_candidate) {
+    loop {
+        if !line.is_empty()
+            && (previous_has_cue || current_has_cue || next_has_cue)
+            && token_candidates(line).any(is_contextual_secret_candidate)
+        {
             return true;
         }
-    }
 
-    false
+        let Some(next) = next_line else {
+            return false;
+        };
+        line = next;
+        previous_has_cue = current_has_cue;
+        current_has_cue = next_has_cue;
+        next_line = lines.next();
+        next_has_cue = next_line.is_some_and(contains_context_cue);
+    }
 }
 
 fn contains_context_cue(text: &str) -> bool {
-    let lower = text.to_ascii_lowercase();
-    CONTEXT_CUES.iter().any(|cue| lower.contains(cue))
+    CONTEXT_CUES
+        .iter()
+        .any(|cue| contains_ascii_case_insensitive(text, cue))
+}
+
+fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
+    let haystack = haystack.as_bytes();
+    let needle = needle.as_bytes();
+
+    if needle.is_empty() {
+        return true;
+    }
+    if needle.len() > haystack.len() {
+        return false;
+    }
+
+    haystack
+        .windows(needle.len())
+        .any(|window| ascii_eq_ignore_case(window, needle))
+}
+
+fn ascii_eq_ignore_case(left: &[u8], right: &[u8]) -> bool {
+    left.iter()
+        .zip(right)
+        .all(|(left, right)| left.eq_ignore_ascii_case(right))
 }
 
 fn matches_strong_api_key_signature(token: &str) -> bool {
@@ -192,8 +219,12 @@ fn class_count(token: &str) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::should_skip_snapshot_for_api_key_filter;
+    use super::{
+        has_contextual_token_match, is_contextual_secret_candidate,
+        should_skip_snapshot_for_api_key_filter, token_candidates,
+    };
     use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
+    use std::time::{Duration, Instant};
 
     fn text_snapshot(text: &str) -> crate::model::ClipboardSnapshot {
         build_snapshot(
@@ -291,5 +322,93 @@ mod tests {
     fn ignores_empty_search_text() {
         let snapshot = build_snapshot(CaptureContext::new(1), Vec::new());
         assert!(!should_skip_snapshot_for_api_key_filter(&snapshot));
+    }
+
+    #[test]
+    #[ignore = "profiling harness for contextual API key filter scanning"]
+    fn profile_contextual_api_key_filter_scan() {
+        let text = large_contextual_filter_text(25_000, true);
+
+        let before = median_duration(15, || {
+            assert!(has_contextual_token_match_collect_lines_for_profile(&text));
+        });
+        let after = median_duration(15, || {
+            assert!(has_contextual_token_match(&text));
+        });
+
+        eprintln!(
+            "api_key_filter_collect_lines_before={before:?} api_key_filter_stream_after={after:?}"
+        );
+    }
+
+    #[test]
+    #[ignore = "profiling harness for contextual API key filter scanning without matches"]
+    fn profile_contextual_api_key_filter_no_match_scan() {
+        let text = large_contextual_filter_text(25_000, false);
+
+        let before = median_duration(15, || {
+            assert!(!has_contextual_token_match_collect_lines_for_profile(&text));
+        });
+        let after = median_duration(15, || {
+            assert!(!has_contextual_token_match(&text));
+        });
+
+        eprintln!("api_key_filter_no_match_collect_lines_before={before:?} api_key_filter_no_match_stream_after={after:?}");
+    }
+
+    fn median_duration(runs: usize, mut f: impl FnMut()) -> Duration {
+        let mut samples = Vec::with_capacity(runs);
+        for _ in 0..runs {
+            let started = Instant::now();
+            f();
+            samples.push(started.elapsed());
+        }
+        samples.sort();
+        samples[samples.len() / 2]
+    }
+
+    fn large_contextual_filter_text(line_count: usize, include_secret: bool) -> String {
+        let mut out = String::with_capacity(line_count * 72);
+        for index in 0..line_count {
+            out.push_str("ordinary clipboard line ");
+            out.push_str(&index.to_string());
+            out.push_str(" with mixed words and numbers 12345\n");
+        }
+        if include_secret {
+            out.push_str("Authorization: Bearer\n");
+            out.push_str("8JfA-2mQpV_4tLz9XnR6cH0wKdS7yBu3\n");
+        }
+        out
+    }
+
+    fn has_contextual_token_match_collect_lines_for_profile(text: &str) -> bool {
+        let lines = text.lines().map(str::trim).collect::<Vec<_>>();
+        for (index, line) in lines.iter().enumerate() {
+            if line.is_empty() {
+                continue;
+            }
+
+            let cue_nearby = [
+                index.saturating_sub(1),
+                index,
+                (index + 1).min(lines.len() - 1),
+            ]
+            .into_iter()
+            .any(|candidate| contains_context_cue_collect_lowercase_for_profile(lines[candidate]));
+            if !cue_nearby {
+                continue;
+            }
+
+            if token_candidates(line).any(is_contextual_secret_candidate) {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    fn contains_context_cue_collect_lowercase_for_profile(text: &str) -> bool {
+        let lower = text.to_ascii_lowercase();
+        super::CONTEXT_CUES.iter().any(|cue| lower.contains(cue))
     }
 }
