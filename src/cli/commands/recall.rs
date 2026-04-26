@@ -325,13 +325,13 @@ pub(in crate::cli) fn literal_match_score(hit: &SearchHit, query: &str) -> f64 {
     }
     if candidates
         .iter()
-        .any(|value| value.to_ascii_lowercase().starts_with(&query))
+        .any(|value| starts_with_ascii_case_insensitive(value, &query))
     {
         return 0.88;
     }
     if candidates
         .iter()
-        .any(|value| value.to_ascii_lowercase().contains(&query))
+        .any(|value| contains_ascii_case_insensitive(value, &query))
     {
         return 0.78;
     }
@@ -347,10 +347,9 @@ pub(in crate::cli) fn literal_match_score(hit: &SearchHit, query: &str) -> f64 {
     let best_overlap = candidates
         .iter()
         .map(|value| {
-            let lower = value.to_ascii_lowercase();
             let matched = query_terms
                 .iter()
-                .filter(|term| lower.contains(**term))
+                .filter(|term| contains_ascii_case_insensitive(value, term))
                 .count();
             matched as f64 / query_terms.len() as f64
         })
@@ -385,14 +384,42 @@ pub(in crate::cli) fn matches_preferred_app(hit: &SearchHit, prefer_app: Option<
     let Some(prefer_app) = prefer_app.map(str::trim).filter(|value| !value.is_empty()) else {
         return false;
     };
-    let prefer_app = prefer_app.to_ascii_lowercase();
     hit.last_frontmost_app_name()
-        .map(|value| value.to_ascii_lowercase().contains(&prefer_app))
+        .map(|value| contains_ascii_case_insensitive(value, prefer_app))
         .unwrap_or(false)
         || hit
             .last_frontmost_app_bundle_id()
-            .map(|value| value.to_ascii_lowercase().contains(&prefer_app))
+            .map(|value| contains_ascii_case_insensitive(value, prefer_app))
             .unwrap_or(false)
+}
+
+pub(in crate::cli) fn starts_with_ascii_case_insensitive(value: &str, prefix: &str) -> bool {
+    let value = value.as_bytes();
+    let prefix = prefix.as_bytes();
+    value
+        .get(..prefix.len())
+        .is_some_and(|head| ascii_eq_ignore_case(head, prefix))
+}
+
+pub(in crate::cli) fn contains_ascii_case_insensitive(value: &str, needle: &str) -> bool {
+    let value = value.as_bytes();
+    let needle = needle.as_bytes();
+    if needle.is_empty() {
+        return true;
+    }
+    if needle.len() > value.len() {
+        return false;
+    }
+
+    value
+        .windows(needle.len())
+        .any(|window| ascii_eq_ignore_case(window, needle))
+}
+
+pub(in crate::cli) fn ascii_eq_ignore_case(left: &[u8], right: &[u8]) -> bool {
+    left.iter()
+        .zip(right)
+        .all(|(left, right)| left.eq_ignore_ascii_case(right))
 }
 
 pub(in crate::cli) fn app_preference_boost(app_preferred: bool) -> f64 {
@@ -465,4 +492,175 @@ pub(in crate::cli) fn build_recall_why_selected(
     }
 
     parts.join("; ")
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::{literal_match_score, matches_preferred_app};
+    use crate::model::{SearchHit, SnapshotKind};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    #[ignore = "profiling harness for recall literal scoring"]
+    fn profile_recall_literal_match_scoring() {
+        let hits = large_recall_hits(20_000);
+        let query = "needle term";
+
+        let before = median_duration(11, || {
+            let total = hits
+                .iter()
+                .map(|hit| literal_match_score_before_for_profile(hit, query))
+                .sum::<f64>();
+            assert!(total > 10_000.0);
+        });
+        let after = median_duration(11, || {
+            let total = hits
+                .iter()
+                .map(|hit| literal_match_score(hit, query))
+                .sum::<f64>();
+            assert!(total > 10_000.0);
+        });
+
+        eprintln!(
+            "recall_literal_lowercase_before={before:?} recall_literal_ascii_after={after:?}"
+        );
+    }
+
+    #[test]
+    #[ignore = "profiling harness for recall preferred-app matching"]
+    fn profile_recall_preferred_app_matching() {
+        let hits = large_recall_hits(20_000);
+
+        let before = median_duration(11, || {
+            let matches = hits
+                .iter()
+                .filter(|hit| matches_preferred_app_before_for_profile(hit, Some("terminal")))
+                .count();
+            assert_eq!(matches, hits.len());
+        });
+        let after = median_duration(11, || {
+            let matches = hits
+                .iter()
+                .filter(|hit| matches_preferred_app(hit, Some("terminal")))
+                .count();
+            assert_eq!(matches, hits.len());
+        });
+
+        eprintln!("recall_preferred_app_lowercase_before={before:?} recall_preferred_app_ascii_after={after:?}");
+    }
+
+    fn median_duration(runs: usize, mut f: impl FnMut()) -> Duration {
+        let mut samples = Vec::with_capacity(runs);
+        for _ in 0..runs {
+            let started = Instant::now();
+            f();
+            samples.push(started.elapsed());
+        }
+        samples.sort();
+        samples[samples.len() / 2]
+    }
+
+    fn large_recall_hits(count: usize) -> Vec<SearchHit> {
+        (0..count)
+            .map(|index| {
+                let preview = format!(
+                    "Clipboard row {index} includes Needle text with surrounding words and term"
+                );
+                let why_matched = Some(format!(
+                    "Search snippet {index} with another Needle Term occurrence"
+                ));
+                SearchHit::new(
+                    index as i64 + 1,
+                    index as i64 + 100_000,
+                    format!("{:064x}", index + 1),
+                    SnapshotKind::PlainText,
+                    preview.clone(),
+                    preview,
+                    why_matched,
+                    vec!["best_text".to_string()],
+                    1,
+                    "2026-04-17 10:00:00".to_string(),
+                    "2026-04-17 11:00:00".to_string(),
+                    Some("Terminal".to_string()),
+                    Some("com.apple.Terminal".to_string()),
+                    Vec::new(),
+                    Vec::new(),
+                    128,
+                    1,
+                    Some(0.25),
+                )
+            })
+            .collect()
+    }
+
+    fn literal_match_score_before_for_profile(hit: &SearchHit, query: &str) -> f64 {
+        let query = query.trim().to_ascii_lowercase();
+        if query.is_empty() {
+            return 0.0;
+        }
+
+        let candidates = [
+            hit.why_matched().unwrap_or(hit.preview_text()),
+            hit.preview_text(),
+        ];
+
+        if candidates
+            .iter()
+            .any(|value| value.trim().eq_ignore_ascii_case(&query))
+        {
+            return 0.95;
+        }
+        if candidates
+            .iter()
+            .any(|value| value.to_ascii_lowercase().starts_with(&query))
+        {
+            return 0.88;
+        }
+        if candidates
+            .iter()
+            .any(|value| value.to_ascii_lowercase().contains(&query))
+        {
+            return 0.78;
+        }
+
+        let query_terms = token_candidates_for_profile(&query);
+        if query_terms.is_empty() {
+            return 0.0;
+        }
+
+        let best_overlap = candidates
+            .iter()
+            .map(|value| {
+                let lower = value.to_ascii_lowercase();
+                let matched = query_terms
+                    .iter()
+                    .filter(|term| lower.contains(**term))
+                    .count();
+                matched as f64 / query_terms.len() as f64
+            })
+            .fold(0.0, f64::max);
+
+        (0.55 + best_overlap * 0.25).clamp(0.0, 0.82)
+    }
+
+    fn matches_preferred_app_before_for_profile(hit: &SearchHit, prefer_app: Option<&str>) -> bool {
+        let Some(prefer_app) = prefer_app.map(str::trim).filter(|value| !value.is_empty()) else {
+            return false;
+        };
+        let prefer_app = prefer_app.to_ascii_lowercase();
+        hit.last_frontmost_app_name()
+            .map(|value| value.to_ascii_lowercase().contains(&prefer_app))
+            .unwrap_or(false)
+            || hit
+                .last_frontmost_app_bundle_id()
+                .map(|value| value.to_ascii_lowercase().contains(&prefer_app))
+                .unwrap_or(false)
+    }
+
+    fn token_candidates_for_profile(query: &str) -> Vec<&str> {
+        query
+            .split_whitespace()
+            .filter(|term| !term.is_empty())
+            .collect()
+    }
 }

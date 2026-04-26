@@ -31,6 +31,11 @@ versioning where practical.
 
 ### Performance
 
+- Improved `recall` candidate ranking by avoiding per-candidate lowercase
+  allocations during literal scoring and preferred-app matching. In a
+  20,000-candidate literal scoring benchmark, median scoring time dropped from
+  4.026 ms to 1.518 ms; in the preferred-app matching benchmark, median time
+  dropped from 1.066 ms to 148 us.
 - Improved API key filtering for large clipboard text by scanning contextual
   token lines with a rolling lookahead instead of collecting every line and
   allocating lowercase cue copies. In a 25,000-line contextual-token benchmark,
