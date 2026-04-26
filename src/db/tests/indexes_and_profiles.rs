@@ -245,6 +245,50 @@ fn pending_ocr_candidate_query_uses_pending_queue_index() -> Result<()> {
 }
 
 #[test]
+fn unfiltered_stats_leaderboards_use_ordering_indexes() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    db.store_capture(&fake_snapshot(1, "small"))?;
+    let large = db.store_capture(&fake_snapshot(2, "large"))?;
+    db.conn.execute(
+        "UPDATE snapshots SET total_bytes = 4096 WHERE id = ?1",
+        [large.snapshot_id()],
+    )?;
+
+    let largest_plan = explain_query_plan(
+        &db.conn,
+        "SELECT s.id, s.total_bytes
+         FROM snapshots s
+         JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+         ORDER BY s.total_bytes DESC, s.id ASC
+         LIMIT ?1",
+        &[&5_i64],
+    )?;
+    let most_captured_plan = explain_query_plan(
+        &db.conn,
+        "SELECT s.id, ss.capture_count
+         FROM snapshots s
+         JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+         ORDER BY ss.capture_count DESC, s.id ASC
+         LIMIT ?1",
+        &[&5_i64],
+    )?;
+
+    assert!(largest_plan
+        .iter()
+        .any(|detail| detail.contains("idx_snapshots_total_bytes")));
+    assert!(largest_plan
+        .iter()
+        .all(|detail| !detail.contains("USE TEMP B-TREE FOR ORDER BY")));
+    assert!(most_captured_plan
+        .iter()
+        .any(|detail| detail.contains("idx_snapshot_stats_capture_count")));
+    assert!(most_captured_plan
+        .iter()
+        .all(|detail| !detail.contains("USE TEMP B-TREE FOR ORDER BY")));
+    Ok(())
+}
+
+#[test]
 fn image_optimization_candidate_query_uses_queue_index() -> Result<()> {
     let mut db = Database::open_in_memory()?;
     db.store_capture(&image_snapshot(1, vec![("public.png", vec![1, 2, 3, 4])]))?;
@@ -305,6 +349,77 @@ fn profile_pending_ocr_candidate_query() -> Result<()> {
     })?;
 
     eprintln!("pending_ocr_candidates_before={before:?} after={after:?}");
+    Ok(())
+}
+
+#[test]
+#[ignore = "profiling harness for unfiltered stats leaderboard ordering"]
+fn profile_unfiltered_stats_leaderboards() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    seed_stats_leaderboard_archive(&mut db, 50_000)?;
+    let largest_sql = r"
+        SELECT s.id, s.total_bytes
+        FROM snapshots s
+        JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+        ORDER BY s.total_bytes DESC, s.id ASC
+        LIMIT ?1
+    ";
+    let most_captured_sql = r"
+        SELECT s.id, ss.capture_count
+        FROM snapshots s
+        JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+        ORDER BY ss.capture_count DESC, s.id ASC
+        LIMIT ?1
+    ";
+
+    db.conn
+        .execute("DROP INDEX IF EXISTS idx_snapshots_total_bytes", [])?;
+    db.conn
+        .execute("DROP INDEX IF EXISTS idx_snapshot_stats_capture_count", [])?;
+    db.conn.execute_batch("ANALYZE")?;
+    let largest_before = median_profile_run_expected(7, 5, || {
+        let mut stmt = db.conn.prepare(largest_sql)?;
+        let rows = stmt.query_map([5_i64], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        collect_rows(rows).map(|rows| rows.len())
+    })?;
+    let most_captured_before = median_profile_run_expected(7, 5, || {
+        let mut stmt = db.conn.prepare(most_captured_sql)?;
+        let rows = stmt.query_map([5_i64], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        collect_rows(rows).map(|rows| rows.len())
+    })?;
+
+    db.conn.execute(
+        "CREATE INDEX idx_snapshots_total_bytes ON snapshots(total_bytes DESC, id ASC)",
+        [],
+    )?;
+    db.conn.execute(
+        "CREATE INDEX idx_snapshot_stats_capture_count
+         ON snapshot_stats(capture_count DESC, snapshot_id ASC)",
+        [],
+    )?;
+    db.conn.execute_batch("ANALYZE")?;
+    let largest_after = median_profile_run_expected(7, 5, || {
+        let mut stmt = db.conn.prepare(largest_sql)?;
+        let rows = stmt.query_map([5_i64], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        collect_rows(rows).map(|rows| rows.len())
+    })?;
+    let most_captured_after = median_profile_run_expected(7, 5, || {
+        let mut stmt = db.conn.prepare(most_captured_sql)?;
+        let rows = stmt.query_map([5_i64], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+        })?;
+        collect_rows(rows).map(|rows| rows.len())
+    })?;
+
+    eprintln!(
+        "largest_before={largest_before:?} largest_after={largest_after:?} most_captured_before={most_captured_before:?} most_captured_after={most_captured_after:?}"
+    );
     Ok(())
 }
 

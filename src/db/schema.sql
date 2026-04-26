@@ -134,6 +134,12 @@ CREATE INDEX IF NOT EXISTS idx_capture_events_observed_weekday
 CREATE INDEX IF NOT EXISTS idx_snapshot_stats_last_observed_snapshot
     ON snapshot_stats(last_observed_at DESC, snapshot_id DESC);
 
+CREATE INDEX IF NOT EXISTS idx_snapshots_total_bytes
+    ON snapshots(total_bytes DESC, id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_snapshot_stats_capture_count
+    ON snapshot_stats(capture_count DESC, snapshot_id ASC);
+
 CREATE INDEX IF NOT EXISTS idx_pending_restores_created_at
     ON pending_restores(created_at);
 

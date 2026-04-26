@@ -430,8 +430,68 @@ pub(in crate::db::tests) fn seed_pending_ocr_candidate_archive(
     Ok(())
 }
 
-pub(in crate::db::tests) fn median_profile_run<F>(
+pub(in crate::db::tests) fn seed_stats_leaderboard_archive(
+    db: &mut Database,
+    snapshot_count: usize,
+) -> Result<()> {
+    let tx = db
+        .conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+
+    {
+        let mut insert_snapshot = tx.prepare(
+            "INSERT INTO snapshots (
+                sha256,
+                snapshot_kind,
+                preview_text,
+                search_text,
+                item_count,
+                total_bytes,
+                created_at
+            ) VALUES (?1, 'plain_text', ?2, ?2, 1, ?3, '2026-04-17 12:00:00')",
+        )?;
+        let mut insert_stats = tx.prepare(
+            "INSERT INTO snapshot_stats (
+                snapshot_id,
+                capture_count,
+                first_observed_at,
+                last_observed_at,
+                last_event_id,
+                last_frontmost_app_bundle_id,
+                last_frontmost_app_name
+            ) VALUES (?1, ?2, '2026-04-17 12:00:00', '2026-04-17 12:00:00', ?1, 'com.example.test', 'Test App')",
+        )?;
+
+        for index in 0..snapshot_count {
+            let number = index + 1;
+            let preview = format!("stats candidate {number}");
+            let total_bytes = ((snapshot_count - index) * 17 % 1_000_000) as i64 + 1;
+            let capture_count = ((index * 13) % 10_000) as i64 + 1;
+            insert_snapshot.execute(params![
+                format!("{:064x}", 30_000_000 + number),
+                preview,
+                total_bytes,
+            ])?;
+            let snapshot_id = tx.last_insert_rowid();
+            insert_stats.execute(params![snapshot_id, capture_count])?;
+        }
+    }
+
+    tx.execute_batch("ANALYZE")?;
+    tx.commit()?;
+    Ok(())
+}
+
+pub(in crate::db::tests) fn median_profile_run<F>(runs: usize, f: F) -> Result<std::time::Duration>
+where
+    F: FnMut() -> Result<usize>,
+{
+    median_profile_run_expected(runs, 25, f)
+}
+
+pub(in crate::db::tests) fn median_profile_run_expected<F>(
     runs: usize,
+    expected_count: usize,
     mut f: F,
 ) -> Result<std::time::Duration>
 where
@@ -441,7 +501,7 @@ where
     for _ in 0..runs {
         let started = Instant::now();
         let count = f()?;
-        assert_eq!(count, 25);
+        assert_eq!(count, expected_count);
         elapsed.push(started.elapsed());
     }
     elapsed.sort();

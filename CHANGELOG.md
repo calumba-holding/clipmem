@@ -31,6 +31,10 @@ versioning where practical.
 
 ### Performance
 
+- Improved unfiltered `stats` snapshot leaderboards by indexing the largest
+  snapshot and most-captured ordering paths. In a 50,000-snapshot leaderboard
+  benchmark, largest snapshot selection dropped from 5.300 ms to 6.416 us and
+  most-captured selection dropped from 3.004 ms to 13.667 us.
 - Improved pending OCR candidate discovery by indexing the queue in retry
   order. In a 50,000-row pending OCR benchmark, median candidate selection
   dropped from 3.664 ms to 8.666 us.
