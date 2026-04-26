@@ -31,6 +31,14 @@ versioning where practical.
 
 ### Performance
 
+- Improved rich text clipboard normalization by parsing RTF directly from the
+  input stream instead of first copying it into a character vector and
+  allocating control words. In a 20,000-token RTF extraction benchmark, median
+  extraction time dropped from 4.400 ms to 2.100 ms.
+- Improved shared whitespace normalization used by text, HTML, RTF, and
+  projection cleanup by appending normalized segments directly instead of
+  collecting them before joining. In a 20,000-token whitespace benchmark,
+  median normalization time dropped from 891.083 us to 857.833 us.
 - Improved large TOON CLI output rendering by streaming row fields directly
   into the output buffer instead of allocating encoded fields before joining
   them. In a 10,000-row TOON rendering benchmark, median render time dropped

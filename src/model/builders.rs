@@ -207,7 +207,18 @@ pub(crate) fn truncate_chars(text: &str, max_chars: usize) -> String {
 }
 
 pub(crate) fn normalise_whitespace(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
+    let mut parts = text.split_whitespace();
+    let Some(first) = parts.next() else {
+        return String::new();
+    };
+
+    let mut out = String::with_capacity(text.len());
+    out.push_str(first);
+    for part in parts {
+        out.push(' ');
+        out.push_str(part);
+    }
+    out
 }
 
 pub(crate) fn dedupe_text_fragments<I>(fragments: I) -> Vec<String>
@@ -408,76 +419,78 @@ fn decode_numeric_html_entity(entity: &str) -> Option<char> {
 
 pub(crate) fn rtf_to_text_lossy(rtf: &str) -> String {
     let mut out = String::with_capacity(rtf.len());
-    let chars = rtf.chars().collect::<Vec<_>>();
-    let mut index = 0;
+    let mut chars = rtf.char_indices().peekable();
 
-    while index < chars.len() {
-        match chars[index] {
+    while let Some((_, ch)) = chars.next() {
+        match ch {
             '{' | '}' => {
-                index += 1;
+                continue;
             }
             '\\' => {
-                index += 1;
-                if index >= chars.len() {
+                let Some((escaped_index, escaped)) = chars.next() else {
                     break;
-                }
+                };
 
-                match chars[index] {
+                match escaped {
                     '\\' | '{' | '}' => {
-                        out.push(chars[index]);
-                        index += 1;
+                        out.push(escaped);
                     }
                     '\'' => {
-                        if index + 2 < chars.len() {
-                            let hex = format!("{}{}", chars[index + 1], chars[index + 2]);
-                            if let Ok(byte) = u8::from_str_radix(&hex, 16) {
-                                out.push(byte as char);
-                            }
-                            index += 3;
-                        } else {
-                            index += 1;
+                        let high = chars.next().and_then(|(_, hex)| hex.to_digit(16));
+                        let low = chars.next().and_then(|(_, hex)| hex.to_digit(16));
+                        if let (Some(high), Some(low)) = (high, low) {
+                            out.push(((high << 4) as u8 | low as u8) as char);
                         }
                     }
                     c if c.is_ascii_alphabetic() => {
-                        let start = index;
-                        while index < chars.len() && chars[index].is_ascii_alphabetic() {
-                            index += 1;
+                        let word_start = escaped_index;
+                        let mut word_end = escaped_index + escaped.len_utf8();
+                        while let Some(&(byte_index, next)) = chars.peek() {
+                            if !next.is_ascii_alphabetic() {
+                                break;
+                            }
+                            word_end = byte_index + next.len_utf8();
+                            chars.next();
                         }
-                        let word = chars[start..index].iter().collect::<String>();
+                        let word = &rtf[word_start..word_end];
 
-                        if index < chars.len()
-                            && (chars[index] == '-' || chars[index].is_ascii_digit())
-                        {
-                            index += 1;
-                            while index < chars.len() && chars[index].is_ascii_digit() {
-                                index += 1;
+                        if let Some(&(_, next)) = chars.peek() {
+                            if next == '-' || next.is_ascii_digit() {
+                                chars.next();
+                                while let Some(&(_, digit)) = chars.peek() {
+                                    if !digit.is_ascii_digit() {
+                                        break;
+                                    }
+                                    chars.next();
+                                }
                             }
                         }
 
-                        if index < chars.len() && chars[index] == ' ' {
-                            index += 1;
+                        if let Some(&(_, ' ')) = chars.peek() {
+                            chars.next();
                         }
 
-                        match word.as_str() {
+                        match word {
                             "par" | "line" => out.push('\n'),
                             "tab" => out.push('\t'),
                             _ => {}
                         }
                     }
-                    _ => {
-                        index += 1;
-                    }
+                    _ => {}
                 }
             }
             ch => {
                 out.push(ch);
-                index += 1;
             }
         }
     }
 
     normalise_whitespace(&out)
 }
+
+#[cfg(test)]
+#[path = "builders/profile_tests.rs"]
+mod profile_tests;
 
 fn pick_primary_representation(
     reps: &[ClipboardRepresentation],
