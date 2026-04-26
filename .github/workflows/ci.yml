@@ -100,5 +100,6 @@ jobs:
             -configuration Debug \
             -destination 'platform=macOS' \
             -derivedDataPath /tmp/clipmem-menubar-ci-test-derived \
+            -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO \
             test

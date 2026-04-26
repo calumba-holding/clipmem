@@ -74,6 +74,7 @@ struct CommandRunner: Sendable {
     ) async throws -> CommandResult {
         let runningProcess = RunningProcess()
         let cancellationState = CancellationState()
+        let pipeHandles = PipeHandles()
         return try await withTaskCancellationHandler {
             try await Task.detached(priority: .userInitiated) {
                 let process = Process()
@@ -86,7 +87,14 @@ struct CommandRunner: Sendable {
                 process.standardOutput = stdout
                 process.standardError = stderr
                 runningProcess.set(process)
+                pipeHandles.set([
+                    stdout.fileHandleForReading,
+                    stdout.fileHandleForWriting,
+                    stderr.fileHandleForReading,
+                    stderr.fileHandleForWriting,
+                ])
                 defer { runningProcess.clear() }
+                defer { pipeHandles.clear() }
 
                 stderrReader.start()
                 do {
@@ -103,18 +111,21 @@ struct CommandRunner: Sendable {
                     return CommandResult(exitCode: process.terminationStatus, stdout: stdoutData, stderr: stderrData)
                 } catch {
                     process.terminate()
+                    stdout.fileHandleForReading.closeFile()
                     stdout.fileHandleForWriting.closeFile()
+                    stderr.fileHandleForReading.closeFile()
                     stderr.fileHandleForWriting.closeFile()
+                    stderrReader.close()
                     if process.isRunning {
                         process.waitUntilExit()
                     }
-                    _ = stderrReader.wait()
                     throw error
                 }
             }.value
         } onCancel: {
             cancellationState.cancel()
             runningProcess.terminate()
+            pipeHandles.close()
         }
     }
 
@@ -203,6 +214,33 @@ private final class CancellationState: @unchecked Sendable {
     }
 }
 
+private final class PipeHandles: @unchecked Sendable {
+    private let lock = NSLock()
+    private var fileHandles: [FileHandle] = []
+
+    func set(_ fileHandles: [FileHandle]) {
+        lock.lock()
+        self.fileHandles = fileHandles
+        lock.unlock()
+    }
+
+    func close() {
+        lock.lock()
+        let fileHandles = fileHandles
+        self.fileHandles = []
+        lock.unlock()
+        for fileHandle in fileHandles {
+            fileHandle.closeFile()
+        }
+    }
+
+    func clear() {
+        lock.lock()
+        fileHandles = []
+        lock.unlock()
+    }
+}
+
 private final class PipeReader: @unchecked Sendable {
     private let fileHandle: FileHandle
     private let semaphore = DispatchSemaphore(value: 0)
@@ -229,5 +267,10 @@ private final class PipeReader: @unchecked Sendable {
         let output = data
         lock.unlock()
         return output
+    }
+
+    func close() {
+        fileHandle.closeFile()
+        semaphore.signal()
     }
 }

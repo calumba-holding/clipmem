@@ -2,6 +2,7 @@ import Foundation
 import Testing
 @testable import ClipmemMenuBar
 
+@Suite(.serialized)
 struct CommandRunnerTests {
     @Test func drainsLargeStdoutAndStderrBeforeWaiting() async throws {
         let byteCount = 200_000
@@ -16,7 +17,7 @@ struct CommandRunnerTests {
 
     @Test func cancellationTerminatesRunningProcess() async throws {
         let task = Task {
-            try await CommandRunner().run(executable: "/bin/sh", arguments: ["-c", "sleep 30"])
+            try await CommandRunner().run(executable: "/bin/sh", arguments: ["-c", "exec sleep 30"])
         }
 
         try await Task.sleep(for: .milliseconds(100))
@@ -51,7 +52,7 @@ struct CommandRunnerTests {
         let task = Task {
             try await CommandRunner().runStreaming(
                 executable: "/bin/sh",
-                arguments: ["-c", "printf 'bad\\n'; sleep 30"]
+                arguments: ["-c", "printf 'bad\\n'; exec sleep 30"]
             ) { _ in
                 throw ClipmemClientError.decodingFailed("bad line")
             }
@@ -71,7 +72,7 @@ struct CommandRunnerTests {
         let task = Task {
             try await CommandRunner().runStreaming(
                 executable: "/bin/sh",
-                arguments: ["-c", "sleep 30"]
+                arguments: ["-c", "exec sleep 30"]
             ) { _ in }
         }
 
