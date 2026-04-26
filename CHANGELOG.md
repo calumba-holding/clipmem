@@ -31,6 +31,10 @@ versioning where practical.
 
 ### Performance
 
+- Improved human-readable CLI rendering for large clipboard previews by
+  truncating table cells with bounded scanning and replacing newlines without
+  copying the full source text. In a 10,000-cell long-preview benchmark,
+  median truncation time dropped from 2.636 ms to 1.057 ms.
 - Improved search and timeline row mapping for file-heavy clipboard entries by
   normalizing aggregated file paths in one pass and skipping percent-decoder
   work for unescaped `file://` URLs. In a 20,000-path row-mapping benchmark,

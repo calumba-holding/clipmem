@@ -148,19 +148,127 @@ pub(in crate::cli) fn format_timestamp_short(timestamp: &str) -> String {
 }
 
 pub(in crate::cli) fn truncate_multiline(text: &str, limit: usize) -> String {
-    truncate_cell(&text.replace('\n', " "), limit)
+    truncate_cell_mapped(text, limit, |ch| if ch == '\n' { ' ' } else { ch })
 }
 
 pub(in crate::cli) fn truncate_cell(text: &str, width: usize) -> String {
+    truncate_cell_mapped(text, width, std::convert::identity)
+}
+
+fn truncate_cell_mapped(text: &str, width: usize, map_char: impl Fn(char) -> char) -> String {
     let text = text.trim();
-    let count = text.chars().count();
-    if count <= width {
-        return text.to_string();
+    let mut chars = text.chars();
+    for _ in 0..width {
+        if chars.next().is_none() {
+            return text.chars().map(map_char).collect();
+        }
     }
+    if chars.next().is_none() {
+        return text.chars().map(map_char).collect();
+    }
+
     if width <= 3 {
         return ".".repeat(width);
     }
-    let mut out = text.chars().take(width - 3).collect::<String>();
+
+    let mut out = String::with_capacity(width);
+    for ch in text.chars().take(width - 3) {
+        out.push(map_char(ch));
+    }
     out.push_str("...");
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{truncate_cell, truncate_multiline};
+
+    #[test]
+    fn truncate_cell_preserves_existing_width_behavior() {
+        assert_eq!(truncate_cell(" git status ", 20), "git status");
+        assert_eq!(truncate_cell("abcdef", 6), "abcdef");
+        assert_eq!(truncate_cell("abcdef", 5), "ab...");
+        assert_eq!(truncate_cell("abcdef", 3), "...");
+        assert_eq!(truncate_cell("abcdef", 0), "");
+    }
+
+    #[test]
+    fn truncate_multiline_replaces_newlines_without_full_input_copy() {
+        assert_eq!(truncate_multiline("git\nstatus", 20), "git status");
+        assert_eq!(
+            truncate_multiline("git\nstatus\nwith\nlong\noutput", 12),
+            "git statu..."
+        );
+    }
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::truncate_cell;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    #[ignore = "profiling harness for human CLI cell truncation"]
+    fn profile_large_human_cell_truncation() {
+        let cells = large_human_cells(10_000, 4_000);
+
+        let before = median_duration(11, 340_000, || {
+            cells
+                .iter()
+                .map(|cell| truncate_cell_before_for_profile(cell, 34).len())
+                .sum()
+        });
+        let after = median_duration(11, 340_000, || {
+            cells.iter().map(|cell| truncate_cell(cell, 34).len()).sum()
+        });
+
+        eprintln!(
+            "human_cell_truncate_full_count_before={before:?} human_cell_truncate_bounded_after={after:?}"
+        );
+    }
+
+    fn median_duration(
+        runs: usize,
+        expected_total: usize,
+        mut f: impl FnMut() -> usize,
+    ) -> Duration {
+        let mut samples = Vec::with_capacity(runs);
+        for _ in 0..runs {
+            let started = Instant::now();
+            let total = f();
+            assert_eq!(total, expected_total);
+            samples.push(started.elapsed());
+        }
+        samples.sort();
+        samples[samples.len() / 2]
+    }
+
+    fn large_human_cells(count: usize, chars_per_cell: usize) -> Vec<String> {
+        (0..count)
+            .map(|index| {
+                let mut cell = String::with_capacity(chars_per_cell + 32);
+                cell.push_str("clipboard row ");
+                cell.push_str(&index.to_string());
+                cell.push(' ');
+                while cell.len() < chars_per_cell {
+                    cell.push_str("large preview text ");
+                }
+                cell
+            })
+            .collect()
+    }
+
+    fn truncate_cell_before_for_profile(text: &str, width: usize) -> String {
+        let text = text.trim();
+        let count = text.chars().count();
+        if count <= width {
+            return text.to_string();
+        }
+        if width <= 3 {
+            return ".".repeat(width);
+        }
+        let mut out = text.chars().take(width - 3).collect::<String>();
+        out.push_str("...");
+        out
+    }
 }
