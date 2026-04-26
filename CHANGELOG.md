@@ -31,6 +31,10 @@ versioning where practical.
 
 ### Performance
 
+- Improved OpenClaw and Hermes skill validation by deduplicating referenced
+  Markdown files with borrowed-path tracking instead of allocating a path for
+  every repeated link. In a 25,000-reference agent skill benchmark, median
+  reference extraction time dropped from 5.483 ms to 3.875 ms.
 - Improved text clipboard capture normalization by trusting an already
   searchable pasteboard string before decoding the same raw UTF-8 bytes and by
   avoiding an extra string copy in representation construction. In an 80-item,

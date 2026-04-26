@@ -314,6 +314,7 @@ pub(in crate::cli) fn validate_openclaw_skill_content(content: &str) -> Result<(
 }
 
 pub(in crate::cli) fn referenced_markdown_files(content: &str) -> Vec<PathBuf> {
+    let mut seen = std::collections::HashSet::new();
     let mut references = Vec::new();
 
     for line in content.lines() {
@@ -324,11 +325,8 @@ pub(in crate::cli) fn referenced_markdown_files(content: &str) -> Vec<PathBuf> {
                 break;
             };
             let candidate = &after_start[..end];
-            if candidate.ends_with(".md") {
-                let path = PathBuf::from(candidate);
-                if !references.iter().any(|existing| existing == &path) {
-                    references.push(path);
-                }
+            if candidate.ends_with(".md") && seen.insert(candidate) {
+                references.push(PathBuf::from(candidate));
             }
             remainder = &after_start[end + 1..];
         }
@@ -398,4 +396,85 @@ pub(in crate::cli) fn render_openclaw_doctor_report(report: &OpenClawDoctorRepor
     }
 
     out
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::referenced_markdown_files;
+    use std::path::PathBuf;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    #[ignore = "profiling harness for agent skill reference extraction"]
+    fn profile_referenced_markdown_file_extraction() {
+        let content = large_skill_markdown_with_repeated_references(25_000);
+
+        let before = median_duration(11, 5, || {
+            referenced_markdown_files_linear_dedupe_for_profile(&content).len()
+        });
+        let after = median_duration(11, 5, || referenced_markdown_files(&content).len());
+
+        eprintln!(
+            "referenced_markdown_files_linear_before={before:?} referenced_markdown_files_hash_after={after:?}"
+        );
+    }
+
+    fn median_duration(
+        runs: usize,
+        expected_count: usize,
+        mut f: impl FnMut() -> usize,
+    ) -> Duration {
+        let mut samples = Vec::with_capacity(runs);
+        for _ in 0..runs {
+            let started = Instant::now();
+            let count = f();
+            assert_eq!(count, expected_count);
+            samples.push(started.elapsed());
+        }
+        samples.sort();
+        samples[samples.len() / 2]
+    }
+
+    fn large_skill_markdown_with_repeated_references(reference_count: usize) -> String {
+        let references = [
+            "references/commands.md",
+            "references/troubleshooting.md",
+            "references/json-schema.md",
+            "references/examples.md",
+            "references/setup-check.md",
+        ];
+        let mut out = String::with_capacity(reference_count * 72);
+        out.push_str("---\nname: clipboard-memory\n---\n");
+        for index in 0..reference_count {
+            let reference = references[index % references.len()];
+            out.push_str("- See [reference](");
+            out.push_str(reference);
+            out.push_str(") for command details.\n");
+        }
+        out
+    }
+
+    fn referenced_markdown_files_linear_dedupe_for_profile(content: &str) -> Vec<PathBuf> {
+        let mut references = Vec::new();
+
+        for line in content.lines() {
+            let mut remainder = line;
+            while let Some(start) = remainder.find("(references/") {
+                let after_start = &remainder[start + 1..];
+                let Some(end) = after_start.find(')') else {
+                    break;
+                };
+                let candidate = &after_start[..end];
+                if candidate.ends_with(".md") {
+                    let path = PathBuf::from(candidate);
+                    if !references.iter().any(|existing| existing == &path) {
+                        references.push(path);
+                    }
+                }
+                remainder = &after_start[end + 1..];
+            }
+        }
+
+        references
+    }
 }
