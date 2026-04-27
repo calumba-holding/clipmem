@@ -37,6 +37,8 @@ versioning where practical.
   `best_candidate` and `alternatives` instead of list pagination fields.
 - Added diagnostic notes to `clipmem service status` when launchctl, plist, or
   process probes fail so missing service details are easier to troubleshoot.
+- Fixed direct LaunchAgent stop and uninstall commands so real `launchctl` and
+  plist removal failures are reported instead of being silently ignored.
 - Fixed background OCR worker startup so watchers for different archive
   databases no longer suppress each other's OCR processing.
 - Fixed file URL path normalization so `file://localhost/...` clipboard

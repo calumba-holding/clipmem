@@ -52,9 +52,8 @@ pub(in crate::cli) fn run_command_checked(
 }
 
 pub(in crate::cli) fn launchctl_bootout(label: &str) -> Result<()> {
-    let _ = ProcessCommand::new("launchctl")
-        .args(["bootout", &format!("gui/{}/{}", uid()?, label)])
-        .output();
+    let target = format!("gui/{}/{}", uid()?, label);
+    run_launchctl_idempotent(["bootout", target.as_str()], "launchctl bootout")?;
     Ok(())
 }
 
@@ -81,9 +80,8 @@ pub(in crate::cli) fn launchctl_enable(label: &str) -> Result<()> {
 }
 
 pub(in crate::cli) fn launchctl_disable(label: &str) -> Result<()> {
-    let _ = ProcessCommand::new("launchctl")
-        .args(["disable", &format!("gui/{}/{}", uid()?, label)])
-        .output();
+    let target = format!("gui/{}/{}", uid()?, label);
+    run_launchctl_idempotent(["disable", target.as_str()], "launchctl disable")?;
     Ok(())
 }
 
@@ -94,6 +92,35 @@ pub(in crate::cli) fn launchctl_kickstart(label: &str) -> Result<()> {
             .output(),
         "launchctl kickstart",
     )
+}
+
+fn run_launchctl_idempotent<const N: usize>(args: [&str; N], command: &str) -> Result<()> {
+    let output = ProcessCommand::new("launchctl")
+        .args(args)
+        .output()
+        .with_context(|| format!("run `{command}`"))?;
+    if output.status.success() || launchctl_reports_absent_service(&output) {
+        return Ok(());
+    }
+
+    run_command_checked(Ok(output), command)
+}
+
+fn launchctl_reports_absent_service(output: &std::process::Output) -> bool {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{stdout}\n{stderr}").to_ascii_lowercase();
+    [
+        "could not find specified service",
+        "does not exist",
+        "no such file",
+        "no such process",
+        "not loaded",
+        "service is not loaded",
+        "unknown service",
+    ]
+    .iter()
+    .any(|marker| combined.contains(marker))
 }
 
 pub(in crate::cli) fn uid() -> Result<String> {

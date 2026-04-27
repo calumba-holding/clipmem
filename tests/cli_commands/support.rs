@@ -458,6 +458,8 @@ pub(crate) fn write_stateful_launchctl_stub(bin_dir: &Path, state_dir: &Path) ->
 STATE_DIR='{state_dir}'
 DIRECT_STATE=\"$STATE_DIR/direct.state\"
 DIRECT_DISABLED=\"$STATE_DIR/direct.disabled\"
+BOOTOUT_FAIL=\"$STATE_DIR/bootout.fail\"
+DISABLE_FAIL=\"$STATE_DIR/disable.fail\"
 HOMEBREW_STATE=\"$STATE_DIR/homebrew.state\"
 mkdir -p \"$STATE_DIR\"
 case \"$1\" in
@@ -473,9 +475,20 @@ case \"$1\" in
     printf '123 0 io.openclaw.clipmem.watch\\n' > \"$DIRECT_STATE\"
     ;;
   bootout)
+    if [ -f \"$BOOTOUT_FAIL\" ]; then
+      printf 'forced bootout failure\\n' >&2
+      exit 42
+    fi
     case \"$2\" in
       *homebrew.mxcl.clipmem) rm -f \"$HOMEBREW_STATE\" ;;
-      *io.openclaw.clipmem.watch) rm -f \"$DIRECT_STATE\" ;;
+      *io.openclaw.clipmem.watch)
+        if [ -f \"$DIRECT_STATE\" ]; then
+          rm -f \"$DIRECT_STATE\"
+        else
+          printf 'No such process\\n' >&2
+          exit 3
+        fi
+        ;;
     esac
     ;;
   enable)
@@ -484,6 +497,10 @@ case \"$1\" in
     esac
     ;;
   disable)
+    if [ -f \"$DISABLE_FAIL\" ]; then
+      printf 'forced disable failure\\n' >&2
+      exit 43
+    fi
     case \"$2\" in
       *io.openclaw.clipmem.watch) touch \"$DIRECT_DISABLED\" ;;
     esac

@@ -204,6 +204,90 @@ fn setup_uses_direct_launchagent_provider_when_homebrew_is_not_detected() -> Res
 
 #[cfg(target_os = "macos")]
 #[test]
+fn service_stop_reports_direct_launchctl_disable_failure() -> Result<()> {
+    let test_dir = temp_test_dir("service-stop-disable-failure");
+    let home_dir = test_dir.join("home");
+    let bin_dir = test_dir.join("bin");
+    let state_dir = test_dir.join("state");
+    fs::create_dir_all(home_dir.join("Library/LaunchAgents"))?;
+    fs::create_dir_all(&bin_dir)?;
+    fs::create_dir_all(&state_dir)?;
+    write_stateful_launchctl_stub(&bin_dir, &state_dir)?;
+    write_executable(&bin_dir.join("id"), "#!/bin/sh\nprintf '501\\n'\n")?;
+    fs::write(
+        state_dir.join("direct.state"),
+        "123 0 io.openclaw.clipmem.watch\n",
+    )?;
+    fs::write(state_dir.join("disable.fail"), "")?;
+
+    let db_path = home_dir
+        .join("Library/Application Support/clipmem/clipmem.sqlite3")
+        .display()
+        .to_string();
+    let path_value = format!("{}:/usr/bin:/bin", bin_dir.display());
+    let envs = vec![
+        ("HOME".to_string(), home_dir.display().to_string()),
+        ("PATH".to_string(), path_value),
+        (
+            "CLIPMEM_TEST_ACTIVE_BINARY".to_string(),
+            home_dir.join(".cargo/bin/clipmem").display().to_string(),
+        ),
+    ];
+
+    let output = run_cli_with_owned_env(&["--db", &db_path, "service", "stop"], &envs);
+    assert!(!output.status.success());
+    let stderr = stderr_text(&output);
+    assert!(stderr.contains("launchctl disable"));
+    assert!(stderr.contains("forced disable failure"));
+
+    let _ = fs::remove_dir_all(&test_dir);
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn service_uninstall_reports_direct_plist_removal_failure() -> Result<()> {
+    let test_dir = temp_test_dir("service-uninstall-plist-failure");
+    let home_dir = test_dir.join("home");
+    let bin_dir = test_dir.join("bin");
+    let state_dir = test_dir.join("state");
+    let plist_path = home_dir.join("Library/LaunchAgents/io.openclaw.clipmem.watch.plist");
+    fs::create_dir_all(&plist_path)?;
+    fs::create_dir_all(&bin_dir)?;
+    fs::create_dir_all(&state_dir)?;
+    write_stateful_launchctl_stub(&bin_dir, &state_dir)?;
+    write_executable(&bin_dir.join("id"), "#!/bin/sh\nprintf '501\\n'\n")?;
+    fs::write(
+        state_dir.join("direct.state"),
+        "123 0 io.openclaw.clipmem.watch\n",
+    )?;
+
+    let db_path = home_dir
+        .join("Library/Application Support/clipmem/clipmem.sqlite3")
+        .display()
+        .to_string();
+    let path_value = format!("{}:/usr/bin:/bin", bin_dir.display());
+    let envs = vec![
+        ("HOME".to_string(), home_dir.display().to_string()),
+        ("PATH".to_string(), path_value),
+        (
+            "CLIPMEM_TEST_ACTIVE_BINARY".to_string(),
+            home_dir.join(".cargo/bin/clipmem").display().to_string(),
+        ),
+    ];
+
+    let output = run_cli_with_owned_env(&["--db", &db_path, "service", "uninstall"], &envs);
+    assert!(!output.status.success());
+    let stderr = stderr_text(&output);
+    assert!(stderr.contains("remove direct LaunchAgent plist"));
+    assert!(stderr.contains("io.openclaw.clipmem.watch.plist"));
+
+    let _ = fs::remove_dir_all(&test_dir);
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+#[test]
 fn setup_ignores_path_poisoning_when_persisting_service_binary() -> Result<()> {
     let test_dir = temp_test_dir("service-setup-path-poisoning");
     let home_dir = test_dir.join("home");

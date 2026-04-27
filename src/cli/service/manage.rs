@@ -297,14 +297,28 @@ pub(in crate::cli) fn uninstall_direct_provider(
 ) -> Result<ServiceActionReport> {
     launchctl_bootout(DIRECT_LABEL)?;
     launchctl_disable(DIRECT_LABEL)?;
-    let _ = fs::remove_file(&context.direct_plist_path);
+    let mut notes = Vec::new();
+    match fs::remove_file(&context.direct_plist_path) {
+        Ok(()) => notes.push("Removed the direct LaunchAgent plist.".to_string()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            notes.push("The direct LaunchAgent plist was already absent.".to_string());
+        }
+        Err(error) => {
+            return Err(error).with_context(|| {
+                format!(
+                    "remove direct LaunchAgent plist {}",
+                    context.direct_plist_path.display()
+                )
+            });
+        }
+    }
     Ok(ServiceActionReport {
         action: "uninstall",
         provider: ServiceProvider::Launchagent,
         binary_path: context.binary_path.clone(),
         db_path: context.db_path.clone(),
         label: DIRECT_LABEL,
-        notes: vec!["Removed the direct LaunchAgent plist.".to_string()],
+        notes,
     })
 }
 
