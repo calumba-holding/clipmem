@@ -122,13 +122,6 @@ impl SearchHitParts {
     }
 
     #[must_use]
-    pub(crate) fn with_locations(mut self, urls: Vec<String>, file_paths: Vec<String>) -> Self {
-        self.urls = urls;
-        self.file_paths = file_paths;
-        self
-    }
-
-    #[must_use]
     pub(crate) fn with_size(mut self, total_bytes: usize, item_count: usize) -> Self {
         self.total_bytes = total_bytes;
         self.item_count = item_count;

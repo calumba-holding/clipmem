@@ -2,12 +2,14 @@ use std::fmt::Write;
 
 use crate::cli::commands::CaptureOnceOutput;
 use crate::cli::formats::{format_duration_seconds, peak_bucket};
+use crate::cli::output::model::{
+    GetEnvelope, ListEnvelope, ListRow, SnapshotListRow, StatsEnvelope, TimelineListRow,
+};
 use crate::cli::output::support::{
     format_utc_timestamp, push_blank_line, push_snapshot_leaderboard,
     push_snapshot_leaderboard_entry,
 };
-use crate::db::{SearchResults, StatsReport};
-use crate::model::{DoctorReport, SearchHit, SnapshotDetails, TimelineEvent};
+use crate::model::{DoctorReport, SnapshotDetails};
 
 pub(in crate::cli) fn render_capture_once_text(output: &CaptureOnceOutput) -> String {
     let mut out = String::new();
@@ -46,96 +48,107 @@ pub(in crate::cli) fn render_capture_once_text(output: &CaptureOnceOutput) -> St
     out
 }
 
-pub(in crate::cli) fn render_hits_text(hits: &[SearchHit]) -> String {
+pub(in crate::cli) fn render_list_text(envelope: &ListEnvelope) -> String {
     let mut out = String::new();
-    for hit in hits {
-        let app = hit
-            .last_frontmost_app_name()
-            .or(hit.last_frontmost_app_bundle_id())
-            .unwrap_or("unknown app");
-
-        let _ = writeln!(
-            out,
-            "[{}] {} · last seen {} · captures {} · {} · {} bytes · {} items",
-            hit.snapshot_id(),
-            hit.snapshot_kind(),
-            format_utc_timestamp(hit.last_observed_at()),
-            hit.capture_count(),
-            app,
-            hit.total_bytes(),
-            hit.item_count()
-        );
-
-        if !hit.preview_text().is_empty() {
-            let _ = writeln!(out, "  preview: {}", hit.preview_text());
-        }
-        if let Some(why_matched) = hit
-            .why_matched()
-            .filter(|value| *value != hit.preview_text())
+    if envelope.command == "search" {
+        if let Some(mode_used) = envelope
+            .applied_filters
+            .get("mode_used")
+            .and_then(serde_json::Value::as_str)
         {
-            let _ = writeln!(out, "  match:   {why_matched}");
+            let _ = writeln!(out, "search mode: {mode_used}");
+            if !envelope.results.is_empty() {
+                out.push('\n');
+            }
         }
-        if !hit.urls().is_empty() {
-            let _ = writeln!(out, "  urls:    {}", hit.urls().join(", "));
-        }
-        if !hit.file_paths().is_empty() {
-            let _ = writeln!(out, "  files:   {}", hit.file_paths().join(", "));
-        }
-        if let Some(score) = hit.score() {
-            let _ = writeln!(out, "  score:   {score:.3}");
-        }
-        push_blank_line(&mut out);
     }
+
+    for row in &envelope.results {
+        match row {
+            ListRow::Snapshot(row) => push_snapshot_row_text(&mut out, row),
+            ListRow::Timeline(row) => push_timeline_row_text(&mut out, row),
+        }
+    }
+
     out
 }
 
-pub(in crate::cli) fn render_timeline_text(events: &[TimelineEvent]) -> String {
-    let mut out = String::new();
-    for event in events {
-        let app = event
-            .frontmost_app_name()
-            .or(event.frontmost_app_bundle_id())
-            .unwrap_or("unknown app");
+fn push_snapshot_row_text(out: &mut String, row: &SnapshotListRow) {
+    let app = row
+        .app_name
+        .as_deref()
+        .or(row.app_bundle_id.as_deref())
+        .unwrap_or("unknown app");
 
-        let _ = writeln!(
-            out,
-            "event {} · snapshot {} · {} · change_count={} · {} · {} bytes",
-            event.event_id(),
-            event.snapshot_id(),
-            format_utc_timestamp(event.observed_at()),
-            event.change_count(),
-            app,
-            event.total_bytes()
-        );
+    let _ = writeln!(
+        out,
+        "[{}] {} · last seen {} · captures {} · {} · {} bytes · {} items",
+        row.snapshot_id,
+        row.kind,
+        format_utc_timestamp(&row.last_seen_at),
+        row.capture_count,
+        app,
+        row.total_bytes,
+        row.item_count
+    );
 
-        if !event.best_text().is_empty() {
-            let _ = writeln!(out, "  best:    {}", event.best_text());
-        }
-        if !event.preview_text().is_empty() && event.preview_text() != event.best_text() {
-            let _ = writeln!(out, "  preview: {}", event.preview_text());
-        }
-        if !event.urls().is_empty() {
-            let _ = writeln!(out, "  urls:    {}", event.urls().join(", "));
-        }
-        if !event.file_paths().is_empty() {
-            let _ = writeln!(out, "  files:   {}", event.file_paths().join(", "));
-        }
-        push_blank_line(&mut out);
+    if !row.preview_text.is_empty() {
+        let _ = writeln!(out, "  preview: {}", row.preview_text);
     }
-    out
+    if let Some(why_matched) = row
+        .why_matched
+        .as_deref()
+        .filter(|value| *value != row.preview_text)
+    {
+        let _ = writeln!(out, "  match:   {why_matched}");
+    }
+    if !row.urls.is_empty() {
+        let _ = writeln!(out, "  urls:    {}", row.urls.join(", "));
+    }
+    if !row.file_paths.is_empty() {
+        let _ = writeln!(out, "  files:   {}", row.file_paths.join(", "));
+    }
+    if let Some(score) = row.score {
+        let _ = writeln!(out, "  score:   {score:.3}");
+    }
+    push_blank_line(out);
 }
 
-pub(in crate::cli) fn render_search_results_text(results: &SearchResults) -> String {
-    let mut out = String::new();
-    let _ = writeln!(out, "search mode: {}", results.mode_used().as_str());
-    if !results.hits().is_empty() {
-        out.push('\n');
+fn push_timeline_row_text(out: &mut String, row: &TimelineListRow) {
+    let app = row
+        .app_name
+        .as_deref()
+        .or(row.app_bundle_id.as_deref())
+        .unwrap_or("unknown app");
+
+    let _ = writeln!(
+        out,
+        "event {} · snapshot {} · {} · change_count={} · {} · {} bytes",
+        row.event_id,
+        row.snapshot_id,
+        format_utc_timestamp(&row.observed_at),
+        row.change_count,
+        app,
+        row.total_bytes
+    );
+
+    if !row.best_text.is_empty() {
+        let _ = writeln!(out, "  best:    {}", row.best_text);
     }
-    out.push_str(&render_hits_text(results.hits()));
-    out
+    if !row.preview_text.is_empty() && row.preview_text != row.best_text {
+        let _ = writeln!(out, "  preview: {}", row.preview_text);
+    }
+    if !row.urls.is_empty() {
+        let _ = writeln!(out, "  urls:    {}", row.urls.join(", "));
+    }
+    if !row.file_paths.is_empty() {
+        let _ = writeln!(out, "  files:   {}", row.file_paths.join(", "));
+    }
+    push_blank_line(out);
 }
 
-pub(in crate::cli) fn render_stats_text(stats: &StatsReport) -> String {
+pub(in crate::cli) fn render_stats_text(envelope: &StatsEnvelope) -> String {
+    let stats = &envelope.stats;
     let mut out = String::new();
     let _ = writeln!(out, "Overview");
     let _ = writeln!(out, "  snapshots: {}", stats.snapshot_count());
@@ -237,6 +250,10 @@ pub(in crate::cli) fn render_stats_text(stats: &StatsReport) -> String {
     push_snapshot_leaderboard(&mut out, stats.most_captured_snapshots(), 4);
 
     out
+}
+
+pub(in crate::cli) fn render_get_text(envelope: &GetEnvelope) -> String {
+    render_snapshot_text(&envelope.snapshot)
 }
 
 pub(in crate::cli) fn render_snapshot_text(snapshot: &SnapshotDetails) -> String {

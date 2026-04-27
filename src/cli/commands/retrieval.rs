@@ -6,12 +6,9 @@ use serde_json::json;
 use crate::model::{SearchHit, TimelineEvent};
 
 use crate::cli::errors::not_found_error;
-use crate::cli::formats::{OutputFormat, StatsOutputFormat};
-use crate::cli::human::render_stats_human;
 use crate::cli::output::{
-    emit_get_output, emit_json_or_text, emit_list_output, generated_at_now, render_hits_text,
-    render_search_results_text, render_snapshot_text, render_stats_text, render_timeline_text,
-    GetEnvelope, ListEnvelope, ListRow, StatsEnvelope, OUTPUT_SCHEMA_VERSION,
+    emit_get_output, emit_list_output, emit_stats_output, generated_at_now, GetEnvelope,
+    ListEnvelope, ListRow, StatsEnvelope, OUTPUT_SCHEMA_VERSION,
 };
 use crate::cli::schema::{GetArgs, RecentArgs, SearchArgs, StatsArgs, TimelineArgs};
 
@@ -38,11 +35,6 @@ pub(in crate::cli) fn search(db_path: &Path, args: &SearchArgs) -> Result<()> {
         query_search_results(&db, args, &filters, cursor.as_ref()),
         || format!("search failed for query '{}'", args.query),
     )?;
-
-    if matches!(format, OutputFormat::Text) {
-        print!("{}", render_search_results_text(&results));
-        return Ok(());
-    }
 
     let projections =
         load_snapshot_projections(&db, results.hits().iter().map(SearchHit::snapshot_id))?;
@@ -104,11 +96,6 @@ pub(in crate::cli) fn recent(db_path: &Path, args: &RecentArgs) -> Result<()> {
         || "recent query failed".to_string(),
     )?;
 
-    if matches!(format, OutputFormat::Text) {
-        print!("{}", render_hits_text(hits.items()));
-        return Ok(());
-    }
-
     let projections =
         load_snapshot_projections(&db, hits.items().iter().map(SearchHit::snapshot_id))?;
 
@@ -163,11 +150,6 @@ pub(in crate::cli) fn timeline(db_path: &Path, args: &TimelineArgs) -> Result<()
         || "timeline query failed".to_string(),
     )?;
 
-    if matches!(format, OutputFormat::Text) {
-        print!("{}", render_timeline_text(events.items()));
-        return Ok(());
-    }
-
     let projections =
         load_snapshot_projections(&db, events.items().iter().map(TimelineEvent::snapshot_id))?;
 
@@ -215,11 +197,6 @@ pub(in crate::cli) fn stats(db_path: &Path, args: &StatsArgs) -> Result<()> {
     let db = open_existing_db(db_path)?;
     let report = anyhow::Context::context(db.stats(&filters), "stats query failed")?;
 
-    if matches!(format, StatsOutputFormat::Text) {
-        print!("{}", render_stats_text(&report));
-        return Ok(());
-    }
-
     let envelope = StatsEnvelope {
         schema_version: OUTPUT_SCHEMA_VERSION,
         command: "stats",
@@ -227,12 +204,7 @@ pub(in crate::cli) fn stats(db_path: &Path, args: &StatsArgs) -> Result<()> {
         applied_filters: serde_json::to_value(&filters)?,
         stats: report,
     };
-    if matches!(format, StatsOutputFormat::Human) {
-        print!("{}", render_stats_human(&envelope));
-        Ok(())
-    } else {
-        emit_json_or_text(true, &envelope, |_| String::new())
-    }
+    emit_stats_output(format, &envelope)
 }
 
 pub(in crate::cli) fn show_snapshot(db_path: &Path, args: &GetArgs) -> Result<()> {
@@ -249,11 +221,6 @@ pub(in crate::cli) fn show_snapshot(db_path: &Path, args: &GetArgs) -> Result<()
             "snapshot {} does not satisfy the active filters",
             args.snapshot_id
         ));
-    }
-
-    if matches!(format, OutputFormat::Text) {
-        print!("{}", render_snapshot_text(&snapshot));
-        return Ok(());
     }
 
     let envelope = GetEnvelope {

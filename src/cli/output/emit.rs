@@ -2,15 +2,18 @@ use anyhow::{anyhow, Result};
 use serde::Serialize;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-use crate::cli::formats::{OutputFormat, RecallOutputFormat};
-use crate::cli::human::{render_get_human, render_list_human, render_recall_human};
+use crate::cli::formats::{OutputFormat, RecallOutputFormat, StatsOutputFormat};
+use crate::cli::human::{
+    render_get_human, render_list_human, render_recall_human, render_stats_human,
+};
 use crate::cli::output::json::{print_json, print_json_line, print_jsonl_list};
 use crate::cli::output::markdown::{
     render_get_markdown, render_list_markdown, render_recall_markdown,
 };
 use crate::cli::output::model::{
-    GetEnvelope, ListEnvelope, RecallEnvelope, UnsupportedFormatError,
+    GetEnvelope, ListEnvelope, RecallEnvelope, StatsEnvelope, UnsupportedFormatError,
 };
+use crate::cli::output::text::{render_get_text, render_list_text, render_stats_text};
 use crate::cli::output::toon::{render_list_toon, render_recall_toon};
 
 pub(in crate::cli) fn generated_at_now() -> Result<String> {
@@ -40,7 +43,10 @@ pub(in crate::cli) fn emit_list_output(
     envelope: &ListEnvelope,
 ) -> Result<()> {
     match format {
-        OutputFormat::Text => unreachable!("list text output uses the legacy text renderer"),
+        OutputFormat::Text => {
+            print!("{}", render_list_text(envelope));
+            Ok(())
+        }
         OutputFormat::Json => print_json(envelope),
         OutputFormat::Jsonl => print_jsonl_list(envelope),
         OutputFormat::Md => {
@@ -60,7 +66,10 @@ pub(in crate::cli) fn emit_list_output(
 
 pub(in crate::cli) fn emit_get_output(format: OutputFormat, envelope: &GetEnvelope) -> Result<()> {
     match format {
-        OutputFormat::Text => unreachable!("get text output uses the legacy text renderer"),
+        OutputFormat::Text => {
+            print!("{}", render_get_text(envelope));
+            Ok(())
+        }
         OutputFormat::Json => print_json(envelope),
         OutputFormat::Jsonl => {
             print_json_line(envelope)
@@ -75,6 +84,23 @@ pub(in crate::cli) fn emit_get_output(format: OutputFormat, envelope: &GetEnvelo
         .into()),
         OutputFormat::Human => {
             print!("{}", render_get_human(envelope));
+            Ok(())
+        }
+    }
+}
+
+pub(in crate::cli) fn emit_stats_output(
+    format: StatsOutputFormat,
+    envelope: &StatsEnvelope,
+) -> Result<()> {
+    match format {
+        StatsOutputFormat::Text => {
+            print!("{}", render_stats_text(envelope));
+            Ok(())
+        }
+        StatsOutputFormat::Json => print_json(envelope),
+        StatsOutputFormat::Human => {
+            print!("{}", render_stats_human(envelope));
             Ok(())
         }
     }

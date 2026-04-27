@@ -2,11 +2,9 @@ use serde_json::{json, Value};
 use std::fmt::Write;
 use std::time::{Duration, Instant};
 
-use crate::db::{SearchMode, SearchResults};
 use crate::model::{
     build_item, build_representation, build_snapshot, CaptureContext, CaptureEvent,
-    CaptureStoreResult, DoctorReport, SearchHit, SearchHitParts, SnapshotDetails, SnapshotKind,
-    TimelineEvent,
+    CaptureStoreResult, DoctorReport, SnapshotDetails, SnapshotKind,
 };
 
 use super::super::commands::{CaptureOnceOutput, CaptureOnceStoredOutput};
@@ -18,8 +16,7 @@ use super::model::{
     OUTPUT_SCHEMA_VERSION,
 };
 use super::text::{
-    render_capture_once_text, render_doctor_text, render_hits_text, render_search_results_text,
-    render_snapshot_text, render_timeline_text,
+    render_capture_once_text, render_doctor_text, render_get_text, render_list_text,
 };
 use super::toon::{render_list_toon, render_recall_toon};
 
@@ -66,31 +63,47 @@ pub(in crate::cli) fn render_capture_once_text_skips_preview_for_filtered_conten
 }
 
 #[test]
-pub(in crate::cli) fn render_hits_text_includes_match_score_urls_and_files() {
-    let text = render_hits_text(&[SearchHit::from_parts(
-        SearchHitParts::plain_text(42, 77, "git clone".to_string())
-            .with_sha256("abc123".to_string())
-            .with_match(
-                Some("⟦git⟧ clone".to_string()),
-                vec!["best_text".to_string(), "search_text".to_string()],
-            )
-            .with_capture_summary(
-                3,
-                "2026-04-16 10:00:00".to_string(),
-                "2026-04-16 11:00:00".to_string(),
-            )
-            .with_last_frontmost_app(
-                Some("Terminal".to_string()),
-                Some("com.apple.Terminal".to_string()),
-            )
-            .with_locations(
-                vec!["https://example.com".to_string()],
-                vec!["/Users/test/repo".to_string()],
-            )
-            .with_size(9, 1)
-            .with_score(Some(0.125)),
-    )]);
+pub(in crate::cli) fn render_list_text_includes_search_mode_match_score_urls_and_files() {
+    let text = render_list_text(&ListEnvelope {
+        schema_version: OUTPUT_SCHEMA_VERSION,
+        command: "search",
+        generated_at: "2026-04-17T10:00:00Z".to_string(),
+        applied_filters: json!({
+            "mode_used": "literal",
+        }),
+        truncated: false,
+        next_cursor: None,
+        results: vec![ListRow::Snapshot(SnapshotListRow {
+            snapshot_id: 42,
+            event_id: 77,
+            sha256: "abc123".to_string(),
+            kind: "plain_text".to_string(),
+            observed_at: "2026-04-16 11:00:00".to_string(),
+            first_seen_at: "2026-04-16 10:00:00".to_string(),
+            last_seen_at: "2026-04-16 11:00:00".to_string(),
+            app_name: Some("Terminal".to_string()),
+            app_bundle_id: Some("com.apple.Terminal".to_string()),
+            best_text: "git clone".to_string(),
+            best_text_uti: None,
+            text_fragments: Vec::new(),
+            urls: vec!["https://example.com".to_string()],
+            file_paths: vec!["/Users/test/repo".to_string()],
+            html_text: None,
+            rtf_text: None,
+            ocr_text: None,
+            ocr_status: None,
+            text_summary: "git clone".to_string(),
+            preview_text: "git clone".to_string(),
+            item_count: 1,
+            total_bytes: 9,
+            capture_count: 3,
+            score: Some(0.125),
+            why_matched: Some("⟦git⟧ clone".to_string()),
+            matched_fields: vec!["best_text".to_string(), "search_text".to_string()],
+        })],
+    });
 
+    assert!(text.contains("search mode: literal"));
     assert!(text.contains("[42] plain_text"));
     assert!(text.contains("match:   ⟦git⟧ clone"));
     assert!(text.contains("urls:    https://example.com"));
@@ -99,39 +112,45 @@ pub(in crate::cli) fn render_hits_text_includes_match_score_urls_and_files() {
 }
 
 #[test]
-pub(in crate::cli) fn render_snapshot_text_lists_items_and_events() {
-    let text = render_snapshot_text(&SnapshotDetails::new(
-        7,
-        "abc123".to_string(),
-        SnapshotKind::PlainText,
-        "git push".to_string(),
-        "git push".to_string(),
-        1,
-        8,
-        "2026-04-16 10:00:00".to_string(),
-        2,
-        "2026-04-16 10:00:00".to_string(),
-        "2026-04-16 11:00:00".to_string(),
-        Some("Terminal".to_string()),
-        Some("com.apple.Terminal".to_string()),
-        None,
-        None,
-        vec![CaptureEvent::new(
-            21,
+pub(in crate::cli) fn render_get_text_lists_items_and_events() {
+    let text = render_get_text(&GetEnvelope {
+        schema_version: OUTPUT_SCHEMA_VERSION,
+        command: "get",
+        generated_at: "2026-04-17T10:00:00Z".to_string(),
+        applied_filters: json!({}),
+        snapshot: SnapshotDetails::new(
+            7,
+            "abc123".to_string(),
+            SnapshotKind::PlainText,
+            "git push".to_string(),
+            "git push".to_string(),
+            1,
+            8,
+            "2026-04-16 10:00:00".to_string(),
+            2,
+            "2026-04-16 10:00:00".to_string(),
             "2026-04-16 11:00:00".to_string(),
-            3,
             Some("Terminal".to_string()),
             Some("com.apple.Terminal".to_string()),
-        )],
-        vec![build_item(
-            0,
-            vec![build_representation(
-                "public.utf8-plain-text".to_string(),
-                None,
-                b"git push".to_vec(),
+            None,
+            None,
+            vec![CaptureEvent::new(
+                21,
+                "2026-04-16 11:00:00".to_string(),
+                3,
+                Some("Terminal".to_string()),
+                Some("com.apple.Terminal".to_string()),
             )],
-        )],
-    ));
+            vec![build_item(
+                0,
+                vec![build_representation(
+                    "public.utf8-plain-text".to_string(),
+                    None,
+                    b"git push".to_vec(),
+                )],
+            )],
+        ),
+    });
 
     assert!(text.contains("snapshot 7"));
     assert!(text.contains("item 0 · kind=plain_text"));
@@ -155,51 +174,38 @@ pub(in crate::cli) fn render_doctor_text_lists_compile_options() {
 }
 
 #[test]
-pub(in crate::cli) fn render_search_results_text_reports_effective_mode() {
-    let text = render_search_results_text(&SearchResults::new(
-        SearchMode::Literal,
-        vec![SearchHit::from_parts(
-            SearchHitParts::plain_text(7, 21, "git push".to_string())
-                .with_sha256("abc123".to_string())
-                .with_match(
-                    Some("git push".to_string()),
-                    vec!["best_text".to_string(), "search_text".to_string()],
-                )
-                .with_capture_summary(
-                    2,
-                    "2026-04-16 10:00:00".to_string(),
-                    "2026-04-16 11:00:00".to_string(),
-                )
-                .with_last_frontmost_app(
-                    Some("Terminal".to_string()),
-                    Some("com.apple.Terminal".to_string()),
-                )
-                .with_size(8, 1),
-        )],
-        false,
-    ));
-
-    assert!(text.contains("search mode: literal"));
-}
-
-#[test]
-pub(in crate::cli) fn render_timeline_text_reports_event_history() {
-    let text = render_timeline_text(&[TimelineEvent::new(
-        21,
-        7,
-        "2026-04-16 11:00:00".to_string(),
-        3,
-        "abc123".to_string(),
-        SnapshotKind::PlainText,
-        "git push".to_string(),
-        "git push".to_string(),
-        Some("Terminal".to_string()),
-        Some("com.apple.Terminal".to_string()),
-        vec!["https://example.com".to_string()],
-        vec!["/Users/test/repo".to_string()],
-        8,
-        1,
-    )]);
+pub(in crate::cli) fn render_timeline_list_text_reports_event_history() {
+    let text = render_list_text(&ListEnvelope {
+        schema_version: OUTPUT_SCHEMA_VERSION,
+        command: "timeline",
+        generated_at: "2026-04-17T10:00:00Z".to_string(),
+        applied_filters: json!({}),
+        truncated: false,
+        next_cursor: None,
+        results: vec![ListRow::Timeline(TimelineListRow {
+            event_id: 21,
+            snapshot_id: 7,
+            observed_at: "2026-04-16 11:00:00".to_string(),
+            change_count: 3,
+            kind: "plain_text".to_string(),
+            app_name: Some("Terminal".to_string()),
+            app_bundle_id: Some("com.apple.Terminal".to_string()),
+            best_text: "git push".to_string(),
+            best_text_uti: None,
+            text_fragments: Vec::new(),
+            urls: vec!["https://example.com".to_string()],
+            file_paths: vec!["/Users/test/repo".to_string()],
+            html_text: None,
+            rtf_text: None,
+            ocr_text: None,
+            ocr_status: None,
+            text_summary: "git push".to_string(),
+            preview_text: "git push".to_string(),
+            total_bytes: 8,
+            sha256: "abc123".to_string(),
+            item_count: 1,
+        })],
+    });
 
     assert!(text.contains("event 21"));
     assert!(text.contains("change_count=3"));

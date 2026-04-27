@@ -30,6 +30,8 @@ versioning where practical.
   filter code easier to navigate together.
 - Narrowed macOS `objc2` framework crate features to the APIs `clipmem` uses,
   reducing unnecessary default framework bindings in builds.
+- Routed retrieval text output through the shared output envelope model used by
+  structured formats while preserving the existing text output shape.
 
 ### Fixed
 
