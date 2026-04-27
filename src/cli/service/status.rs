@@ -58,80 +58,20 @@ pub(crate) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
     let homebrew_status = homebrew_status.value;
     let conflict = homebrew_status.installed && direct_status.installed;
     let selection = select_provider(&context);
-
-    let db_exists = context.db_path.is_file();
-    let db_size_bytes = if db_exists {
-        fs::metadata(&context.db_path)
-            .map(|metadata| metadata.len())
-            .ok()
-    } else {
-        None
-    };
-    let (
-        recent_capture_at,
-        recent_capture_within_last_hour,
-        paused,
-        api_key_filter_enabled,
-        retention_seconds,
-        retention,
-        ignored_bundle_id_count,
-        db_error,
-    ) = if db_exists {
-        match Database::open_existing(&context.db_path).and_then(|db| {
-            let policy = db.capture_policy()?;
-            Ok((
-                db.latest_capture_observed_at()?,
-                Some(db.has_capture_within_hours(SERVICE_FRESHNESS_HOURS)?),
-                Some(policy.settings().paused()),
-                Some(policy.settings().api_key_filter_enabled()),
-                policy.settings().retention_seconds(),
-                Some(render_retention_value(policy.settings())),
-                Some(policy.ignored_bundle_id_count()),
-            ))
-        }) {
-            Ok(fields) => (
-                fields.0, fields.1, fields.2, fields.3, fields.4, fields.5, fields.6, None,
-            ),
-            Err(error) => (
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(error.to_string()),
-            ),
-        }
-    } else {
-        (None, None, None, None, None, None, None, None)
-    };
-    let stale = matches!(recent_capture_within_last_hour, Some(false))
-        && !homebrew_status.running
-        && !direct_status.running;
-
-    let mut notes = selection.notes;
-    notes.extend(probe_warnings);
-    if conflict {
-        notes.push(conflict_message());
-    }
-    if !db_exists {
-        notes.push(format!(
-            "Database does not exist yet at {}. Run `clipmem setup` to initialize capture.",
-            context.db_path.display()
-        ));
-    }
-    if stale {
-        notes.push(
-            "No recent captures were found and no background watcher is running.".to_string(),
-        );
-    }
+    let database_status = ServiceDatabaseStatus::load(&context.db_path);
+    let stale = database_status.is_stale_without_running_service(&homebrew_status, &direct_status);
     let watcher_binary_mismatch_note =
         watcher_binary_mismatch_note(&context.binary_path, [&homebrew_status, &direct_status]);
     let watcher_binary_mismatch = watcher_binary_mismatch_note.is_some();
-    if let Some(note) = &watcher_binary_mismatch_note {
-        notes.push(note.clone());
-    }
+    let notes = service_status_notes(ServiceStatusNotesInput {
+        provider_notes: selection.notes,
+        probe_warnings,
+        conflict,
+        db_path: &context.db_path,
+        db_exists: database_status.exists,
+        stale,
+        watcher_binary_mismatch_note: watcher_binary_mismatch_note.as_deref(),
+    });
 
     Ok(ServiceStatusReport {
         binary_path: context.binary_path.display().to_string(),
@@ -141,21 +81,142 @@ pub(crate) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
         conflict,
         homebrew: homebrew_status,
         launchagent: direct_status,
-        db_exists,
-        db_size_bytes,
-        recent_capture_at,
-        recent_capture_within_last_hour,
-        paused,
-        api_key_filter_enabled,
-        retention_seconds,
-        retention,
-        ignored_bundle_id_count,
+        db_exists: database_status.exists,
+        db_size_bytes: database_status.size_bytes,
+        recent_capture_at: database_status.recent_capture_at,
+        recent_capture_within_last_hour: database_status.recent_capture_within_last_hour,
+        paused: database_status.paused,
+        api_key_filter_enabled: database_status.api_key_filter_enabled,
+        retention_seconds: database_status.retention_seconds,
+        retention: database_status.retention,
+        ignored_bundle_id_count: database_status.ignored_bundle_id_count,
         stale,
-        db_error,
+        db_error: database_status.error,
         watcher_binary_mismatch,
         watcher_binary_mismatch_note,
         notes,
     })
+}
+
+#[derive(Debug)]
+struct ServiceDatabaseStatus {
+    exists: bool,
+    size_bytes: Option<u64>,
+    recent_capture_at: Option<String>,
+    recent_capture_within_last_hour: Option<bool>,
+    paused: Option<bool>,
+    api_key_filter_enabled: Option<bool>,
+    retention_seconds: Option<u64>,
+    retention: Option<String>,
+    ignored_bundle_id_count: Option<usize>,
+    error: Option<String>,
+}
+
+impl ServiceDatabaseStatus {
+    fn load(db_path: &Path) -> Self {
+        let exists = db_path.is_file();
+        let size_bytes = exists
+            .then(|| fs::metadata(db_path).map(|metadata| metadata.len()).ok())
+            .flatten();
+        if !exists {
+            return Self {
+                exists,
+                size_bytes,
+                recent_capture_at: None,
+                recent_capture_within_last_hour: None,
+                paused: None,
+                api_key_filter_enabled: None,
+                retention_seconds: None,
+                retention: None,
+                ignored_bundle_id_count: None,
+                error: None,
+            };
+        }
+
+        match Database::open_existing(db_path).and_then(|db| {
+            let policy = db.capture_policy()?;
+            Ok(Self {
+                exists,
+                size_bytes,
+                recent_capture_at: db.latest_capture_observed_at()?,
+                recent_capture_within_last_hour: Some(
+                    db.has_capture_within_hours(SERVICE_FRESHNESS_HOURS)?,
+                ),
+                paused: Some(policy.settings().paused()),
+                api_key_filter_enabled: Some(policy.settings().api_key_filter_enabled()),
+                retention_seconds: policy.settings().retention_seconds(),
+                retention: Some(render_retention_value(policy.settings())),
+                ignored_bundle_id_count: Some(policy.ignored_bundle_id_count()),
+                error: None,
+            })
+        }) {
+            Ok(status) => status,
+            Err(error) => Self {
+                exists,
+                size_bytes,
+                recent_capture_at: None,
+                recent_capture_within_last_hour: None,
+                paused: None,
+                api_key_filter_enabled: None,
+                retention_seconds: None,
+                retention: None,
+                ignored_bundle_id_count: None,
+                error: Some(error.to_string()),
+            },
+        }
+    }
+
+    fn is_stale_without_running_service(
+        &self,
+        homebrew_status: &ServiceProviderStatus,
+        direct_status: &ServiceProviderStatus,
+    ) -> bool {
+        matches!(self.recent_capture_within_last_hour, Some(false))
+            && !homebrew_status.running
+            && !direct_status.running
+    }
+}
+
+struct ServiceStatusNotesInput<'a> {
+    provider_notes: Vec<String>,
+    probe_warnings: Vec<String>,
+    conflict: bool,
+    db_path: &'a Path,
+    db_exists: bool,
+    stale: bool,
+    watcher_binary_mismatch_note: Option<&'a str>,
+}
+
+fn service_status_notes(input: ServiceStatusNotesInput<'_>) -> Vec<String> {
+    let ServiceStatusNotesInput {
+        provider_notes,
+        probe_warnings,
+        conflict,
+        db_path,
+        db_exists,
+        stale,
+        watcher_binary_mismatch_note,
+    } = input;
+    let mut notes = provider_notes;
+    notes.extend(probe_warnings);
+    if conflict {
+        notes.push(conflict_message());
+    }
+    if !db_exists {
+        notes.push(format!(
+            "Database does not exist yet at {}. Run `clipmem setup` to initialize capture.",
+            db_path.display()
+        ));
+    }
+    if stale {
+        notes.push(
+            "No recent captures were found and no background watcher is running.".to_string(),
+        );
+    }
+    if let Some(note) = watcher_binary_mismatch_note {
+        notes.push(note.to_string());
+    }
+    notes
 }
 
 #[derive(Debug)]
