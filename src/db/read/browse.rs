@@ -1,6 +1,13 @@
 use super::*;
 
 impl Database {
+    /// Return the most recent archived snapshots that match the supplied filters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if filter values cannot be converted for SQLite, if relative hour filters
+    /// cannot be formatted as timestamps, or if the recent query cannot be prepared, executed, or
+    /// collected.
     pub fn recent(&self, limit: usize, filters: &RetrievalFilters) -> Result<Vec<SearchHit>> {
         self.recent_page(limit, filters, None).map(Page::into_items)
     }
@@ -156,6 +163,13 @@ impl Database {
         Ok(exists != 0)
     }
 
+    /// Return aggregate archive statistics for snapshots matching the supplied filters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if filter values cannot be converted for SQLite, if relative hour filters
+    /// cannot be formatted as timestamps, or if any stats query or temporary-table operation cannot
+    /// be prepared or executed.
     pub fn stats(&self, filters: &RetrievalFilters) -> Result<StatsReport> {
         if *filters == RetrievalFilters::default() {
             return self.stats_unfiltered();

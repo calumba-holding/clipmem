@@ -144,38 +144,82 @@ impl RetrievalKind {
 }
 
 impl RetrievalFilters {
-    #[allow(clippy::too_many_arguments)]
     #[must_use]
-    pub fn new(
-        since: Option<String>,
-        until: Option<String>,
-        hours: Option<u32>,
-        app: Option<String>,
-        bundle_id: Option<String>,
-        kind: Option<RetrievalKind>,
-        has_text: bool,
-        has_url: bool,
-        has_file_url: bool,
-        has_image: bool,
-        has_pdf: bool,
-        min_bytes: Option<usize>,
-        max_bytes: Option<usize>,
-    ) -> Self {
-        Self {
-            since,
-            until,
-            hours,
-            app,
-            bundle_id,
-            kind,
-            has_text,
-            has_url,
-            has_file_url,
-            has_image,
-            has_pdf,
-            min_bytes,
-            max_bytes,
-        }
+    pub fn with_since(mut self, since: Option<String>) -> Self {
+        self.since = since;
+        self
+    }
+
+    #[must_use]
+    pub fn with_until(mut self, until: Option<String>) -> Self {
+        self.until = until;
+        self
+    }
+
+    #[must_use]
+    pub fn with_hours(mut self, hours: Option<u32>) -> Self {
+        self.hours = hours;
+        self
+    }
+
+    #[must_use]
+    pub fn with_app(mut self, app: Option<String>) -> Self {
+        self.app = app;
+        self
+    }
+
+    #[must_use]
+    pub fn with_bundle_id(mut self, bundle_id: Option<String>) -> Self {
+        self.bundle_id = bundle_id;
+        self
+    }
+
+    #[must_use]
+    pub fn with_kind(mut self, kind: Option<RetrievalKind>) -> Self {
+        self.kind = kind;
+        self
+    }
+
+    #[must_use]
+    pub fn requiring_text(mut self) -> Self {
+        self.has_text = true;
+        self
+    }
+
+    #[must_use]
+    pub fn requiring_url(mut self) -> Self {
+        self.has_url = true;
+        self
+    }
+
+    #[must_use]
+    pub fn requiring_file_url(mut self) -> Self {
+        self.has_file_url = true;
+        self
+    }
+
+    #[must_use]
+    pub fn requiring_image(mut self) -> Self {
+        self.has_image = true;
+        self
+    }
+
+    #[must_use]
+    pub fn requiring_pdf(mut self) -> Self {
+        self.has_pdf = true;
+        self
+    }
+
+    #[must_use]
+    pub fn with_min_bytes(mut self, min_bytes: Option<usize>) -> Self {
+        self.min_bytes = min_bytes;
+        self
+    }
+
+    #[must_use]
+    pub fn with_max_bytes(mut self, max_bytes: Option<usize>) -> Self {
+        self.max_bytes = max_bytes;
+        self
     }
 
     #[must_use]

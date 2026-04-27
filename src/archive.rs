@@ -9,7 +9,7 @@ pub use crate::model::{
 #[cfg(test)]
 mod tests {
     use super::{CaptureEvent, DoctorReport, SearchHit, SnapshotDetails};
-    use crate::model::{build_item, build_representation, SnapshotKind};
+    use crate::model::{build_item, build_representation, SearchHitParts, SnapshotKind};
 
     #[test]
     fn archive_dtos_preserve_constructor_data() {
@@ -47,25 +47,21 @@ mod tests {
                 b"git push".to_vec(),
             )],
         )]);
-        let hit = SearchHit::new(
-            7,
-            21,
-            "abc123".to_string(),
-            SnapshotKind::PlainText,
-            "git push".to_string(),
-            "git push".to_string(),
-            Some("git push".to_string()),
-            vec!["best_text".to_string()],
-            2,
-            "2026-04-16 10:00:00".to_string(),
-            "2026-04-16 11:00:00".to_string(),
-            Some("Terminal".to_string()),
-            Some("com.apple.Terminal".to_string()),
-            Vec::new(),
-            Vec::new(),
-            8,
-            1,
-            Some(0.25),
+        let hit = SearchHit::from_parts(
+            SearchHitParts::plain_text(7, 21, "git push".to_string())
+                .with_sha256("abc123".to_string())
+                .with_match(Some("git push".to_string()), vec!["best_text".to_string()])
+                .with_capture_summary(
+                    2,
+                    "2026-04-16 10:00:00".to_string(),
+                    "2026-04-16 11:00:00".to_string(),
+                )
+                .with_last_frontmost_app(
+                    Some("Terminal".to_string()),
+                    Some("com.apple.Terminal".to_string()),
+                )
+                .with_size(8, 1)
+                .with_score(Some(0.25)),
         );
         let report = DoctorReport::new(
             "/tmp/clipmem.sqlite3".to_string(),

@@ -3,7 +3,7 @@ use rusqlite::{named_params, params, Error as SqlError, ErrorCode, OptionalExten
 
 use crate::model::{
     CaptureEvent, ClipboardItem, ClipboardRepresentation, DoctorReport, FlattenedTextProjection,
-    SearchHit, SnapshotDetails, TimelineEvent,
+    SearchHit, SearchHitParts, SnapshotDetails, TimelineEvent,
 };
 
 use super::{

@@ -223,26 +223,26 @@ pub(in crate::db) fn map_search_hit_row(
     let file_paths = split_aggregated_file_paths(&row.get::<_, String>(14)?);
     let matched_fields = split_match_fields(&row.get::<_, String>(7)?);
 
-    Ok(SearchHit::new(
-        row.get(0)?,
-        row.get(1)?,
-        row.get(2)?,
-        row_enum(row, 3)?,
-        row.get(4)?,
-        row.get(5)?,
-        row.get(6)?,
+    Ok(SearchHit::from_parts(SearchHitParts {
+        snapshot_id: row.get(0)?,
+        event_id: row.get(1)?,
+        sha256: row.get(2)?,
+        snapshot_kind: row_enum(row, 3)?,
+        preview_text: row.get(4)?,
+        search_text: row.get(5)?,
+        why_matched: row.get(6)?,
         matched_fields,
-        row_usize(row, 8)?,
-        row.get(9)?,
-        row.get(10)?,
-        row.get(11)?,
-        row.get(12)?,
+        capture_count: row_usize(row, 8)?,
+        first_observed_at: row.get(9)?,
+        last_observed_at: row.get(10)?,
+        last_frontmost_app_name: row.get(11)?,
+        last_frontmost_app_bundle_id: row.get(12)?,
         urls,
         file_paths,
-        row_usize(row, 15)?,
-        row_usize(row, 16)?,
-        if has_score { row.get(17)? } else { None },
-    ))
+        total_bytes: row_usize(row, 15)?,
+        item_count: row_usize(row, 16)?,
+        score: if has_score { row.get(17)? } else { None },
+    }))
 }
 
 pub(in crate::db) fn map_scored_search_hit_row(row: &Row<'_>) -> rusqlite::Result<SearchHit> {

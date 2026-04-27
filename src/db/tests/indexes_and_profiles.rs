@@ -150,21 +150,7 @@ fn recent_since_only_filter_uses_snapshot_stats_time_index() -> Result<()> {
         [recent.snapshot_id()],
     )?;
 
-    let filters = RetrievalFilters::new(
-        Some("2026-04-20T00:00:00Z".to_string()),
-        None,
-        None,
-        None,
-        None,
-        None,
-        false,
-        false,
-        false,
-        false,
-        false,
-        None,
-        None,
-    );
+    let filters = RetrievalFilters::default().with_since(Some("2026-04-20T00:00:00Z".to_string()));
     let page = db.recent_page(20, &filters, None)?;
 
     assert_eq!(page.items().len(), 1);
@@ -428,51 +414,10 @@ fn profile_unfiltered_stats_leaderboards() -> Result<()> {
 fn profile_large_retrieval_queries() -> Result<()> {
     let mut db = Database::open_in_memory()?;
     seed_large_archive(&mut db, 5_000, 100_000)?;
-    let app_filtered = RetrievalFilters::new(
-        None,
-        None,
-        None,
-        Some("terminal".to_string()),
-        None,
-        None,
-        false,
-        false,
-        false,
-        false,
-        false,
-        None,
-        None,
-    );
-    let bundle_filtered = RetrievalFilters::new(
-        None,
-        None,
-        None,
-        None,
-        Some("com.apple.Terminal".to_string()),
-        None,
-        false,
-        false,
-        false,
-        false,
-        false,
-        None,
-        None,
-    );
-    let recent_hours = RetrievalFilters::new(
-        None,
-        None,
-        Some(24),
-        None,
-        None,
-        None,
-        false,
-        false,
-        false,
-        false,
-        false,
-        None,
-        None,
-    );
+    let app_filtered = RetrievalFilters::default().with_app(Some("terminal".to_string()));
+    let bundle_filtered =
+        RetrievalFilters::default().with_bundle_id(Some("com.apple.Terminal".to_string()));
+    let recent_hours = RetrievalFilters::default().with_hours(Some(24));
 
     let started = Instant::now();
     let recent = db.recent_page(20, &unfiltered(), None)?;

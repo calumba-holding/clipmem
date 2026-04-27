@@ -169,25 +169,24 @@ mod tests {
 
     #[test]
     fn search_cursor_round_trips_and_rejects_mismatches() {
-        let hit = crate::model::SearchHit::new(
-            9,
-            12,
-            "abc".to_string(),
-            crate::model::SnapshotKind::PlainText,
-            "git status".to_string(),
-            "git status".to_string(),
-            Some("git status".to_string()),
-            vec!["best_text".to_string(), "search_text".to_string()],
-            1,
-            "2026-04-16T09:00:00Z".to_string(),
-            "2026-04-16T10:00:00Z".to_string(),
-            Some("Terminal".to_string()),
-            Some("com.apple.Terminal".to_string()),
-            Vec::new(),
-            Vec::new(),
-            10,
-            1,
-            Some(0.5),
+        let hit = crate::model::SearchHit::from_parts(
+            crate::model::SearchHitParts::plain_text(9, 12, "git status".to_string())
+                .with_sha256("abc".to_string())
+                .with_match(
+                    Some("git status".to_string()),
+                    vec!["best_text".to_string(), "search_text".to_string()],
+                )
+                .with_capture_summary(
+                    1,
+                    "2026-04-16T09:00:00Z".to_string(),
+                    "2026-04-16T10:00:00Z".to_string(),
+                )
+                .with_last_frontmost_app(
+                    Some("Terminal".to_string()),
+                    Some("com.apple.Terminal".to_string()),
+                )
+                .with_size(10, 1)
+                .with_score(Some(0.5)),
         );
         let filters = unfiltered();
         let encoded =
@@ -200,64 +199,29 @@ mod tests {
 
     #[test]
     fn recent_cursor_round_trips_and_rejects_mismatches() {
-        let hit = crate::model::SearchHit::new(
-            9,
-            12,
-            "abc".to_string(),
-            crate::model::SnapshotKind::PlainText,
-            "git status".to_string(),
-            "git status".to_string(),
-            None,
-            Vec::new(),
-            1,
-            "2026-04-16T09:00:00Z".to_string(),
-            "2026-04-16T10:00:00Z".to_string(),
-            Some("Terminal".to_string()),
-            Some("com.apple.Terminal".to_string()),
-            Vec::new(),
-            Vec::new(),
-            10,
-            1,
-            None,
+        let hit = crate::model::SearchHit::from_parts(
+            crate::model::SearchHitParts::plain_text(9, 12, "git status".to_string())
+                .with_sha256("abc".to_string())
+                .with_capture_summary(
+                    1,
+                    "2026-04-16T09:00:00Z".to_string(),
+                    "2026-04-16T10:00:00Z".to_string(),
+                )
+                .with_last_frontmost_app(
+                    Some("Terminal".to_string()),
+                    Some("com.apple.Terminal".to_string()),
+                )
+                .with_size(10, 1),
         );
-        let filters = RetrievalFilters::new(
-            None,
-            None,
-            Some(24),
-            None,
-            None,
-            None,
-            false,
-            false,
-            false,
-            false,
-            false,
-            None,
-            None,
-        );
+        let filters = RetrievalFilters::default().with_hours(Some(24));
         let encoded = encode_recent_cursor(&filters, &hit).unwrap();
         let cursor = parse_recent_cursor(&encoded, &filters).unwrap();
 
         assert_eq!(cursor.snapshot_id(), 9);
-        assert!(parse_recent_cursor(
-            &encoded,
-            &RetrievalFilters::new(
-                None,
-                None,
-                Some(12),
-                None,
-                None,
-                None,
-                false,
-                false,
-                false,
-                false,
-                false,
-                None,
-                None,
-            )
-        )
-        .is_err());
+        assert!(
+            parse_recent_cursor(&encoded, &RetrievalFilters::default().with_hours(Some(12)))
+                .is_err()
+        );
     }
 
     #[test]

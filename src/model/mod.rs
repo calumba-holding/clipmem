@@ -4,6 +4,7 @@ mod clipboard;
 mod kinds;
 mod text_projection;
 
+pub(crate) use archive::SearchHitParts;
 pub use archive::{
     CaptureEvent, CaptureStoreResult, DoctorReport, SearchHit, SnapshotDetails, TimelineEvent,
 };

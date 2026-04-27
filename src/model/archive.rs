@@ -32,6 +32,116 @@ pub struct SearchHit {
     score: Option<f64>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct SearchHitParts {
+    pub(crate) snapshot_id: i64,
+    pub(crate) event_id: i64,
+    pub(crate) sha256: String,
+    pub(crate) snapshot_kind: SnapshotKind,
+    pub(crate) preview_text: String,
+    pub(crate) search_text: String,
+    pub(crate) why_matched: Option<String>,
+    pub(crate) matched_fields: Vec<String>,
+    pub(crate) capture_count: usize,
+    pub(crate) first_observed_at: String,
+    pub(crate) last_observed_at: String,
+    pub(crate) last_frontmost_app_name: Option<String>,
+    pub(crate) last_frontmost_app_bundle_id: Option<String>,
+    pub(crate) urls: Vec<String>,
+    pub(crate) file_paths: Vec<String>,
+    pub(crate) total_bytes: usize,
+    pub(crate) item_count: usize,
+    pub(crate) score: Option<f64>,
+}
+
+#[cfg(test)]
+impl SearchHitParts {
+    #[must_use]
+    pub(crate) fn plain_text(snapshot_id: i64, event_id: i64, preview_text: String) -> Self {
+        Self {
+            snapshot_id,
+            event_id,
+            sha256: String::new(),
+            snapshot_kind: SnapshotKind::PlainText,
+            search_text: preview_text.clone(),
+            preview_text,
+            why_matched: None,
+            matched_fields: Vec::new(),
+            capture_count: 1,
+            first_observed_at: String::new(),
+            last_observed_at: String::new(),
+            last_frontmost_app_name: None,
+            last_frontmost_app_bundle_id: None,
+            urls: Vec::new(),
+            file_paths: Vec::new(),
+            total_bytes: 0,
+            item_count: 1,
+            score: None,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn with_sha256(mut self, sha256: String) -> Self {
+        self.sha256 = sha256;
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_match(
+        mut self,
+        why_matched: Option<String>,
+        matched_fields: Vec<String>,
+    ) -> Self {
+        self.why_matched = why_matched;
+        self.matched_fields = matched_fields;
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_capture_summary(
+        mut self,
+        capture_count: usize,
+        first_observed_at: String,
+        last_observed_at: String,
+    ) -> Self {
+        self.capture_count = capture_count;
+        self.first_observed_at = first_observed_at;
+        self.last_observed_at = last_observed_at;
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_last_frontmost_app(
+        mut self,
+        name: Option<String>,
+        bundle_id: Option<String>,
+    ) -> Self {
+        self.last_frontmost_app_name = name;
+        self.last_frontmost_app_bundle_id = bundle_id;
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_locations(mut self, urls: Vec<String>, file_paths: Vec<String>) -> Self {
+        self.urls = urls;
+        self.file_paths = file_paths;
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_size(mut self, total_bytes: usize, item_count: usize) -> Self {
+        self.total_bytes = total_bytes;
+        self.item_count = item_count;
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_score(mut self, score: Option<f64>) -> Self {
+        self.score = score;
+        self
+    }
+}
+
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize)]
 pub struct CaptureEvent {
@@ -129,47 +239,27 @@ impl CaptureStoreResult {
 }
 
 impl SearchHit {
-    #[allow(clippy::too_many_arguments)]
     #[must_use]
-    pub(crate) fn new(
-        snapshot_id: i64,
-        event_id: i64,
-        sha256: String,
-        snapshot_kind: SnapshotKind,
-        preview_text: String,
-        search_text: String,
-        why_matched: Option<String>,
-        matched_fields: Vec<String>,
-        capture_count: usize,
-        first_observed_at: String,
-        last_observed_at: String,
-        last_frontmost_app_name: Option<String>,
-        last_frontmost_app_bundle_id: Option<String>,
-        urls: Vec<String>,
-        file_paths: Vec<String>,
-        total_bytes: usize,
-        item_count: usize,
-        score: Option<f64>,
-    ) -> Self {
+    pub(crate) fn from_parts(parts: SearchHitParts) -> Self {
         Self {
-            snapshot_id,
-            event_id,
-            sha256,
-            snapshot_kind,
-            preview_text,
-            search_text,
-            why_matched,
-            matched_fields,
-            capture_count,
-            first_observed_at,
-            last_observed_at,
-            last_frontmost_app_name,
-            last_frontmost_app_bundle_id,
-            urls,
-            file_paths,
-            total_bytes,
-            item_count,
-            score,
+            snapshot_id: parts.snapshot_id,
+            event_id: parts.event_id,
+            sha256: parts.sha256,
+            snapshot_kind: parts.snapshot_kind,
+            preview_text: parts.preview_text,
+            search_text: parts.search_text,
+            why_matched: parts.why_matched,
+            matched_fields: parts.matched_fields,
+            capture_count: parts.capture_count,
+            first_observed_at: parts.first_observed_at,
+            last_observed_at: parts.last_observed_at,
+            last_frontmost_app_name: parts.last_frontmost_app_name,
+            last_frontmost_app_bundle_id: parts.last_frontmost_app_bundle_id,
+            urls: parts.urls,
+            file_paths: parts.file_paths,
+            total_bytes: parts.total_bytes,
+            item_count: parts.item_count,
+            score: parts.score,
         }
     }
 

@@ -497,7 +497,7 @@ pub(in crate::cli) fn build_recall_why_selected(
 #[cfg(test)]
 mod profile_tests {
     use super::{literal_match_score, matches_preferred_app};
-    use crate::model::{SearchHit, SnapshotKind};
+    use crate::model::{SearchHit, SearchHitParts};
     use std::time::{Duration, Instant};
 
     #[test]
@@ -569,25 +569,21 @@ mod profile_tests {
                 let why_matched = Some(format!(
                     "Search snippet {index} with another Needle Term occurrence"
                 ));
-                SearchHit::new(
-                    index as i64 + 1,
-                    index as i64 + 100_000,
-                    format!("{:064x}", index + 1),
-                    SnapshotKind::PlainText,
-                    preview.clone(),
-                    preview,
-                    why_matched,
-                    vec!["best_text".to_string()],
-                    1,
-                    "2026-04-17 10:00:00".to_string(),
-                    "2026-04-17 11:00:00".to_string(),
-                    Some("Terminal".to_string()),
-                    Some("com.apple.Terminal".to_string()),
-                    Vec::new(),
-                    Vec::new(),
-                    128,
-                    1,
-                    Some(0.25),
+                SearchHit::from_parts(
+                    SearchHitParts::plain_text(index as i64 + 1, index as i64 + 100_000, preview)
+                        .with_sha256(format!("{:064x}", index + 1))
+                        .with_match(why_matched, vec!["best_text".to_string()])
+                        .with_capture_summary(
+                            1,
+                            "2026-04-17 10:00:00".to_string(),
+                            "2026-04-17 11:00:00".to_string(),
+                        )
+                        .with_last_frontmost_app(
+                            Some("Terminal".to_string()),
+                            Some("com.apple.Terminal".to_string()),
+                        )
+                        .with_size(128, 1)
+                        .with_score(Some(0.25)),
                 )
             })
             .collect()

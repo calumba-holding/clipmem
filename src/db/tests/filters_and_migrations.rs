@@ -269,21 +269,11 @@ fn shared_filters_constrain_search_recent_and_timeline_consistently() -> Result<
     set_event_observed_at(&db, first.event_id(), "2026-04-16 09:00:00")?;
     set_event_observed_at(&db, second.event_id(), "2026-04-16 10:00:00")?;
 
-    let filters = RetrievalFilters::new(
-        None,
-        None,
-        None,
-        Some("terminal".to_string()),
-        None,
-        Some(RetrievalKind::Url),
-        false,
-        true,
-        false,
-        false,
-        false,
-        Some(20),
-        None,
-    );
+    let filters = RetrievalFilters::default()
+        .with_app(Some("terminal".to_string()))
+        .with_kind(Some(RetrievalKind::Url))
+        .requiring_url()
+        .with_min_bytes(Some(20));
 
     let search = db.search_auto("example.com", 10, &filters)?;
     let recent = db.recent(10, &filters)?;

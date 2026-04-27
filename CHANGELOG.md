@@ -9,6 +9,18 @@ versioning where practical.
 
 ## Unreleased
 
+### Changed
+
+- Replaced wide internal archive/search construction paths with named-field
+  parts and filter builder methods so query mapping and CLI filter
+  normalization are harder to assemble incorrectly.
+- Documented the failure modes for public recent and stats database queries so
+  API consumers can rely on consistent error contracts across retrieval
+  methods.
+- Grouped retrieval CLI command helpers under a dedicated command submodule,
+  reducing the flat command directory and making search, recall, cursor, and
+  filter code easier to navigate together.
+
 ### Fixed
 
 - Fixed file URL path normalization so `file://localhost/...` clipboard

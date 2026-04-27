@@ -154,39 +154,11 @@ pub(in crate::db::tests) fn unfiltered() -> RetrievalFilters {
 }
 
 pub(in crate::db::tests) fn filters_with_app(app: &str) -> RetrievalFilters {
-    RetrievalFilters::new(
-        None,
-        None,
-        None,
-        Some(app.to_string()),
-        None,
-        None,
-        false,
-        false,
-        false,
-        false,
-        false,
-        None,
-        None,
-    )
+    RetrievalFilters::default().with_app(Some(app.to_string()))
 }
 
 pub(in crate::db::tests) fn filters_with_kind(kind: RetrievalKind) -> RetrievalFilters {
-    RetrievalFilters::new(
-        None,
-        None,
-        None,
-        None,
-        None,
-        Some(kind),
-        false,
-        false,
-        false,
-        false,
-        false,
-        None,
-        None,
-    )
+    RetrievalFilters::default().with_kind(Some(kind))
 }
 
 pub(in crate::db::tests) fn seed_large_archive(

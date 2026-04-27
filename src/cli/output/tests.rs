@@ -5,7 +5,8 @@ use std::time::{Duration, Instant};
 use crate::db::{SearchMode, SearchResults};
 use crate::model::{
     build_item, build_representation, build_snapshot, CaptureContext, CaptureEvent,
-    CaptureStoreResult, DoctorReport, SearchHit, SnapshotDetails, SnapshotKind, TimelineEvent,
+    CaptureStoreResult, DoctorReport, SearchHit, SearchHitParts, SnapshotDetails, SnapshotKind,
+    TimelineEvent,
 };
 
 use super::super::commands::{CaptureOnceOutput, CaptureOnceStoredOutput};
@@ -62,25 +63,28 @@ pub(in crate::cli) fn render_capture_once_text_skips_preview_for_filtered_conten
 
 #[test]
 pub(in crate::cli) fn render_hits_text_includes_match_score_urls_and_files() {
-    let text = render_hits_text(&[SearchHit::new(
-        42,
-        77,
-        "abc123".to_string(),
-        SnapshotKind::PlainText,
-        "git clone".to_string(),
-        "git clone".to_string(),
-        Some("⟦git⟧ clone".to_string()),
-        vec!["best_text".to_string(), "search_text".to_string()],
-        3,
-        "2026-04-16 10:00:00".to_string(),
-        "2026-04-16 11:00:00".to_string(),
-        Some("Terminal".to_string()),
-        Some("com.apple.Terminal".to_string()),
-        vec!["https://example.com".to_string()],
-        vec!["/Users/test/repo".to_string()],
-        9,
-        1,
-        Some(0.125),
+    let text = render_hits_text(&[SearchHit::from_parts(
+        SearchHitParts::plain_text(42, 77, "git clone".to_string())
+            .with_sha256("abc123".to_string())
+            .with_match(
+                Some("⟦git⟧ clone".to_string()),
+                vec!["best_text".to_string(), "search_text".to_string()],
+            )
+            .with_capture_summary(
+                3,
+                "2026-04-16 10:00:00".to_string(),
+                "2026-04-16 11:00:00".to_string(),
+            )
+            .with_last_frontmost_app(
+                Some("Terminal".to_string()),
+                Some("com.apple.Terminal".to_string()),
+            )
+            .with_locations(
+                vec!["https://example.com".to_string()],
+                vec!["/Users/test/repo".to_string()],
+            )
+            .with_size(9, 1)
+            .with_score(Some(0.125)),
     )]);
 
     assert!(text.contains("[42] plain_text"));
@@ -150,25 +154,23 @@ pub(in crate::cli) fn render_doctor_text_lists_compile_options() {
 pub(in crate::cli) fn render_search_results_text_reports_effective_mode() {
     let text = render_search_results_text(&SearchResults::new(
         SearchMode::Literal,
-        vec![SearchHit::new(
-            7,
-            21,
-            "abc123".to_string(),
-            SnapshotKind::PlainText,
-            "git push".to_string(),
-            "git push".to_string(),
-            Some("git push".to_string()),
-            vec!["best_text".to_string(), "search_text".to_string()],
-            2,
-            "2026-04-16 10:00:00".to_string(),
-            "2026-04-16 11:00:00".to_string(),
-            Some("Terminal".to_string()),
-            Some("com.apple.Terminal".to_string()),
-            Vec::new(),
-            Vec::new(),
-            8,
-            1,
-            None,
+        vec![SearchHit::from_parts(
+            SearchHitParts::plain_text(7, 21, "git push".to_string())
+                .with_sha256("abc123".to_string())
+                .with_match(
+                    Some("git push".to_string()),
+                    vec!["best_text".to_string(), "search_text".to_string()],
+                )
+                .with_capture_summary(
+                    2,
+                    "2026-04-16 10:00:00".to_string(),
+                    "2026-04-16 11:00:00".to_string(),
+                )
+                .with_last_frontmost_app(
+                    Some("Terminal".to_string()),
+                    Some("com.apple.Terminal".to_string()),
+                )
+                .with_size(8, 1),
         )],
         false,
     ));

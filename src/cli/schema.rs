@@ -214,21 +214,33 @@ impl RetrievalFilterArgs {
             self.hours
         };
 
-        Ok(RetrievalFilters::new(
-            since,
-            self.until.clone(),
-            hours,
-            app,
-            bundle_id,
-            self.kind,
-            self.has_text,
-            self.has_url,
-            self.has_file_url,
-            self.has_image,
-            self.has_pdf,
-            self.min_bytes,
-            self.max_bytes,
-        ))
+        let mut filters = RetrievalFilters::default()
+            .with_since(since)
+            .with_until(self.until.clone())
+            .with_hours(hours)
+            .with_app(app)
+            .with_bundle_id(bundle_id)
+            .with_kind(self.kind)
+            .with_min_bytes(self.min_bytes)
+            .with_max_bytes(self.max_bytes);
+
+        if self.has_text {
+            filters = filters.requiring_text();
+        }
+        if self.has_url {
+            filters = filters.requiring_url();
+        }
+        if self.has_file_url {
+            filters = filters.requiring_file_url();
+        }
+        if self.has_image {
+            filters = filters.requiring_image();
+        }
+        if self.has_pdf {
+            filters = filters.requiring_pdf();
+        }
+
+        Ok(filters)
     }
 }
 
