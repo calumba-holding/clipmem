@@ -13,9 +13,8 @@ use crate::db::read::query_analysis::{
     analyze_query, is_invalid_fts_query, is_simple_fts_query, literal_fts_match_query,
     QueryAnalysis,
 };
-use crate::db::read::row_mapping::{
-    map_scored_search_hit_row, map_search_hit_row, merge_scored_search_results, paginate_rows,
-};
+use crate::db::read::row_mapping::{map_scored_search_hit_row, map_search_hit_row};
+use crate::db::read::search_results::{merge_scored_search_results, paginate_rows};
 use crate::db::sqlite_helpers::{collect_rows, usize_to_i64};
 use crate::db::types::{Database, RetrievalFilters, SearchCursorState, SearchMode, SearchResults};
 use crate::model::SearchHit;

@@ -8,9 +8,8 @@ use crate::db::read::filter_sql::{
     requires_matching_events, snapshot_filter_clause,
 };
 use crate::db::read::queries::{recent_query, timeline_query};
-use crate::db::read::row_mapping::{
-    map_search_hit_row, map_timeline_event_row, paginate_rows, paginate_timeline_rows,
-};
+use crate::db::read::row_mapping::{map_search_hit_row, map_timeline_event_row};
+use crate::db::read::search_results::{paginate_rows, paginate_timeline_rows};
 use crate::db::read::stats::stats_params;
 use crate::db::sqlite_helpers::{collect_rows, usize_to_i64};
 use crate::db::types::{
