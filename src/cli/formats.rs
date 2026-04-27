@@ -101,32 +101,15 @@ pub(super) struct OutputArgs {
 
 impl OutputArgs {
     pub(super) fn resolved(&self) -> Result<OutputFormat, CliValueError> {
-        match (self.json, self.human, self.format) {
-            (false, false, Some(format)) => Ok(format),
-            (false, false, None) => Ok(OutputFormat::Text),
-            (true, false, None) | (true, false, Some(OutputFormat::Json)) => Ok(OutputFormat::Json),
-            (false, true, None) | (false, true, Some(OutputFormat::Human)) => {
-                Ok(OutputFormat::Human)
-            }
-            (true, false, Some(format)) => Err(value_error(
-                ErrorKind::ArgumentConflict,
-                format!(
-                    "`--json` is only compatible with `--format json`, got `--format {}`",
-                    format.as_str()
-                ),
-            )),
-            (false, true, Some(format)) => Err(value_error(
-                ErrorKind::ArgumentConflict,
-                format!(
-                    "`--human` is only compatible with `--format human`, got `--format {}`",
-                    format.as_str()
-                ),
-            )),
-            (true, true, _) => Err(value_error(
-                ErrorKind::ArgumentConflict,
-                "`--human` cannot be combined with `--json`",
-            )),
-        }
+        resolve_json_human_aliases(
+            self.format,
+            self.json,
+            self.human,
+            OutputFormat::Text,
+            OutputFormat::Json,
+            OutputFormat::Human,
+            OutputFormat::as_str,
+        )
     }
 }
 
@@ -143,18 +126,13 @@ pub(super) struct RecallOutputArgs {
 
 impl RecallOutputArgs {
     pub(super) fn resolved(&self) -> Result<RecallOutputFormat, CliValueError> {
-        match (self.human, self.format) {
-            (false, Some(format)) => Ok(format),
-            (false, None) => Ok(RecallOutputFormat::Md),
-            (true, None) | (true, Some(RecallOutputFormat::Human)) => Ok(RecallOutputFormat::Human),
-            (true, Some(format)) => Err(value_error(
-                ErrorKind::ArgumentConflict,
-                format!(
-                    "`--human` is only compatible with `--format human`, got `--format {}`",
-                    format.as_str()
-                ),
-            )),
-        }
+        resolve_human_alias(
+            self.format,
+            self.human,
+            RecallOutputFormat::Md,
+            RecallOutputFormat::Human,
+            RecallOutputFormat::as_str,
+        )
     }
 }
 
@@ -175,34 +153,78 @@ pub(super) struct StatsOutputArgs {
 
 impl StatsOutputArgs {
     pub(super) fn resolved(&self) -> Result<StatsOutputFormat, CliValueError> {
-        match (self.json, self.human, self.format) {
-            (false, false, Some(format)) => Ok(format),
-            (false, false, None) => Ok(StatsOutputFormat::Text),
-            (true, false, None) | (true, false, Some(StatsOutputFormat::Json)) => {
-                Ok(StatsOutputFormat::Json)
-            }
-            (false, true, None) | (false, true, Some(StatsOutputFormat::Human)) => {
-                Ok(StatsOutputFormat::Human)
-            }
-            (true, false, Some(format)) => Err(value_error(
-                ErrorKind::ArgumentConflict,
-                format!(
-                    "`--json` is only compatible with `--format json`, got `--format {}`",
-                    format.as_str()
-                ),
-            )),
-            (false, true, Some(format)) => Err(value_error(
-                ErrorKind::ArgumentConflict,
-                format!(
-                    "`--human` is only compatible with `--format human`, got `--format {}`",
-                    format.as_str()
-                ),
-            )),
-            (true, true, _) => Err(value_error(
-                ErrorKind::ArgumentConflict,
-                "`--human` cannot be combined with `--json`",
-            )),
-        }
+        resolve_json_human_aliases(
+            self.format,
+            self.json,
+            self.human,
+            StatsOutputFormat::Text,
+            StatsOutputFormat::Json,
+            StatsOutputFormat::Human,
+            StatsOutputFormat::as_str,
+        )
+    }
+}
+
+fn resolve_json_human_aliases<F>(
+    format: Option<F>,
+    json: bool,
+    human: bool,
+    default_format: F,
+    json_format: F,
+    human_format: F,
+    format_label: fn(F) -> &'static str,
+) -> Result<F, CliValueError>
+where
+    F: Copy + PartialEq,
+{
+    match (json, human) {
+        (false, false) => Ok(format.unwrap_or(default_format)),
+        (true, false) => resolve_alias_format(format, "--json", json_format, format_label),
+        (false, true) => resolve_alias_format(format, "--human", human_format, format_label),
+        (true, true) => Err(value_error(
+            ErrorKind::ArgumentConflict,
+            "`--human` cannot be combined with `--json`",
+        )),
+    }
+}
+
+fn resolve_human_alias<F>(
+    format: Option<F>,
+    human: bool,
+    default_format: F,
+    human_format: F,
+    format_label: fn(F) -> &'static str,
+) -> Result<F, CliValueError>
+where
+    F: Copy + PartialEq,
+{
+    if human {
+        resolve_alias_format(format, "--human", human_format, format_label)
+    } else {
+        Ok(format.unwrap_or(default_format))
+    }
+}
+
+fn resolve_alias_format<F>(
+    format: Option<F>,
+    alias: &str,
+    alias_format: F,
+    format_label: fn(F) -> &'static str,
+) -> Result<F, CliValueError>
+where
+    F: Copy + PartialEq,
+{
+    match format {
+        None => Ok(alias_format),
+        Some(format) if format == alias_format => Ok(format),
+        Some(format) => Err(value_error(
+            ErrorKind::ArgumentConflict,
+            format!(
+                "`{alias}` is only compatible with `--format {}`, got `--format {}`",
+                format_label(alias_format),
+                format_label(format)
+            ),
+        )),
     }
 }
 
