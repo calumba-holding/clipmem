@@ -25,9 +25,6 @@ final class HistoryModel {
     @ObservationIgnored private var loadGeneration = 0
     @ObservationIgnored private var detailGeneration = 0
 
-    // Keep backward compatibility
-    var errorMessage: String? { error?.message }
-
     init(
         mode: QueryMode = UserDefaults.standard.clipmemDefaultMode,
         appModel: AppModel,

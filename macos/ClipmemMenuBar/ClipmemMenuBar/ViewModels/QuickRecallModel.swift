@@ -11,8 +11,6 @@ final class QuickRecallModel {
     var isLoading = false
     var error: UserError?
 
-    var errorMessage: String? { error?.message }
-
     @ObservationIgnored private let appModel: AppModel
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private let forgetItem: @MainActor (ClipmemItem) async -> Bool

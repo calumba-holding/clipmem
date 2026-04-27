@@ -52,9 +52,6 @@ final class AppModel {
         }
     }
 
-    // Keep backward compatibility for views that check the string directly
-    var lastErrorMessage: String? { lastError?.message }
-
     var healthState: HealthState {
         if client.resolvedBinaryPath() == nil {
             return .missingBinary
