@@ -14,16 +14,19 @@ use crate::cli::service::{
 };
 
 use super::agent_package::{packaged_hermes_skill, packaged_openclaw_skill};
+use super::archive_mutate::{
+    export_snapshot_bytes, forget_snapshot, purge_snapshots, restore_snapshot,
+};
+use super::doctor::doctor;
 use super::hermes_manage::{hermes_install_skill, hermes_uninstall_skill};
 use super::hermes_validate::hermes_doctor;
-use super::mutate::{
-    doctor, export_snapshot_bytes, forget_snapshot, ocr, purge_snapshots, restore_snapshot,
-    settings, storage,
-};
+use super::ocr::ocr;
 use super::openclaw_manage::{openclaw_install_skill, openclaw_uninstall_skill};
 use super::openclaw_validate::openclaw_doctor;
 use super::retrieval::{recall, recent, search, show_snapshot, stats, timeline};
 use super::runtime::{capture_once, watch};
+use super::settings::settings;
+use super::storage::storage;
 
 pub(in crate::cli) fn run_command(command: Command, db_path: &Path) -> Result<()> {
     match command {
