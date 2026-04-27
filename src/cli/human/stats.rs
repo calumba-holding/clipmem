@@ -108,7 +108,7 @@ pub(in crate::cli) fn push_content_mix(out: &mut String, theme: &HumanTheme, sta
         let _ = writeln!(
             out,
             "{:<14}  {:>10}  {:>10}  {}",
-            truncate_cell(entry.kind(), 14),
+            truncate_cell(entry.kind().as_str(), 14),
             format_count(entry.snapshot_count()),
             format_bytes(entry.total_bytes() as u64),
             theme.bar(entry.snapshot_count(), max, BAR_WIDTH)

@@ -4,7 +4,7 @@ use clap::ValueEnum;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
-use crate::model::SearchHit;
+use crate::model::{SearchHit, SnapshotKind};
 
 pub(super) const SCHEMA: &str = include_str!("schema.sql");
 pub(super) const CURRENT_SCHEMA_VERSION: i64 = 17;
@@ -235,7 +235,7 @@ pub struct StatsReport {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct StatsKindBreakdownEntry {
-    pub(in crate::db) kind: String,
+    pub(in crate::db) kind: SnapshotKind,
     pub(in crate::db) snapshot_count: usize,
     pub(in crate::db) total_bytes: usize,
 }
@@ -256,7 +256,7 @@ pub struct StatsTimeBucketEntry {
 pub struct StatsSnapshotLeaderboardEntry {
     pub(in crate::db) snapshot_id: i64,
     pub(in crate::db) capture_count: usize,
-    pub(in crate::db) kind: String,
+    pub(in crate::db) kind: SnapshotKind,
     pub(in crate::db) preview_text: String,
     pub(in crate::db) app_name: Option<String>,
     pub(in crate::db) last_observed_at: String,
@@ -352,8 +352,8 @@ impl StatsReport {
 
 impl StatsKindBreakdownEntry {
     #[must_use]
-    pub fn kind(&self) -> &str {
-        &self.kind
+    pub fn kind(&self) -> SnapshotKind {
+        self.kind
     }
 
     #[must_use]
@@ -403,8 +403,8 @@ impl StatsSnapshotLeaderboardEntry {
     }
 
     #[must_use]
-    pub fn kind(&self) -> &str {
-        &self.kind
+    pub fn kind(&self) -> SnapshotKind {
+        self.kind
     }
 
     #[must_use]

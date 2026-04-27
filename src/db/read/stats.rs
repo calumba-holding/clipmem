@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use rusqlite::named_params;
 
-use crate::db::core::{collect_rows, row_usize, usize_to_i64};
+use crate::db::core::{collect_rows, row_enum, row_usize, usize_to_i64};
 use crate::db::read::mapping::{app_like_pattern, effective_since_param};
 use crate::db::read::queries::weekday_name;
 use crate::db::types::{
@@ -136,7 +136,7 @@ impl Database {
         let rows = stmt
             .query_map([], |row| {
                 Ok(StatsKindBreakdownEntry {
-                    kind: row.get(0)?,
+                    kind: row_enum(row, 0)?,
                     snapshot_count: row_usize(row, 1)?,
                     total_bytes: row_usize(row, 2)?,
                 })
@@ -267,7 +267,7 @@ impl Database {
                 Ok(StatsSnapshotLeaderboardEntry {
                     snapshot_id: row.get(0)?,
                     capture_count: row_usize(row, 1)?,
-                    kind: row.get(2)?,
+                    kind: row_enum(row, 2)?,
                     preview_text: row.get(3)?,
                     app_name: app_name.or(app_bundle_id),
                     last_observed_at: row.get(6)?,
@@ -328,7 +328,7 @@ impl Database {
         let rows = stmt
             .query_map([], |row| {
                 Ok(StatsKindBreakdownEntry {
-                    kind: row.get(0)?,
+                    kind: row_enum(row, 0)?,
                     snapshot_count: row_usize(row, 1)?,
                     total_bytes: row_usize(row, 2)?,
                 })
@@ -450,7 +450,7 @@ impl Database {
                 Ok(StatsSnapshotLeaderboardEntry {
                     snapshot_id: row.get(0)?,
                     capture_count: row_usize(row, 1)?,
-                    kind: row.get(2)?,
+                    kind: row_enum(row, 2)?,
                     preview_text: row.get(3)?,
                     app_name: app_name.or(app_bundle_id),
                     last_observed_at: row.get(6)?,
