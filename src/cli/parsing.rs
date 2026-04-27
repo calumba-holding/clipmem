@@ -1,6 +1,8 @@
 use anyhow::Result;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
+use crate::db::{RetrievalKind, SearchMode, TimelineSort};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct DurationValue {
     pub(in crate::cli) raw: String,
@@ -95,6 +97,46 @@ pub(super) fn parse_nonnegative_bytes(value: &str) -> Result<usize, LimitParseEr
         .map_err(|_| LimitParseError(format!("invalid integer value '{value}'")))
 }
 
+pub(super) fn parse_search_mode(value: &str) -> Result<SearchMode, LimitParseError> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => Ok(SearchMode::Auto),
+        "fts" => Ok(SearchMode::Fts),
+        "literal" => Ok(SearchMode::Literal),
+        _ => Err(one_of_error("search mode", value, "auto, fts, or literal")),
+    }
+}
+
+pub(super) fn parse_timeline_sort(value: &str) -> Result<TimelineSort, LimitParseError> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "asc" => Ok(TimelineSort::Asc),
+        "desc" => Ok(TimelineSort::Desc),
+        _ => Err(one_of_error("timeline sort", value, "asc or desc")),
+    }
+}
+
+pub(super) fn parse_retrieval_kind(value: &str) -> Result<RetrievalKind, LimitParseError> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "text" => Ok(RetrievalKind::Text),
+        "html" => Ok(RetrievalKind::Html),
+        "rtf" => Ok(RetrievalKind::Rtf),
+        "url" => Ok(RetrievalKind::Url),
+        "file" => Ok(RetrievalKind::File),
+        "image" => Ok(RetrievalKind::Image),
+        "pdf" => Ok(RetrievalKind::Pdf),
+        "binary" => Ok(RetrievalKind::Binary),
+        "other" => Ok(RetrievalKind::Other),
+        _ => Err(one_of_error(
+            "retrieval kind",
+            value,
+            "text, html, rtf, url, file, image, pdf, binary, or other",
+        )),
+    }
+}
+
+fn one_of_error(label: &str, value: &str, allowed: &str) -> LimitParseError {
+    LimitParseError(format!("invalid {label} '{value}'; expected {allowed}"))
+}
+
 pub(super) fn parse_duration_value(value: &str) -> Result<DurationValue, LimitParseError> {
     let trimmed = value.trim();
     if trimmed.len() < 2 {
@@ -145,7 +187,11 @@ pub(super) fn parse_retention_value(value: &str) -> Result<RetentionValue, Limit
 
 #[cfg(test)]
 mod tests {
-    use super::{DurationValue, RetentionValue};
+    use crate::db::{RetrievalKind, SearchMode, TimelineSort};
+
+    use super::{
+        parse_retrieval_kind, parse_search_mode, parse_timeline_sort, DurationValue, RetentionValue,
+    };
 
     #[test]
     fn retention_value_returns_none_for_forever_and_seconds_for_duration() {
@@ -155,5 +201,15 @@ mod tests {
                 .retention_seconds(),
             Some(7_200)
         );
+    }
+
+    #[test]
+    fn cli_domain_parsers_return_database_enums() {
+        assert_eq!(parse_search_mode("literal").unwrap(), SearchMode::Literal);
+        assert_eq!(parse_timeline_sort("asc").unwrap(), TimelineSort::Asc);
+        assert_eq!(parse_retrieval_kind("file").unwrap(), RetrievalKind::File);
+        assert!(parse_search_mode("regex").is_err());
+        assert!(parse_timeline_sort("newest").is_err());
+        assert!(parse_retrieval_kind("folder").is_err());
     }
 }

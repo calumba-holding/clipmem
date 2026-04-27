@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-use crate::db::{SearchMode, TimelineSort};
+use crate::db::{RetrievalKind, SearchMode, TimelineSort};
 
 use super::errors::classify_command_error;
 use super::formats::{OutputFormat, ProgressFormat, RecallOutputFormat};
@@ -354,10 +354,7 @@ fn get_command_parses_shared_filters() {
                 args.filters.bundle_id.as_deref(),
                 Some("com.apple.Terminal")
             );
-            assert!(matches!(
-                args.filters.kind,
-                Some(crate::db::RetrievalKind::Url)
-            ));
+            assert!(matches!(args.filters.kind, Some(RetrievalKind::Url)));
             assert!(args.filters.has_url);
             assert_eq!(args.filters.min_bytes, Some(20));
             assert_eq!(args.filters.max_bytes, Some(200));
@@ -400,10 +397,7 @@ fn export_command_parses_shared_filters() {
             assert_eq!(args.filters.since.as_deref(), Some("2026-04-16T09:00:00Z"));
             assert_eq!(args.filters.hours, Some(24));
             assert_eq!(args.filters.app.as_deref(), Some("safari"));
-            assert!(matches!(
-                args.filters.kind,
-                Some(crate::db::RetrievalKind::File)
-            ));
+            assert!(matches!(args.filters.kind, Some(RetrievalKind::File)));
             assert!(args.filters.has_file_url);
         }
         other => panic!("expected export command, got {other:?}"),

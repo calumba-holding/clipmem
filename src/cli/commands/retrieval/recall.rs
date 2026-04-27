@@ -90,7 +90,7 @@ fn build_recall_envelope(
             json!({
                 "limit": args.limit,
                 "query_present": args.query.is_some(),
-                "requested_mode": args.query.as_ref().map(|_| args.mode.as_str()),
+                "requested_mode": args.query.as_ref().map(|_| args.search_mode().as_str()),
                 "mode_used": recall.search_mode_used.map(SearchMode::as_str),
                 "full": args.full,
                 "quote": args.quote,
@@ -125,7 +125,7 @@ pub(in crate::cli) fn query_search_results(
     filters: &RetrievalFilters,
     cursor: Option<&SearchCursorState>,
 ) -> Result<SearchResults> {
-    match args.mode {
+    match args.search_mode() {
         SearchMode::Auto => db.search_auto_page(&args.query, args.limit, filters, cursor),
         SearchMode::Fts => db.search_fts_page(&args.query, args.limit, filters, cursor),
         SearchMode::Literal => db.search_literal_page(&args.query, args.limit, filters, cursor),
@@ -147,7 +147,7 @@ pub(in crate::cli) fn compute_recall(
     let mut search_was_weak = false;
 
     if let Some(query) = query {
-        let results = run_search_query(db, query, args.mode, args.limit, filters)?;
+        let results = run_search_query(db, query, args.search_mode(), args.limit, filters)?;
         search_mode_used = Some(results.mode_used());
         let search_candidates = results
             .hits()

@@ -25,11 +25,12 @@ pub(in crate::cli) use self::recall::{query_search_results, recall};
 pub(in crate::cli) fn search(db_path: &Path, args: &SearchArgs) -> Result<()> {
     let format = args.output.resolved()?;
     let filters = normalize_retrieval_filters(&args.filters)?;
+    let search_mode = args.search_mode();
     let db = open_existing_db(db_path)?;
     let cursor = args
         .cursor
         .as_deref()
-        .map(|value| parse_search_cursor(value, &args.query, args.mode, &filters))
+        .map(|value| parse_search_cursor(value, &args.query, search_mode, &filters))
         .transpose()?;
     let results = anyhow::Context::with_context(
         query_search_results(&db, args, &filters, cursor.as_ref()),
@@ -45,7 +46,7 @@ pub(in crate::cli) fn search(db_path: &Path, args: &SearchArgs) -> Result<()> {
             .hits()
             .last()
             .map(|hit| {
-                encode_search_cursor(&args.query, args.mode, &filters, results.mode_used(), hit)
+                encode_search_cursor(&args.query, search_mode, &filters, results.mode_used(), hit)
             })
             .transpose()?
     } else {
@@ -59,7 +60,7 @@ pub(in crate::cli) fn search(db_path: &Path, args: &SearchArgs) -> Result<()> {
             &filters,
             json!({
                 "query": args.query,
-                "requested_mode": args.mode.as_str(),
+                "requested_mode": search_mode.as_str(),
                 "mode_used": results.mode_used().as_str(),
                 "limit": args.limit,
                 "cursor": args.cursor,
@@ -139,14 +140,15 @@ pub(in crate::cli) fn recent(db_path: &Path, args: &RecentArgs) -> Result<()> {
 pub(in crate::cli) fn timeline(db_path: &Path, args: &TimelineArgs) -> Result<()> {
     let format = args.output.resolved()?;
     let filters = normalize_retrieval_filters(&args.filters)?;
+    let timeline_sort = args.timeline_sort();
     let db = open_existing_db(db_path)?;
     let cursor = args
         .cursor
         .as_deref()
-        .map(|value| parse_timeline_cursor(value, &filters, args.sort))
+        .map(|value| parse_timeline_cursor(value, &filters, timeline_sort))
         .transpose()?;
     let events = anyhow::Context::with_context(
-        db.timeline_page(args.limit, &filters, args.sort, cursor.as_ref()),
+        db.timeline_page(args.limit, &filters, timeline_sort, cursor.as_ref()),
         || "timeline query failed".to_string(),
     )?;
 
@@ -157,7 +159,7 @@ pub(in crate::cli) fn timeline(db_path: &Path, args: &TimelineArgs) -> Result<()
         events
             .items()
             .last()
-            .map(|event| encode_timeline_cursor(&filters, args.sort, event))
+            .map(|event| encode_timeline_cursor(&filters, timeline_sort, event))
             .transpose()?
     } else {
         None
@@ -170,7 +172,7 @@ pub(in crate::cli) fn timeline(db_path: &Path, args: &TimelineArgs) -> Result<()
             &filters,
             json!({
                 "limit": args.limit,
-                "sort": args.sort.as_str(),
+                "sort": timeline_sort.as_str(),
                 "cursor": args.cursor,
             }),
         ),

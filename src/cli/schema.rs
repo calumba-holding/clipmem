@@ -16,7 +16,8 @@ use super::help::{
 };
 use super::parsing::{
     parse_bounded_limit, parse_duration_value, parse_nonnegative_bytes, parse_normalized_score,
-    parse_retention_value, parse_rfc3339_timestamp, DurationValue, RetentionValue,
+    parse_retention_value, parse_retrieval_kind, parse_rfc3339_timestamp, parse_search_mode,
+    parse_timeline_sort, DurationValue, RetentionValue,
 };
 use super::value_validation::{
     normalize_nonempty_filter_value, validate_byte_window, validate_time_window,
@@ -149,7 +150,7 @@ pub(super) struct SearchArgs {
     pub(super) query: String,
 
     /// Search mode to execute.
-    #[arg(long, value_enum, default_value_t = SearchMode::Auto)]
+    #[arg(long, value_parser = parse_search_mode, default_value = "auto")]
     pub(super) mode: SearchMode,
 
     /// Maximum number of results.
@@ -165,6 +166,12 @@ pub(super) struct SearchArgs {
 
     #[command(flatten)]
     pub(super) output: OutputArgs,
+}
+
+impl SearchArgs {
+    pub(super) fn search_mode(&self) -> SearchMode {
+        self.mode
+    }
 }
 
 #[derive(Debug, Clone, Args)]
@@ -190,7 +197,7 @@ pub(super) struct RetrievalFilterArgs {
     pub(super) bundle_id: Option<String>,
 
     /// Filter by clipboard content shape. `file` means file URLs; `other` means mixed or empty snapshots.
-    #[arg(long, value_enum)]
+    #[arg(long, value_parser = parse_retrieval_kind)]
     pub(super) kind: Option<RetrievalKind>,
 
     /// Require at least one non-empty text-like representation.
@@ -298,7 +305,7 @@ pub(super) struct TimelineArgs {
     pub(super) cursor: Option<String>,
 
     /// Sort timeline events chronologically ascending or descending.
-    #[arg(long, value_enum, default_value_t = TimelineSort::Desc)]
+    #[arg(long, value_parser = parse_timeline_sort, default_value = "desc")]
     pub(super) sort: TimelineSort,
 
     #[command(flatten)]
@@ -306,6 +313,12 @@ pub(super) struct TimelineArgs {
 
     #[command(flatten)]
     pub(super) output: OutputArgs,
+}
+
+impl TimelineArgs {
+    pub(super) fn timeline_sort(&self) -> TimelineSort {
+        self.sort
+    }
 }
 
 #[derive(Debug, Args)]
@@ -325,7 +338,7 @@ pub(super) struct RecallArgs {
     pub(super) query: Option<String>,
 
     /// Search mode to use when a query is present.
-    #[arg(long, value_enum, default_value_t = SearchMode::Auto)]
+    #[arg(long, value_parser = parse_search_mode, default_value = "auto")]
     pub(super) mode: SearchMode,
 
     /// Maximum number of ranked candidates to consider.
@@ -357,6 +370,12 @@ pub(super) struct RecallArgs {
 
     #[command(flatten)]
     pub(super) output: RecallOutputArgs,
+}
+
+impl RecallArgs {
+    pub(super) fn search_mode(&self) -> SearchMode {
+        self.mode
+    }
 }
 
 #[derive(Debug, Args)]

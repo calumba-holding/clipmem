@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use clap::ValueEnum;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
@@ -11,20 +10,20 @@ pub struct Database {
     pub(in crate::db) path: PathBuf,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SearchMode {
     Auto,
     Fts,
     Literal,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TimelineSort {
     Asc,
     Desc,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RetrievalKind {
     Text,
