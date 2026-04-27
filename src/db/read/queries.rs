@@ -1,21 +1,8 @@
-use crate::db::read::mapping::{
+use crate::db::read::filter_sql::{
     base_event_filter_clause, event_filter_clause, event_filter_where_clause,
     snapshot_filter_clause, snapshot_stats_since_filter_clause,
 };
 use crate::db::types::TimelineSort;
-
-pub(in crate::db) fn weekday_name(index: usize) -> &'static str {
-    match index {
-        0 => "Sunday",
-        1 => "Monday",
-        2 => "Tuesday",
-        3 => "Wednesday",
-        4 => "Thursday",
-        5 => "Friday",
-        6 => "Saturday",
-        _ => "Unknown",
-    }
-}
 
 pub(in crate::db) fn recent_query(
     include_matching_events: bool,

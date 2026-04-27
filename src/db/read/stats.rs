@@ -2,8 +2,7 @@ use anyhow::{Context, Result};
 use rusqlite::named_params;
 
 use crate::db::core::{collect_rows, row_enum, row_usize, usize_to_i64};
-use crate::db::read::mapping::{app_like_pattern, effective_since_param};
-use crate::db::read::queries::weekday_name;
+use crate::db::read::filter_sql::{app_like_pattern, effective_since_param};
 use crate::db::types::{
     Database, RetrievalFilters, RetrievalKind, StatsAppEntry, StatsKindBreakdownEntry,
     StatsSnapshotLeaderboardEntry, StatsTimeBucketEntry,
@@ -75,6 +74,19 @@ impl StatsOverview {
         } else {
             1.0 - (self.snapshot_count as f64 / self.capture_event_count as f64)
         }
+    }
+}
+
+fn weekday_name(index: usize) -> &'static str {
+    match index {
+        0 => "Sunday",
+        1 => "Monday",
+        2 => "Tuesday",
+        3 => "Wednesday",
+        4 => "Thursday",
+        5 => "Friday",
+        6 => "Saturday",
+        _ => "Unknown",
     }
 }
 
