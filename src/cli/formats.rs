@@ -2,7 +2,7 @@ use clap::{error::ErrorKind, Args, ValueEnum};
 
 use crate::db::StatsTimeBucketEntry;
 
-use super::errors::clap_error;
+use super::errors::{value_error, CliValueError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(super) enum OutputFormat {
@@ -114,7 +114,7 @@ pub(super) struct OutputArgs {
 }
 
 impl OutputArgs {
-    pub(super) fn resolved(&self) -> std::result::Result<OutputFormat, clap::Error> {
+    pub(super) fn resolved(&self) -> Result<OutputFormat, CliValueError> {
         match (self.json, self.human, self.format) {
             (false, false, Some(format)) => Ok(format),
             (false, false, None) => Ok(OutputFormat::Text),
@@ -122,21 +122,21 @@ impl OutputArgs {
             (false, true, None) | (false, true, Some(OutputFormat::Human)) => {
                 Ok(OutputFormat::Human)
             }
-            (true, false, Some(format)) => Err(clap_error(
+            (true, false, Some(format)) => Err(value_error(
                 ErrorKind::ArgumentConflict,
                 format!(
                     "`--json` is only compatible with `--format json`, got `--format {}`",
                     format.as_str()
                 ),
             )),
-            (false, true, Some(format)) => Err(clap_error(
+            (false, true, Some(format)) => Err(value_error(
                 ErrorKind::ArgumentConflict,
                 format!(
                     "`--human` is only compatible with `--format human`, got `--format {}`",
                     format.as_str()
                 ),
             )),
-            (true, true, _) => Err(clap_error(
+            (true, true, _) => Err(value_error(
                 ErrorKind::ArgumentConflict,
                 "`--human` cannot be combined with `--json`",
             )),
@@ -156,12 +156,12 @@ pub(super) struct RecallOutputArgs {
 }
 
 impl RecallOutputArgs {
-    pub(super) fn resolved(&self) -> std::result::Result<RecallOutputFormat, clap::Error> {
+    pub(super) fn resolved(&self) -> Result<RecallOutputFormat, CliValueError> {
         match (self.human, self.format) {
             (false, Some(format)) => Ok(format),
             (false, None) => Ok(RecallOutputFormat::Md),
             (true, None) | (true, Some(RecallOutputFormat::Human)) => Ok(RecallOutputFormat::Human),
-            (true, Some(format)) => Err(clap_error(
+            (true, Some(format)) => Err(value_error(
                 ErrorKind::ArgumentConflict,
                 format!(
                     "`--human` is only compatible with `--format human`, got `--format {}`",
@@ -188,7 +188,7 @@ pub(super) struct StatsOutputArgs {
 }
 
 impl StatsOutputArgs {
-    pub(super) fn resolved(&self) -> std::result::Result<StatsOutputFormat, clap::Error> {
+    pub(super) fn resolved(&self) -> Result<StatsOutputFormat, CliValueError> {
         match (self.json, self.human, self.format) {
             (false, false, Some(format)) => Ok(format),
             (false, false, None) => Ok(StatsOutputFormat::Text),
@@ -198,21 +198,21 @@ impl StatsOutputArgs {
             (false, true, None) | (false, true, Some(StatsOutputFormat::Human)) => {
                 Ok(StatsOutputFormat::Human)
             }
-            (true, false, Some(format)) => Err(clap_error(
+            (true, false, Some(format)) => Err(value_error(
                 ErrorKind::ArgumentConflict,
                 format!(
                     "`--json` is only compatible with `--format json`, got `--format {}`",
                     format.as_str()
                 ),
             )),
-            (false, true, Some(format)) => Err(clap_error(
+            (false, true, Some(format)) => Err(value_error(
                 ErrorKind::ArgumentConflict,
                 format!(
                     "`--human` is only compatible with `--format human`, got `--format {}`",
                     format.as_str()
                 ),
             )),
-            (true, true, _) => Err(clap_error(
+            (true, true, _) => Err(value_error(
                 ErrorKind::ArgumentConflict,
                 "`--human` cannot be combined with `--json`",
             )),

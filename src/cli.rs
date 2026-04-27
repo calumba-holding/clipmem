@@ -11,6 +11,7 @@ mod runtime;
 mod schema;
 mod service;
 mod validate;
+mod value_validation;
 
 pub use self::exit::{CliError, CliExitCode};
 pub use self::runtime::{run, run_cli, run_from};

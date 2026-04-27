@@ -21,7 +21,7 @@ use super::parsing::{
     parse_bounded_limit, parse_duration_value, parse_nonnegative_bytes, parse_normalized_score,
     parse_retention_value, parse_rfc3339_timestamp,
 };
-use super::validate::{
+use super::value_validation::{
     normalize_nonempty_filter_value, validate_byte_window, validate_time_window,
 };
 
@@ -226,7 +226,9 @@ pub(super) struct RetrievalFilterArgs {
 }
 
 impl RetrievalFilterArgs {
-    pub(super) fn normalized(&self) -> std::result::Result<RetrievalFilters, clap::Error> {
+    pub(super) fn normalized(
+        &self,
+    ) -> std::result::Result<RetrievalFilters, super::errors::CliValueError> {
         validate_time_window(self.since.as_deref(), self.until.as_deref())?;
         validate_byte_window(self.min_bytes, self.max_bytes)?;
 

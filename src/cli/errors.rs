@@ -3,6 +3,29 @@ use clap::error::ErrorKind;
 use super::exit::{CliError, CliExitCode};
 use super::output::UnsupportedFormatError;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct CliValueError {
+    kind: ErrorKind,
+    message: String,
+}
+
+impl CliValueError {
+    pub(super) fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for CliValueError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for CliValueError {}
+
 #[derive(Debug)]
 pub(in crate::cli) struct CliCommandError {
     exit_code: CliExitCode,
@@ -48,6 +71,14 @@ pub(in crate::cli) fn db_error(message: impl Into<String>) -> anyhow::Error {
 
 pub(in crate::cli) fn platform_error(message: impl Into<String>) -> anyhow::Error {
     CliCommandError::new(CliExitCode::PlatformError, message).into()
+}
+
+pub(super) fn value_error(kind: ErrorKind, message: impl Into<String>) -> CliValueError {
+    CliValueError::new(kind, message)
+}
+
+pub(super) fn clap_error_from_value(error: CliValueError) -> clap::Error {
+    clap_error(error.kind, error.message)
 }
 
 pub(super) fn clap_error(kind: ErrorKind, message: impl Into<String>) -> clap::Error {
@@ -113,6 +144,7 @@ pub(super) fn sanitize_error_message(error: &anyhow::Error) -> String {
 
 pub(super) fn is_invalid_argument_error(error: &anyhow::Error, message: &str) -> bool {
     error.downcast_ref::<clap::Error>().is_some()
+        || error.downcast_ref::<CliValueError>().is_some()
         || message.contains("cursor does not match")
         || message.contains("cursor is for command")
         || message.contains("cursor mode")
