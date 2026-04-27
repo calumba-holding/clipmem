@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use rusqlite::named_params;
 
-use crate::db::core::sanitise_limit;
+use crate::db::core::clamp_result_limit;
 use crate::db::read::filter_sql::{
     app_like_pattern, can_use_snapshot_event_cache, can_use_snapshot_stats_since_filter,
     effective_since_param, event_filter_clause, requires_matching_events, snapshot_filter_clause,
@@ -66,7 +66,7 @@ impl Database {
         filters: &RetrievalFilters,
         cursor: Option<&RecentCursorState>,
     ) -> Result<Page<SearchHit>> {
-        let limit = sanitise_limit(limit);
+        let limit = clamp_result_limit(limit);
         let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
         let use_snapshot_stats_since_filter = can_use_snapshot_stats_since_filter(filters);
         let include_matching_events =
@@ -123,7 +123,7 @@ impl Database {
         sort: TimelineSort,
         cursor: Option<&TimelineCursorState>,
     ) -> Result<Page<TimelineEvent>> {
-        let limit = sanitise_limit(limit);
+        let limit = clamp_result_limit(limit);
         let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
         let sql = timeline_query(sort);
         let app_like = app_like_pattern(filters);

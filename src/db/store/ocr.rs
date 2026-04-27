@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use rusqlite::{params, TransactionBehavior};
 
-use crate::db::core::sanitise_limit;
+use crate::db::core::clamp_result_limit;
 use crate::db::sqlite_helpers::{collect_rows, row_usize, usize_to_i64};
 use crate::db::types::{Database, OcrCandidate, OcrStatusReport};
 
@@ -52,7 +52,7 @@ impl Database {
             .context("requeue failed ocr results")?;
         }
 
-        let limit = usize_to_i64(sanitise_limit(limit))?;
+        let limit = usize_to_i64(clamp_result_limit(limit))?;
         let mut stmt = tx
             .prepare(
                 r"

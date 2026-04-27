@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use rusqlite::{params, OptionalExtension};
 
-use crate::db::core::sanitise_limit;
+use crate::db::core::clamp_result_limit;
 use crate::db::sqlite_helpers::{collect_rows, row_enum, row_usize, usize_to_i64};
 use crate::db::types::Database;
 use crate::model::{
@@ -24,8 +24,9 @@ impl Database {
             return Ok(None);
         };
 
-        details
-            .set_recent_events(self.load_recent_events(snapshot_id, sanitise_limit(event_limit))?);
+        details.set_recent_events(
+            self.load_recent_events(snapshot_id, clamp_result_limit(event_limit))?,
+        );
         details.set_items(self.load_snapshot_items(snapshot_id)?);
 
         Ok(Some(details))

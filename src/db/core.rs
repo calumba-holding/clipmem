@@ -204,7 +204,7 @@ pub(in crate::db) fn run_wal_checkpoint(
     .with_context(|| format!("run WAL checkpoint {mode}"))
 }
 
-pub(in crate::db) fn sanitise_limit(limit: usize) -> usize {
+pub(in crate::db) fn clamp_result_limit(limit: usize) -> usize {
     limit.clamp(1, 250)
 }
 

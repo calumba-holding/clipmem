@@ -5,7 +5,7 @@ use anyhow::{ensure, Context, Result};
 use image::{ExtendedColorType, ImageEncoder, ImageReader, Limits};
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
-use crate::db::core::{pragma_usize, sanitise_limit, storage_file_sizes};
+use crate::db::core::{clamp_result_limit, pragma_usize, storage_file_sizes};
 use crate::db::sqlite_helpers::{collect_rows, row_usize, usize_to_i64};
 use crate::db::store::config::{
     ImageOptimizationCandidate, IMAGE_OPTIMIZATION_FORMAT, IMAGE_OPTIMIZATION_MAX_DIMENSION,
@@ -271,7 +271,7 @@ pub(in crate::db) fn load_image_optimization_candidates(
     conn: &rusqlite::Connection,
     limit: usize,
 ) -> Result<Vec<ImageOptimizationCandidate>> {
-    let limit = usize_to_i64(sanitise_limit(limit))?;
+    let limit = usize_to_i64(clamp_result_limit(limit))?;
     let mut stmt = conn
         .prepare(
             r"

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use rusqlite::{named_params, params, Error as SqlError, Result as SqlResult};
 
-use crate::db::core::sanitise_limit;
+use crate::db::core::clamp_result_limit;
 use crate::db::read::filter_sql::{
     app_like_pattern, can_use_snapshot_event_cache, effective_since_param, escape_like_pattern,
     has_temporal_event_filters, requires_matching_events,
@@ -167,7 +167,7 @@ impl Database {
         filters: &RetrievalFilters,
         cursor: Option<&SearchCursorState>,
     ) -> Result<SearchResults> {
-        let limit = sanitise_limit(limit);
+        let limit = clamp_result_limit(limit);
         let analysis = analyze_query(query);
 
         if analysis.literal_preferred {
@@ -227,7 +227,7 @@ impl Database {
         filters: &RetrievalFilters,
         cursor: Option<&SearchCursorState>,
     ) -> Result<SearchResults> {
-        let limit = sanitise_limit(limit);
+        let limit = clamp_result_limit(limit);
         let params = SearchExecutionParams::new(limit, filters, cursor)?;
         let analysis = analyze_query(query);
         let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
@@ -301,7 +301,7 @@ impl Database {
         filters: &RetrievalFilters,
         cursor: Option<&SearchCursorState>,
     ) -> Result<SearchResults> {
-        let limit = sanitise_limit(limit);
+        let limit = clamp_result_limit(limit);
         let params = SearchExecutionParams::new(limit, filters, cursor)?;
         let analysis = analyze_query(query);
         if let Some(path_fragment) = analysis.path_fragment.as_deref() {
