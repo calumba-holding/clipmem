@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use serde::Serialize;
 
 use super::builders::{
-    html_to_text_lossy, normalise_whitespace, rtf_to_text_lossy, truncate_chars,
+    html_to_text_lossy, normalize_whitespace, rtf_to_text_lossy, truncate_chars,
 };
 use super::{ClipboardItem, ClipboardKind};
 
@@ -242,7 +242,7 @@ fn projected_fragment_text(kind: ClipboardKind, normalized_text: &str) -> String
 }
 
 fn normalize_nonempty_text(text: &str) -> Option<String> {
-    let normalized = normalise_whitespace(text);
+    let normalized = normalize_whitespace(text);
     let trimmed = normalized.trim();
     (!trimmed.is_empty()).then(|| trimmed.to_string())
 }

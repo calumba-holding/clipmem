@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Result};
 use rusqlite::Connection;
 
 use crate::model::{
-    dedupe_text_fragments, html_to_text_lossy, is_searchable_text_fragment, normalise_whitespace,
+    dedupe_text_fragments, html_to_text_lossy, is_searchable_text_fragment, normalize_whitespace,
     rtf_to_text_lossy, truncate_chars, ClipboardKind,
 };
 
@@ -593,7 +593,7 @@ pub(in crate::db) fn rebuilt_search_fragment_for_representation(
         ClipboardKind::Rtf => rtf_to_text_lossy(text),
         _ => text.to_string(),
     };
-    let normalized = normalise_whitespace(&projected);
+    let normalized = normalize_whitespace(&projected);
     is_searchable_text_fragment(&normalized).then_some(normalized)
 }
 

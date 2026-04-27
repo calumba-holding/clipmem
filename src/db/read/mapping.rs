@@ -502,7 +502,7 @@ pub(in crate::db) fn split_aggregated_file_paths(value: &str) -> Vec<String> {
         value
             .split(LIST_VALUE_SEPARATOR)
             .filter(|entry| !entry.is_empty())
-            .map(normalise_file_path)
+            .map(normalize_file_path)
             .collect()
     }
 }
@@ -519,7 +519,7 @@ pub(in crate::db) fn split_match_fields(value: &str) -> Vec<String> {
     }
 }
 
-pub(in crate::db) fn normalise_file_path(value: &str) -> String {
+pub(in crate::db) fn normalize_file_path(value: &str) -> String {
     decode_file_url_path(value).unwrap_or_else(|| value.to_string())
 }
 
@@ -637,7 +637,7 @@ pub(in crate::db) fn analyze_query(query: &str) -> QueryAnalysis {
     let path_fragment = if let Some(value) = trimmed.strip_prefix("~/") {
         Some(file_url_cache_path_fragment(value.trim_start_matches('/')))
     } else if lower.starts_with("file://") {
-        Some(file_url_cache_path_fragment(&normalise_file_path(&trimmed)))
+        Some(file_url_cache_path_fragment(&normalize_file_path(&trimmed)))
     } else if trimmed.starts_with('/')
         || trimmed.starts_with("./")
         || trimmed.starts_with("../")
@@ -728,7 +728,7 @@ mod profile_tests {
 
     #[test]
     #[ignore = "profiling harness for aggregated file path row mapping"]
-    fn profile_aggregated_file_path_normalisation() {
+    fn profile_aggregated_file_path_normalization() {
         let aggregated = large_file_url_list(20_000);
 
         let before = median_duration(11, 20_000, || {
@@ -785,11 +785,11 @@ mod profile_tests {
     fn split_aggregated_file_paths_before_for_profile(value: &str) -> Vec<String> {
         split_aggregated_values(value)
             .into_iter()
-            .map(|value| normalise_file_path_before_for_profile(&value))
+            .map(|value| normalize_file_path_before_for_profile(&value))
             .collect()
     }
 
-    fn normalise_file_path_before_for_profile(value: &str) -> String {
+    fn normalize_file_path_before_for_profile(value: &str) -> String {
         decode_file_url_path_before_for_profile(value).unwrap_or_else(|| value.to_string())
     }
 

@@ -206,7 +206,7 @@ pub(crate) fn truncate_chars(text: &str, max_chars: usize) -> String {
     out
 }
 
-pub(crate) fn normalise_whitespace(text: &str) -> String {
+pub(crate) fn normalize_whitespace(text: &str) -> String {
     let mut parts = text.split_whitespace();
     let Some(first) = parts.next() else {
         return String::new();
@@ -229,7 +229,7 @@ where
     let mut out = Vec::new();
 
     for fragment in fragments {
-        let collapsed = normalise_whitespace(&fragment);
+        let collapsed = normalize_whitespace(&fragment);
         let trimmed = collapsed.trim();
         if trimmed.is_empty() {
             continue;
@@ -385,7 +385,7 @@ pub(crate) fn html_to_text_lossy(html: &str) -> String {
         out.push_str(&entity);
     }
 
-    normalise_whitespace(&out)
+    normalize_whitespace(&out)
 }
 
 fn is_html_entity_char(ch: char) -> bool {
@@ -485,7 +485,7 @@ pub(crate) fn rtf_to_text_lossy(rtf: &str) -> String {
         }
     }
 
-    normalise_whitespace(&out)
+    normalize_whitespace(&out)
 }
 
 #[cfg(test)]

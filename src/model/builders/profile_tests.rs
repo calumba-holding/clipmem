@@ -1,25 +1,25 @@
 use super::{
     build_representation, classify_uti, decode_text_bytes_lossy, decode_text_bytes_strict,
-    hash_bytes, normalise_whitespace, rtf_to_text_lossy,
+    hash_bytes, normalize_whitespace, rtf_to_text_lossy,
 };
 use crate::model::ClipboardRepresentation;
 use std::time::{Duration, Instant};
 
 #[test]
 #[ignore = "profiling harness for model whitespace normalization"]
-fn profile_normalise_whitespace() {
+fn profile_normalize_whitespace() {
     let text = large_whitespace_heavy_text(20_000);
 
     let before = median_duration(15, || {
-        let normalized = normalise_whitespace_collect_join_for_profile(&text);
+        let normalized = normalize_whitespace_collect_join_for_profile(&text);
         assert!(normalized.contains("clipmem token 19999"));
     });
     let after = median_duration(15, || {
-        let normalized = normalise_whitespace(&text);
+        let normalized = normalize_whitespace(&text);
         assert!(normalized.contains("clipmem token 19999"));
     });
 
-    eprintln!("normalise_whitespace_collect_before={before:?} normalise_whitespace_stream_after={after:?}");
+    eprintln!("normalize_whitespace_collect_before={before:?} normalize_whitespace_stream_after={after:?}");
 }
 
 #[test]
@@ -127,7 +127,7 @@ fn large_plain_text(byte_count: usize) -> String {
     out
 }
 
-fn normalise_whitespace_collect_join_for_profile(text: &str) -> String {
+fn normalize_whitespace_collect_join_for_profile(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
@@ -261,5 +261,5 @@ fn rtf_to_text_lossy_vec_chars_for_profile(rtf: &str) -> String {
         }
     }
 
-    normalise_whitespace_collect_join_for_profile(&out)
+    normalize_whitespace_collect_join_for_profile(&out)
 }

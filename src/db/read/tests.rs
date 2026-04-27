@@ -5,7 +5,7 @@ use crate::model::{build_item, build_representation, build_snapshot, CaptureCont
 
 use crate::db::read::mapping::{
     analyze_query, invalid_fts_message, is_simple_fts_query, literal_fts_match_query,
-    normalise_file_path,
+    normalize_file_path,
 };
 use crate::db::read::queries::fts_query;
 
@@ -124,15 +124,15 @@ pub(in crate::db) fn literal_fts_match_query_skips_like_escaped_inputs() {
 #[test]
 pub(in crate::db) fn file_urls_decode_to_paths() {
     assert_eq!(
-        normalise_file_path("file:///Users/test/Documents/hello%20world.txt"),
+        normalize_file_path("file:///Users/test/Documents/hello%20world.txt"),
         "/Users/test/Documents/hello world.txt"
     );
     assert_eq!(
-        normalise_file_path("file://LOCALHOST/Users/test/Documents/hello%20world.txt"),
+        normalize_file_path("file://LOCALHOST/Users/test/Documents/hello%20world.txt"),
         "/Users/test/Documents/hello world.txt"
     );
     assert_eq!(
-        normalise_file_path("/Users/test/Documents/hello world.txt"),
+        normalize_file_path("/Users/test/Documents/hello world.txt"),
         "/Users/test/Documents/hello world.txt"
     );
 }
