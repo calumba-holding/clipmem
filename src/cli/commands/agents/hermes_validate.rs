@@ -6,7 +6,8 @@ use anyhow::{anyhow, Context, Result};
 use crate::cli::commands::agents::doctor::render_agent_doctor_report;
 use crate::cli::commands::agents::package::{packaged_hermes_files, resolve_hermes_skill_dir};
 use crate::cli::commands::agents::support::{
-    binary_check, find_executable, referenced_markdown_files, validate_packaged_skill_file,
+    binary_check, find_executable, frontmatter_value, parse_skill_frontmatter,
+    required_frontmatter_value, validate_packaged_skill_file, validate_required_skill_references,
 };
 use crate::cli::commands::types::{
     AgentDoctorCheck, AgentDoctorStatus, HermesDoctorReport, HERMES_SKILL_NAME,
@@ -214,7 +215,7 @@ pub(in crate::cli) fn validate_hermes_skill_dir(path: &Path) -> Result<()> {
 }
 
 pub(in crate::cli) fn validate_hermes_skill_content(content: &str) -> Result<()> {
-    let frontmatter_lines = parse_frontmatter_lines(content)?;
+    let frontmatter_lines = parse_skill_frontmatter(content)?;
 
     let name = frontmatter_value(&frontmatter_lines, "name").filter(|value| !value.is_empty());
     if name != Some(HERMES_SKILL_NAME) {
@@ -223,19 +224,8 @@ pub(in crate::cli) fn validate_hermes_skill_content(content: &str) -> Result<()>
         ));
     }
 
-    let description =
-        frontmatter_value(&frontmatter_lines, "description").filter(|value| !value.is_empty());
-    if description.is_none() {
-        return Err(anyhow!(
-            "skill frontmatter must include a non-empty `description`"
-        ));
-    }
-
-    let version =
-        frontmatter_value(&frontmatter_lines, "version").filter(|value| !value.is_empty());
-    if version.is_none() {
-        return Err(anyhow!("skill frontmatter must include `version`"));
-    }
+    required_frontmatter_value(&frontmatter_lines, "description")?;
+    required_frontmatter_value(&frontmatter_lines, "version")?;
 
     let platforms = frontmatter_value(&frontmatter_lines, "platforms")
         .ok_or_else(|| anyhow!("skill frontmatter must include `platforms`"))?;
@@ -281,49 +271,12 @@ pub(in crate::cli) fn validate_hermes_skill_content(content: &str) -> Result<()>
         }
     }
 
-    let references = referenced_markdown_files(content);
-    if !references
-        .iter()
-        .any(|reference| reference == Path::new("references/commands.md"))
-    {
-        return Err(anyhow!(
-            "skill content must reference `references/commands.md`"
-        ));
-    }
-    if !references
-        .iter()
-        .any(|reference| reference == Path::new("references/troubleshooting.md"))
-    {
-        return Err(anyhow!(
-            "skill content must reference `references/troubleshooting.md`"
-        ));
-    }
+    validate_required_skill_references(
+        content,
+        &["references/commands.md", "references/troubleshooting.md"],
+    )?;
 
     Ok(())
-}
-
-pub(in crate::cli) fn parse_frontmatter_lines(content: &str) -> Result<Vec<&str>> {
-    let mut lines = content.lines();
-    if lines.next() != Some("---") {
-        return Err(anyhow!("skill frontmatter must start with `---`"));
-    }
-
-    let mut frontmatter_lines = Vec::new();
-    for line in lines {
-        if line == "---" {
-            return Ok(frontmatter_lines);
-        }
-        frontmatter_lines.push(line);
-    }
-
-    Err(anyhow!("skill frontmatter is missing the closing `---`"))
-}
-
-pub(in crate::cli) fn frontmatter_value<'a>(lines: &'a [&str], key: &str) -> Option<&'a str> {
-    let prefix = format!("{key}:");
-    lines
-        .iter()
-        .find_map(|line| line.strip_prefix(&prefix).map(str::trim))
 }
 
 pub(in crate::cli) fn render_hermes_doctor_report(report: &HermesDoctorReport) -> String {
@@ -338,10 +291,9 @@ pub(in crate::cli) fn render_hermes_doctor_report(report: &HermesDoctorReport) -
 mod tests {
     use std::path::PathBuf;
 
-    use super::{
-        packaged_hermes_files, packaged_hermes_skill, referenced_markdown_files,
-        validate_hermes_skill_content,
-    };
+    use crate::cli::commands::agents::support::referenced_markdown_files;
+
+    use super::{packaged_hermes_files, packaged_hermes_skill, validate_hermes_skill_content};
 
     #[test]
     fn packaged_hermes_skill_includes_required_metadata() {

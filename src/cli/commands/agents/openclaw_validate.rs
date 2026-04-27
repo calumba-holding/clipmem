@@ -8,7 +8,8 @@ use crate::cli::commands::agents::package::{
     packaged_openclaw_files, resolve_openclaw_skill_dir, resolve_openclaw_workspace_root,
 };
 use crate::cli::commands::agents::support::{
-    binary_check, find_executable, referenced_markdown_files, validate_packaged_skill_file,
+    binary_check, find_executable, frontmatter_value, parse_skill_frontmatter,
+    required_frontmatter_value, validate_packaged_skill_file, validate_required_skill_references,
 };
 use crate::cli::commands::types::{
     AgentDoctorCheck, AgentDoctorStatus, OpenClawDoctorReport, OPENCLAW_SKILL_NAME,
@@ -203,48 +204,18 @@ pub(in crate::cli) fn validate_openclaw_skill_dir(path: &Path) -> Result<()> {
 }
 
 pub(in crate::cli) fn validate_openclaw_skill_content(content: &str) -> Result<()> {
-    let mut lines = content.lines();
-    if lines.next() != Some("---") {
-        return Err(anyhow!("skill frontmatter must start with `---`"));
-    }
+    let frontmatter_lines = parse_skill_frontmatter(content)?;
 
-    let mut frontmatter_lines = Vec::new();
-    let mut found_end = false;
-    for line in lines {
-        if line == "---" {
-            found_end = true;
-            break;
-        }
-        frontmatter_lines.push(line);
-    }
-    if !found_end {
-        return Err(anyhow!("skill frontmatter is missing the closing `---`"));
-    }
-
-    let name = frontmatter_lines
-        .iter()
-        .find_map(|line| line.strip_prefix("name:").map(str::trim))
-        .filter(|value| !value.is_empty());
+    let name = frontmatter_value(&frontmatter_lines, "name").filter(|value| !value.is_empty());
     if name != Some(OPENCLAW_SKILL_NAME) {
         return Err(anyhow!(
             "skill frontmatter must include `name: {OPENCLAW_SKILL_NAME}`"
         ));
     }
 
-    let description = frontmatter_lines
-        .iter()
-        .find_map(|line| line.strip_prefix("description:").map(str::trim))
-        .filter(|value| !value.is_empty());
-    if description.is_none() {
-        return Err(anyhow!(
-            "skill frontmatter must include a non-empty `description`"
-        ));
-    }
+    required_frontmatter_value(&frontmatter_lines, "description")?;
 
-    let metadata_line = frontmatter_lines
-        .iter()
-        .find_map(|line| line.strip_prefix("metadata:").map(str::trim))
-        .ok_or_else(|| anyhow!("skill frontmatter must include `metadata`"))?;
+    let metadata_line = required_frontmatter_value(&frontmatter_lines, "metadata")?;
     let metadata: serde_json::Value = serde_json::from_str(metadata_line)
         .map_err(|error| anyhow!("invalid metadata JSON: {error}"))?;
     let openclaw = metadata
@@ -266,23 +237,10 @@ pub(in crate::cli) fn validate_openclaw_skill_content(content: &str) -> Result<(
         .ok_or_else(|| anyhow!("metadata.openclaw.install must be an array"))?;
     validate_openclaw_install_entries(install)?;
 
-    let references = referenced_markdown_files(content);
-    if !references
-        .iter()
-        .any(|reference| reference == Path::new("references/commands.md"))
-    {
-        return Err(anyhow!(
-            "skill content must reference `references/commands.md`"
-        ));
-    }
-    if !references
-        .iter()
-        .any(|reference| reference == Path::new("references/troubleshooting.md"))
-    {
-        return Err(anyhow!(
-            "skill content must reference `references/troubleshooting.md`"
-        ));
-    }
+    validate_required_skill_references(
+        content,
+        &["references/commands.md", "references/troubleshooting.md"],
+    )?;
 
     Ok(())
 }

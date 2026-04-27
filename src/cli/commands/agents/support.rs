@@ -132,3 +132,52 @@ pub(in crate::cli) fn referenced_markdown_files(content: &str) -> Vec<PathBuf> {
 
     references
 }
+
+pub(in crate::cli) fn parse_skill_frontmatter(content: &str) -> Result<Vec<&str>> {
+    let mut lines = content.lines();
+    if lines.next() != Some("---") {
+        return Err(anyhow!("skill frontmatter must start with `---`"));
+    }
+
+    let mut frontmatter_lines = Vec::new();
+    for line in lines {
+        if line == "---" {
+            return Ok(frontmatter_lines);
+        }
+        frontmatter_lines.push(line);
+    }
+
+    Err(anyhow!("skill frontmatter is missing the closing `---`"))
+}
+
+pub(in crate::cli) fn frontmatter_value<'a>(lines: &'a [&str], key: &str) -> Option<&'a str> {
+    let prefix = format!("{key}:");
+    lines
+        .iter()
+        .find_map(|line| line.strip_prefix(&prefix).map(str::trim))
+}
+
+pub(in crate::cli) fn required_frontmatter_value<'a>(
+    lines: &'a [&str],
+    key: &str,
+) -> Result<&'a str> {
+    frontmatter_value(lines, key)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow!("skill frontmatter must include `{key}`"))
+}
+
+pub(in crate::cli) fn validate_required_skill_references(
+    content: &str,
+    required_references: &[&str],
+) -> Result<()> {
+    let references = referenced_markdown_files(content);
+    for required in required_references {
+        if !references
+            .iter()
+            .any(|reference| reference == Path::new(required))
+        {
+            return Err(anyhow!("skill content must reference `{required}`"));
+        }
+    }
+    Ok(())
+}
