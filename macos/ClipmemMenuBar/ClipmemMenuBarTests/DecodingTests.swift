@@ -7,7 +7,7 @@ struct DecodingTests {
         let report = try decode(ServiceStatusReport.self, "service_status")
 
         #expect(report.health == .healthy)
-        #expect(report.launchagent?.running == true)
+        #expect(report.launchagent.running == true)
         #expect(report.retention == "30d")
         #expect(report.dbSizeBytes == 12_582_912)
         #expect(report.watcherBinaryPath == "/Users/test/clipmem/target/debug/clipmem")
@@ -17,21 +17,21 @@ struct DecodingTests {
         let report = try decode(ServiceStatusReport.self, "service_status_stopped_watcher")
 
         #expect(report.stale == true)
-        #expect(report.homebrew?.running == false)
-        #expect(report.launchagent?.running == false)
+        #expect(report.homebrew.running == false)
+        #expect(report.launchagent.running == false)
         #expect(report.health == .stale)
     }
 
     @Test func serviceHealthMappingPrioritizesActionableStates() {
-        let runningLaunchAgent = provider("launchagent", installed: true, loaded: true, running: true)
+        let runningLaunchAgent = provider(.launchagent, installed: true, loaded: true, running: true)
         #expect(status(launchagent: runningLaunchAgent, recentCaptureWithinLastHour: true).health == .healthy)
         #expect(status(launchagent: runningLaunchAgent, recentCaptureWithinLastHour: false, stale: false).health == .noRecentCaptures)
 
-        let stoppedLaunchAgent = provider("launchagent", installed: true, loaded: true, running: false)
+        let stoppedLaunchAgent = provider(.launchagent, installed: true, loaded: true, running: false)
         #expect(status(launchagent: stoppedLaunchAgent, recentCaptureWithinLastHour: false, stale: true).health == .stale)
         #expect(status(launchagent: stoppedLaunchAgent, recentCaptureWithinLastHour: false, stale: false).health == .watcherStopped)
 
-        let missingLaunchAgent = provider("launchagent", installed: false, loaded: false, running: false)
+        let missingLaunchAgent = provider(.launchagent, installed: false, loaded: false, running: false)
         #expect(status(launchagent: missingLaunchAgent, recentCaptureWithinLastHour: false).health == .setupNeeded)
 
         #expect(status(conflict: true, launchagent: runningLaunchAgent, paused: true, stale: true).health == .conflict)
@@ -42,7 +42,7 @@ struct DecodingTests {
 
     @Test func serviceStatusExposesWatcherBinaryMismatchWithoutChangingHealth() {
         let launchAgent = provider(
-            "launchagent",
+            .launchagent,
             installed: true,
             loaded: true,
             running: true,
@@ -224,11 +224,11 @@ struct DecodingTests {
         ServiceStatusReport(
             binaryPath: "/Users/test/clipmem",
             dbPath: "/Users/test/clipmem.sqlite3",
-            preferredProvider: "launchagent",
+            preferredProvider: .launchagent,
             preferredProviderReason: "test",
             conflict: conflict,
-            homebrew: homebrew ?? provider("homebrew", installed: false, loaded: false, running: false),
-            launchagent: launchagent ?? provider("launchagent", installed: true, loaded: true, running: true),
+            homebrew: homebrew ?? provider(.homebrew, installed: false, loaded: false, running: false),
+            launchagent: launchagent ?? provider(.launchagent, installed: true, loaded: true, running: true),
             dbExists: dbExists,
             dbSizeBytes: 1024,
             recentCaptureAt: "2026-04-20 08:09:29",
@@ -247,7 +247,7 @@ struct DecodingTests {
     }
 
     private func provider(
-        _ provider: String,
+        _ provider: ServiceProvider,
         installed: Bool,
         loaded: Bool,
         running: Bool,
@@ -256,8 +256,8 @@ struct DecodingTests {
     ) -> ProviderStatus {
         ProviderStatus(
             provider: provider,
-            label: provider,
-            state: running ? "running" : (installed ? "stopped" : "not_installed"),
+            label: provider.rawValue,
+            state: providerState(installed: installed, loaded: loaded, running: running),
             installed: installed,
             loaded: loaded,
             running: running,
@@ -269,6 +269,13 @@ struct DecodingTests {
             stdoutLogPath: nil,
             stderrLogPath: nil
         )
+    }
+
+    private func providerState(installed: Bool, loaded: Bool, running: Bool) -> ServiceState {
+        if running { return .running }
+        if loaded { return .loaded }
+        if installed { return .installed }
+        return .notInstalled
     }
 
     private func object(_ value: JSONValue?) throws -> [String: Any] {

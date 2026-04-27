@@ -191,7 +191,7 @@ enum MenuBarBadgeTone: Equatable, Sendable {
     }
 }
 
-enum ClipboardKind: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
+enum RetrievalKind: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
     case text
     case html
     case rtf
@@ -291,7 +291,7 @@ struct RetrievalFilterState: Equatable, Sendable {
     var hours: Int
     var appName = ""
     var bundleID = ""
-    var kind: ClipboardKind?
+    var kind: RetrievalKind?
     var hasText = false
     var hasURL = false
     var hasFile = false

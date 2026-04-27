@@ -44,15 +44,15 @@ enum DesignColor {
         tint.opacity(0.10)
     }
 
-    static func kindTint(for kind: String?) -> Color {
+    static func kindTint(for kind: SnapshotKind) -> Color {
         switch kind {
-        case "image": .purple
-        case "pdf": .red
-        case "url": .blue
-        case "file": .yellow
-        case "html": .teal
-        case "rtf": .indigo
-        case "binary": .brown
+        case .image: .purple
+        case .pdf: .red
+        case .url: .blue
+        case .fileUrl: .yellow
+        case .html: .teal
+        case .rtf: .indigo
+        case .binary: .brown
         default: .gray
         }
     }

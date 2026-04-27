@@ -48,6 +48,8 @@ versioning where practical.
   URL scheme uses uppercase characters.
 - Fixed the macOS menu bar JSON models so OCR text and status emitted by the
   CLI are decoded and available in history/detail views.
+- Tightened macOS menu bar decoding for clipboard kinds, service state, and
+  recall confidence so the app follows the CLI JSON contract directly.
 - Corrected the `should_capture_change` Rustdoc so it describes the boolean
   watch-state contract instead of a nonexistent persistence error path.
 

@@ -14,7 +14,7 @@
       "snapshot_id": 7,
       "event_id": 11,
       "sha256": "abc123",
-      "kind": "text",
+      "kind": "plain_text",
       "observed_at": "2026-04-19 11:59:00",
       "first_seen_at": "2026-04-19 11:58:00",
       "last_seen_at": "2026-04-19 11:59:00",

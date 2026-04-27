@@ -290,7 +290,7 @@ struct HistoryWindowView: View {
                 Grid(alignment: .leading, horizontalSpacing: Spacing.md, verticalSpacing: Spacing.sm) {
                     FieldRow(title: "Snapshot", value: String(selected.snapshotId))
                     FieldRow(title: "Event", value: selected.eventId.map(String.init))
-                    FieldRow(title: "Kind", value: selected.kind)
+                    FieldRow(title: "Kind", value: selected.kind.displayTitle)
                     FieldRow(title: "Bytes", value: selected.totalBytes.map(String.init))
                     FieldRow(title: "Matched", value: selected.matchedFields?.joined(separator: ", "))
                     FieldRow(title: "Why", value: selected.whyMatched)

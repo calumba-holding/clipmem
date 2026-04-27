@@ -142,7 +142,7 @@ struct HistoryModelTests {
             snapshotId: snapshotID,
             eventId: nil,
             sha256: nil,
-            kind: "text",
+            kind: .plainText,
             observedAt: nil,
             firstSeenAt: nil,
             lastSeenAt: nil,
@@ -174,7 +174,7 @@ struct HistoryModelTests {
         SnapshotDetails(
             snapshotId: snapshotID,
             sha256: "sha-\(snapshotID)",
-            snapshotKind: "text",
+            snapshotKind: .plainText,
             bestText: "Snapshot \(snapshotID)",
             bestTextUti: nil,
             textFragments: nil,

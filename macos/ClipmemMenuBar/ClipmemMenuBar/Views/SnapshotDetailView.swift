@@ -118,7 +118,7 @@ struct SnapshotDetailView: View {
     private func metadataSection(_ detail: SnapshotDetails) -> some View {
         GroupBox("Metadata") {
             Grid(alignment: .leading, horizontalSpacing: Spacing.md, verticalSpacing: Spacing.sm) {
-                FieldRow(title: "Kind", value: detail.snapshotKind)
+                FieldRow(title: "Kind", value: detail.snapshotKind.displayTitle)
                 FieldRow(title: "Snapshot ID", value: String(detail.snapshotId))
                 FieldRow(title: "Content fingerprint", value: detail.sha256, lineLimit: 1)
                 FieldRow(title: "First Seen", value: DisplayFormatters.localTimestamp(detail.firstObservedAt))
@@ -148,7 +148,7 @@ struct SnapshotDetailView: View {
                                     .truncationMode(.middle)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .help(representation.uti)
-                                Text(representation.kind ?? "unknown")
+                                Text(representation.kind.rawValue)
                                     .lineLimit(1)
                                 Text("\(representation.byteLen) bytes")
                                     .monospacedDigit()

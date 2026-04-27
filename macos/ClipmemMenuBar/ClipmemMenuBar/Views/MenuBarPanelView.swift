@@ -275,7 +275,7 @@ struct MenuBarPanelView: View {
             item.displayText,
             item.appName,
             item.appBundleId,
-            item.kind,
+            item.kind.rawValue,
             DisplayFormatters.localTimestamp(item.observedAt),
             item.observedAt,
             item.urls?.joined(separator: " "),

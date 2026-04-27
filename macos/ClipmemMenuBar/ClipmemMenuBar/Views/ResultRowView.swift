@@ -46,17 +46,15 @@ struct ResultRowView: View {
 
     private var metadataView: some View {
         HStack(spacing: Spacing.xs) {
-            if let kind = item.kind {
-                Text(kind)
-                    .font(DesignType.badge)
-                    .padding(.horizontal, Spacing.xs)
-                    .padding(.vertical, Spacing.xxs)
-                    .background(
-                        selected ? Color.white.opacity(0.2) : Color(.quaternaryLabelColor),
-                        in: Capsule()
-                    )
-                    .foregroundStyle(selected ? .white : .secondary)
-            }
+            Text(item.kind.displayTitle)
+                .font(DesignType.badge)
+                .padding(.horizontal, Spacing.xs)
+                .padding(.vertical, Spacing.xxs)
+                .background(
+                    selected ? Color.white.opacity(0.2) : Color(.quaternaryLabelColor),
+                    in: Capsule()
+                )
+                .foregroundStyle(selected ? .white : .secondary)
             if let relative = DisplayFormatters.relativeTimestamp(item.observedAt) {
                 Text(relative)
                     .font(DesignType.rowMeta)
@@ -90,13 +88,13 @@ struct ResultRowView: View {
 
     private var symbol: String {
         switch item.kind {
-        case "image": "photo"
-        case "pdf": "doc.richtext"
-        case "url": "link"
-        case "file": "doc"
-        case "html": "chevron.left.forwardslash.chevron.right"
-        case "rtf": "textformat"
-        case "binary": "shippingbox"
+        case .image: "photo"
+        case .pdf: "doc.richtext"
+        case .url: "link"
+        case .fileUrl: "doc"
+        case .html: "chevron.left.forwardslash.chevron.right"
+        case .rtf: "textformat"
+        case .binary: "shippingbox"
         default: "text.alignleft"
         }
     }

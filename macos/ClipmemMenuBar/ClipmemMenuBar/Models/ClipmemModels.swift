@@ -1,12 +1,76 @@
 import Foundation
 
+enum SnapshotKind: String, Decodable, Hashable, Sendable {
+    case empty
+    case mixed
+    case plainText = "plain_text"
+    case url
+    case fileUrl = "file_url"
+    case html
+    case json
+    case xml
+    case rtf
+    case pdf
+    case image
+    case binary
+
+    var displayTitle: String {
+        switch self {
+        case .empty: "empty"
+        case .mixed: "mixed"
+        case .plainText: "plain_text"
+        case .url: "url"
+        case .fileUrl: "file_url"
+        case .html: "html"
+        case .json: "json"
+        case .xml: "xml"
+        case .rtf: "rtf"
+        case .pdf: "pdf"
+        case .image: "image"
+        case .binary: "binary"
+        }
+    }
+}
+
+enum ClipboardRepresentationKind: String, Decodable, Hashable, Sendable {
+    case plainText = "plain_text"
+    case url
+    case fileUrl = "file_url"
+    case html
+    case json
+    case xml
+    case rtf
+    case pdf
+    case image
+    case binary
+    case empty
+}
+
+enum ServiceProvider: String, Decodable, Equatable, Sendable {
+    case homebrew
+    case launchagent
+}
+
+enum ServiceState: String, Decodable, Equatable, Sendable {
+    case notInstalled = "not_installed"
+    case installed
+    case loaded
+    case running
+}
+
+enum RecallMatchConfidence: String, Decodable, Equatable, Sendable {
+    case high
+    case medium
+    case low
+}
+
 struct ProviderStatus: Decodable, Equatable, Sendable {
-    var provider: String?
-    var label: String?
-    var state: String?
-    var installed: Bool?
-    var loaded: Bool?
-    var running: Bool?
+    var provider: ServiceProvider
+    var label: String
+    var state: ServiceState
+    var installed: Bool
+    var loaded: Bool
+    var running: Bool
     var pid: Int?
     var plistPath: String?
     var configuredBinaryPath: String?
@@ -17,14 +81,14 @@ struct ProviderStatus: Decodable, Equatable, Sendable {
 }
 
 struct ServiceStatusReport: Decodable, Equatable, Sendable {
-    var binaryPath: String?
-    var dbPath: String?
-    var preferredProvider: String?
-    var preferredProviderReason: String?
-    var conflict: Bool?
-    var homebrew: ProviderStatus?
-    var launchagent: ProviderStatus?
-    var dbExists: Bool?
+    var binaryPath: String
+    var dbPath: String
+    var preferredProvider: ServiceProvider
+    var preferredProviderReason: String
+    var conflict: Bool
+    var homebrew: ProviderStatus
+    var launchagent: ProviderStatus
+    var dbExists: Bool
     var dbSizeBytes: Int?
     var recentCaptureAt: String?
     var recentCaptureWithinLastHour: Bool?
@@ -33,18 +97,18 @@ struct ServiceStatusReport: Decodable, Equatable, Sendable {
     var retentionSeconds: UInt64?
     var retention: String?
     var ignoredBundleIdCount: Int?
-    var stale: Bool?
+    var stale: Bool
     var dbError: String?
-    var watcherBinaryMismatch: Bool?
+    var watcherBinaryMismatch: Bool
     var watcherBinaryMismatchNote: String?
-    var notes: [String]?
+    var notes: [String]
 
     var health: HealthState {
-        if conflict == true { return .conflict }
+        if conflict { return .conflict }
         if dbError != nil { return .error }
-        if dbExists == false { return .setupNeeded }
+        if !dbExists { return .setupNeeded }
         if paused == true { return .capturePaused }
-        if stale == true { return .stale }
+        if stale { return .stale }
         if isAnyProviderRunning {
             if recentCaptureWithinLastHour == false { return .noRecentCaptures }
             return .healthy
@@ -54,30 +118,30 @@ struct ServiceStatusReport: Decodable, Equatable, Sendable {
     }
 
     var logPaths: [String] {
-        [homebrew?.stdoutLogPath, homebrew?.stderrLogPath, launchagent?.stdoutLogPath, launchagent?.stderrLogPath]
+        [homebrew.stdoutLogPath, homebrew.stderrLogPath, launchagent.stdoutLogPath, launchagent.stderrLogPath]
             .compactMap { $0 }
     }
 
     var watcherBinaryPath: String? {
-        if launchagent?.running == true {
-            return launchagent?.runningBinaryPath ?? launchagent?.configuredBinaryPath
+        if launchagent.running {
+            return launchagent.runningBinaryPath ?? launchagent.configuredBinaryPath
         }
-        if homebrew?.running == true {
-            return homebrew?.runningBinaryPath ?? homebrew?.configuredBinaryPath
+        if homebrew.running {
+            return homebrew.runningBinaryPath ?? homebrew.configuredBinaryPath
         }
-        return launchagent?.configuredBinaryPath ?? homebrew?.configuredBinaryPath
+        return launchagent.configuredBinaryPath ?? homebrew.configuredBinaryPath
     }
 
     private var isAnyProviderRunning: Bool {
-        homebrew?.running == true || launchagent?.running == true
+        homebrew.running || launchagent.running
     }
 
     private var isAnyProviderConfigured: Bool {
         providerIsConfigured(homebrew) || providerIsConfigured(launchagent)
     }
 
-    private func providerIsConfigured(_ provider: ProviderStatus?) -> Bool {
-        provider?.installed == true || provider?.loaded == true || provider?.running == true
+    private func providerIsConfigured(_ provider: ProviderStatus) -> Bool {
+        provider.installed || provider.loaded || provider.running
     }
 }
 
@@ -116,7 +180,7 @@ struct RecallEnvelope: Decodable, Equatable, Sendable {
     var query: String?
     var bestCandidate: ClipmemItem
     var alternatives: [ClipmemItem]
-    var bestMatchConfidence: String?
+    var bestMatchConfidence: RecallMatchConfidence
     var bestMatchScore: Double?
     var whySelected: String?
     var quotedText: String?
@@ -133,7 +197,7 @@ struct ClipmemItem: Decodable, Identifiable, Hashable, Sendable {
     var snapshotId: Int
     var eventId: Int?
     var sha256: String?
-    var kind: String?
+    var kind: SnapshotKind
     var observedAt: String?
     var firstSeenAt: String?
     var lastSeenAt: String?
@@ -183,16 +247,16 @@ struct ClipmemItem: Decodable, Identifiable, Hashable, Sendable {
 }
 
 struct TextFragment: Decodable, Hashable, Sendable {
-    var itemIndex: Int?
-    var uti: String?
-    var kind: String?
-    var text: String?
+    var itemIndex: Int
+    var uti: String
+    var kind: ClipboardRepresentationKind
+    var text: String
 }
 
 struct SnapshotDetails: Decodable, Equatable, Sendable {
     var snapshotId: Int
     var sha256: String
-    var snapshotKind: String?
+    var snapshotKind: SnapshotKind
     var bestText: String?
     var bestTextUti: String?
     var textFragments: [TextFragment]?
@@ -229,7 +293,7 @@ struct CaptureEvent: Decodable, Equatable, Identifiable, Sendable {
 
 struct ClipboardItemDetail: Decodable, Equatable, Identifiable, Sendable {
     var itemIndex: Int
-    var primaryKind: String?
+    var primaryKind: ClipboardRepresentationKind
     var primaryUti: String?
     var previewText: String?
     var searchText: String?
@@ -241,8 +305,8 @@ struct ClipboardItemDetail: Decodable, Equatable, Identifiable, Sendable {
 
 struct ClipboardRepresentation: Decodable, Equatable, Identifiable, Sendable {
     var uti: String
-    var kind: String?
-    var isText: Bool?
+    var kind: ClipboardRepresentationKind
+    var isText: Bool
     var byteLen: Int
     var rawSha256: String?
     var textValue: String?

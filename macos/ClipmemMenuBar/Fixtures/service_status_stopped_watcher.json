@@ -22,7 +22,7 @@
   "launchagent": {
     "provider": "launchagent",
     "label": "io.openclaw.clipmem.watch",
-    "state": "stopped",
+    "state": "loaded",
     "installed": true,
     "loaded": true,
     "running": false,

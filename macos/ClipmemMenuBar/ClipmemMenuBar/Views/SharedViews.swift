@@ -364,8 +364,8 @@ struct FilterBar: View {
                 }
                 .fixedSize()
                 Picker("Kind", selection: $history.filters.kind) {
-                    Text("Any").tag(ClipboardKind?.none)
-                    ForEach(ClipboardKind.allCases) { kind in
+                    Text("Any").tag(RetrievalKind?.none)
+                    ForEach(RetrievalKind.allCases) { kind in
                         Text(kind.title).tag(Optional(kind))
                     }
                 }
