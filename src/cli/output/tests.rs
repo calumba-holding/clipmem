@@ -680,26 +680,28 @@ fn render_list_toon_join_encoded_for_profile(envelope: &ListEnvelope) -> String 
         envelope.next_cursor.as_deref().unwrap_or("null")
     );
 
-    let fields = if envelope.command == "timeline" {
-        ToonTimelineRowProjection::FIELDS.as_slice()
+    let field_names = if envelope.command == "timeline" {
+        ToonTimelineRowProjection::field_names()
     } else {
-        ToonSearchRowProjection::FIELDS.as_slice()
+        ToonSearchRowProjection::field_names()
     };
     let _ = writeln!(
         out,
         "results[#{}\t]{{{}}}:",
         envelope.results.len(),
-        fields.join("\t")
+        field_names.join("\t")
     );
 
     for row in &envelope.results {
-        let values = match row {
-            ListRow::Snapshot(row) => ToonSearchRowProjection::from_snapshot_row(row).values(),
-            ListRow::Timeline(row) => ToonTimelineRowProjection::from_row(row).values(),
+        let fields_and_values = match row {
+            ListRow::Snapshot(row) => {
+                ToonSearchRowProjection::from_snapshot_row(row).fields_and_values()
+            }
+            ListRow::Timeline(row) => ToonTimelineRowProjection::from_row(row).fields_and_values(),
         };
-        let encoded = values
+        let encoded = fields_and_values
             .iter()
-            .map(encode_toon_scalar_for_profile)
+            .map(|(_field, value)| encode_toon_scalar_for_profile(value))
             .collect::<Vec<_>>()
             .join("\t");
         let _ = writeln!(out, "  {encoded}");

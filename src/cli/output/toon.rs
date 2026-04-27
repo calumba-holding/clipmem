@@ -24,23 +24,6 @@ pub(in crate::cli) struct ToonSearchRowProjection {
 }
 
 impl ToonSearchRowProjection {
-    pub(in crate::cli) const FIELDS: [&'static str; 14] = [
-        "snapshot_id",
-        "event_id",
-        "observed_at",
-        "first_seen_at",
-        "last_seen_at",
-        "kind",
-        "app_name",
-        "app_bundle_id",
-        "display_text",
-        "capture_count",
-        "item_count",
-        "total_bytes",
-        "score",
-        "why_matched",
-    ];
-
     pub(in crate::cli) fn from_snapshot_row(row: &SnapshotListRow) -> Self {
         Self::from_parts(ToonSearchRowParts {
             snapshot_id: row.snapshot_id,
@@ -107,24 +90,56 @@ impl ToonSearchRowProjection {
         }
     }
 
-    pub(in crate::cli) fn values(&self) -> Vec<Value> {
+    fn schema_row() -> Self {
+        Self {
+            snapshot_id: 0,
+            event_id: 0,
+            observed_at: String::new(),
+            first_seen_at: String::new(),
+            last_seen_at: String::new(),
+            kind: String::new(),
+            app_name: None,
+            app_bundle_id: None,
+            display_text: String::new(),
+            capture_count: 0,
+            item_count: 0,
+            total_bytes: 0,
+            score: None,
+            why_matched: None,
+        }
+    }
+
+    pub(in crate::cli) fn field_names() -> Vec<&'static str> {
+        toon_field_names(&Self::schema_row().fields_and_values())
+    }
+
+    pub(in crate::cli) fn fields_and_values(&self) -> Vec<(&'static str, Value)> {
         vec![
-            Value::from(self.snapshot_id),
-            Value::from(self.event_id),
-            Value::String(self.observed_at.clone()),
-            Value::String(self.first_seen_at.clone()),
-            Value::String(self.last_seen_at.clone()),
-            Value::String(self.kind.clone()),
-            self.app_name.clone().map_or(Value::Null, Value::String),
-            self.app_bundle_id
-                .clone()
-                .map_or(Value::Null, Value::String),
-            Value::String(self.display_text.clone()),
-            Value::from(self.capture_count as u64),
-            Value::from(self.item_count as u64),
-            Value::from(self.total_bytes as u64),
-            self.score.map_or(Value::Null, Value::from),
-            self.why_matched.clone().map_or(Value::Null, Value::String),
+            ("snapshot_id", Value::from(self.snapshot_id)),
+            ("event_id", Value::from(self.event_id)),
+            ("observed_at", Value::String(self.observed_at.clone())),
+            ("first_seen_at", Value::String(self.first_seen_at.clone())),
+            ("last_seen_at", Value::String(self.last_seen_at.clone())),
+            ("kind", Value::String(self.kind.clone())),
+            (
+                "app_name",
+                self.app_name.clone().map_or(Value::Null, Value::String),
+            ),
+            (
+                "app_bundle_id",
+                self.app_bundle_id
+                    .clone()
+                    .map_or(Value::Null, Value::String),
+            ),
+            ("display_text", Value::String(self.display_text.clone())),
+            ("capture_count", Value::from(self.capture_count as u64)),
+            ("item_count", Value::from(self.item_count as u64)),
+            ("total_bytes", Value::from(self.total_bytes as u64)),
+            ("score", self.score.map_or(Value::Null, Value::from)),
+            (
+                "why_matched",
+                self.why_matched.clone().map_or(Value::Null, Value::String),
+            ),
         ]
     }
 }
@@ -160,19 +175,6 @@ pub(in crate::cli) struct ToonTimelineRowProjection {
 }
 
 impl ToonTimelineRowProjection {
-    pub(in crate::cli) const FIELDS: [&'static str; 10] = [
-        "event_id",
-        "snapshot_id",
-        "observed_at",
-        "change_count",
-        "kind",
-        "app_name",
-        "app_bundle_id",
-        "display_text",
-        "item_count",
-        "total_bytes",
-    ];
-
     pub(in crate::cli) fn from_row(row: &TimelineListRow) -> Self {
         Self {
             event_id: row.event_id,
@@ -192,22 +194,69 @@ impl ToonTimelineRowProjection {
         }
     }
 
-    pub(in crate::cli) fn values(&self) -> Vec<Value> {
+    fn schema_row() -> Self {
+        Self {
+            event_id: 0,
+            snapshot_id: 0,
+            observed_at: String::new(),
+            change_count: 0,
+            kind: String::new(),
+            app_name: None,
+            app_bundle_id: None,
+            display_text: String::new(),
+            item_count: 0,
+            total_bytes: 0,
+        }
+    }
+
+    pub(in crate::cli) fn field_names() -> Vec<&'static str> {
+        toon_field_names(&Self::schema_row().fields_and_values())
+    }
+
+    pub(in crate::cli) fn fields_and_values(&self) -> Vec<(&'static str, Value)> {
         vec![
-            Value::from(self.event_id),
-            Value::from(self.snapshot_id),
-            Value::String(self.observed_at.clone()),
-            Value::from(self.change_count),
-            Value::String(self.kind.clone()),
-            self.app_name.clone().map_or(Value::Null, Value::String),
-            self.app_bundle_id
-                .clone()
-                .map_or(Value::Null, Value::String),
-            Value::String(self.display_text.clone()),
-            Value::from(self.item_count as u64),
-            Value::from(self.total_bytes as u64),
+            ("event_id", Value::from(self.event_id)),
+            ("snapshot_id", Value::from(self.snapshot_id)),
+            ("observed_at", Value::String(self.observed_at.clone())),
+            ("change_count", Value::from(self.change_count)),
+            ("kind", Value::String(self.kind.clone())),
+            (
+                "app_name",
+                self.app_name.clone().map_or(Value::Null, Value::String),
+            ),
+            (
+                "app_bundle_id",
+                self.app_bundle_id
+                    .clone()
+                    .map_or(Value::Null, Value::String),
+            ),
+            ("display_text", Value::String(self.display_text.clone())),
+            ("item_count", Value::from(self.item_count as u64)),
+            ("total_bytes", Value::from(self.total_bytes as u64)),
         ]
     }
+}
+
+fn toon_field_names(fields_and_values: &[(&'static str, Value)]) -> Vec<&'static str> {
+    fields_and_values
+        .iter()
+        .map(|(field, _value)| *field)
+        .collect()
+}
+
+fn toon_field_values(fields_and_values: Vec<(&'static str, Value)>) -> Vec<Value> {
+    fields_and_values
+        .into_iter()
+        .map(|(_field, value)| value)
+        .collect()
+}
+
+fn push_toon_field_values_tab_separated(
+    out: &mut String,
+    fields_and_values: Vec<(&'static str, Value)>,
+) {
+    let values = toon_field_values(fields_and_values);
+    push_toon_scalars_tab_separated(out, &values);
 }
 
 pub(in crate::cli) fn first_non_empty_text(candidates: &[&str]) -> String {
@@ -250,25 +299,27 @@ pub(in crate::cli) fn render_list_toon(envelope: &ListEnvelope) -> String {
         0,
     );
 
-    let fields = if envelope.command == "timeline" {
-        ToonTimelineRowProjection::FIELDS.as_slice()
+    let field_names = if envelope.command == "timeline" {
+        ToonTimelineRowProjection::field_names()
     } else {
-        ToonSearchRowProjection::FIELDS.as_slice()
+        ToonSearchRowProjection::field_names()
     };
     let _ = writeln!(
         out,
         "results[#{}\t]{{{}}}:",
         envelope.results.len(),
-        fields.join("\t")
+        field_names.join("\t")
     );
 
     for row in &envelope.results {
-        let values = match row {
-            ListRow::Snapshot(row) => ToonSearchRowProjection::from_snapshot_row(row).values(),
-            ListRow::Timeline(row) => ToonTimelineRowProjection::from_row(row).values(),
+        let fields_and_values = match row {
+            ListRow::Snapshot(row) => {
+                ToonSearchRowProjection::from_snapshot_row(row).fields_and_values()
+            }
+            ListRow::Timeline(row) => ToonTimelineRowProjection::from_row(row).fields_and_values(),
         };
         out.push_str("  ");
-        push_toon_scalars_tab_separated(&mut out, &values);
+        push_toon_field_values_tab_separated(&mut out, fields_and_values);
         out.push('\n');
     }
 
@@ -343,12 +394,12 @@ pub(in crate::cli) fn render_recall_rows_toon(
         out,
         "{key}[#{}\t]{{{}}}:",
         rows.len(),
-        ToonSearchRowProjection::FIELDS.join("\t")
+        ToonSearchRowProjection::field_names().join("\t")
     );
     for row in rows {
-        let values = ToonSearchRowProjection::from_recall_row(row).values();
+        let fields_and_values = ToonSearchRowProjection::from_recall_row(row).fields_and_values();
         out.push_str("  ");
-        push_toon_scalars_tab_separated(out, &values);
+        push_toon_field_values_tab_separated(out, fields_and_values);
         out.push('\n');
     }
 }
