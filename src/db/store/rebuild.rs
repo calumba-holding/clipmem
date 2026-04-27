@@ -1,9 +1,8 @@
 use anyhow::{Context, Result};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::params;
 
 use crate::db::sqlite_helpers::{collect_rows, row_usize, usize_to_i64};
-use crate::db::store::config::{ImageOptimizationCandidate, RESTORE_SUPPRESSION_WINDOW_SECONDS};
-use crate::db::types::{PurgeReport, SnapshotDeletionReport};
+use crate::db::store::config::ImageOptimizationCandidate;
 use crate::model::{truncate_chars, ClipboardItem, ClipboardKind, SnapshotKind};
 
 pub(in crate::db) fn rebuild_snapshot_summary(
@@ -307,115 +306,6 @@ pub(in crate::db) fn rebuild_snapshot_projection_cache_for_snapshot(
     )
     .context("rebuild snapshot projection cache")?;
     Ok(())
-}
-
-pub(in crate::db) fn normalize_bundle_id(bundle_id: &str) -> Result<String> {
-    let normalized = bundle_id.trim().to_ascii_lowercase();
-    if normalized.is_empty() {
-        anyhow::bail!("bundle id cannot be empty");
-    }
-    Ok(normalized)
-}
-
-pub(in crate::db) fn delete_expired_pending_restores(conn: &rusqlite::Connection) -> Result<()> {
-    let expiry_window = format!("-{RESTORE_SUPPRESSION_WINDOW_SECONDS} seconds");
-    conn.execute(
-        "DELETE FROM pending_restores
-         WHERE datetime(created_at) < datetime('now', ?1)",
-        [expiry_window],
-    )
-    .context("delete expired pending restores")?;
-    Ok(())
-}
-
-pub(in crate::db) fn load_snapshot_deletion_report(
-    tx: &rusqlite::Transaction<'_>,
-    snapshot_id: i64,
-) -> Result<Option<SnapshotDeletionReport>> {
-    tx.query_row(
-        r"
-            SELECT
-                s.id,
-                s.item_count,
-                (
-                    SELECT COUNT(*)
-                    FROM item_representations ir
-                    WHERE ir.snapshot_id = s.id
-                ) AS representation_count,
-                (
-                    SELECT COUNT(*)
-                    FROM capture_events ce
-                    WHERE ce.snapshot_id = s.id
-                ) AS capture_event_count,
-                s.total_bytes
-            FROM snapshots s
-            WHERE s.id = ?1
-        ",
-        [snapshot_id],
-        |row| {
-            Ok(SnapshotDeletionReport::new(
-                row.get(0)?,
-                row_usize(row, 1)?,
-                row_usize(row, 2)?,
-                row_usize(row, 3)?,
-                row_usize(row, 4)?,
-            ))
-        },
-    )
-    .optional()
-    .context("load snapshot deletion report")
-}
-
-pub(in crate::db) fn load_purge_report(
-    tx: &rusqlite::Transaction<'_>,
-    older_than_seconds: u64,
-) -> Result<PurgeReport> {
-    let older_than_seconds_i64 =
-        i64::try_from(older_than_seconds).context("duration exceeds SQLite INTEGER range")?;
-    tx.query_row(
-        r"
-            WITH candidates AS (
-                SELECT ss.snapshot_id
-                FROM snapshot_stats ss
-                WHERE ss.last_observed_at < datetime('now', printf('-%d seconds', ?1))
-            )
-            SELECT
-                COALESCE((SELECT COUNT(*) FROM candidates), 0) AS snapshot_count,
-                COALESCE((
-                    SELECT SUM(s.item_count)
-                    FROM snapshots s
-                    WHERE s.id IN (SELECT snapshot_id FROM candidates)
-                ), 0) AS item_count,
-                COALESCE((
-                    SELECT COUNT(*)
-                    FROM item_representations ir
-                    WHERE ir.snapshot_id IN (SELECT snapshot_id FROM candidates)
-                ), 0) AS representation_count,
-                COALESCE((
-                    SELECT COUNT(*)
-                    FROM capture_events ce
-                    WHERE ce.snapshot_id IN (SELECT snapshot_id FROM candidates)
-                ), 0) AS capture_event_count,
-                COALESCE((
-                    SELECT SUM(s.total_bytes)
-                    FROM snapshots s
-                    WHERE s.id IN (SELECT snapshot_id FROM candidates)
-                ), 0) AS total_bytes
-        ",
-        [older_than_seconds_i64],
-        |row| {
-            Ok(PurgeReport::new(
-                older_than_seconds,
-                false,
-                row_usize(row, 0)?,
-                row_usize(row, 1)?,
-                row_usize(row, 2)?,
-                row_usize(row, 3)?,
-                row_usize(row, 4)?,
-            ))
-        },
-    )
-    .context("load purge report")
 }
 
 #[cfg(test)]

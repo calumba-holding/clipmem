@@ -16,13 +16,167 @@ use crate::db::store::ocr::rebuild_snapshot_ocr_cache;
 use crate::db::store::rebuild::{
     rebuild_snapshot_summary, recompute_snapshot_fingerprint, snapshot_fingerprint_with_replacement,
 };
-use crate::db::types::Database;
+use crate::db::types::{Database, ImageOptimizationProgressEvent, ImageOptimizationReport};
 use crate::model::{hash_bytes, truncate_chars};
 
 #[derive(Debug, Clone)]
 pub(in crate::db) struct OptimizedImage {
     pub(in crate::db) bytes: Vec<u8>,
     pub(in crate::db) raw_sha256: String,
+}
+
+impl Database {
+    pub(crate) fn optimize_images(
+        &mut self,
+        dry_run: bool,
+        limit: usize,
+        auto_compact: bool,
+    ) -> Result<ImageOptimizationReport> {
+        self.optimize_images_with_progress(dry_run, limit, auto_compact, |_| Ok(()))
+    }
+
+    pub(crate) fn optimize_images_with_progress(
+        &mut self,
+        dry_run: bool,
+        limit: usize,
+        auto_compact: bool,
+        mut progress: impl FnMut(ImageOptimizationProgressEvent) -> Result<()>,
+    ) -> Result<ImageOptimizationReport> {
+        let initial_file_bytes = if database_path_is_file_backed(&self.path) {
+            Some(storage_file_sizes(&self.path)?.total_bytes())
+        } else {
+            None
+        };
+        let candidates = load_image_optimization_candidates(&self.conn, limit)?;
+        let total_rows = candidates.len();
+        let mut report = ImageOptimizationReport {
+            dry_run,
+            format: IMAGE_OPTIMIZATION_FORMAT,
+            scanned_rows: 0,
+            compressed_rows: 0,
+            skipped_rows: 0,
+            conflict_count: 0,
+            original_bytes: 0,
+            optimized_bytes: 0,
+            logical_saved_bytes: 0,
+            compact_run: false,
+            compact: None,
+            compact_error: None,
+            filesystem_saved_bytes: 0,
+            filesystem_growth_bytes: 0,
+            compact_recommended: false,
+        };
+        progress(ImageOptimizationProgressEvent::Started { total_rows })?;
+
+        for candidate in candidates {
+            report.scanned_rows += 1;
+            let optimized = match encode_candidate_as_lossless_webp(&candidate) {
+                Ok(optimized) => optimized,
+                Err(reason) => {
+                    report.skipped_rows += 1;
+                    if !dry_run {
+                        mark_image_optimization_skipped(&self.conn, &candidate, reason)?;
+                    }
+                    Self::emit_image_optimization_scan_progress(
+                        &mut progress,
+                        &report,
+                        total_rows,
+                    )?;
+                    continue;
+                }
+            };
+
+            let saved_bytes = candidate.byte_len.saturating_sub(optimized.bytes.len());
+            if !image_optimization_is_beneficial(candidate.byte_len, optimized.bytes.len()) {
+                report.skipped_rows += 1;
+                if !dry_run {
+                    mark_image_optimization_skipped(&self.conn, &candidate, "not_smaller")?;
+                }
+                Self::emit_image_optimization_scan_progress(&mut progress, &report, total_rows)?;
+                continue;
+            }
+
+            if image_optimization_would_conflict(&self.conn, &candidate, &optimized)? {
+                report.skipped_rows += 1;
+                report.conflict_count += 1;
+                if !dry_run {
+                    mark_image_optimization_skipped(&self.conn, &candidate, "conflict")?;
+                }
+                Self::emit_image_optimization_scan_progress(&mut progress, &report, total_rows)?;
+                continue;
+            }
+
+            report.compressed_rows += 1;
+            report.original_bytes += candidate.byte_len;
+            report.optimized_bytes += optimized.bytes.len();
+            report.logical_saved_bytes += saved_bytes;
+            report.compact_recommended = true;
+
+            if !dry_run {
+                replace_image_with_optimized_webp(&mut self.conn, &candidate, optimized)?;
+            }
+            Self::emit_image_optimization_scan_progress(&mut progress, &report, total_rows)?;
+        }
+
+        if !dry_run && auto_compact && database_path_is_file_backed(&self.path) {
+            let compact_wanted = report.compact_recommended || storage_compaction_would_help(self)?;
+            if compact_wanted {
+                report.compact_run = true;
+                progress(ImageOptimizationProgressEvent::Compacting {
+                    scanned_rows: report.scanned_rows,
+                    total_rows,
+                    compressed_rows: report.compressed_rows,
+                    skipped_rows: report.skipped_rows,
+                    conflict_count: report.conflict_count,
+                })?;
+                match self.compact_storage(false) {
+                    Ok(compact) => {
+                        if let Some(initial) = initial_file_bytes {
+                            report.filesystem_saved_bytes =
+                                initial.saturating_sub(compact.total_after_bytes);
+                            report.filesystem_growth_bytes =
+                                compact.total_after_bytes.saturating_sub(initial);
+                        }
+                        report.compact_recommended = false;
+                        report.compact = Some(compact);
+                    }
+                    Err(error) => {
+                        report.compact_error = Some(format_compaction_error(&error));
+                        report.compact_recommended = true;
+                    }
+                }
+            } else if let Some(initial) = initial_file_bytes {
+                let final_bytes = storage_file_sizes(&self.path)?.total_bytes();
+                report.filesystem_saved_bytes = initial.saturating_sub(final_bytes);
+                report.filesystem_growth_bytes = final_bytes.saturating_sub(initial);
+            }
+        } else if !dry_run && report.compact_recommended && !auto_compact {
+            if let Some(initial) = initial_file_bytes {
+                let final_bytes = storage_file_sizes(&self.path)?.total_bytes();
+                report.filesystem_saved_bytes = initial.saturating_sub(final_bytes);
+                report.filesystem_growth_bytes = final_bytes.saturating_sub(initial);
+            }
+        }
+
+        progress(ImageOptimizationProgressEvent::Complete {
+            report: Box::new(report.clone()),
+        })?;
+        Ok(report)
+    }
+
+    fn emit_image_optimization_scan_progress(
+        progress: &mut impl FnMut(ImageOptimizationProgressEvent) -> Result<()>,
+        report: &ImageOptimizationReport,
+        total_rows: usize,
+    ) -> Result<()> {
+        progress(ImageOptimizationProgressEvent::Scanning {
+            scanned_rows: report.scanned_rows,
+            total_rows,
+            compressed_rows: report.compressed_rows,
+            skipped_rows: report.skipped_rows,
+            conflict_count: report.conflict_count,
+        })
+    }
 }
 
 pub(in crate::db) fn load_image_optimization_candidates(
