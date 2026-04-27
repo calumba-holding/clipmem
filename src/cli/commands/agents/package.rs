@@ -3,7 +3,7 @@ use std::process::Command as ProcessCommand;
 
 use anyhow::Result;
 
-use crate::cli::commands::agent_support::{find_executable, home_dir};
+use crate::cli::commands::agents::support::{find_executable, home_dir};
 use crate::cli::commands::types::{
     PackagedSkillFile, HERMES_CHECK_SETUP_SH, HERMES_COMMANDS_REF, HERMES_EXAMPLES_REF,
     HERMES_JSON_SCHEMA_REF, HERMES_SETUP_CHECK_REF, HERMES_SKILL_MD, HERMES_SKILL_NAME,

@@ -3,11 +3,11 @@ use std::process::Command as ProcessCommand;
 
 use anyhow::{anyhow, Context, Result};
 
-use crate::cli::commands::agent_doctor::render_agent_doctor_report;
-use crate::cli::commands::agent_package::{
+use crate::cli::commands::agents::doctor::render_agent_doctor_report;
+use crate::cli::commands::agents::package::{
     packaged_openclaw_files, resolve_openclaw_skill_dir, resolve_openclaw_workspace_root,
 };
-use crate::cli::commands::agent_support::{
+use crate::cli::commands::agents::support::{
     binary_check, find_executable, referenced_markdown_files, validate_packaged_skill_file,
 };
 use crate::cli::commands::types::{
@@ -331,7 +331,7 @@ pub(in crate::cli) fn render_openclaw_doctor_report(report: &OpenClawDoctorRepor
 
 #[cfg(test)]
 mod profile_tests {
-    use crate::cli::commands::agent_support::referenced_markdown_files;
+    use crate::cli::commands::agents::support::referenced_markdown_files;
     use std::path::PathBuf;
     use std::time::{Duration, Instant};
 

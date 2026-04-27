@@ -2,8 +2,8 @@ use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
 
-use crate::cli::commands::agent_package::{packaged_hermes_files, resolve_hermes_skill_dir};
-use crate::cli::commands::agent_support::install_packaged_skill;
+use crate::cli::commands::agents::package::{packaged_hermes_files, resolve_hermes_skill_dir};
+use crate::cli::commands::agents::support::install_packaged_skill;
 use crate::cli::schema::{HermesInstallSkillArgs, HermesUninstallSkillArgs};
 
 pub(in crate::cli) fn hermes_install_skill(args: &HermesInstallSkillArgs) -> Result<()> {
@@ -51,7 +51,7 @@ pub(in crate::cli) fn install_hermes_package(target_dir: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::cli::commands::agent_package::{packaged_hermes_files, resolve_hermes_skill_dir};
+    use crate::cli::commands::agents::package::{packaged_hermes_files, resolve_hermes_skill_dir};
     use crate::cli::commands::types::HERMES_SKILL_NAME;
 
     #[test]

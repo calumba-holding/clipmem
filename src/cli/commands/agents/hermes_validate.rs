@@ -3,9 +3,9 @@ use std::process::Command as ProcessCommand;
 
 use anyhow::{anyhow, Context, Result};
 
-use crate::cli::commands::agent_doctor::render_agent_doctor_report;
-use crate::cli::commands::agent_package::{packaged_hermes_files, resolve_hermes_skill_dir};
-use crate::cli::commands::agent_support::{
+use crate::cli::commands::agents::doctor::render_agent_doctor_report;
+use crate::cli::commands::agents::package::{packaged_hermes_files, resolve_hermes_skill_dir};
+use crate::cli::commands::agents::support::{
     binary_check, find_executable, referenced_markdown_files, validate_packaged_skill_file,
 };
 use crate::cli::commands::types::{
@@ -14,7 +14,7 @@ use crate::cli::commands::types::{
 use crate::cli::schema::HermesDoctorArgs;
 
 #[cfg(test)]
-use crate::cli::commands::agent_package::packaged_hermes_skill;
+use crate::cli::commands::agents::package::packaged_hermes_skill;
 
 pub(in crate::cli) fn hermes_doctor(args: &HermesDoctorArgs) -> Result<()> {
     let report = build_hermes_doctor_report(args)?;

@@ -17,11 +17,11 @@ use super::recall::query_search_results;
 #[cfg(test)]
 use crate::app::WatchState;
 #[cfg(test)]
-use crate::cli::commands::agent_package::{packaged_openclaw_files, packaged_openclaw_skill};
+use crate::cli::commands::agents::openclaw_validate::validate_openclaw_skill_content;
 #[cfg(test)]
-use crate::cli::commands::agent_support::referenced_markdown_files;
+use crate::cli::commands::agents::package::{packaged_openclaw_files, packaged_openclaw_skill};
 #[cfg(test)]
-use crate::cli::commands::openclaw_validate::validate_openclaw_skill_content;
+use crate::cli::commands::agents::support::referenced_markdown_files;
 #[cfg(test)]
 use crate::cli::commands::runtime::run_watch_iteration_with_capture;
 #[cfg(test)]

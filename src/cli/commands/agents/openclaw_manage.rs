@@ -2,8 +2,8 @@ use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
 
-use crate::cli::commands::agent_package::{packaged_openclaw_files, resolve_openclaw_skill_dir};
-use crate::cli::commands::agent_support::install_packaged_skill;
+use crate::cli::commands::agents::package::{packaged_openclaw_files, resolve_openclaw_skill_dir};
+use crate::cli::commands::agents::support::install_packaged_skill;
 use crate::cli::schema::{OpenClawInstallSkillArgs, OpenClawUninstallSkillArgs};
 
 pub(in crate::cli) fn openclaw_install_skill(args: &OpenClawInstallSkillArgs) -> Result<()> {
@@ -55,10 +55,10 @@ pub(in crate::cli) fn install_openclaw_package(target_dir: &Path) -> Result<()> 
 mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use crate::cli::commands::agent_package::{
+    use crate::cli::commands::agents::package::{
         packaged_openclaw_files, resolve_openclaw_skill_dir,
     };
-    use crate::cli::commands::agent_support::install_packaged_skill;
+    use crate::cli::commands::agents::support::install_packaged_skill;
     use crate::cli::commands::types::{PackagedSkillFile, OPENCLAW_SKILL_NAME};
 
     fn temp_skill_dir(name: &str) -> std::path::PathBuf {
