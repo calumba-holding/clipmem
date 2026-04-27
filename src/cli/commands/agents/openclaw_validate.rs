@@ -5,6 +5,8 @@ use anyhow::{anyhow, Context, Result};
 
 use super::doctor::render_agent_doctor_report;
 use super::doctor::{AgentDoctorCheck, AgentDoctorStatus, OpenClawDoctorReport};
+#[cfg(test)]
+use super::package::packaged_openclaw_skill;
 use super::package::{
     packaged_openclaw_files, resolve_openclaw_skill_dir, resolve_openclaw_workspace_root,
     OPENCLAW_SKILL_NAME,
@@ -284,6 +286,84 @@ pub(in crate::cli) fn render_openclaw_doctor_report(report: &OpenClawDoctorRepor
         &report.target_dir,
         &report.checks,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::super::support::referenced_markdown_files;
+    use super::{
+        packaged_openclaw_files, packaged_openclaw_skill, validate_openclaw_skill_content,
+    };
+
+    #[test]
+    fn packaged_openclaw_skill_includes_required_metadata() {
+        let content = packaged_openclaw_skill();
+
+        validate_openclaw_skill_content(&content).expect("packaged skill should validate");
+        assert!(content.contains("\"openclaw\""));
+        assert!(content.contains("\"requires\":{\"bins\":[\"clipmem\"]}"));
+        assert!(content.contains("license:"));
+        assert!(content.contains("clipmem recall"));
+        assert!(content.contains("clipmem timeline"));
+        assert!(content.contains("clipmem export"));
+        assert!(content.contains("references/commands.md"));
+        assert!(content.contains("references/json-schema.md"));
+        assert!(content.contains("references/examples.md"));
+        assert!(content.contains("references/setup-check.md"));
+        assert!(content.contains("references/troubleshooting.md"));
+        assert!(content.contains("scripts/check-setup.sh"));
+        assert!(content.contains("what was that command I copied?"));
+        assert!(content.contains("toon"));
+        assert!(content.contains("--cursor"));
+        assert!(content.contains("schema_version"));
+    }
+
+    #[test]
+    fn packaged_openclaw_package_embeds_reference_files() {
+        let files = packaged_openclaw_files();
+        assert_eq!(files.len(), 7);
+        assert!(files.iter().any(|file| file.relative_path == "SKILL.md"));
+        assert!(files
+            .iter()
+            .any(|file| file.relative_path == "references/commands.md"));
+        assert!(files
+            .iter()
+            .any(|file| file.relative_path == "references/troubleshooting.md"));
+        assert!(files
+            .iter()
+            .any(|file| file.relative_path == "references/json-schema.md"));
+        assert!(files
+            .iter()
+            .any(|file| file.relative_path == "references/examples.md"));
+        assert!(files
+            .iter()
+            .any(|file| file.relative_path == "references/setup-check.md"));
+        assert!(files
+            .iter()
+            .any(|file| file.relative_path == "scripts/check-setup.sh"));
+    }
+
+    #[test]
+    fn packaged_openclaw_skill_references_relative_markdown_files() {
+        let references = referenced_markdown_files(&packaged_openclaw_skill());
+        assert!(references
+            .iter()
+            .any(|path| path == &PathBuf::from("references/commands.md")));
+        assert!(references
+            .iter()
+            .any(|path| path == &PathBuf::from("references/troubleshooting.md")));
+        assert!(references
+            .iter()
+            .any(|path| path == &PathBuf::from("references/json-schema.md")));
+        assert!(references
+            .iter()
+            .any(|path| path == &PathBuf::from("references/examples.md")));
+        assert!(references
+            .iter()
+            .any(|path| path == &PathBuf::from("references/setup-check.md")));
+    }
 }
 
 #[cfg(test)]
