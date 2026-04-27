@@ -1,7 +1,10 @@
 use anyhow::{Context, Result};
 use rusqlite::named_params;
 
-use crate::db::read::filter_sql::{app_like_pattern, effective_since_param};
+use crate::db::read::filter_sql::{
+    app_like_pattern, can_use_snapshot_stats_for_stats, effective_since_param, event_filter_clause,
+    snapshot_filter_clause,
+};
 use crate::db::sqlite_helpers::{collect_rows, row_enum, row_usize, usize_to_i64};
 use crate::db::types::{
     Database, RetrievalFilters, RetrievalKind, StatsAppEntry, StatsKindBreakdownEntry,
@@ -91,6 +94,177 @@ fn weekday_name(index: usize) -> &'static str {
 }
 
 impl Database {
+    pub(in crate::db) fn reset_stats_temp_tables(&self) -> Result<()> {
+        self.conn
+            .execute_batch(
+                "DROP TABLE IF EXISTS temp.clipmem_stats_matching_events;
+                 DROP TABLE IF EXISTS temp.clipmem_stats_matching_snapshots;",
+            )
+            .context("clear stats temp tables")
+    }
+
+    pub(in crate::db) fn materialize_stats_matching_events(
+        &self,
+        params: &StatsQueryParams,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                &format!(
+                    "CREATE TEMP TABLE clipmem_stats_matching_events AS
+                     SELECT ce.id,
+                            ce.snapshot_id,
+                            ce.observed_at,
+                            ce.frontmost_app_name,
+                            ce.frontmost_app_bundle_id
+                     FROM capture_events ce
+                     JOIN snapshots s ON s.id = ce.snapshot_id
+                     WHERE {event_filter_clause}
+                       AND {snapshot_filter_clause}",
+                    event_filter_clause = event_filter_clause("ce"),
+                    snapshot_filter_clause = snapshot_filter_clause("s", "ce.snapshot_id"),
+                ),
+                named_params! {
+                    ":since": params.since.as_deref(),
+                    ":until": params.until.as_deref(),
+                    ":app_like": params.app_like.as_deref(),
+                    ":bundle_id": params.bundle_id.as_deref(),
+                    ":kind": params.kind,
+                    ":has_text": params.has_text,
+                    ":has_url": params.has_url,
+                    ":has_file_url": params.has_file_url,
+                    ":has_image": params.has_image,
+                    ":has_pdf": params.has_pdf,
+                    ":min_bytes": params.min_bytes,
+                    ":max_bytes": params.max_bytes,
+                },
+            )
+            .context("materialize stats matching events")?;
+        Ok(())
+    }
+
+    pub(in crate::db) fn index_stats_matching_events(&self) -> Result<()> {
+        self.conn
+            .execute_batch(
+                "CREATE INDEX temp.idx_clipmem_stats_events_snapshot_id
+                    ON clipmem_stats_matching_events(snapshot_id);
+                 CREATE INDEX temp.idx_clipmem_stats_events_observed_at
+                    ON clipmem_stats_matching_events(observed_at);",
+            )
+            .context("index stats matching events")
+    }
+
+    pub(in crate::db) fn materialize_stats_matching_snapshots(
+        &self,
+        filters: &RetrievalFilters,
+        params: &StatsQueryParams,
+    ) -> Result<()> {
+        if can_use_snapshot_stats_for_stats(filters) {
+            self.materialize_stats_matching_snapshots_from_stats(params)
+        } else {
+            self.materialize_stats_matching_snapshots_from_events(params)
+        }
+    }
+
+    fn materialize_stats_matching_snapshots_from_stats(
+        &self,
+        params: &StatsQueryParams,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                &format!(
+                    "CREATE TEMP TABLE clipmem_stats_matching_snapshots AS
+                     SELECT
+                         s.id AS snapshot_id,
+                         s.snapshot_kind AS kind,
+                         s.preview_text AS preview_text,
+                         s.total_bytes AS total_bytes,
+                         ss.capture_count AS capture_count,
+                         ss.first_observed_at AS first_observed_at,
+                         ss.last_observed_at AS last_observed_at,
+                         ss.last_frontmost_app_name AS last_frontmost_app_name,
+                         ss.last_frontmost_app_bundle_id AS last_frontmost_app_bundle_id
+                     FROM snapshots s
+                     JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+                     WHERE {snapshot_filter_clause}",
+                    snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
+                ),
+                named_params! {
+                    ":kind": params.kind,
+                    ":has_text": params.has_text,
+                    ":has_url": params.has_url,
+                    ":has_file_url": params.has_file_url,
+                    ":has_image": params.has_image,
+                    ":has_pdf": params.has_pdf,
+                    ":min_bytes": params.min_bytes,
+                    ":max_bytes": params.max_bytes,
+                },
+            )
+            .context("materialize stats matching snapshots from snapshot stats")?;
+        Ok(())
+    }
+
+    fn materialize_stats_matching_snapshots_from_events(
+        &self,
+        params: &StatsQueryParams,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                &format!(
+                    "CREATE TEMP TABLE clipmem_stats_matching_snapshots AS
+                     SELECT
+                         s.id AS snapshot_id,
+                         s.snapshot_kind AS kind,
+                         s.preview_text AS preview_text,
+                         s.total_bytes AS total_bytes,
+                         COUNT(me.id) AS capture_count,
+                         MIN(me.observed_at) AS first_observed_at,
+                         MAX(me.observed_at) AS last_observed_at,
+                         (
+                             SELECT me2.frontmost_app_name
+                             FROM clipmem_stats_matching_events me2
+                             WHERE me2.snapshot_id = s.id
+                             ORDER BY me2.observed_at DESC, me2.id DESC
+                             LIMIT 1
+                         ) AS last_frontmost_app_name,
+                         (
+                             SELECT me2.frontmost_app_bundle_id
+                             FROM clipmem_stats_matching_events me2
+                             WHERE me2.snapshot_id = s.id
+                             ORDER BY me2.observed_at DESC, me2.id DESC
+                             LIMIT 1
+                         ) AS last_frontmost_app_bundle_id
+                     FROM snapshots s
+                     JOIN clipmem_stats_matching_events me ON me.snapshot_id = s.id
+                     WHERE {snapshot_filter_clause}
+                     GROUP BY s.id",
+                    snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
+                ),
+                named_params! {
+                    ":kind": params.kind,
+                    ":has_text": params.has_text,
+                    ":has_url": params.has_url,
+                    ":has_file_url": params.has_file_url,
+                    ":has_image": params.has_image,
+                    ":has_pdf": params.has_pdf,
+                    ":min_bytes": params.min_bytes,
+                    ":max_bytes": params.max_bytes,
+                },
+            )
+            .context("materialize stats matching snapshots")?;
+        Ok(())
+    }
+
+    pub(in crate::db) fn index_stats_matching_snapshots(&self) -> Result<()> {
+        self.conn
+            .execute_batch(
+                "CREATE INDEX temp.idx_clipmem_stats_snapshots_capture_count
+                    ON clipmem_stats_matching_snapshots(capture_count DESC, snapshot_id ASC);
+                 CREATE INDEX temp.idx_clipmem_stats_snapshots_bytes
+                    ON clipmem_stats_matching_snapshots(total_bytes DESC, snapshot_id ASC);",
+            )
+            .context("index stats matching snapshots")
+    }
+
     pub(in crate::db) fn load_unfiltered_stats_overview(&self) -> Result<StatsOverview> {
         self.conn
             .query_row(
