@@ -2,7 +2,6 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use crate::cli::commands::runtime::open_existing_db;
 use crate::cli::formats::ProgressFormat;
 use crate::cli::output::{
     emit_image_optimization_output, emit_storage_compact_output, print_json_line,
@@ -12,6 +11,7 @@ use crate::cli::schema::{
 };
 
 use super::mutation_support::require_text_or_json;
+use super::runtime::open_existing_db;
 
 pub(in crate::cli) fn storage(db_path: &Path, args: &StorageArgs) -> Result<()> {
     match &args.command {

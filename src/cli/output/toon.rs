@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use serde_json::Value;
 
-use crate::cli::output::model::{
+use super::model::{
     ListEnvelope, ListRow, RecallEnvelope, RecallOutputRow, SnapshotListRow, TimelineListRow,
 };
 

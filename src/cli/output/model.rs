@@ -1,11 +1,12 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::cli::output::support::{best_text_from_hit, truncate_for_markdown};
 use crate::db::StatsReport;
 use crate::model::{
     FlattenedTextProjection, SearchHit, SnapshotDetails, TextFragment, TimelineEvent,
 };
+
+use super::row_text::{best_text_from_hit, truncate_for_display};
 
 pub(in crate::cli) const OUTPUT_SCHEMA_VERSION: u32 = 2;
 
@@ -312,9 +313,9 @@ impl RecallOutputRow {
         let best_text = if full {
             source_text.clone()
         } else {
-            truncate_for_markdown(&source_text, 320)
+            truncate_for_display(&source_text, 320)
         };
-        let snippet = truncate_for_markdown(&source_text, 140);
+        let snippet = truncate_for_display(&source_text, 140);
 
         Self {
             snapshot_id: hit.snapshot_id(),

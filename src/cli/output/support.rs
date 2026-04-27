@@ -3,7 +3,8 @@ use std::fmt::Write;
 use serde_json::Value;
 
 use crate::db::StatsSnapshotLeaderboardEntry;
-use crate::model::SearchHit;
+
+use super::row_text::truncate_for_display;
 
 pub(in crate::cli) fn render_filter_pairs(filters: &Value) -> String {
     let Some(object) = filters.as_object() else {
@@ -24,31 +25,12 @@ pub(in crate::cli) fn render_filter_pairs(filters: &Value) -> String {
         .join(", ")
 }
 
-pub(in crate::cli) fn best_text_from_hit(hit: &SearchHit) -> String {
-    if hit.preview_text().trim().is_empty() {
-        hit.why_matched()
-            .filter(|value| !value.trim().is_empty())
-            .unwrap_or(hit.preview_text())
-            .to_string()
-    } else {
-        hit.preview_text().to_string()
-    }
-}
-
 pub(in crate::cli) fn escape_markdown_cell(value: &str) -> String {
     value.replace('|', "\\|")
 }
 
 pub(in crate::cli) fn truncate_for_markdown(value: &str, limit: usize) -> String {
-    if value.chars().count() <= limit {
-        value.to_string()
-    } else {
-        value
-            .chars()
-            .take(limit.saturating_sub(1))
-            .collect::<String>()
-            + "…"
-    }
+    truncate_for_display(value, limit)
 }
 
 pub(in crate::cli) fn push_blank_line(out: &mut String) {

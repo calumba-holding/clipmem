@@ -9,6 +9,14 @@ use crate::model::FlattenedTextProjection;
 use crate::cli::schema::RetrievalFilterArgs;
 
 #[cfg(test)]
+use super::super::agents::openclaw_validate::validate_openclaw_skill_content;
+#[cfg(test)]
+use super::super::agents::package::{packaged_openclaw_files, packaged_openclaw_skill};
+#[cfg(test)]
+use super::super::agents::support::referenced_markdown_files;
+#[cfg(test)]
+use super::super::runtime::run_watch_iteration_with_capture;
+#[cfg(test)]
 use super::cursor::{
     encode_recent_cursor, encode_search_cursor, parse_recent_cursor, parse_search_cursor,
 };
@@ -16,14 +24,6 @@ use super::cursor::{
 use super::recall::query_search_results;
 #[cfg(test)]
 use crate::app::WatchState;
-#[cfg(test)]
-use crate::cli::commands::agents::openclaw_validate::validate_openclaw_skill_content;
-#[cfg(test)]
-use crate::cli::commands::agents::package::{packaged_openclaw_files, packaged_openclaw_skill};
-#[cfg(test)]
-use crate::cli::commands::agents::support::referenced_markdown_files;
-#[cfg(test)]
-use crate::cli::commands::runtime::run_watch_iteration_with_capture;
 #[cfg(test)]
 use crate::cli::schema::{SearchArgs, WatchArgs};
 #[cfg(test)]

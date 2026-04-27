@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
-use crate::db::sqlite_helpers::usize_to_i64;
-use crate::db::store::config::RESTORE_SUPPRESSION_WINDOW_SECONDS;
-use crate::db::store::rebuild::{
+use super::config::RESTORE_SUPPRESSION_WINDOW_SECONDS;
+use super::rebuild::{
     insert_item, rebuild_snapshot_projection_cache_for_snapshot, set_representation_cache_deferred,
 };
+use crate::db::sqlite_helpers::usize_to_i64;
 use crate::db::types::{CaptureSkipReason, CaptureStoreOutcome, Database};
 use crate::model::{CaptureStoreResult, ClipboardSnapshot};
 use crate::sensitive;

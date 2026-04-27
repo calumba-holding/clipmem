@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 
-use crate::cli::commands::agents::doctor::{AgentDoctorCheck, AgentDoctorStatus};
+use super::doctor::{AgentDoctorCheck, AgentDoctorStatus};
 
 #[derive(Debug, Clone, Copy)]
 pub(in crate::cli) struct PackagedSkillFile {

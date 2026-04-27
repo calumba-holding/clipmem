@@ -7,8 +7,6 @@ use serde::Serialize;
 use crate::db::{PurgeReport, SnapshotDeletionReport};
 use crate::platform::restore_items;
 
-use crate::cli::commands::retrieval::normalize_retrieval_filters;
-use crate::cli::commands::runtime::open_existing_db;
 use crate::cli::errors::{invalid_args_error, not_found_error};
 use crate::cli::formats::{format_duration_compact, OutputFormat};
 use crate::cli::human::{
@@ -18,6 +16,8 @@ use crate::cli::output::emit_json_or_text;
 use crate::cli::schema::{ExportArgs, ForgetArgs, PurgeArgs, RestoreArgs};
 
 use super::mutation_support::require_text_or_json;
+use super::retrieval::normalize_retrieval_filters;
+use super::runtime::open_existing_db;
 
 #[derive(Debug, Clone, Serialize)]
 pub(in crate::cli) struct RestoreOutput {

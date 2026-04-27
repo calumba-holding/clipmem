@@ -1,20 +1,20 @@
 use anyhow::{Context, Result};
 use rusqlite::{named_params, params, Error as SqlError, Result as SqlResult};
 
-use crate::db::core::clamp_result_limit;
-use crate::db::read::filter_sql::{
+use super::filter_sql::{
     app_like_pattern, can_use_snapshot_event_cache, effective_since_param, escape_like_pattern,
     has_temporal_event_filters, requires_matching_events,
 };
-use crate::db::read::queries::{
+use super::queries::{
     file_path_literal_query, fts_query, literal_query, ocr_fts_query, ocr_literal_query,
 };
-use crate::db::read::query_analysis::{
+use super::query_analysis::{
     analyze_query, is_invalid_fts_query, is_simple_fts_query, literal_fts_match_query,
     QueryAnalysis,
 };
-use crate::db::read::row_mapping::{map_scored_search_hit_row, map_search_hit_row};
-use crate::db::read::search_results::{merge_scored_search_results, paginate_rows};
+use super::row_mapping::{map_scored_search_hit_row, map_search_hit_row};
+use super::search_results::{merge_scored_search_results, paginate_rows};
+use crate::db::core::clamp_result_limit;
 use crate::db::sqlite_helpers::{collect_rows, usize_to_i64};
 use crate::db::types::{Database, RetrievalFilters, SearchCursorState, SearchMode, SearchResults};
 use crate::model::SearchHit;

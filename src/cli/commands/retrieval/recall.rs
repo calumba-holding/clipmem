@@ -8,13 +8,13 @@ use serde_json::json;
 use crate::db::{Database, RetrievalFilters, SearchCursorState, SearchMode, SearchResults};
 use crate::model::SearchHit;
 
-use crate::cli::commands::runtime::open_existing_db;
 use crate::cli::output::{
     emit_recall_output, generated_at_now, RecallEnvelope, RecallMatchConfidence, RecallOutputRow,
     OUTPUT_SCHEMA_VERSION,
 };
 use crate::cli::schema::{RecallArgs, SearchArgs};
 
+use super::super::runtime::open_existing_db;
 use super::filters::{
     load_snapshot_projections, merge_applied_filters, normalize_retrieval_filters,
 };

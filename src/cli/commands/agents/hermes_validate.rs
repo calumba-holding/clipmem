@@ -3,21 +3,17 @@ use std::process::Command as ProcessCommand;
 
 use anyhow::{anyhow, Context, Result};
 
-use crate::cli::commands::agents::doctor::render_agent_doctor_report;
-use crate::cli::commands::agents::doctor::{
-    AgentDoctorCheck, AgentDoctorStatus, HermesDoctorReport,
-};
-use crate::cli::commands::agents::package::{
-    packaged_hermes_files, resolve_hermes_skill_dir, HERMES_SKILL_NAME,
-};
-use crate::cli::commands::agents::support::{
+use super::doctor::render_agent_doctor_report;
+use super::doctor::{AgentDoctorCheck, AgentDoctorStatus, HermesDoctorReport};
+use super::package::{packaged_hermes_files, resolve_hermes_skill_dir, HERMES_SKILL_NAME};
+use super::support::{
     binary_check, find_executable, frontmatter_value, parse_skill_frontmatter,
     required_frontmatter_value, validate_packaged_skill_file, validate_required_skill_references,
 };
 use crate::cli::schema::HermesDoctorArgs;
 
 #[cfg(test)]
-use crate::cli::commands::agents::package::packaged_hermes_skill;
+use super::package::packaged_hermes_skill;
 
 pub(in crate::cli) fn hermes_doctor(args: &HermesDoctorArgs) -> Result<()> {
     let report = build_hermes_doctor_report(args)?;
@@ -293,8 +289,7 @@ pub(in crate::cli) fn render_hermes_doctor_report(report: &HermesDoctorReport) -
 mod tests {
     use std::path::PathBuf;
 
-    use crate::cli::commands::agents::support::referenced_markdown_files;
-
+    use super::super::support::referenced_markdown_files;
     use super::{packaged_hermes_files, packaged_hermes_skill, validate_hermes_skill_content};
 
     #[test]

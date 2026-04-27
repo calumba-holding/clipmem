@@ -3,7 +3,7 @@ use std::process::Command as ProcessCommand;
 
 use anyhow::Result;
 
-use crate::cli::commands::agents::support::{find_executable, home_dir, PackagedSkillFile};
+use super::support::{find_executable, home_dir, PackagedSkillFile};
 
 pub(in crate::cli) const OPENCLAW_SKILL_NAME: &str = "clipboard-memory";
 pub(in crate::cli) const OPENCLAW_SHARED_ROOT: &str = ".openclaw/skills";

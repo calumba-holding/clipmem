@@ -2,6 +2,15 @@ use anyhow::{anyhow, Result};
 use serde::Serialize;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
+use super::json::{print_json, print_json_line, print_jsonl_list};
+use super::markdown::{render_get_markdown, render_list_markdown, render_recall_markdown};
+use super::model::{GetEnvelope, ListEnvelope, RecallEnvelope, StatsEnvelope};
+use super::text::{
+    render_get_text, render_image_optimization_text, render_list_text,
+    render_settings_ignore_list_text, render_settings_view_text, render_stats_text,
+    render_storage_compact_text,
+};
+use super::toon::{render_list_toon, render_recall_toon};
 use crate::cli::commands::{SettingsIgnoreListOutput, SettingsView};
 use crate::cli::errors::UnsupportedFormatError;
 use crate::cli::formats::{OutputFormat, RecallOutputFormat, StatsOutputFormat};
@@ -10,17 +19,6 @@ use crate::cli::human::{
     render_settings_ignore_list_human, render_settings_view_human, render_stats_human,
     render_storage_compact_human,
 };
-use crate::cli::output::json::{print_json, print_json_line, print_jsonl_list};
-use crate::cli::output::markdown::{
-    render_get_markdown, render_list_markdown, render_recall_markdown,
-};
-use crate::cli::output::model::{GetEnvelope, ListEnvelope, RecallEnvelope, StatsEnvelope};
-use crate::cli::output::text::{
-    render_get_text, render_image_optimization_text, render_list_text,
-    render_settings_ignore_list_text, render_settings_view_text, render_stats_text,
-    render_storage_compact_text,
-};
-use crate::cli::output::toon::{render_list_toon, render_recall_toon};
 use crate::db::{ImageOptimizationReport, StorageCompactReport};
 
 pub(in crate::cli) fn generated_at_now() -> Result<String> {

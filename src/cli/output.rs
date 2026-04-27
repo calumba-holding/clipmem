@@ -2,6 +2,7 @@ mod emit;
 mod json;
 mod markdown;
 mod model;
+mod row_text;
 mod support;
 mod text;
 mod toon;

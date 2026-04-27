@@ -1,15 +1,15 @@
 use anyhow::{Context, Result};
 use rusqlite::named_params;
 
-use crate::db::core::clamp_result_limit;
-use crate::db::read::filter_sql::{
+use super::filter_sql::{
     app_like_pattern, can_use_snapshot_event_cache, can_use_snapshot_stats_since_filter,
     effective_since_param, event_filter_clause, requires_matching_events, snapshot_filter_clause,
 };
-use crate::db::read::queries::{recent_query, timeline_query};
-use crate::db::read::row_mapping::{map_search_hit_row, map_timeline_event_row};
-use crate::db::read::search_results::{paginate_rows, paginate_timeline_rows};
-use crate::db::read::stats::stats_params;
+use super::queries::{recent_query, timeline_query};
+use super::row_mapping::{map_search_hit_row, map_timeline_event_row};
+use super::search_results::{paginate_rows, paginate_timeline_rows};
+use super::stats::stats_params;
+use crate::db::core::clamp_result_limit;
 use crate::db::sqlite_helpers::{collect_rows, usize_to_i64};
 use crate::db::types::{
     Database, Page, RecentCursorState, RecentResults, RetrievalFilters, StatsReport,

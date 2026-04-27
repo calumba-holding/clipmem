@@ -5,17 +5,17 @@ use anyhow::{ensure, Context, Result};
 use image::{ExtendedColorType, ImageEncoder, ImageReader, Limits};
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
-use crate::db::core::{clamp_result_limit, pragma_usize, storage_file_sizes};
-use crate::db::sqlite_helpers::{collect_rows, row_usize, usize_to_i64};
-use crate::db::store::config::{
+use super::config::{
     ImageOptimizationCandidate, IMAGE_OPTIMIZATION_FORMAT, IMAGE_OPTIMIZATION_MAX_DIMENSION,
     IMAGE_OPTIMIZATION_MIN_ABSOLUTE_SAVINGS, IMAGE_OPTIMIZATION_MIN_RELATIVE_SAVINGS_DENOMINATOR,
     IMAGE_OPTIMIZATION_MIN_RELATIVE_SAVINGS_NUMERATOR, WEBP_UTI,
 };
-use crate::db::store::ocr::rebuild_snapshot_ocr_cache;
-use crate::db::store::rebuild::{
+use super::ocr::rebuild_snapshot_ocr_cache;
+use super::rebuild::{
     rebuild_snapshot_summary, recompute_snapshot_fingerprint, snapshot_fingerprint_with_replacement,
 };
+use crate::db::core::{clamp_result_limit, pragma_usize, storage_file_sizes};
+use crate::db::sqlite_helpers::{collect_rows, row_usize, usize_to_i64};
 use crate::db::types::{Database, ImageOptimizationProgressEvent, ImageOptimizationReport};
 use crate::model::{hash_bytes, truncate_chars};
 

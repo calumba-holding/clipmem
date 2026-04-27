@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use rusqlite::named_params;
 
-use crate::db::read::filter_sql::{
+use super::filter_sql::{
     app_like_pattern, can_use_snapshot_stats_for_stats, effective_since_param, event_filter_clause,
     snapshot_filter_clause,
 };

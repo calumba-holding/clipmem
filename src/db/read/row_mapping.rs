@@ -1,6 +1,6 @@
 use rusqlite::Row;
 
-use crate::db::read::value_decoding::{
+use super::value_decoding::{
     split_aggregated_file_paths, split_aggregated_values, split_match_fields,
 };
 use crate::db::sqlite_helpers::{row_enum, row_usize};

@@ -5,7 +5,6 @@ use serde::Serialize;
 
 use crate::db::{CapturePolicy, CaptureSettings};
 
-use crate::cli::commands::runtime::open_or_init_db;
 use crate::cli::formats::{format_duration_compact, OutputFormat};
 use crate::cli::output::{emit_settings_ignore_list_output, emit_settings_view_output};
 use crate::cli::schema::{
@@ -15,6 +14,7 @@ use crate::cli::schema::{
 };
 
 use super::mutation_support::require_text_or_json;
+use super::runtime::open_or_init_db;
 
 #[derive(Debug, Clone, Serialize)]
 pub(in crate::cli) struct SettingsView {

@@ -1,4 +1,4 @@
-use crate::db::read::file_url::normalize_file_path;
+use super::file_url::normalize_file_path;
 
 const LIST_VALUE_SEPARATOR: char = '\u{1f}';
 const MATCHED_FIELDS_SEPARATOR: char = '\u{1e}';
@@ -43,8 +43,8 @@ pub(in crate::db) fn split_match_fields(value: &str) -> Vec<String> {
 mod profile_tests {
     use std::time::{Duration, Instant};
 
+    use super::super::file_url::hex_value;
     use super::{split_aggregated_file_paths, split_aggregated_values, LIST_VALUE_SEPARATOR};
-    use crate::db::read::file_url::hex_value;
 
     #[test]
     #[ignore = "profiling harness for aggregated file path row mapping"]

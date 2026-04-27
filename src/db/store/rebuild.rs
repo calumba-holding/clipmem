@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use rusqlite::params;
 
+use super::config::ImageOptimizationCandidate;
 use crate::db::sqlite_helpers::{collect_rows, row_usize, usize_to_i64};
-use crate::db::store::config::ImageOptimizationCandidate;
 use crate::model::{truncate_chars, ClipboardItem, ClipboardKind, SnapshotKind};
 
 pub(in crate::db) fn rebuild_snapshot_summary(
