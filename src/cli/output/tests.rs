@@ -15,15 +15,16 @@ use super::json::write_json_pretty;
 use super::markdown::{render_get_markdown, render_list_markdown, render_recall_markdown};
 use super::model::{
     GetEnvelope, ListEnvelope, ListRow, RecallEnvelope, RecallMatchConfidence, RecallOutputRow,
-    SnapshotListRow, TimelineListRow, ToonSearchRowProjection, ToonTimelineRowProjection,
-    OUTPUT_SCHEMA_VERSION,
+    SnapshotListRow, TimelineListRow, OUTPUT_SCHEMA_VERSION,
 };
 use super::text::{
     render_capture_once_text, render_doctor_text, render_get_text, render_image_optimization_text,
     render_list_text, render_settings_ignore_list_text, render_settings_view_text,
     render_storage_compact_text,
 };
-use super::toon::{render_list_toon, render_recall_toon};
+use super::toon::{
+    render_list_toon, render_recall_toon, ToonSearchRowProjection, ToonTimelineRowProjection,
+};
 
 #[test]
 pub(in crate::cli) fn render_capture_once_text_reports_summary_lines() {
