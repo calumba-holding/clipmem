@@ -164,3 +164,113 @@ pub(super) fn is_db_error(error: &anyhow::Error, message: &str) -> bool {
         || message.contains("failed to write")
         || message.contains("query failed")
 }
+
+#[cfg(test)]
+mod tests {
+    use anyhow::anyhow;
+    use clap::error::ErrorKind;
+
+    use crate::cli::output::UnsupportedFormatError;
+
+    use super::{
+        classify_clap_exit_code, classify_command_error, db_error, invalid_args_error, is_db_error,
+        is_not_found_error, is_platform_error, sanitize_error_message, CliCommandError,
+        CliExitCode,
+    };
+
+    #[test]
+    fn classify_command_error_preserves_explicit_cli_command_error_codes() {
+        let error = CliCommandError::new(CliExitCode::NotFound, "snapshot 42 was not found");
+
+        let classified = classify_command_error(error.into());
+
+        assert_eq!(classified.exit_code(), CliExitCode::NotFound);
+        assert_eq!(classified.message(), "snapshot 42 was not found");
+    }
+
+    #[test]
+    fn classify_clap_exit_code_treats_help_and_version_as_ok() {
+        assert_eq!(
+            classify_clap_exit_code(ErrorKind::DisplayHelp),
+            CliExitCode::Ok
+        );
+        assert_eq!(
+            classify_clap_exit_code(ErrorKind::DisplayVersion),
+            CliExitCode::Ok
+        );
+        assert_eq!(
+            classify_clap_exit_code(ErrorKind::UnknownArgument),
+            CliExitCode::InvalidArgs
+        );
+    }
+
+    #[test]
+    fn sanitize_error_message_rewrites_sqlite_schema_failures() {
+        let error = anyhow!("no such column: capture_events.legacy_column")
+            .context("query failed while reading prerelease schema");
+
+        let message = sanitize_error_message(&error);
+
+        assert!(message.contains("incompatible prerelease schema"));
+        assert!(message.contains("clipmem setup"));
+    }
+
+    #[test]
+    fn sanitize_error_message_keeps_non_database_messages() {
+        let error = invalid_args_error("cursor does not match the active search filters");
+
+        assert_eq!(
+            sanitize_error_message(&error),
+            "cursor does not match the active search filters"
+        );
+    }
+
+    #[test]
+    fn rusqlite_errors_are_db_errors_not_not_found_errors() {
+        let error: anyhow::Error = rusqlite::Error::QueryReturnedNoRows.into();
+        let message = "snapshot was not found";
+
+        assert!(is_db_error(&error, message));
+        assert!(!is_not_found_error(&error, message));
+        assert_eq!(
+            classify_command_error(error).exit_code(),
+            CliExitCode::DbError
+        );
+    }
+
+    #[test]
+    fn platform_error_detection_checks_error_chain() {
+        let error = anyhow!("clipboard restore is only supported on macOS")
+            .context("restore failed for snapshot 42");
+        let message = sanitize_error_message(&error);
+
+        assert!(is_platform_error(&error, &message));
+        assert_eq!(
+            classify_command_error(error).exit_code(),
+            CliExitCode::PlatformError
+        );
+    }
+
+    #[test]
+    fn unsupported_format_error_is_classified_before_invalid_args() {
+        let error = UnsupportedFormatError::new(
+            "export only supports `text`, `json`, and `human` output, got `jsonl`",
+        );
+
+        let classified = classify_command_error(error.into());
+
+        assert_eq!(classified.exit_code(), CliExitCode::UnsupportedFormat);
+    }
+
+    #[test]
+    fn explicit_error_helpers_set_expected_exit_codes() {
+        assert_eq!(
+            classify_command_error(invalid_args_error("bad flag")).exit_code(),
+            CliExitCode::InvalidArgs
+        );
+        assert_eq!(
+            classify_command_error(db_error("database write failed")).exit_code(),
+            CliExitCode::DbError
+        );
+    }
+}

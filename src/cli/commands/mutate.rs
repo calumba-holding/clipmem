@@ -589,3 +589,225 @@ pub(in crate::cli) fn render_retention_value(settings: &CaptureSettings) -> Stri
         .map(format_duration_compact)
         .unwrap_or_else(|| "forever".to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io::Write as _;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use crate::cli::commands::types::{SettingsIgnoreListOutput, SettingsView};
+    use crate::cli::formats::OutputFormat;
+    use crate::db::{Database, ImageOptimizationReport};
+
+    use super::{
+        create_export_destination, render_image_optimization_text,
+        render_settings_ignore_list_text, render_settings_view_text, render_storage_compact_text,
+        require_text_or_json,
+    };
+
+    #[test]
+    fn require_text_or_json_accepts_text_json_and_human() {
+        assert!(matches!(
+            require_text_or_json(OutputFormat::Text, "export").unwrap(),
+            OutputFormat::Text
+        ));
+        assert!(matches!(
+            require_text_or_json(OutputFormat::Json, "export").unwrap(),
+            OutputFormat::Json
+        ));
+        assert!(matches!(
+            require_text_or_json(OutputFormat::Human, "export").unwrap(),
+            OutputFormat::Human
+        ));
+    }
+
+    #[test]
+    fn require_text_or_json_rejects_other_formats_with_command_name() {
+        for format in [OutputFormat::Jsonl, OutputFormat::Md, OutputFormat::Toon] {
+            let error = require_text_or_json(format, "storage compact").unwrap_err();
+            let message = error.to_string();
+
+            assert!(message.contains("storage compact only supports"));
+            assert!(message.contains(format.as_str()));
+        }
+    }
+
+    #[test]
+    fn render_settings_view_text_lists_policy_and_ignored_bundle_ids() {
+        let view = SettingsView {
+            paused: true,
+            api_key_filter_enabled: false,
+            ocr_enabled: true,
+            retention_seconds: Some(3_600),
+            retention: "1h".to_string(),
+            ignored_bundle_ids: vec![
+                "com.apple.Terminal".to_string(),
+                "com.example.SecretApp".to_string(),
+            ],
+        };
+
+        let rendered = render_settings_view_text(&view);
+
+        assert_eq!(
+            rendered,
+            concat!(
+                "paused: true\n",
+                "api key filter: false\n",
+                "ocr: true\n",
+                "retention: 1h\n",
+                "ignored bundle ids: 2\n",
+                "  - com.apple.Terminal\n",
+                "  - com.example.SecretApp\n",
+            )
+        );
+    }
+
+    #[test]
+    fn render_settings_ignore_list_text_handles_empty_and_populated_lists() {
+        let empty = SettingsIgnoreListOutput {
+            ignored_bundle_ids: Vec::new(),
+        };
+        assert_eq!(
+            render_settings_ignore_list_text(&empty),
+            "ignored bundle ids: 0\n"
+        );
+
+        let populated = SettingsIgnoreListOutput {
+            ignored_bundle_ids: vec!["com.apple.Terminal".to_string()],
+        };
+        assert_eq!(
+            render_settings_ignore_list_text(&populated),
+            "ignored bundle ids: 1\n  - com.apple.Terminal\n"
+        );
+    }
+
+    #[test]
+    fn render_storage_compact_text_distinguishes_dry_run_from_completed_compaction() {
+        let path = temp_path("compact.sqlite3");
+        let mut db = Database::open_or_init(&path).unwrap();
+        let dry_run = db.compact_storage(true).unwrap();
+        let completed = db.compact_storage(false).unwrap();
+
+        let dry_run_text = render_storage_compact_text(&dry_run);
+        let completed_text = render_storage_compact_text(&completed);
+
+        assert!(dry_run_text.starts_with(&format!("storage compact dry-run db={}", path.display())));
+        assert!(completed_text.starts_with(&format!("storage compacted db={}", path.display())));
+        assert!(completed_text.contains("before="));
+        assert!(completed_text.contains("after="));
+        assert!(completed_text.contains("checkpoint_busy="));
+
+        cleanup_path(&path);
+    }
+
+    #[test]
+    fn render_image_optimization_text_reports_compact_error_and_recommendation() {
+        let report = ImageOptimizationReport {
+            dry_run: false,
+            format: "webp",
+            scanned_rows: 5,
+            compressed_rows: 3,
+            skipped_rows: 2,
+            conflict_count: 1,
+            original_bytes: 10_000,
+            optimized_bytes: 4_000,
+            logical_saved_bytes: 6_000,
+            compact_run: false,
+            compact: None,
+            compact_error: Some("database is locked".to_string()),
+            filesystem_saved_bytes: 0,
+            filesystem_growth_bytes: 128,
+            compact_recommended: true,
+        };
+
+        let rendered = render_image_optimization_text(&report);
+
+        assert!(rendered.starts_with("image optimization complete; database compaction failed"));
+        assert!(rendered.contains("format=webp scanned=5 compressed=3 skipped=2 conflicts=1"));
+        assert!(rendered.contains("compact_error=database is locked"));
+        assert!(rendered.contains("Run `clipmem storage compact`"));
+    }
+
+    #[test]
+    fn create_export_destination_rejects_existing_file_without_force() {
+        let path = temp_path("existing-export.bin");
+        std::fs::write(&path, b"old").unwrap();
+
+        let error = create_export_destination(&path, false).unwrap_err();
+
+        assert!(error.to_string().contains("already exists"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"old");
+
+        cleanup_path(&path);
+    }
+
+    #[test]
+    fn create_export_destination_replaces_existing_file_with_force() {
+        let path = temp_path("forced-export.bin");
+        std::fs::write(&path, b"old").unwrap();
+
+        let mut file = create_export_destination(&path, true).unwrap();
+        file.write_all(b"new").unwrap();
+        drop(file);
+
+        assert_eq!(std::fs::read(&path).unwrap(), b"new");
+
+        cleanup_path(&path);
+    }
+
+    #[test]
+    fn create_export_destination_rejects_directory() {
+        let path = temp_path("export-directory");
+        std::fs::create_dir_all(&path).unwrap();
+
+        let error = create_export_destination(&path, true).unwrap_err();
+
+        assert!(error.to_string().contains("not a regular file"));
+
+        cleanup_path(&path);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn create_export_destination_rejects_symlink() {
+        let target = temp_path("export-target.bin");
+        let link = temp_path("export-link.bin");
+        std::fs::write(&target, b"target").unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        let error = create_export_destination(&link, true).unwrap_err();
+
+        assert!(error.to_string().contains("symbolic link"));
+        assert_eq!(std::fs::read(&target).unwrap(), b"target");
+
+        cleanup_path(&link);
+        cleanup_path(&target);
+    }
+
+    fn temp_path(name: &str) -> PathBuf {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+
+        let dir = std::env::temp_dir()
+            .join("clipmem-mutate-tests")
+            .join(format!("{}-{timestamp}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join(name)
+    }
+
+    fn cleanup_path(path: &std::path::Path) {
+        if let Ok(metadata) = std::fs::symlink_metadata(path) {
+            if metadata.is_dir() && !metadata.file_type().is_symlink() {
+                let _ = std::fs::remove_dir_all(path);
+            } else {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::remove_dir_all(parent);
+        }
+    }
+}
