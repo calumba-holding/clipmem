@@ -69,6 +69,42 @@ fn agents_openclaw_install_print_and_uninstall_skill_work() -> Result<()> {
 }
 
 #[test]
+fn agents_openclaw_install_force_replaces_existing_skill_directory() -> Result<()> {
+    let test_dir = temp_test_dir("openclaw-install-force");
+    let bin_dir = test_dir.join("bin");
+    let workspace_dir = test_dir.join("workspace");
+    let install_dir = workspace_dir.join("skills").join("clipboard-memory");
+    fs::create_dir_all(&bin_dir)?;
+    fs::create_dir_all(&install_dir)?;
+    fs::write(install_dir.join("SKILL.md"), "stale skill")?;
+    fs::write(install_dir.join("old-file.txt"), "remove me")?;
+
+    let openclaw_path = bin_dir.join("openclaw");
+    write_executable(
+        &openclaw_path,
+        &format!(
+            "#!/bin/sh\nif [ \"$1\" = \"config\" ] && [ \"$2\" = \"get\" ] && [ \"$3\" = \"agents.defaults.workspace\" ]; then\n  printf '%s\\n' '{}'\n  exit 0\nfi\nexit 1\n",
+            workspace_dir.display()
+        ),
+    )?;
+
+    let path_value = bin_dir.display().to_string();
+    let install = run_cli_with_env(
+        &["agents", "openclaw", "install-skill", "--force"],
+        &[("PATH", &path_value), ("HOME", test_dir.to_str().unwrap())],
+    );
+
+    assert!(install.status.success(), "{}", stderr_text(&install));
+    assert!(!install_dir.join("old-file.txt").exists());
+    assert!(fs::read_to_string(install_dir.join("SKILL.md"))?.contains("clipboard-memory"));
+    assert!(install_dir.join("references/commands.md").is_file());
+    assert!(install_dir.join("scripts/check-setup.sh").is_file());
+
+    let _ = fs::remove_dir_all(&test_dir);
+    Ok(())
+}
+
+#[test]
 fn agents_openclaw_doctor_reports_missing_clipmem_with_next_steps() -> Result<()> {
     let test_dir = temp_test_dir("openclaw-doctor-missing-clipmem");
     let bin_dir = test_dir.join("bin");

@@ -434,6 +434,35 @@ fn export_command_writes_raw_representation_bytes() -> Result<()> {
 }
 
 #[test]
+fn export_command_creates_parent_directories_for_nested_output() -> Result<()> {
+    let path = temp_db_path("export-nested");
+    let artifact_root = temp_artifact_path("export-nested", "");
+    let output_path = artifact_root.join("nested").join("out.txt");
+    let snapshot = text_snapshot(1, "nested export");
+    let ids = seed_database(&path, &[snapshot])?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "export",
+        &ids[0].to_string(),
+        "--item",
+        "0",
+        "--uti",
+        "public.utf8-plain-text",
+        "--out",
+        output_path.to_str().expect("output path should be UTF-8"),
+    ]);
+
+    assert!(output.status.success(), "{}", stderr_text(&output));
+    assert_eq!(fs::read(&output_path)?, b"nested export");
+
+    cleanup_temp_artifact(&artifact_root);
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
 fn export_command_rejects_existing_file_without_force() -> Result<()> {
     let path = temp_db_path("export-existing");
     let output_path = temp_artifact_path("export-existing", ".txt");

@@ -84,6 +84,36 @@ fn agents_hermes_install_print_and_uninstall_skill_work() -> Result<()> {
 }
 
 #[test]
+fn agents_hermes_install_force_replaces_existing_skill_directory() -> Result<()> {
+    let test_dir = temp_test_dir("hermes-install-force");
+    let bin_dir = test_dir.join("bin");
+    let install_dir = test_dir
+        .join(".hermes")
+        .join("skills")
+        .join("productivity")
+        .join("clipboard-memory");
+    fs::create_dir_all(&bin_dir)?;
+    fs::create_dir_all(&install_dir)?;
+    fs::write(install_dir.join("SKILL.md"), "stale skill")?;
+    fs::write(install_dir.join("old-file.txt"), "remove me")?;
+
+    let path_value = bin_dir.display().to_string();
+    let install = run_cli_with_env(
+        &["agents", "hermes", "install-skill", "--force"],
+        &[("PATH", &path_value), ("HOME", test_dir.to_str().unwrap())],
+    );
+
+    assert!(install.status.success(), "{}", stderr_text(&install));
+    assert!(!install_dir.join("old-file.txt").exists());
+    assert!(fs::read_to_string(install_dir.join("SKILL.md"))?.contains("clipboard-memory"));
+    assert!(install_dir.join("references/commands.md").is_file());
+    assert!(install_dir.join("scripts/check-setup.sh").is_file());
+
+    let _ = fs::remove_dir_all(&test_dir);
+    Ok(())
+}
+
+#[test]
 fn agents_hermes_doctor_reports_missing_clipmem_with_next_steps() -> Result<()> {
     let test_dir = temp_test_dir("hermes-doctor-missing-clipmem");
     let bin_dir = test_dir.join("bin");

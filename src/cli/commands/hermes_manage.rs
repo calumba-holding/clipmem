@@ -115,3 +115,33 @@ pub(in crate::cli) fn resolve_hermes_skill_dir(dest: Option<&Path>) -> Result<Pa
 
     Ok(home_dir()?.join(HERMES_SKILL_ROOT).join(HERMES_SKILL_NAME))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{packaged_hermes_files, resolve_hermes_skill_dir};
+    use crate::cli::commands::types::HERMES_SKILL_NAME;
+
+    #[test]
+    fn resolve_hermes_skill_dir_uses_explicit_destination() {
+        let explicit = std::path::Path::new("/tmp/custom-hermes-skill");
+
+        assert_eq!(
+            resolve_hermes_skill_dir(Some(explicit)).expect("explicit path should resolve"),
+            explicit
+        );
+    }
+
+    #[test]
+    fn packaged_hermes_files_include_skill_and_setup_script() {
+        let files = packaged_hermes_files();
+
+        assert!(files
+            .iter()
+            .any(|file| file.relative_path == "SKILL.md"
+                && file.contents.contains(HERMES_SKILL_NAME)));
+        assert!(files
+            .iter()
+            .any(|file| file.relative_path == "scripts/check-setup.sh"
+                && file.contents.starts_with("#!/")));
+    }
+}
