@@ -4,9 +4,11 @@ use std::process::Command as ProcessCommand;
 use anyhow::{anyhow, Context, Result};
 
 use crate::cli::commands::agent_doctor::render_agent_doctor_report;
+use crate::cli::commands::agent_support::{
+    binary_check, find_executable, referenced_markdown_files, validate_packaged_skill_file,
+};
 use crate::cli::commands::openclaw_manage::{
-    find_executable, packaged_openclaw_files, resolve_openclaw_skill_dir,
-    resolve_openclaw_workspace_root,
+    packaged_openclaw_files, resolve_openclaw_skill_dir, resolve_openclaw_workspace_root,
 };
 use crate::cli::commands::types::{
     OpenClawDoctorCheck, OpenClawDoctorReport, OpenClawDoctorStatus, OPENCLAW_SKILL_NAME,
@@ -105,27 +107,6 @@ pub(in crate::cli) fn build_openclaw_doctor_report(
     Ok(OpenClawDoctorReport { target_dir, checks })
 }
 
-pub(in crate::cli) fn binary_check(
-    label: &str,
-    path: Option<&PathBuf>,
-    next_steps: &[&str],
-) -> OpenClawDoctorCheck {
-    match path {
-        Some(path) => OpenClawDoctorCheck {
-            status: OpenClawDoctorStatus::Ok,
-            label: label.to_string(),
-            detail: format!("Found {}", path.display()),
-            next_steps: Vec::new(),
-        },
-        None => OpenClawDoctorCheck {
-            status: OpenClawDoctorStatus::Fail,
-            label: label.to_string(),
-            detail: format!("{label} is missing"),
-            next_steps: next_steps.iter().map(|s| s.to_string()).collect(),
-        },
-    }
-}
-
 pub(in crate::cli) fn openclaw_sandbox_check(
     openclaw_path: Option<&PathBuf>,
 ) -> OpenClawDoctorCheck {
@@ -202,42 +183,9 @@ pub(in crate::cli) fn validate_openclaw_skill_dir(path: &Path) -> Result<()> {
 
     for file in packaged_openclaw_files() {
         let installed_path = path.join(file.relative_path);
-        validate_packaged_openclaw_file(&installed_path, file.relative_path)?;
+        validate_packaged_skill_file(&installed_path, file.relative_path)?;
     }
 
-    Ok(())
-}
-
-pub(in crate::cli) fn validate_packaged_openclaw_file(
-    path: &Path,
-    relative_path: &str,
-) -> Result<()> {
-    if !path.is_file() {
-        return Err(anyhow!("packaged file is missing: {}", path.display()));
-    }
-
-    if relative_path.ends_with(".sh") {
-        ensure_executable(path)
-            .with_context(|| format!("packaged script is not executable: {}", path.display()))?;
-    }
-
-    Ok(())
-}
-
-#[cfg(unix)]
-pub(in crate::cli) fn ensure_executable(path: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let mode = std::fs::metadata(path)?.permissions().mode() & 0o777;
-    if mode & 0o111 == 0 {
-        return Err(anyhow!("mode {mode:o} does not include any execute bit"));
-    }
-
-    Ok(())
-}
-
-#[cfg(not(unix))]
-pub(in crate::cli) fn ensure_executable(_path: &Path) -> Result<()> {
     Ok(())
 }
 
@@ -326,28 +274,6 @@ pub(in crate::cli) fn validate_openclaw_skill_content(content: &str) -> Result<(
     Ok(())
 }
 
-pub(in crate::cli) fn referenced_markdown_files(content: &str) -> Vec<PathBuf> {
-    let mut seen = std::collections::HashSet::new();
-    let mut references = Vec::new();
-
-    for line in content.lines() {
-        let mut remainder = line;
-        while let Some(start) = remainder.find("(references/") {
-            let after_start = &remainder[start + 1..];
-            let Some(end) = after_start.find(')') else {
-                break;
-            };
-            let candidate = &after_start[..end];
-            if candidate.ends_with(".md") && seen.insert(candidate) {
-                references.push(PathBuf::from(candidate));
-            }
-            remainder = &after_start[end + 1..];
-        }
-    }
-
-    references
-}
-
 pub(in crate::cli) fn validate_openclaw_install_entries(
     entries: &[serde_json::Value],
 ) -> Result<()> {
@@ -392,7 +318,7 @@ pub(in crate::cli) fn render_openclaw_doctor_report(report: &OpenClawDoctorRepor
 
 #[cfg(test)]
 mod profile_tests {
-    use super::referenced_markdown_files;
+    use crate::cli::commands::agent_support::referenced_markdown_files;
     use std::path::PathBuf;
     use std::time::{Duration, Instant};
 

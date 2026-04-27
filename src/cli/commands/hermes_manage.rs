@@ -2,10 +2,10 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 
+use crate::cli::commands::agent_support::{home_dir, install_packaged_skill};
 use crate::cli::commands::hermes_validate::{
     build_hermes_doctor_report, render_hermes_doctor_report,
 };
-use crate::cli::commands::openclaw_manage::{home_dir, install_packaged_skill};
 use crate::cli::commands::types::{
     OpenClawDoctorStatus, PackagedSkillFile, HERMES_CHECK_SETUP_SH, HERMES_COMMANDS_REF,
     HERMES_EXAMPLES_REF, HERMES_JSON_SCHEMA_REF, HERMES_SETUP_CHECK_REF, HERMES_SKILL_MD,

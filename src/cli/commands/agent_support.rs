@@ -1,0 +1,134 @@
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+
+use anyhow::{anyhow, Context, Result};
+
+use crate::cli::commands::types::{OpenClawDoctorCheck, OpenClawDoctorStatus, PackagedSkillFile};
+
+pub(in crate::cli) fn install_packaged_skill(
+    target_dir: &Path,
+    files: &[PackagedSkillFile],
+) -> Result<()> {
+    std::fs::create_dir_all(target_dir)
+        .with_context(|| format!("failed to create {}", target_dir.display()))?;
+
+    for file in files {
+        let path = target_dir.join(file.relative_path);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
+        std::fs::write(&path, file.contents)
+            .with_context(|| format!("failed to write {}", path.display()))?;
+        if file.relative_path.ends_with(".sh") {
+            set_executable(&path)
+                .with_context(|| format!("failed to mark {} executable", path.display()))?;
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(unix)]
+pub(in crate::cli) fn set_executable(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut perms = std::fs::metadata(path)?.permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(path, perms)?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+pub(in crate::cli) fn set_executable(_path: &Path) -> Result<()> {
+    // On non-Unix targets there is no concept of the executable bit to set;
+    // scripts are invoked via their interpreter explicitly.
+    Ok(())
+}
+
+pub(in crate::cli) fn home_dir() -> Result<PathBuf> {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| anyhow!("HOME is not set"))
+}
+
+pub(in crate::cli) fn find_executable(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path).find_map(|dir| {
+        let candidate = dir.join(name);
+        candidate.is_file().then_some(candidate)
+    })
+}
+
+pub(in crate::cli) fn binary_check(
+    label: &str,
+    path: Option<&PathBuf>,
+    next_steps: &[&str],
+) -> OpenClawDoctorCheck {
+    match path {
+        Some(path) => OpenClawDoctorCheck {
+            status: OpenClawDoctorStatus::Ok,
+            label: label.to_string(),
+            detail: format!("Found {}", path.display()),
+            next_steps: Vec::new(),
+        },
+        None => OpenClawDoctorCheck {
+            status: OpenClawDoctorStatus::Fail,
+            label: label.to_string(),
+            detail: format!("{label} is missing"),
+            next_steps: next_steps.iter().map(|s| s.to_string()).collect(),
+        },
+    }
+}
+
+pub(in crate::cli) fn validate_packaged_skill_file(path: &Path, relative_path: &str) -> Result<()> {
+    if !path.is_file() {
+        return Err(anyhow!("packaged file is missing: {}", path.display()));
+    }
+
+    if relative_path.ends_with(".sh") {
+        ensure_executable(path)
+            .with_context(|| format!("packaged script is not executable: {}", path.display()))?;
+    }
+
+    Ok(())
+}
+
+#[cfg(unix)]
+pub(in crate::cli) fn ensure_executable(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mode = std::fs::metadata(path)?.permissions().mode() & 0o777;
+    if mode & 0o111 == 0 {
+        return Err(anyhow!("mode {mode:o} does not include any execute bit"));
+    }
+
+    Ok(())
+}
+
+#[cfg(not(unix))]
+pub(in crate::cli) fn ensure_executable(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
+pub(in crate::cli) fn referenced_markdown_files(content: &str) -> Vec<PathBuf> {
+    let mut seen = HashSet::new();
+    let mut references = Vec::new();
+
+    for line in content.lines() {
+        let mut remainder = line;
+        while let Some(start) = remainder.find("(references/") {
+            let after = &remainder[start + 1..];
+            let Some(end) = after.find(')') else {
+                break;
+            };
+            let candidate = &after[..end];
+            if candidate.ends_with(".md") && seen.insert(candidate.to_string()) {
+                references.push(PathBuf::from(candidate));
+            }
+            remainder = &after[end + 1..];
+        }
+    }
+
+    references
+}

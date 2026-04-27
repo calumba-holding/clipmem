@@ -4,11 +4,10 @@ use std::process::Command as ProcessCommand;
 use anyhow::{anyhow, Context, Result};
 
 use crate::cli::commands::agent_doctor::render_agent_doctor_report;
-use crate::cli::commands::hermes_manage::{packaged_hermes_files, resolve_hermes_skill_dir};
-use crate::cli::commands::openclaw_manage::find_executable;
-use crate::cli::commands::openclaw_validate::{
-    binary_check, referenced_markdown_files, validate_packaged_openclaw_file,
+use crate::cli::commands::agent_support::{
+    binary_check, find_executable, referenced_markdown_files, validate_packaged_skill_file,
 };
+use crate::cli::commands::hermes_manage::{packaged_hermes_files, resolve_hermes_skill_dir};
 use crate::cli::commands::types::{
     HermesDoctorReport, OpenClawDoctorCheck, OpenClawDoctorStatus, HERMES_SKILL_NAME,
 };
@@ -193,7 +192,7 @@ pub(in crate::cli) fn validate_hermes_skill_dir(path: &Path) -> Result<()> {
 
     for file in packaged_hermes_files() {
         let installed_path = path.join(file.relative_path);
-        validate_packaged_openclaw_file(&installed_path, file.relative_path)?;
+        validate_packaged_skill_file(&installed_path, file.relative_path)?;
     }
 
     Ok(())
