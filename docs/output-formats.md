@@ -66,13 +66,13 @@ fields.
 
 ## JSON envelope
 
-`search`, `recent`, `timeline`, and `recall` return a stable top-level
+`search`, `recent`, and `timeline` return a stable paginated list
 envelope:
 
 ```json
 {
   "schema_version": 2,
-  "command": "recall",
+  "command": "search",
   "generated_at": "2026-04-17T12:34:56Z",
   "applied_filters": { "hours": 24, "app": "safari" },
   "truncated": false,
@@ -92,9 +92,28 @@ envelope:
   `truncated` is `true`. `null` when there are no more rows.
 - `results` — array of flattened snapshot rows.
 
-`recall` adds extra top-level fields:
+`recall` returns a ranked-answer envelope instead of a paginated list:
 
-- `best_candidate` — the top-ranked row (also `results[0]`)
+```json
+{
+  "schema_version": 2,
+  "command": "recall",
+  "generated_at": "2026-04-17T12:34:56Z",
+  "applied_filters": { "hours": 24, "app": "safari" },
+  "query": "launchctl bootstrap",
+  "best_candidate": {},
+  "alternatives": [],
+  "best_match_confidence": "high",
+  "best_match_score": 0.92,
+  "why_selected": "strong literal match",
+  "quoted_text": null
+}
+```
+
+- `query` — the optional recall query, or `null` when recall ranked
+  recent items without a query
+- `best_candidate` — the top-ranked row
+- `alternatives` — lower-ranked candidate rows
 - `why_selected` — short explanation of why this candidate was picked
 - `best_match_confidence` — `"high"`, `"medium"`, or `"low"`
 - `best_match_score` — float in `[0.0, 1.0]`

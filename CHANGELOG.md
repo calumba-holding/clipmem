@@ -33,6 +33,8 @@ versioning where practical.
 
 ### Fixed
 
+- Fixed the output-format documentation so the recall JSON contract describes
+  `best_candidate` and `alternatives` instead of list pagination fields.
 - Added diagnostic notes to `clipmem service status` when launchctl, plist, or
   process probes fail so missing service details are easier to troubleshoot.
 - Fixed background OCR worker startup so watchers for different archive
