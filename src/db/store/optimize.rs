@@ -68,100 +68,121 @@ impl Database {
         };
         progress(ImageOptimizationProgressEvent::Started { total_rows })?;
 
-        for candidate in candidates {
-            report.scanned_rows += 1;
-            let optimized = match encode_candidate_as_lossless_webp(&candidate) {
-                Ok(optimized) => optimized,
-                Err(reason) => {
-                    report.skipped_rows += 1;
-                    if !dry_run {
-                        mark_image_optimization_skipped(&self.conn, &candidate, reason)?;
-                    }
-                    Self::emit_image_optimization_scan_progress(
-                        &mut progress,
-                        &report,
-                        total_rows,
-                    )?;
-                    continue;
-                }
-            };
-
-            let saved_bytes = candidate.byte_len.saturating_sub(optimized.bytes.len());
-            if !image_optimization_is_beneficial(candidate.byte_len, optimized.bytes.len()) {
-                report.skipped_rows += 1;
-                if !dry_run {
-                    mark_image_optimization_skipped(&self.conn, &candidate, "not_smaller")?;
-                }
-                Self::emit_image_optimization_scan_progress(&mut progress, &report, total_rows)?;
-                continue;
-            }
-
-            if image_optimization_would_conflict(&self.conn, &candidate, &optimized)? {
-                report.skipped_rows += 1;
-                report.conflict_count += 1;
-                if !dry_run {
-                    mark_image_optimization_skipped(&self.conn, &candidate, "conflict")?;
-                }
-                Self::emit_image_optimization_scan_progress(&mut progress, &report, total_rows)?;
-                continue;
-            }
-
-            report.compressed_rows += 1;
-            report.original_bytes += candidate.byte_len;
-            report.optimized_bytes += optimized.bytes.len();
-            report.logical_saved_bytes += saved_bytes;
-            report.compact_recommended = true;
-
-            if !dry_run {
-                replace_image_with_optimized_webp(&mut self.conn, &candidate, optimized)?;
-            }
-            Self::emit_image_optimization_scan_progress(&mut progress, &report, total_rows)?;
-        }
-
-        if !dry_run && auto_compact && database_path_is_file_backed(&self.path) {
-            let compact_wanted = report.compact_recommended || storage_compaction_would_help(self)?;
-            if compact_wanted {
-                report.compact_run = true;
-                progress(ImageOptimizationProgressEvent::Compacting {
-                    scanned_rows: report.scanned_rows,
-                    total_rows,
-                    compressed_rows: report.compressed_rows,
-                    skipped_rows: report.skipped_rows,
-                    conflict_count: report.conflict_count,
-                })?;
-                match self.compact_storage(false) {
-                    Ok(compact) => {
-                        if let Some(initial) = initial_file_bytes {
-                            report.filesystem_saved_bytes =
-                                initial.saturating_sub(compact.total_after_bytes);
-                            report.filesystem_growth_bytes =
-                                compact.total_after_bytes.saturating_sub(initial);
-                        }
-                        report.compact_recommended = false;
-                        report.compact = Some(compact);
-                    }
-                    Err(error) => {
-                        report.compact_error = Some(format_compaction_error(&error));
-                        report.compact_recommended = true;
-                    }
-                }
-            } else if let Some(initial) = initial_file_bytes {
-                let final_bytes = storage_file_sizes(&self.path)?.total_bytes();
-                report.filesystem_saved_bytes = initial.saturating_sub(final_bytes);
-                report.filesystem_growth_bytes = final_bytes.saturating_sub(initial);
-            }
-        } else if !dry_run && report.compact_recommended && !auto_compact {
-            if let Some(initial) = initial_file_bytes {
-                let final_bytes = storage_file_sizes(&self.path)?.total_bytes();
-                report.filesystem_saved_bytes = initial.saturating_sub(final_bytes);
-                report.filesystem_growth_bytes = final_bytes.saturating_sub(initial);
-            }
-        }
+        self.process_image_optimization_candidates(
+            dry_run,
+            candidates,
+            total_rows,
+            &mut report,
+            &mut progress,
+        )?;
+        self.maybe_compact_after_image_optimization(
+            dry_run,
+            auto_compact,
+            initial_file_bytes,
+            total_rows,
+            &mut report,
+            &mut progress,
+        )?;
 
         progress(ImageOptimizationProgressEvent::Complete {
             report: Box::new(report.clone()),
         })?;
         Ok(report)
+    }
+
+    fn process_image_optimization_candidates(
+        &mut self,
+        dry_run: bool,
+        candidates: Vec<ImageOptimizationCandidate>,
+        total_rows: usize,
+        report: &mut ImageOptimizationReport,
+        progress: &mut impl FnMut(ImageOptimizationProgressEvent) -> Result<()>,
+    ) -> Result<()> {
+        for candidate in candidates {
+            process_image_optimization_candidate(&mut self.conn, dry_run, &candidate, report)?;
+            Self::emit_image_optimization_scan_progress(progress, report, total_rows)?;
+        }
+        Ok(())
+    }
+
+    fn maybe_compact_after_image_optimization(
+        &mut self,
+        dry_run: bool,
+        auto_compact: bool,
+        initial_file_bytes: Option<u64>,
+        total_rows: usize,
+        report: &mut ImageOptimizationReport,
+        progress: &mut impl FnMut(ImageOptimizationProgressEvent) -> Result<()>,
+    ) -> Result<()> {
+        if dry_run {
+            return Ok(());
+        }
+
+        if auto_compact && database_path_is_file_backed(&self.path) {
+            let compact_wanted = report.compact_recommended || storage_compaction_would_help(self)?;
+            if compact_wanted {
+                self.compact_after_image_optimization(
+                    initial_file_bytes,
+                    total_rows,
+                    report,
+                    progress,
+                )?;
+            } else {
+                self.assign_current_image_optimization_filesystem_delta(
+                    initial_file_bytes,
+                    report,
+                )?;
+            }
+        } else if report.compact_recommended && !auto_compact {
+            self.assign_current_image_optimization_filesystem_delta(initial_file_bytes, report)?;
+        }
+        Ok(())
+    }
+
+    fn compact_after_image_optimization(
+        &mut self,
+        initial_file_bytes: Option<u64>,
+        total_rows: usize,
+        report: &mut ImageOptimizationReport,
+        progress: &mut impl FnMut(ImageOptimizationProgressEvent) -> Result<()>,
+    ) -> Result<()> {
+        report.compact_run = true;
+        progress(ImageOptimizationProgressEvent::Compacting {
+            scanned_rows: report.scanned_rows,
+            total_rows,
+            compressed_rows: report.compressed_rows,
+            skipped_rows: report.skipped_rows,
+            conflict_count: report.conflict_count,
+        })?;
+
+        match self.compact_storage(false) {
+            Ok(compact) => {
+                assign_image_optimization_filesystem_delta(
+                    report,
+                    initial_file_bytes,
+                    compact.total_after_bytes,
+                );
+                report.compact_recommended = false;
+                report.compact = Some(compact);
+            }
+            Err(error) => {
+                report.compact_error = Some(format_compaction_error(&error));
+                report.compact_recommended = true;
+            }
+        }
+        Ok(())
+    }
+
+    fn assign_current_image_optimization_filesystem_delta(
+        &self,
+        initial_file_bytes: Option<u64>,
+        report: &mut ImageOptimizationReport,
+    ) -> Result<()> {
+        if let Some(initial) = initial_file_bytes {
+            let final_bytes = storage_file_sizes(&self.path)?.total_bytes();
+            assign_image_optimization_filesystem_delta(report, Some(initial), final_bytes);
+        }
+        Ok(())
     }
 
     fn emit_image_optimization_scan_progress(
@@ -176,6 +197,73 @@ impl Database {
             skipped_rows: report.skipped_rows,
             conflict_count: report.conflict_count,
         })
+    }
+}
+
+fn process_image_optimization_candidate(
+    conn: &mut rusqlite::Connection,
+    dry_run: bool,
+    candidate: &ImageOptimizationCandidate,
+    report: &mut ImageOptimizationReport,
+) -> Result<()> {
+    report.scanned_rows += 1;
+    let optimized = match encode_candidate_as_lossless_webp(candidate) {
+        Ok(optimized) => optimized,
+        Err(reason) => {
+            record_image_optimization_skip(conn, dry_run, candidate, report, reason, false)?;
+            return Ok(());
+        }
+    };
+
+    if !image_optimization_is_beneficial(candidate.byte_len, optimized.bytes.len()) {
+        record_image_optimization_skip(conn, dry_run, candidate, report, "not_smaller", false)?;
+        return Ok(());
+    }
+
+    if image_optimization_would_conflict(conn, candidate, &optimized)? {
+        record_image_optimization_skip(conn, dry_run, candidate, report, "conflict", true)?;
+        return Ok(());
+    }
+
+    let saved_bytes = candidate.byte_len.saturating_sub(optimized.bytes.len());
+    report.compressed_rows += 1;
+    report.original_bytes += candidate.byte_len;
+    report.optimized_bytes += optimized.bytes.len();
+    report.logical_saved_bytes += saved_bytes;
+    report.compact_recommended = true;
+
+    if !dry_run {
+        replace_image_with_optimized_webp(conn, candidate, optimized)?;
+    }
+    Ok(())
+}
+
+fn record_image_optimization_skip(
+    conn: &rusqlite::Connection,
+    dry_run: bool,
+    candidate: &ImageOptimizationCandidate,
+    report: &mut ImageOptimizationReport,
+    reason: &str,
+    is_conflict: bool,
+) -> Result<()> {
+    report.skipped_rows += 1;
+    if is_conflict {
+        report.conflict_count += 1;
+    }
+    if !dry_run {
+        mark_image_optimization_skipped(conn, candidate, reason)?;
+    }
+    Ok(())
+}
+
+fn assign_image_optimization_filesystem_delta(
+    report: &mut ImageOptimizationReport,
+    initial_bytes: Option<u64>,
+    final_bytes: u64,
+) {
+    if let Some(initial) = initial_bytes {
+        report.filesystem_saved_bytes = initial.saturating_sub(final_bytes);
+        report.filesystem_growth_bytes = final_bytes.saturating_sub(initial);
     }
 }
 
