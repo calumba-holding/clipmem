@@ -1,4 +1,11 @@
-use super::*;
+use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command as ProcessCommand;
+
+use anyhow::{anyhow, bail, Context, Result};
+
+use super::model::{ServiceContext, DEFAULT_INTERVAL_MS, DIRECT_PLIST_TEMPLATE};
 
 pub(in crate::cli) fn write_direct_plist(context: &ServiceContext) -> Result<()> {
     let plist = DIRECT_PLIST_TEMPLATE

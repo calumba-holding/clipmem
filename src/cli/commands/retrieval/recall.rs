@@ -158,7 +158,12 @@ pub(in crate::cli) fn compute_recall(
         }
 
         if search_was_weak {
-            for (index, hit) in db.recent(args.limit, filters)?.into_iter().enumerate() {
+            for (index, hit) in db
+                .recent(args.limit, filters)?
+                .into_hits()
+                .into_iter()
+                .enumerate()
+            {
                 upsert_recall_candidate(
                     &mut merged,
                     build_recent_candidate(
@@ -171,7 +176,12 @@ pub(in crate::cli) fn compute_recall(
             }
         }
     } else {
-        for (index, hit) in db.recent(args.limit, filters)?.into_iter().enumerate() {
+        for (index, hit) in db
+            .recent(args.limit, filters)?
+            .into_hits()
+            .into_iter()
+            .enumerate()
+        {
             upsert_recall_candidate(
                 &mut merged,
                 build_recent_candidate(hit, index, args.prefer_app.as_deref(), args.prefer_recent),

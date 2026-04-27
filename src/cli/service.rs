@@ -1,14 +1,3 @@
-use std::path::{Path, PathBuf};
-use std::process::Command as ProcessCommand;
-use std::{env, fmt::Write as _, fs};
-
-use anyhow::{anyhow, bail, Context, Result};
-use serde::Serialize;
-
-use crate::db::{CaptureSettings, CaptureSkipReason};
-
-use super::formats::format_duration_compact;
-
 mod launchctl;
 mod manage;
 mod model;

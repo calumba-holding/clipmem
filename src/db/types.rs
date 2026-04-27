@@ -212,6 +212,18 @@ pub struct SearchResults {
     pub(in crate::db) has_more: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct RecentResults {
+    pub(in crate::db) hits: Vec<SearchHit>,
+    pub(in crate::db) has_more: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TimelineResults {
+    pub(in crate::db) events: Vec<crate::model::TimelineEvent>,
+    pub(in crate::db) has_more: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct StatsReport {
     pub(in crate::db) snapshot_count: usize,

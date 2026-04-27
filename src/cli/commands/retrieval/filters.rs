@@ -292,7 +292,7 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(capture_calls.get(), 0);
-        assert!(db.recent(10, &unfiltered()).unwrap().is_empty());
+        assert!(db.recent(10, &unfiltered()).unwrap().hits().is_empty());
 
         cleanup_db(&path);
     }
@@ -334,7 +334,7 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(capture_calls.get(), 1);
-        assert_eq!(db.recent(10, &unfiltered()).unwrap().len(), 1);
+        assert_eq!(db.recent(10, &unfiltered()).unwrap().hits().len(), 1);
 
         cleanup_db(&path);
     }
@@ -399,7 +399,10 @@ mod tests {
 
         assert!(first.is_ok());
         assert_eq!(capture_calls.get(), 1);
-        assert_eq!(db.recent(10, &unfiltered()).unwrap()[0].capture_count(), 1);
+        assert_eq!(
+            db.recent(10, &unfiltered()).unwrap().hits()[0].capture_count(),
+            1
+        );
 
         let second = run_watch_iteration_with_capture(
             &mut db,
@@ -451,7 +454,7 @@ mod tests {
 
         assert!(first.is_ok());
         assert_eq!(capture_calls.get(), 1);
-        assert!(db.recent(10, &unfiltered()).unwrap().is_empty());
+        assert!(db.recent(10, &unfiltered()).unwrap().hits().is_empty());
 
         let second = run_watch_iteration_with_capture(
             &mut db,
@@ -504,7 +507,7 @@ mod tests {
 
         assert!(first.is_ok());
         assert_eq!(capture_calls.get(), 1);
-        assert!(db.recent(10, &unfiltered()).unwrap().is_empty());
+        assert!(db.recent(10, &unfiltered()).unwrap().hits().is_empty());
 
         let second = run_watch_iteration_with_capture(
             &mut db,
@@ -562,7 +565,7 @@ mod tests {
 
         assert!(first.is_ok());
         assert_eq!(capture_calls.get(), 1);
-        assert!(db.recent(10, &unfiltered()).unwrap().is_empty());
+        assert!(db.recent(10, &unfiltered()).unwrap().hits().is_empty());
 
         let second = run_watch_iteration_with_capture(
             &mut db,
@@ -646,7 +649,7 @@ mod tests {
             .is_empty());
         let fresh_hits = db.search_auto("fresh", 10, &unfiltered()).unwrap();
         assert_eq!(fresh_hits.hits().len(), 1);
-        assert_eq!(db.recent(10, &unfiltered()).unwrap().len(), 1);
+        assert_eq!(db.recent(10, &unfiltered()).unwrap().hits().len(), 1);
 
         cleanup_db(&path);
     }

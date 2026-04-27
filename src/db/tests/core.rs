@@ -330,7 +330,7 @@ fn store_capture_if_allowed_skips_api_key_like_snapshots_when_enabled() -> Resul
         outcome,
         super::CaptureStoreOutcome::Skipped(super::CaptureSkipReason::ApiKeyFilter)
     ));
-    assert!(db.recent(10, &unfiltered())?.is_empty());
+    assert!(db.recent(10, &unfiltered())?.hits().is_empty());
     Ok(())
 }
 
@@ -344,7 +344,39 @@ fn store_capture_if_allowed_stores_sensitive_text_when_filter_is_disabled() -> R
     ))?;
 
     assert!(matches!(outcome, super::CaptureStoreOutcome::Stored(_)));
-    assert_eq!(db.recent(10, &unfiltered())?.len(), 1);
+    assert_eq!(db.recent(10, &unfiltered())?.hits().len(), 1);
+    Ok(())
+}
+
+#[test]
+fn recent_reports_whether_more_results_are_available() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    db.store_capture(&fake_snapshot(1, "first recent item"))?;
+    db.store_capture(&fake_snapshot(2, "second recent item"))?;
+
+    let first_page = db.recent(1, &unfiltered())?;
+    let full_page = db.recent(2, &unfiltered())?;
+
+    assert_eq!(first_page.hits().len(), 1);
+    assert!(first_page.has_more());
+    assert_eq!(full_page.hits().len(), 2);
+    assert!(!full_page.has_more());
+    Ok(())
+}
+
+#[test]
+fn timeline_exposes_public_events_and_pagination_state() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    db.store_capture(&fake_snapshot(1, "first timeline item"))?;
+    db.store_capture(&fake_snapshot(2, "second timeline item"))?;
+
+    let first_page = db.timeline(1, &unfiltered(), TimelineSort::Desc)?;
+    let full_page = db.timeline(2, &unfiltered(), TimelineSort::Desc)?;
+
+    assert_eq!(first_page.events().len(), 1);
+    assert!(first_page.has_more());
+    assert_eq!(full_page.events().len(), 2);
+    assert!(!full_page.has_more());
     Ok(())
 }
 

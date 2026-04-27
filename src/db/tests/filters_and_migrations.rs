@@ -280,10 +280,10 @@ fn shared_filters_constrain_search_recent_and_timeline_consistently() -> Result<
     let timeline = db.timeline_page(10, &filters, TimelineSort::Desc, None)?;
 
     assert_eq!(search.hits().len(), 1);
-    assert_eq!(recent.len(), 1);
+    assert_eq!(recent.hits().len(), 1);
     assert_eq!(timeline.items().len(), 2);
     assert_eq!(search.hits()[0].snapshot_id(), first.snapshot_id());
-    assert_eq!(recent[0].snapshot_id(), first.snapshot_id());
+    assert_eq!(recent.hits()[0].snapshot_id(), first.snapshot_id());
     assert!(timeline
         .items()
         .iter()

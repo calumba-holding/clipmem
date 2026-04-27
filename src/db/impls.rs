@@ -2,8 +2,9 @@ use crate::model::SearchHit;
 
 use super::types::{
     CapturePolicy, CaptureSettings, CaptureSkipReason, OcrCandidate, OcrRunReport, OcrStatusReport,
-    Page, PurgeReport, RecentCursorState, RetrievalFilters, RetrievalKind, SearchCursorState,
-    SearchMode, SearchResults, SnapshotDeletionReport, TimelineCursorState, TimelineSort,
+    Page, PurgeReport, RecentCursorState, RecentResults, RetrievalFilters, RetrievalKind,
+    SearchCursorState, SearchMode, SearchResults, SnapshotDeletionReport, TimelineCursorState,
+    TimelineResults, TimelineSort,
 };
 
 impl SearchResults {
@@ -29,6 +30,50 @@ impl SearchResults {
     #[must_use]
     pub fn has_more(&self) -> bool {
         self.has_more
+    }
+}
+
+impl RecentResults {
+    #[must_use]
+    pub(crate) fn new(hits: Vec<SearchHit>, has_more: bool) -> Self {
+        Self { hits, has_more }
+    }
+
+    #[must_use]
+    pub fn hits(&self) -> &[SearchHit] {
+        &self.hits
+    }
+
+    #[must_use]
+    pub fn has_more(&self) -> bool {
+        self.has_more
+    }
+
+    #[must_use]
+    pub fn into_hits(self) -> Vec<SearchHit> {
+        self.hits
+    }
+}
+
+impl TimelineResults {
+    #[must_use]
+    pub(crate) fn new(events: Vec<crate::model::TimelineEvent>, has_more: bool) -> Self {
+        Self { events, has_more }
+    }
+
+    #[must_use]
+    pub fn events(&self) -> &[crate::model::TimelineEvent] {
+        &self.events
+    }
+
+    #[must_use]
+    pub fn has_more(&self) -> bool {
+        self.has_more
+    }
+
+    #[must_use]
+    pub fn into_events(self) -> Vec<crate::model::TimelineEvent> {
+        self.events
     }
 }
 

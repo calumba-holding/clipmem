@@ -1,5 +1,6 @@
 pub use crate::db::{
-    Database, RetrievalFilters, RetrievalKind, SearchMode, SearchResults, TimelineSort,
+    Database, RecentResults, RetrievalFilters, RetrievalKind, SearchMode, SearchResults,
+    TimelineResults, TimelineSort,
 };
 pub use crate::model::{
     CaptureEvent, CaptureStoreResult, DoctorReport, FlattenedTextProjection, SearchHit,

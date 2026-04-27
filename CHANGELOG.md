@@ -20,6 +20,11 @@ versioning where practical.
 - Documented the failure modes for public recent and stats database queries so
   API consumers can rely on consistent error contracts across retrieval
   methods.
+- Changed the public `Database::recent` API to return `RecentResults`,
+  preserving whether more recent items are available while keeping a
+  `recent_hits` convenience helper for callers that only need the hit list.
+- Added a public `Database::timeline` API with `TimelineResults` so exported
+  timeline DTOs have a supported archive retrieval path.
 - Grouped retrieval CLI command helpers under a dedicated command submodule,
   reducing the flat command directory and making search, recall, cursor, and
   filter code easier to navigate together.

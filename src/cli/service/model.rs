@@ -1,4 +1,8 @@
-use super::*;
+use std::path::PathBuf;
+
+use serde::Serialize;
+
+use crate::db::CaptureSkipReason;
 
 pub(in crate::cli) const DIRECT_LABEL: &str = "io.openclaw.clipmem.watch";
 pub(in crate::cli) const HOMEBREW_LABEL: &str = "homebrew.mxcl.clipmem";

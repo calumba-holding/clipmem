@@ -11,8 +11,8 @@ use crate::db::read::mapping::{
 use crate::db::read::queries::{recent_query, timeline_query};
 use crate::db::read::stats::stats_params;
 use crate::db::types::{
-    Database, Page, RecentCursorState, RetrievalFilters, StatsReport, TimelineCursorState,
-    TimelineSort,
+    Database, Page, RecentCursorState, RecentResults, RetrievalFilters, StatsReport,
+    TimelineCursorState, TimelineResults, TimelineSort,
 };
 use crate::model::{SearchHit, TimelineEvent};
 
@@ -24,8 +24,39 @@ impl Database {
     /// Returns an error if filter values cannot be converted for SQLite, if relative hour filters
     /// cannot be formatted as timestamps, or if the recent query cannot be prepared, executed, or
     /// collected.
-    pub fn recent(&self, limit: usize, filters: &RetrievalFilters) -> Result<Vec<SearchHit>> {
-        self.recent_page(limit, filters, None).map(Page::into_items)
+    pub fn recent(&self, limit: usize, filters: &RetrievalFilters) -> Result<RecentResults> {
+        let page = self.recent_page(limit, filters, None)?;
+        let has_more = page.has_more();
+        Ok(RecentResults::new(page.into_items(), has_more))
+    }
+
+    /// Return only the most recent archived snapshots that match the supplied filters.
+    ///
+    /// Prefer [`Self::recent`] when callers need to know whether another page is available.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Self::recent`].
+    pub fn recent_hits(&self, limit: usize, filters: &RetrievalFilters) -> Result<Vec<SearchHit>> {
+        self.recent(limit, filters).map(RecentResults::into_hits)
+    }
+
+    /// Return capture events in stable chronological order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if filter values cannot be converted for SQLite, if relative hour filters
+    /// cannot be formatted as timestamps, or if the timeline query cannot be prepared, executed, or
+    /// collected.
+    pub fn timeline(
+        &self,
+        limit: usize,
+        filters: &RetrievalFilters,
+        sort: TimelineSort,
+    ) -> Result<TimelineResults> {
+        let page = self.timeline_page(limit, filters, sort, None)?;
+        let has_more = page.has_more();
+        Ok(TimelineResults::new(page.into_items(), has_more))
     }
 
     pub(crate) fn recent_page(

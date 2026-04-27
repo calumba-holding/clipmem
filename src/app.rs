@@ -105,7 +105,10 @@ mod tests {
         }
 
         assert!(!should_capture_change(snapshot.change_count(), &state));
-        assert!(db.recent(10, &RetrievalFilters::default())?.is_empty());
+        assert!(db
+            .recent(10, &RetrievalFilters::default())?
+            .hits()
+            .is_empty());
         Ok(())
     }
 
@@ -123,7 +126,7 @@ mod tests {
 
         assert!(first.is_some());
         assert!(second.is_none());
-        assert_eq!(db.recent(10, &RetrievalFilters::default())?.len(), 1);
+        assert_eq!(db.recent(10, &RetrievalFilters::default())?.hits().len(), 1);
         Ok(())
     }
 

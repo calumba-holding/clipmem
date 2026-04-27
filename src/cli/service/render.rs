@@ -1,4 +1,12 @@
-use super::*;
+use std::fmt::Write as _;
+
+use crate::cli::formats::format_duration_compact;
+use crate::db::{CaptureSettings, CaptureSkipReason};
+
+use super::model::{
+    SeedCaptureOutcome, ServiceActionReport, ServiceProviderStatus, ServiceStatusReport,
+    SetupReport,
+};
 
 pub(in crate::cli) fn render_setup_text(report: &SetupReport) -> String {
     let mut out = String::new();
