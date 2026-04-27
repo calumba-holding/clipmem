@@ -8,6 +8,7 @@ pub mod archive;
 pub mod capture;
 pub(crate) mod cli;
 pub(crate) mod db;
+pub(crate) mod file_url;
 pub(crate) mod model;
 pub(crate) mod ocr;
 pub(crate) mod platform;

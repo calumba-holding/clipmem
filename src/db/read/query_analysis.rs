@@ -1,6 +1,6 @@
 use rusqlite::{Error as SqlError, ErrorCode};
 
-use super::file_url::{file_url_cache_path_fragment, normalize_file_path};
+use crate::file_url::{file_url_cache_path_fragment, normalize_file_path};
 
 #[derive(Debug, Clone)]
 pub(in crate::db) struct QueryAnalysis {

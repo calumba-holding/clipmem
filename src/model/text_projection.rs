@@ -2,6 +2,8 @@ use std::collections::HashSet;
 
 use serde::Serialize;
 
+use crate::file_url::projected_file_url_path;
+
 use super::builders::{
     html_to_text_lossy, normalize_whitespace, rtf_to_text_lossy, truncate_chars,
 };
@@ -125,8 +127,9 @@ impl FlattenedTextProjection {
                         push_distinct(&mut urls, &mut url_keys, normalized_text.clone())
                     }
                     ClipboardKind::FileUrl => {
-                        let decoded_path = decode_file_url_path(&normalized_text);
-                        push_distinct(&mut file_paths, &mut file_path_keys, decoded_path);
+                        if let Some(decoded_path) = projected_file_url_path(&normalized_text) {
+                            push_distinct(&mut file_paths, &mut file_path_keys, decoded_path);
+                        }
                     }
                     ClipboardKind::Html => {
                         let plain = html_to_text_lossy(&normalized_text);
@@ -293,57 +296,6 @@ fn best_text_priority(kind: ClipboardKind, text: &str) -> Option<u8> {
         _ if kind.is_textual() => 1,
         _ => return None,
     })
-}
-
-fn decode_file_url_path(file_url: &str) -> String {
-    const PREFIX: &str = "file://";
-    if has_ascii_prefix(file_url, PREFIX) {
-        let remainder = &file_url[PREFIX.len()..];
-        let remainder = strip_localhost_authority(remainder);
-        percent_decode(remainder)
-    } else {
-        file_url.to_string()
-    }
-}
-
-fn strip_localhost_authority(value: &str) -> &str {
-    const LOCALHOST: &str = "localhost";
-    if has_ascii_prefix(value, LOCALHOST)
-        && (value.len() == LOCALHOST.len() || value.as_bytes()[LOCALHOST.len()] == b'/')
-    {
-        &value[LOCALHOST.len()..]
-    } else {
-        value
-    }
-}
-
-fn has_ascii_prefix(value: &str, prefix: &str) -> bool {
-    value
-        .as_bytes()
-        .get(..prefix.len())
-        .is_some_and(|candidate| candidate.eq_ignore_ascii_case(prefix.as_bytes()))
-}
-
-fn percent_decode(value: &str) -> String {
-    let bytes = value.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-
-    while index < bytes.len() {
-        if bytes[index] == b'%' && index + 2 < bytes.len() {
-            let hex = &value[index + 1..index + 3];
-            if let Ok(byte) = u8::from_str_radix(hex, 16) {
-                out.push(byte);
-                index += 3;
-                continue;
-            }
-        }
-
-        out.push(bytes[index]);
-        index += 1;
-    }
-
-    String::from_utf8(out).unwrap_or_else(|_| value.to_string())
 }
 
 #[cfg(test)]

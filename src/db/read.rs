@@ -1,5 +1,4 @@
 mod browse;
-mod file_url;
 mod filter_sql;
 mod queries;
 mod query_analysis;

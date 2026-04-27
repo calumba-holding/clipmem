@@ -1,4 +1,4 @@
-use super::file_url::normalize_file_path;
+use crate::file_url::normalize_file_path;
 
 const LIST_VALUE_SEPARATOR: char = '\u{1f}';
 const MATCHED_FIELDS_SEPARATOR: char = '\u{1e}';
@@ -43,7 +43,6 @@ pub(in crate::db) fn split_match_fields(value: &str) -> Vec<String> {
 mod profile_tests {
     use std::time::{Duration, Instant};
 
-    use super::super::file_url::hex_value;
     use super::{split_aggregated_file_paths, split_aggregated_values, LIST_VALUE_SEPARATOR};
 
     #[test]
@@ -136,5 +135,14 @@ mod profile_tests {
             index += 1;
         }
         String::from_utf8(out).ok()
+    }
+
+    fn hex_value(byte: u8) -> Option<u8> {
+        match byte {
+            b'0'..=b'9' => Some(byte - b'0'),
+            b'a'..=b'f' => Some(byte - b'a' + 10),
+            b'A'..=b'F' => Some(byte - b'A' + 10),
+            _ => None,
+        }
     }
 }
