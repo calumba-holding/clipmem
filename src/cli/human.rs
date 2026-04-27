@@ -5,7 +5,7 @@ use colored::Colorize;
 
 use crate::db::{
     ImageOptimizationReport, OcrRunReport, OcrStatusReport, PurgeReport, SnapshotDeletionReport,
-    StatsReport, StatsSnapshotLeaderboardEntry, StatsTimeBucketEntry, StorageCompactReport,
+    StatsReport, StatsSnapshotLeaderboardEntry, StorageCompactReport,
 };
 use crate::model::{DoctorReport, SnapshotDetails};
 
@@ -16,6 +16,7 @@ use super::output::{
     GetEnvelope, ListEnvelope, ListRow, RecallEnvelope, RecallMatchConfidence, StatsEnvelope,
 };
 use super::service::{ServiceProviderStatus, ServiceStatusReport};
+use super::{format_duration_seconds, peak_bucket};
 
 mod actions;
 mod detail;

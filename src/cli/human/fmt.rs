@@ -60,20 +60,6 @@ pub(in crate::cli) fn first_non_empty<'a>(values: &[&'a str]) -> &'a str {
         .unwrap_or("")
 }
 
-pub(in crate::cli) fn peak_bucket(
-    buckets: &[StatsTimeBucketEntry],
-) -> Option<&StatsTimeBucketEntry> {
-    buckets
-        .iter()
-        .max_by_key(|entry| {
-            (
-                entry.capture_event_count(),
-                std::cmp::Reverse(entry.bucket()),
-            )
-        })
-        .filter(|entry| entry.capture_event_count() > 0)
-}
-
 pub(in crate::cli) fn separator(width: usize, heavy: bool) -> String {
     if heavy {
         "═".repeat(width)
@@ -117,23 +103,6 @@ pub(in crate::cli) fn format_bytes(value: u64) -> String {
 
 pub(in crate::cli) fn format_percent(value: f64) -> String {
     format!("{:.1}%", value * 100.0)
-}
-
-pub(in crate::cli) fn format_duration_seconds(seconds: u64) -> String {
-    let days = seconds / 86_400;
-    let hours = (seconds % 86_400) / 3_600;
-    let minutes = (seconds % 3_600) / 60;
-    let remainder = seconds % 60;
-
-    if days > 0 {
-        format!("{days}d {hours}h")
-    } else if hours > 0 {
-        format!("{hours}h {minutes}m")
-    } else if minutes > 0 {
-        format!("{minutes}m {remainder}s")
-    } else {
-        format!("{remainder}s")
-    }
 }
 
 pub(in crate::cli) fn format_timestamp_short(timestamp: &str) -> String {

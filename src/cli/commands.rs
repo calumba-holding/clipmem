@@ -41,12 +41,12 @@ use super::service::{
     self, render_service_action_text, render_service_status_text, render_setup_text,
 };
 use super::{
-    AgentsArgs, AgentsCommand, CaptureOnceArgs, Command, DoctorArgs, ExportArgs, ForgetArgs,
-    GetArgs, HermesArgs, HermesCommand, HermesDoctorArgs, HermesInstallSkillArgs,
-    HermesUninstallSkillArgs, OcrArgs, OcrCommand, OcrRunArgs, OcrStatusArgs, OpenClawArgs,
-    OpenClawCommand, OpenClawDoctorArgs, OpenClawInstallSkillArgs, OpenClawUninstallSkillArgs,
-    OutputFormat, ProgressFormat, PurgeArgs, RecallArgs, RecentArgs, RestoreArgs,
-    RetrievalFilterArgs, SearchArgs, ServiceArgs, ServiceCommand, ServiceStatusArgs,
+    format_duration_compact, AgentsArgs, AgentsCommand, CaptureOnceArgs, Command, DoctorArgs,
+    ExportArgs, ForgetArgs, GetArgs, HermesArgs, HermesCommand, HermesDoctorArgs,
+    HermesInstallSkillArgs, HermesUninstallSkillArgs, OcrArgs, OcrCommand, OcrRunArgs,
+    OcrStatusArgs, OpenClawArgs, OpenClawCommand, OpenClawDoctorArgs, OpenClawInstallSkillArgs,
+    OpenClawUninstallSkillArgs, OutputFormat, ProgressFormat, PurgeArgs, RecallArgs, RecentArgs,
+    RestoreArgs, RetrievalFilterArgs, SearchArgs, ServiceArgs, ServiceCommand, ServiceStatusArgs,
     SettingsApiKeyFilterArgs, SettingsArgs, SettingsCommand, SettingsIgnoreArgs,
     SettingsIgnoreCommand, SettingsIgnoreListArgs, SettingsOcrArgs, SettingsPauseArgs,
     SettingsRetentionArgs, SettingsShowArgs, SetupArgs, StatsArgs, StatsOutputFormat, StorageArgs,

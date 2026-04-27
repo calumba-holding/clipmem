@@ -559,19 +559,3 @@ pub(in crate::cli) fn render_retention_value(settings: &CaptureSettings) -> Stri
         .map(format_duration_compact)
         .unwrap_or_else(|| "forever".to_string())
 }
-
-pub(in crate::cli) fn format_duration_compact(seconds: u64) -> String {
-    let day = 24 * 60 * 60;
-    let hour = 60 * 60;
-    let minute = 60;
-
-    if seconds.is_multiple_of(day) {
-        format!("{}d", seconds / day)
-    } else if seconds.is_multiple_of(hour) {
-        format!("{}h", seconds / hour)
-    } else if seconds.is_multiple_of(minute) {
-        format!("{}m", seconds / minute)
-    } else {
-        format!("{seconds}s")
-    }
-}

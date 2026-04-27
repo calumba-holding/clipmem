@@ -360,20 +360,6 @@ pub(in crate::cli) fn push_blank_line(out: &mut String) {
     out.push('\n');
 }
 
-pub(in crate::cli) fn peak_bucket(
-    buckets: &[StatsTimeBucketEntry],
-) -> Option<&StatsTimeBucketEntry> {
-    buckets
-        .iter()
-        .max_by_key(|entry| {
-            (
-                entry.capture_event_count(),
-                std::cmp::Reverse(entry.bucket()),
-            )
-        })
-        .filter(|entry| entry.capture_event_count() > 0)
-}
-
 pub(in crate::cli) fn push_snapshot_leaderboard(
     out: &mut String,
     snapshots: &[StatsSnapshotLeaderboardEntry],
@@ -412,23 +398,6 @@ pub(in crate::cli) fn push_snapshot_leaderboard_entry(
         app
     );
     let _ = writeln!(out, "{prefix}  preview: {preview}");
-}
-
-pub(in crate::cli) fn format_duration_seconds(seconds: u64) -> String {
-    let days = seconds / 86_400;
-    let hours = (seconds % 86_400) / 3_600;
-    let minutes = (seconds % 3_600) / 60;
-    let remainder = seconds % 60;
-
-    if days > 0 {
-        format!("{days}d {hours}h")
-    } else if hours > 0 {
-        format!("{hours}h {minutes}m")
-    } else if minutes > 0 {
-        format!("{minutes}m {remainder}s")
-    } else {
-        format!("{remainder}s")
-    }
 }
 
 pub(in crate::cli) fn format_utc_timestamp(timestamp: &str) -> String {

@@ -5,14 +5,14 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-use crate::db::{SearchResults, StatsReport, StatsSnapshotLeaderboardEntry, StatsTimeBucketEntry};
+use crate::db::{SearchResults, StatsReport, StatsSnapshotLeaderboardEntry};
 use crate::model::{
     DoctorReport, FlattenedTextProjection, SearchHit, SnapshotDetails, TextFragment, TimelineEvent,
 };
 
 use super::commands::CaptureOnceOutput;
 use super::human::{render_get_human, render_list_human, render_recall_human};
-use super::{OutputFormat, RecallOutputFormat};
+use super::{format_duration_seconds, peak_bucket, OutputFormat, RecallOutputFormat};
 
 mod emit;
 mod json;

@@ -1,4 +1,5 @@
 use super::*;
+use crate::db::StatsTimeBucketEntry;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(super) enum OutputFormat {
@@ -248,4 +249,51 @@ impl PauseState {
     pub(super) fn is_paused(self) -> bool {
         matches!(self, Self::On)
     }
+}
+
+pub(in crate::cli) fn format_duration_compact(seconds: u64) -> String {
+    let day = 24 * 60 * 60;
+    let hour = 60 * 60;
+    let minute = 60;
+
+    if seconds.is_multiple_of(day) {
+        format!("{}d", seconds / day)
+    } else if seconds.is_multiple_of(hour) {
+        format!("{}h", seconds / hour)
+    } else if seconds.is_multiple_of(minute) {
+        format!("{}m", seconds / minute)
+    } else {
+        format!("{seconds}s")
+    }
+}
+
+pub(in crate::cli) fn format_duration_seconds(seconds: u64) -> String {
+    let days = seconds / 86_400;
+    let hours = (seconds % 86_400) / 3_600;
+    let minutes = (seconds % 3_600) / 60;
+    let remainder = seconds % 60;
+
+    if days > 0 {
+        format!("{days}d {hours}h")
+    } else if hours > 0 {
+        format!("{hours}h {minutes}m")
+    } else if minutes > 0 {
+        format!("{minutes}m {remainder}s")
+    } else {
+        format!("{remainder}s")
+    }
+}
+
+pub(in crate::cli) fn peak_bucket(
+    buckets: &[StatsTimeBucketEntry],
+) -> Option<&StatsTimeBucketEntry> {
+    buckets
+        .iter()
+        .max_by_key(|entry| {
+            (
+                entry.capture_event_count(),
+                std::cmp::Reverse(entry.bucket()),
+            )
+        })
+        .filter(|entry| entry.capture_event_count() > 0)
 }
