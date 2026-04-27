@@ -20,186 +20,14 @@ pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .context("read PRAGMA user_version")?;
 
-    match user_version {
-        0 => {
-            tx.execute(
-                "INSERT INTO snapshots_fts(snapshots_fts) VALUES ('rebuild')",
-                [],
-            )
-            .context("rebuild FTS5 index")?;
-            rebuild_snapshot_stats(&tx)?;
-            rebuild_snapshot_projection_cache(&tx)?;
-            rebuild_snapshot_event_filter_cache(&tx)?;
-            rebuild_snapshot_literal_cache(&tx)?;
-            rebuild_snapshot_file_url_fts(&tx)?;
-            ensure_api_key_filter_setting_column(&tx)?;
-            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
-                .context("set PRAGMA user_version")?;
-        }
-        1 => {
-            if legacy_prerelease_schema_detected(&tx)? {
-                bail!(
-                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
-                );
-            }
-            rebuild_snapshot_stats(&tx)?;
-            rebuild_snapshot_projection_cache(&tx)?;
-            rebuild_snapshot_event_filter_cache(&tx)?;
-            rebuild_snapshot_literal_cache(&tx)?;
-            rebuild_snapshot_file_url_fts(&tx)?;
-            ensure_api_key_filter_setting_column(&tx)?;
-            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
-                .context("set PRAGMA user_version")?;
-        }
-        2 => {
-            if legacy_prerelease_schema_detected(&tx)? {
-                bail!(
-                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
-                );
-            }
-            rebuild_snapshot_projection_cache(&tx)?;
-            rebuild_snapshot_event_filter_cache(&tx)?;
-            rebuild_snapshot_literal_cache(&tx)?;
-            rebuild_snapshot_file_url_fts(&tx)?;
-            ensure_api_key_filter_setting_column(&tx)?;
-            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
-                .context("set PRAGMA user_version")?;
-        }
-        3 => {
-            if legacy_prerelease_schema_detected(&tx)? {
-                bail!(
-                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
-                );
-            }
-            rebuild_snapshot_event_filter_cache(&tx)?;
-            rebuild_snapshot_literal_cache(&tx)?;
-            rebuild_snapshot_file_url_fts(&tx)?;
-            ensure_api_key_filter_setting_column(&tx)?;
-            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
-                .context("set PRAGMA user_version")?;
-        }
-        4 => {
-            if legacy_prerelease_schema_detected(&tx)? {
-                bail!(
-                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
-                );
-            }
-            rebuild_snapshot_literal_cache(&tx)?;
-            rebuild_snapshot_file_url_fts(&tx)?;
-            ensure_api_key_filter_setting_column(&tx)?;
-            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
-                .context("set PRAGMA user_version")?;
-        }
-        5 => {
-            if legacy_prerelease_schema_detected(&tx)? {
-                bail!(
-                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
-                );
-            }
-            rebuild_snapshot_file_url_fts(&tx)?;
-            ensure_api_key_filter_setting_column(&tx)?;
-            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
-                .context("set PRAGMA user_version")?;
-        }
-        6 => {
-            if legacy_prerelease_schema_detected(&tx)? {
-                bail!(
-                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
-                );
-            }
-            ensure_api_key_filter_setting_column(&tx)?;
-            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
-                .context("set PRAGMA user_version")?;
-        }
-        7 => {
-            if legacy_prerelease_schema_detected(&tx)? {
-                bail!(
-                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
-                );
-            }
-            ensure_api_key_filter_setting_column(&tx)?;
-            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
-                .context("set PRAGMA user_version")?;
-        }
-        8 => {
-            if legacy_prerelease_schema_detected(&tx)? {
-                bail!(
-                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
-                );
-            }
-            ensure_api_key_filter_setting_column(&tx)?;
-            rebuild_snapshot_text_from_representations(&tx)?;
-            rebuild_snapshot_literal_cache(&tx)?;
-            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
-                .context("set PRAGMA user_version")?;
-        }
-        9 => {
-            if legacy_prerelease_schema_detected(&tx)? {
-                bail!(
-                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
-                );
-            }
-            ensure_api_key_filter_setting_column(&tx)?;
-            ensure_ocr_enabled_setting_column(&tx)?;
-            rebuild_snapshot_text_from_representations(&tx)?;
-            rebuild_snapshot_literal_cache(&tx)?;
-            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
-                .context("set PRAGMA user_version")?;
-        }
-        10 => {
-            if legacy_prerelease_schema_detected(&tx)? {
-                bail!(
-                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
-                );
-            }
-            ensure_image_compression_columns(&tx)?;
-            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
-                .context("set PRAGMA user_version")?;
-        }
-        11 => {
-            if legacy_prerelease_schema_detected(&tx)? {
-                bail!(
-                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
-                );
-            }
-            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
-                .context("set PRAGMA user_version")?;
-        }
-        12 => {
-            if legacy_prerelease_schema_detected(&tx)? {
-                bail!(
-                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
-                );
-            }
-            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
-                .context("set PRAGMA user_version")?;
-        }
-        13..=16 => {
-            if legacy_prerelease_schema_detected(&tx)? {
-                bail!(
-                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
-                );
-            }
-            tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
-                .context("set PRAGMA user_version")?;
-        }
-        CURRENT_SCHEMA_VERSION => {
-            if legacy_prerelease_schema_detected(&tx)? {
-                bail!(
-                    "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
-                );
-            }
-        }
-        version if version > CURRENT_SCHEMA_VERSION => {
-            bail!(
-                "database schema version {version} is newer than supported version {CURRENT_SCHEMA_VERSION}"
-            );
-        }
-        version => {
-            bail!("unsupported database schema version {version}");
-        }
+    validate_supported_user_version(&tx, user_version)?;
+    if user_version < CURRENT_SCHEMA_VERSION {
+        run_schema_migration_steps(&tx, user_version)?;
+        tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+            .context("set PRAGMA user_version")?;
     }
 
+    ensure_api_key_filter_setting_column(&tx)?;
     ensure_ocr_enabled_setting_column(&tx)?;
     ensure_image_compression_columns(&tx)?;
     ensure_image_optimization_queue_index(&tx)?;
@@ -211,6 +39,114 @@ pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {
     .context("seed clipmem settings row")?;
 
     tx.commit().context("commit schema transaction")?;
+    Ok(())
+}
+
+struct MigrationStep {
+    name: &'static str,
+    applies_to: fn(i64) -> bool,
+    run: fn(&Connection) -> Result<()>,
+}
+
+const MIGRATION_STEPS: &[MigrationStep] = &[
+    MigrationStep {
+        name: "rebuild FTS5 index",
+        applies_to: source_version_is_zero,
+        run: rebuild_snapshots_fts,
+    },
+    MigrationStep {
+        name: "rebuild snapshot stats",
+        applies_to: source_version_through_1,
+        run: rebuild_snapshot_stats,
+    },
+    MigrationStep {
+        name: "rebuild snapshot projection cache",
+        applies_to: source_version_through_2,
+        run: rebuild_snapshot_projection_cache,
+    },
+    MigrationStep {
+        name: "rebuild snapshot event filter cache",
+        applies_to: source_version_through_3,
+        run: rebuild_snapshot_event_filter_cache,
+    },
+    MigrationStep {
+        name: "repair stored snapshot text projection",
+        applies_to: source_version_needs_text_projection_repair,
+        run: rebuild_snapshot_text_from_representations,
+    },
+    MigrationStep {
+        name: "rebuild snapshot literal cache",
+        applies_to: source_version_needs_literal_cache_rebuild,
+        run: rebuild_snapshot_literal_cache,
+    },
+    MigrationStep {
+        name: "rebuild snapshot file URL FTS",
+        applies_to: source_version_through_5,
+        run: rebuild_snapshot_file_url_fts,
+    },
+];
+
+fn validate_supported_user_version(conn: &Connection, user_version: i64) -> Result<()> {
+    if user_version > CURRENT_SCHEMA_VERSION {
+        bail!(
+            "database schema version {user_version} is newer than supported version {CURRENT_SCHEMA_VERSION}"
+        );
+    }
+    if user_version < 0 {
+        bail!("unsupported database schema version {user_version}");
+    }
+    if user_version > 0 && legacy_prerelease_schema_detected(conn)? {
+        bail!(
+            "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
+        );
+    }
+    Ok(())
+}
+
+fn run_schema_migration_steps(conn: &Connection, source_version: i64) -> Result<()> {
+    for step in MIGRATION_STEPS
+        .iter()
+        .filter(|step| (step.applies_to)(source_version))
+    {
+        (step.run)(conn).with_context(|| format!("run schema migration step: {}", step.name))?;
+    }
+    Ok(())
+}
+
+fn source_version_is_zero(version: i64) -> bool {
+    version == 0
+}
+
+fn source_version_through_1(version: i64) -> bool {
+    version <= 1
+}
+
+fn source_version_through_2(version: i64) -> bool {
+    version <= 2
+}
+
+fn source_version_through_3(version: i64) -> bool {
+    version <= 3
+}
+
+fn source_version_through_5(version: i64) -> bool {
+    version <= 5
+}
+
+fn source_version_needs_literal_cache_rebuild(version: i64) -> bool {
+    version <= 4 || matches!(version, 8 | 9)
+}
+
+fn source_version_needs_text_projection_repair(version: i64) -> bool {
+    matches!(version, 8 | 9)
+}
+
+fn rebuild_snapshots_fts(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "INSERT INTO snapshots_fts(snapshots_fts) VALUES ('rebuild')",
+        [],
+    )
+    .context("rebuild FTS5 index")?;
     Ok(())
 }
 
