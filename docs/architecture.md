@@ -75,9 +75,15 @@ Supporting tables:
   `raw_sha256`
 - `snapshot_ocr_cache` — aggregated ready OCR text per snapshot
 
-A comprehensive trigger system maintains all denormalized stats and
-caches on every insert, update, and delete. Search indexes stay in
-sync without manual refresh.
+Cache maintenance is intentionally hybrid. Triggers maintain the
+steady-state derived tables: snapshot stats, event-filter cache,
+literal and FTS search indexes, OCR cache rows, and representation
+projection updates after ordinary representation changes. During
+`store_capture`, new snapshot representation inserts temporarily defer
+representation-derived trigger work. The capture transaction inserts
+all representations, rebuilds `snapshot_projection_cache` once for the
+new snapshot, then inserts the `capture_events` row so downstream
+event/search refresh work sees the complete representation projection.
 
 ## What gets indexed
 
