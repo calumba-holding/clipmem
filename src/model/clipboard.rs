@@ -1,7 +1,7 @@
 use serde::ser::{SerializeStruct, Serializer};
 use serde::Serialize;
 
-use super::{ClipboardKind, SnapshotKind};
+use super::kinds::{ClipboardKind, SnapshotKind};
 
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize)]

@@ -1,6 +1,8 @@
 use serde::Serialize;
 
-use super::{ClipboardItem, FlattenedTextProjection, SnapshotKind, TextFragment};
+use super::clipboard::ClipboardItem;
+use super::kinds::SnapshotKind;
+use super::text_projection::{FlattenedTextProjection, TextFragment};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CaptureStoreResult {

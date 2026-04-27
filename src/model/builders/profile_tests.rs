@@ -1,8 +1,8 @@
+use super::super::clipboard::ClipboardRepresentation;
 use super::{
     build_representation, classify_uti, decode_text_bytes_lossy, decode_text_bytes_strict,
     hash_bytes, normalize_whitespace, rtf_to_text_lossy,
 };
-use crate::model::ClipboardRepresentation;
 use std::time::{Duration, Instant};
 
 #[test]

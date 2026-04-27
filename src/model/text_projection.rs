@@ -5,7 +5,8 @@ use serde::Serialize;
 use super::builders::{
     html_to_text_lossy, normalize_whitespace, rtf_to_text_lossy, truncate_chars,
 };
-use super::{ClipboardItem, ClipboardKind};
+use super::clipboard::ClipboardItem;
+use super::kinds::ClipboardKind;
 
 const TEXT_SUMMARY_LIMIT: usize = 320;
 
@@ -347,8 +348,9 @@ fn percent_decode(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::super::builders::{build_item, build_representation};
+    use super::super::kinds::ClipboardKind;
     use super::FlattenedTextProjection;
-    use crate::model::{build_item, build_representation, ClipboardKind};
 
     #[test]
     fn projection_prefers_plain_text_and_collects_urls_and_paths() {
