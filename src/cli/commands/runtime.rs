@@ -5,45 +5,24 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use serde::Serialize;
 
 use crate::app::{
     format_watch_capture_line, mark_change_handled, should_skip_initial_change, WatchState,
 };
 use crate::db::{CaptureSkipReason, CaptureStoreOutcome, Database};
-use crate::model::{CaptureStoreResult, ClipboardSnapshot};
+use crate::model::ClipboardSnapshot;
 use crate::platform::{capture_snapshot, current_change_count};
 
 use crate::cli::errors::{db_error, platform_error};
 use crate::cli::human::render_capture_once_human;
-use crate::cli::output::{emit_json_or_text, render_capture_once_text};
+use crate::cli::output::{
+    emit_json_or_text, render_capture_once_text, CaptureOnceOutput, CaptureOnceSkippedOutput,
+    CaptureOnceStoredOutput,
+};
 use crate::cli::schema::{CaptureOnceArgs, WatchArgs};
 
 static OCR_WORKERS: LazyLock<Mutex<HashSet<PathBuf>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
-
-#[derive(Debug, Serialize)]
-pub(in crate::cli) struct CaptureOnceStoredOutput {
-    pub(in crate::cli) store: CaptureStoreResult,
-    pub(in crate::cli) snapshot: ClipboardSnapshot,
-}
-
-#[derive(Debug, Serialize)]
-pub(in crate::cli) struct CaptureOnceSkippedOutput {
-    pub(in crate::cli) status: &'static str,
-    pub(in crate::cli) reason: CaptureSkipReason,
-    pub(in crate::cli) kind: String,
-    pub(in crate::cli) total_bytes: usize,
-    pub(in crate::cli) frontmost_app_name: Option<String>,
-    pub(in crate::cli) frontmost_app_bundle_id: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(untagged)]
-pub(in crate::cli) enum CaptureOnceOutput {
-    Stored(CaptureOnceStoredOutput),
-    Skipped(CaptureOnceSkippedOutput),
-}
 
 fn capture_skip_reason_label(reason: CaptureSkipReason) -> &'static str {
     reason.as_str()

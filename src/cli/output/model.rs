@@ -1,7 +1,8 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::db::StatsReport;
+use crate::db::{CaptureSkipReason, StatsReport};
+use crate::model::{CaptureStoreResult, ClipboardSnapshot};
 use crate::model::{
     FlattenedTextProjection, SearchHit, SnapshotDetails, TextFragment, TimelineEvent,
 };
@@ -9,6 +10,62 @@ use crate::model::{
 use super::row_text::{best_text_from_hit, truncate_for_display};
 
 pub(in crate::cli) const OUTPUT_SCHEMA_VERSION: u32 = 2;
+
+#[derive(Debug, Serialize)]
+pub(in crate::cli) struct CaptureOnceStoredOutput {
+    pub(in crate::cli) store: CaptureStoreResult,
+    pub(in crate::cli) snapshot: ClipboardSnapshot,
+}
+
+#[derive(Debug, Serialize)]
+pub(in crate::cli) struct CaptureOnceSkippedOutput {
+    pub(in crate::cli) status: &'static str,
+    pub(in crate::cli) reason: CaptureSkipReason,
+    pub(in crate::cli) kind: String,
+    pub(in crate::cli) total_bytes: usize,
+    pub(in crate::cli) frontmost_app_name: Option<String>,
+    pub(in crate::cli) frontmost_app_bundle_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub(in crate::cli) enum CaptureOnceOutput {
+    Stored(CaptureOnceStoredOutput),
+    Skipped(CaptureOnceSkippedOutput),
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(in crate::cli) struct RestoreOutput {
+    pub(in crate::cli) snapshot_id: i64,
+    pub(in crate::cli) item_count: usize,
+    pub(in crate::cli) representation_count: usize,
+    pub(in crate::cli) total_bytes: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(in crate::cli) struct ExportOutput {
+    pub(in crate::cli) snapshot_id: i64,
+    pub(in crate::cli) item_index: usize,
+    pub(in crate::cli) uti: String,
+    pub(in crate::cli) byte_count: usize,
+    pub(in crate::cli) raw_sha256: String,
+    pub(in crate::cli) out: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(in crate::cli) struct SettingsView {
+    pub(in crate::cli) paused: bool,
+    pub(in crate::cli) api_key_filter_enabled: bool,
+    pub(in crate::cli) ocr_enabled: bool,
+    pub(in crate::cli) retention_seconds: Option<u64>,
+    pub(in crate::cli) retention: String,
+    pub(in crate::cli) ignored_bundle_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(in crate::cli) struct SettingsIgnoreListOutput {
+    pub(in crate::cli) ignored_bundle_ids: Vec<String>,
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub(in crate::cli) struct ListEnvelope {

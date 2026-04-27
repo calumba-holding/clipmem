@@ -2,7 +2,6 @@ use std::fs::{File, OpenOptions};
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
-use serde::Serialize;
 
 use crate::db::{PurgeReport, SnapshotDeletionReport};
 use crate::platform::restore_items;
@@ -12,30 +11,12 @@ use crate::cli::formats::{format_duration_compact, OutputFormat};
 use crate::cli::human::{
     render_export_human, render_forget_human, render_purge_human, render_restore_human,
 };
-use crate::cli::output::emit_json_or_text;
+use crate::cli::output::{emit_json_or_text, ExportOutput, RestoreOutput};
 use crate::cli::schema::{ExportArgs, ForgetArgs, PurgeArgs, RestoreArgs};
 
 use super::mutation_support::require_text_or_json;
 use super::retrieval::normalize_retrieval_filters;
 use super::runtime::open_existing_db;
-
-#[derive(Debug, Clone, Serialize)]
-pub(in crate::cli) struct RestoreOutput {
-    pub(in crate::cli) snapshot_id: i64,
-    pub(in crate::cli) item_count: usize,
-    pub(in crate::cli) representation_count: usize,
-    pub(in crate::cli) total_bytes: usize,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub(in crate::cli) struct ExportOutput {
-    pub(in crate::cli) snapshot_id: i64,
-    pub(in crate::cli) item_index: usize,
-    pub(in crate::cli) uti: String,
-    pub(in crate::cli) byte_count: usize,
-    pub(in crate::cli) raw_sha256: String,
-    pub(in crate::cli) out: String,
-}
 
 pub(in crate::cli) fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -> Result<()> {
     let format = require_text_or_json(args.output.resolved()?, "export")?;

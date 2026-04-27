@@ -2,17 +2,16 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use crate::cli::human::render_service_status_human;
-use crate::cli::output::emit_json_or_text;
-use crate::cli::schema::{
+use super::super::human::render_service_status_human;
+use super::super::output::emit_json_or_text;
+use super::super::schema::{
     AgentsArgs, AgentsCommand, Command, HermesArgs, HermesCommand, OpenClawArgs, OpenClawCommand,
     ServiceArgs, ServiceCommand, ServiceStatusArgs, SetupArgs,
 };
-use crate::cli::service as service_api;
-use crate::cli::service::{
+use super::super::service as service_api;
+use super::super::service::{
     render_service_action_text, render_service_status_text, render_setup_text,
 };
-
 use super::agents::{
     hermes_doctor, hermes_install_skill, hermes_uninstall_skill, openclaw_doctor,
     openclaw_install_skill, openclaw_uninstall_skill, packaged_hermes_skill,

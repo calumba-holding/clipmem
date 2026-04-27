@@ -7,7 +7,7 @@ use super::errors::{classify_clap_error, classify_clap_exit_code, classify_comma
 use super::exit::{CliError, CliExitCode};
 use super::schema::Cli;
 use super::validate::validate_cli;
-use super::{commands, db_path};
+use super::{commands::entry::run_command, db_path};
 
 /// Parse CLI arguments and execute the requested command.
 ///
@@ -31,7 +31,7 @@ where
     let cli = Cli::try_parse_from(args).map_err(classify_clap_error)?;
     validate_cli(&cli).map_err(classify_clap_error)?;
     let db_path = cli.db.unwrap_or_else(db_path::default_db_path);
-    commands::run_command(cli.command, &db_path).map_err(classify_command_error)
+    run_command(cli.command, &db_path).map_err(classify_command_error)
 }
 
 pub fn run_cli() -> ExitCode {
@@ -56,7 +56,7 @@ where
     let cli = Cli::try_parse_from(args)?;
     validate_cli(&cli)?;
     let db_path = cli.db.unwrap_or_else(db_path::default_db_path);
-    match commands::run_command(cli.command, &db_path) {
+    match run_command(cli.command, &db_path) {
         Ok(()) => Ok(CliExitCode::Ok),
         Err(error) => {
             let classified = classify_command_error(error);

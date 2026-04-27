@@ -1,13 +1,13 @@
 use std::fmt::Write;
 
 use super::model::{
-    GetEnvelope, ListEnvelope, ListRow, SnapshotListRow, StatsEnvelope, TimelineListRow,
+    CaptureOnceOutput, GetEnvelope, ListEnvelope, ListRow, SettingsIgnoreListOutput, SettingsView,
+    SnapshotListRow, StatsEnvelope, TimelineListRow,
 };
 use super::support::{
     format_utc_timestamp, push_blank_line, push_snapshot_leaderboard,
     push_snapshot_leaderboard_entry,
 };
-use crate::cli::commands::{CaptureOnceOutput, SettingsIgnoreListOutput, SettingsView};
 use crate::cli::formats::{format_duration_seconds, peak_bucket};
 use crate::db::{ImageOptimizationReport, StorageCompactReport};
 use crate::model::{DoctorReport, SnapshotDetails};

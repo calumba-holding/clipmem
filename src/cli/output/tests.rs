@@ -3,19 +3,19 @@ use std::fmt::Write;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use crate::cli::commands::{SettingsIgnoreListOutput, SettingsView};
 use crate::db::{Database, ImageOptimizationReport};
 use crate::model::{
     build_item, build_representation, build_snapshot, CaptureContext, CaptureEvent,
     CaptureStoreResult, DoctorReport, SnapshotDetails, SnapshotKind,
 };
 
-use super::super::commands::{CaptureOnceOutput, CaptureOnceStoredOutput};
 use super::json::write_json_pretty;
 use super::markdown::{render_get_markdown, render_list_markdown, render_recall_markdown};
 use super::model::{
-    GetEnvelope, ListEnvelope, ListRow, RecallEnvelope, RecallMatchConfidence, RecallOutputRow,
-    SnapshotListRow, TimelineListRow, OUTPUT_SCHEMA_VERSION,
+    CaptureOnceOutput, CaptureOnceSkippedOutput, CaptureOnceStoredOutput, GetEnvelope,
+    ListEnvelope, ListRow, RecallEnvelope, RecallMatchConfidence, RecallOutputRow,
+    SettingsIgnoreListOutput, SettingsView, SnapshotListRow, TimelineListRow,
+    OUTPUT_SCHEMA_VERSION,
 };
 use super::text::{
     render_capture_once_text, render_doctor_text, render_get_text, render_image_optimization_text,
@@ -52,16 +52,14 @@ pub(in crate::cli) fn render_capture_once_text_reports_summary_lines() {
 
 #[test]
 pub(in crate::cli) fn render_capture_once_text_skips_preview_for_filtered_content() {
-    let text = render_capture_once_text(&CaptureOnceOutput::Skipped(
-        super::super::commands::CaptureOnceSkippedOutput {
-            status: "skipped",
-            reason: crate::db::CaptureSkipReason::ApiKeyFilter,
-            kind: "plain_text".to_string(),
-            total_bytes: 48,
-            frontmost_app_name: Some("Terminal".to_string()),
-            frontmost_app_bundle_id: Some("com.apple.Terminal".to_string()),
-        },
-    ));
+    let text = render_capture_once_text(&CaptureOnceOutput::Skipped(CaptureOnceSkippedOutput {
+        status: "skipped",
+        reason: crate::db::CaptureSkipReason::ApiKeyFilter,
+        kind: "plain_text".to_string(),
+        total_bytes: 48,
+        frontmost_app_name: Some("Terminal".to_string()),
+        frontmost_app_bundle_id: Some("com.apple.Terminal".to_string()),
+    }));
 
     assert!(text.contains("skipped capture reason=api_key_filter"));
     assert!(text.contains("kind: plain_text"));

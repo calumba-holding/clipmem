@@ -1,12 +1,14 @@
 use std::path::Path;
 
 use anyhow::Result;
-use serde::Serialize;
 
 use crate::db::{CapturePolicy, CaptureSettings};
 
 use crate::cli::formats::{format_duration_compact, OutputFormat};
-use crate::cli::output::{emit_settings_ignore_list_output, emit_settings_view_output};
+use crate::cli::output::{
+    emit_settings_ignore_list_output, emit_settings_view_output, SettingsIgnoreListOutput,
+    SettingsView,
+};
 use crate::cli::schema::{
     SettingsApiKeyFilterArgs, SettingsArgs, SettingsCommand, SettingsIgnoreArgs,
     SettingsIgnoreCommand, SettingsIgnoreListArgs, SettingsOcrArgs, SettingsPauseArgs,
@@ -15,21 +17,6 @@ use crate::cli::schema::{
 
 use super::mutation_support::require_text_or_json;
 use super::runtime::open_or_init_db;
-
-#[derive(Debug, Clone, Serialize)]
-pub(in crate::cli) struct SettingsView {
-    pub(in crate::cli) paused: bool,
-    pub(in crate::cli) api_key_filter_enabled: bool,
-    pub(in crate::cli) ocr_enabled: bool,
-    pub(in crate::cli) retention_seconds: Option<u64>,
-    pub(in crate::cli) retention: String,
-    pub(in crate::cli) ignored_bundle_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub(in crate::cli) struct SettingsIgnoreListOutput {
-    pub(in crate::cli) ignored_bundle_ids: Vec<String>,
-}
 
 pub(in crate::cli) fn settings(db_path: &Path, args: &SettingsArgs) -> Result<()> {
     match &args.command {

@@ -1,13 +1,13 @@
 use std::fmt::Write;
 
-use crate::cli::commands::{
-    CaptureOnceOutput, ExportOutput, RestoreOutput, SettingsIgnoreListOutput, SettingsView,
-};
 use crate::cli::formats::format_duration_seconds;
 use crate::cli::human::{
     format_bytes, format_count, format_timestamp_short, header, push_ignored_bundle_table,
     push_kpi, push_optional_text, push_provider_row, render_bool_status, separator, truncate_cell,
     HumanTheme, WIDTH,
+};
+use crate::cli::output::{
+    CaptureOnceOutput, ExportOutput, RestoreOutput, SettingsIgnoreListOutput, SettingsView,
 };
 use crate::cli::service::ServiceStatusReport;
 use crate::db::{
