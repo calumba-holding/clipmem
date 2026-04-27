@@ -7,7 +7,7 @@ use anyhow::{anyhow, bail, Context, Result};
 
 use super::model::{ServiceContext, DEFAULT_INTERVAL_MS, DIRECT_PLIST_TEMPLATE};
 
-pub(in crate::cli) fn write_direct_plist(context: &ServiceContext) -> Result<()> {
+pub(super) fn write_direct_plist(context: &ServiceContext) -> Result<()> {
     let plist = DIRECT_PLIST_TEMPLATE
         .replace(
             "{{CLIPMEM_BIN}}",
@@ -32,7 +32,7 @@ pub(in crate::cli) fn write_direct_plist(context: &ServiceContext) -> Result<()>
     Ok(())
 }
 
-pub(in crate::cli) fn run_command_checked(
+pub(super) fn run_command_checked(
     output: std::io::Result<std::process::Output>,
     command: &str,
 ) -> Result<()> {
@@ -51,13 +51,13 @@ pub(in crate::cli) fn run_command_checked(
     );
 }
 
-pub(in crate::cli) fn launchctl_bootout(label: &str) -> Result<()> {
+pub(super) fn launchctl_bootout(label: &str) -> Result<()> {
     let target = format!("gui/{}/{}", uid()?, label);
     run_launchctl_idempotent(["bootout", target.as_str()], "launchctl bootout")?;
     Ok(())
 }
 
-pub(in crate::cli) fn launchctl_bootstrap(plist_path: &Path) -> Result<()> {
+pub(super) fn launchctl_bootstrap(plist_path: &Path) -> Result<()> {
     run_command_checked(
         ProcessCommand::new("launchctl")
             .args([
@@ -70,7 +70,7 @@ pub(in crate::cli) fn launchctl_bootstrap(plist_path: &Path) -> Result<()> {
     )
 }
 
-pub(in crate::cli) fn launchctl_enable(label: &str) -> Result<()> {
+pub(super) fn launchctl_enable(label: &str) -> Result<()> {
     run_command_checked(
         ProcessCommand::new("launchctl")
             .args(["enable", &format!("gui/{}/{}", uid()?, label)])
@@ -79,13 +79,13 @@ pub(in crate::cli) fn launchctl_enable(label: &str) -> Result<()> {
     )
 }
 
-pub(in crate::cli) fn launchctl_disable(label: &str) -> Result<()> {
+pub(super) fn launchctl_disable(label: &str) -> Result<()> {
     let target = format!("gui/{}/{}", uid()?, label);
     run_launchctl_idempotent(["disable", target.as_str()], "launchctl disable")?;
     Ok(())
 }
 
-pub(in crate::cli) fn launchctl_kickstart(label: &str) -> Result<()> {
+pub(super) fn launchctl_kickstart(label: &str) -> Result<()> {
     run_command_checked(
         ProcessCommand::new("launchctl")
             .args(["kickstart", "-k", &format!("gui/{}/{}", uid()?, label)])
@@ -123,7 +123,7 @@ fn launchctl_reports_absent_service(output: &std::process::Output) -> bool {
     .any(|marker| combined.contains(marker))
 }
 
-pub(in crate::cli) fn uid() -> Result<String> {
+pub(super) fn uid() -> Result<String> {
     if let Some(uid) = env::var_os("UID") {
         return Ok(uid.to_string_lossy().into_owned());
     }
@@ -138,7 +138,7 @@ pub(in crate::cli) fn uid() -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-pub(in crate::cli) fn ensure_parent_dir(path: &Path) -> Result<()> {
+pub(super) fn ensure_parent_dir(path: &Path) -> Result<()> {
     let parent = path
         .parent()
         .ok_or_else(|| anyhow!("{} has no parent directory", path.display()))?;
@@ -147,7 +147,7 @@ pub(in crate::cli) fn ensure_parent_dir(path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(in crate::cli) fn touch_log_file(path: &Path) -> Result<()> {
+pub(super) fn touch_log_file(path: &Path) -> Result<()> {
     fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -158,7 +158,7 @@ pub(in crate::cli) fn touch_log_file(path: &Path) -> Result<()> {
 }
 
 #[cfg(unix)]
-pub(in crate::cli) fn set_mode_700(path: &Path) -> Result<()> {
+pub(super) fn set_mode_700(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
     let mut perms = fs::metadata(path)?.permissions();
@@ -168,12 +168,12 @@ pub(in crate::cli) fn set_mode_700(path: &Path) -> Result<()> {
 }
 
 #[cfg(not(unix))]
-pub(in crate::cli) fn set_mode_700(_path: &Path) -> Result<()> {
+pub(super) fn set_mode_700(_path: &Path) -> Result<()> {
     Ok(())
 }
 
 #[cfg(unix)]
-pub(in crate::cli) fn set_mode_600(path: &Path) -> Result<()> {
+pub(super) fn set_mode_600(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
 
     let mut perms = fs::metadata(path)?.permissions();
@@ -183,11 +183,11 @@ pub(in crate::cli) fn set_mode_600(path: &Path) -> Result<()> {
 }
 
 #[cfg(not(unix))]
-pub(in crate::cli) fn set_mode_600(_path: &Path) -> Result<()> {
+pub(super) fn set_mode_600(_path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub(in crate::cli) fn xml_escape(value: &str) -> String {
+pub(super) fn xml_escape(value: &str) -> String {
     value
         .replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -196,7 +196,7 @@ pub(in crate::cli) fn xml_escape(value: &str) -> String {
         .replace('\'', "&apos;")
 }
 
-pub(in crate::cli) fn brew_services_available(brew_path: &Path) -> bool {
+pub(super) fn brew_services_available(brew_path: &Path) -> bool {
     ProcessCommand::new(brew_path)
         .args(["services", "list"])
         .output()
@@ -204,7 +204,7 @@ pub(in crate::cli) fn brew_services_available(brew_path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-pub(in crate::cli) fn trusted_binary_path() -> Result<PathBuf> {
+pub(super) fn trusted_binary_path() -> Result<PathBuf> {
     if let Some(path) = env::var_os("CLIPMEM_TEST_ACTIVE_BINARY") {
         return Ok(PathBuf::from(path));
     }
@@ -212,7 +212,7 @@ pub(in crate::cli) fn trusted_binary_path() -> Result<PathBuf> {
     env::current_exe().context("resolve current executable path")
 }
 
-pub(in crate::cli) fn find_executable(name: &str) -> Option<PathBuf> {
+pub(super) fn find_executable(name: &str) -> Option<PathBuf> {
     let path = env::var_os("PATH")?;
     env::split_paths(&path).find_map(|dir| {
         let candidate = dir.join(name);
@@ -220,7 +220,7 @@ pub(in crate::cli) fn find_executable(name: &str) -> Option<PathBuf> {
     })
 }
 
-pub(in crate::cli) fn homebrew_prefix_for_binary(path: &Path) -> Option<PathBuf> {
+pub(super) fn homebrew_prefix_for_binary(path: &Path) -> Option<PathBuf> {
     for prefix in ["/opt/homebrew", "/usr/local"] {
         let prefix = Path::new(prefix);
         if path == prefix.join("bin/clipmem") {
@@ -245,7 +245,7 @@ pub(in crate::cli) fn homebrew_prefix_for_binary(path: &Path) -> Option<PathBuf>
     None
 }
 
-pub(in crate::cli) fn home_dir() -> Result<PathBuf> {
+pub(super) fn home_dir() -> Result<PathBuf> {
     env::var_os("HOME")
         .map(PathBuf::from)
         .ok_or_else(|| anyhow!("HOME is not set"))

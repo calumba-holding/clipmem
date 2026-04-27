@@ -69,14 +69,14 @@ pub(crate) fn uninstall(db_path: &Path) -> Result<ServiceActionReport> {
     }
 }
 
-pub(in crate::cli) fn ensure_no_conflict(status: &ServiceStatusReport) -> Result<()> {
+fn ensure_no_conflict(status: &ServiceStatusReport) -> Result<()> {
     if status.conflict {
         bail!(conflict_message());
     }
     Ok(())
 }
 
-pub(in crate::cli) fn start_with_provider(
+fn start_with_provider(
     context: &ServiceContext,
     selection: &ProviderSelection,
 ) -> Result<ServiceActionReport> {
@@ -86,7 +86,7 @@ pub(in crate::cli) fn start_with_provider(
     }
 }
 
-pub(in crate::cli) fn start_homebrew_provider(
+fn start_homebrew_provider(
     context: &ServiceContext,
     notes: &[String],
 ) -> Result<ServiceActionReport> {
@@ -120,15 +120,13 @@ pub(in crate::cli) fn start_homebrew_provider(
     })
 }
 
-pub(in crate::cli) fn brew_services_formula_unavailable(stderr: &str) -> bool {
+fn brew_services_formula_unavailable(stderr: &str) -> bool {
     stderr.contains("has not implemented #plist")
         || stderr.contains("has not implemented #service")
         || stderr.contains("provided a locatable service file")
 }
 
-pub(in crate::cli) fn stop_homebrew_provider(
-    context: &ServiceContext,
-) -> Result<ServiceActionReport> {
+fn stop_homebrew_provider(context: &ServiceContext) -> Result<ServiceActionReport> {
     let brew = context
         .brew_path
         .as_ref()
@@ -149,9 +147,7 @@ pub(in crate::cli) fn stop_homebrew_provider(
     })
 }
 
-pub(in crate::cli) fn uninstall_homebrew_provider(
-    context: &ServiceContext,
-) -> Result<ServiceActionReport> {
+fn uninstall_homebrew_provider(context: &ServiceContext) -> Result<ServiceActionReport> {
     let mut report = stop_homebrew_provider(context)?;
     report.action = "uninstall";
     report.notes.push(
@@ -160,7 +156,7 @@ pub(in crate::cli) fn uninstall_homebrew_provider(
     Ok(report)
 }
 
-pub(in crate::cli) fn start_direct_provider(
+fn start_direct_provider(
     context: &ServiceContext,
     notes: &[String],
 ) -> Result<ServiceActionReport> {
@@ -183,9 +179,7 @@ pub(in crate::cli) fn start_direct_provider(
     })
 }
 
-pub(in crate::cli) fn stop_direct_provider(
-    context: &ServiceContext,
-) -> Result<ServiceActionReport> {
+fn stop_direct_provider(context: &ServiceContext) -> Result<ServiceActionReport> {
     launchctl_bootout(DIRECT_LABEL)?;
     launchctl_disable(DIRECT_LABEL)?;
     Ok(ServiceActionReport {
@@ -198,9 +192,7 @@ pub(in crate::cli) fn stop_direct_provider(
     })
 }
 
-pub(in crate::cli) fn uninstall_direct_provider(
-    context: &ServiceContext,
-) -> Result<ServiceActionReport> {
+fn uninstall_direct_provider(context: &ServiceContext) -> Result<ServiceActionReport> {
     launchctl_bootout(DIRECT_LABEL)?;
     launchctl_disable(DIRECT_LABEL)?;
     let mut notes = Vec::new();
@@ -228,7 +220,7 @@ pub(in crate::cli) fn uninstall_direct_provider(
     })
 }
 
-pub(in crate::cli) fn seed_capture(db_path: &Path) -> Result<SeedCaptureOutcome> {
+fn seed_capture(db_path: &Path) -> Result<SeedCaptureOutcome> {
     if env::var_os("CLIPMEM_TEST_SKIP_SETUP_CAPTURE_ONCE").as_deref() == Some("1".as_ref()) {
         return Ok(SeedCaptureOutcome::NotAttempted);
     }

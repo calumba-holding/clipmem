@@ -115,7 +115,7 @@ pub(in crate::cli) fn render_service_status_text(report: &ServiceStatusReport) -
     out
 }
 
-pub(in crate::cli) fn render_provider_status(out: &mut String, status: &ServiceProviderStatus) {
+fn render_provider_status(out: &mut String, status: &ServiceProviderStatus) {
     let _ = writeln!(out, "{} service:", status.provider.as_str());
     let _ = writeln!(out, "  label: {}", status.label);
     let _ = writeln!(out, "  state: {:?}", status.state);
@@ -145,15 +145,13 @@ pub(in crate::cli) fn render_provider_status(out: &mut String, status: &ServiceP
     }
 }
 
-pub(in crate::cli) fn render_retention_value(settings: &CaptureSettings) -> String {
+pub(super) fn render_retention_value(settings: &CaptureSettings) -> String {
     settings
         .retention_seconds()
         .map_or_else(|| "forever".to_string(), format_duration_compact)
 }
 
-pub(in crate::cli) const fn render_seed_capture_outcome(
-    outcome: SeedCaptureOutcome,
-) -> &'static str {
+const fn render_seed_capture_outcome(outcome: SeedCaptureOutcome) -> &'static str {
     match outcome {
         SeedCaptureOutcome::Stored => "stored",
         SeedCaptureOutcome::Skipped(CaptureSkipReason::ApiKeyFilter) => "skipped_api_key_filter",

@@ -353,7 +353,7 @@ fn provider_status_probe(input: ProviderStatusInput) -> ServiceProbe<ServiceProv
 }
 
 #[cfg(test)]
-pub(crate) fn configured_binary_path_from_plist(plist_path: &Path) -> Option<String> {
+pub(super) fn configured_binary_path_from_plist(plist_path: &Path) -> Option<String> {
     configured_binary_path_from_plist_probe(plist_path).value
 }
 
@@ -415,7 +415,7 @@ fn configured_binary_path_from_plist_probe(plist_path: &Path) -> ServiceProbe<Op
 }
 
 #[cfg(test)]
-pub(crate) fn configured_binary_path_from_plist_xml(plist_path: &Path) -> Option<String> {
+pub(super) fn configured_binary_path_from_plist_xml(plist_path: &Path) -> Option<String> {
     configured_binary_path_from_plist_xml_probe(plist_path).value
 }
 
@@ -535,7 +535,7 @@ fn process_command_probe(pid: i64) -> ServiceProbe<Option<String>> {
     }
 }
 
-pub(in crate::cli) struct ProviderStatusInput {
+struct ProviderStatusInput {
     provider: ServiceProvider,
     label: &'static str,
     installed: bool,
@@ -546,7 +546,7 @@ pub(in crate::cli) struct ProviderStatusInput {
     stderr_log_path: Option<PathBuf>,
 }
 
-pub(in crate::cli) fn decode_plist_xml_text(value: &str) -> String {
+fn decode_plist_xml_text(value: &str) -> String {
     value
         .replace("&lt;", "<")
         .replace("&gt;", ">")
@@ -555,7 +555,7 @@ pub(in crate::cli) fn decode_plist_xml_text(value: &str) -> String {
         .replace("&amp;", "&")
 }
 
-pub(crate) fn command_binary_path(command: &str) -> Option<String> {
+pub(super) fn command_binary_path(command: &str) -> Option<String> {
     let trimmed = command.trim();
     if trimmed.is_empty() {
         return None;
@@ -573,7 +573,7 @@ pub(crate) fn command_binary_path(command: &str) -> Option<String> {
     trimmed.split_whitespace().next().map(ToString::to_string)
 }
 
-pub(crate) fn watcher_binary_mismatch_note<'a>(
+pub(super) fn watcher_binary_mismatch_note<'a>(
     current_binary_path: &Path,
     providers: impl IntoIterator<Item = &'a ServiceProviderStatus>,
 ) -> Option<String> {
@@ -605,7 +605,7 @@ pub(crate) fn watcher_binary_mismatch_note<'a>(
     None
 }
 
-pub(in crate::cli) fn paths_equivalent(left: &Path, right: &Path) -> bool {
+fn paths_equivalent(left: &Path, right: &Path) -> bool {
     if left == right {
         return true;
     }

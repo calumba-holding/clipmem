@@ -13,7 +13,7 @@ use super::model::{
     ProviderSelection, ServiceContext, ServiceProvider, DIRECT_LABEL, HOMEBREW_LABEL,
 };
 
-pub(crate) fn ensure_supported() -> Result<()> {
+pub(super) fn ensure_supported() -> Result<()> {
     if cfg!(target_os = "macos") {
         Ok(())
     } else {
@@ -21,7 +21,7 @@ pub(crate) fn ensure_supported() -> Result<()> {
     }
 }
 
-pub(crate) fn build_context(db_path: &Path) -> Result<ServiceContext> {
+pub(super) fn build_context(db_path: &Path) -> Result<ServiceContext> {
     let home = home_dir()?;
     let binary_path = trusted_binary_path()?;
     let direct_plist_path = home
@@ -53,7 +53,7 @@ pub(crate) fn build_context(db_path: &Path) -> Result<ServiceContext> {
     })
 }
 
-pub(in crate::cli) fn select_provider(context: &ServiceContext) -> ProviderSelection {
+pub(super) fn select_provider(context: &ServiceContext) -> ProviderSelection {
     let mut notes = Vec::new();
     if let Some(brew_path) = &context.brew_path {
         if context.homebrew_prefix.is_some() {
@@ -86,7 +86,7 @@ pub(in crate::cli) fn select_provider(context: &ServiceContext) -> ProviderSelec
     }
 }
 
-pub(in crate::cli) fn brew_services_can_manage_clipmem(brew: &Path) -> bool {
+fn brew_services_can_manage_clipmem(brew: &Path) -> bool {
     let Ok(output) = ProcessCommand::new(brew)
         .args(["services", "info", "clipmem", "--json"])
         .output()
@@ -101,6 +101,6 @@ pub(in crate::cli) fn brew_services_can_manage_clipmem(brew: &Path) -> bool {
     stdout.contains("\"schedulable\":true") || stdout.contains("\"schedulable\": true")
 }
 
-pub(in crate::cli) fn conflict_message() -> String {
+pub(super) fn conflict_message() -> String {
     "Both the Homebrew service and the direct LaunchAgent are installed. Remove one first with `brew services stop clipmem` or `clipmem service uninstall`.".to_string()
 }

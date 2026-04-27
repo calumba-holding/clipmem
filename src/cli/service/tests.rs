@@ -1,12 +1,14 @@
-use super::{
-    command_binary_path, configured_binary_path_from_plist, configured_binary_path_from_plist_xml,
-    homebrew_prefix_for_binary, watcher_binary_mismatch_note, ServiceProvider,
-    ServiceProviderStatus, ServiceState,
-};
 use std::path::{Path, PathBuf};
 
+use super::launchctl::homebrew_prefix_for_binary;
+use super::model::{ServiceProvider, ServiceProviderStatus, ServiceState};
+use super::status::{
+    command_binary_path, configured_binary_path_from_plist, configured_binary_path_from_plist_xml,
+    watcher_binary_mismatch_note,
+};
+
 #[test]
-pub(in crate::cli) fn homebrew_prefix_matches_opt_homebrew_wrapper_path() {
+fn homebrew_prefix_matches_opt_homebrew_wrapper_path() {
     assert_eq!(
         homebrew_prefix_for_binary(Path::new("/opt/homebrew/bin/clipmem")),
         Some(PathBuf::from("/opt/homebrew"))
@@ -14,7 +16,7 @@ pub(in crate::cli) fn homebrew_prefix_matches_opt_homebrew_wrapper_path() {
 }
 
 #[test]
-pub(in crate::cli) fn homebrew_prefix_matches_usr_local_wrapper_path() {
+fn homebrew_prefix_matches_usr_local_wrapper_path() {
     assert_eq!(
         homebrew_prefix_for_binary(Path::new("/usr/local/bin/clipmem")),
         Some(PathBuf::from("/usr/local"))
@@ -22,7 +24,7 @@ pub(in crate::cli) fn homebrew_prefix_matches_usr_local_wrapper_path() {
 }
 
 #[test]
-pub(in crate::cli) fn homebrew_prefix_matches_opt_homebrew_cellar_path() {
+fn homebrew_prefix_matches_opt_homebrew_cellar_path() {
     assert_eq!(
         homebrew_prefix_for_binary(Path::new("/opt/homebrew/Cellar/clipmem/1.2.3/bin/clipmem")),
         Some(PathBuf::from("/opt/homebrew"))
@@ -30,7 +32,7 @@ pub(in crate::cli) fn homebrew_prefix_matches_opt_homebrew_cellar_path() {
 }
 
 #[test]
-pub(in crate::cli) fn homebrew_prefix_matches_usr_local_cellar_path() {
+fn homebrew_prefix_matches_usr_local_cellar_path() {
     assert_eq!(
         homebrew_prefix_for_binary(Path::new("/usr/local/Cellar/clipmem/1.2.3/bin/clipmem")),
         Some(PathBuf::from("/usr/local"))
@@ -38,7 +40,7 @@ pub(in crate::cli) fn homebrew_prefix_matches_usr_local_cellar_path() {
 }
 
 #[test]
-pub(in crate::cli) fn homebrew_prefix_rejects_non_homebrew_paths() {
+fn homebrew_prefix_rejects_non_homebrew_paths() {
     assert_eq!(
         homebrew_prefix_for_binary(Path::new("/Users/tristan/.cargo/bin/clipmem")),
         None
@@ -46,7 +48,7 @@ pub(in crate::cli) fn homebrew_prefix_rejects_non_homebrew_paths() {
 }
 
 #[test]
-pub(in crate::cli) fn command_binary_path_reads_first_program_argument() {
+fn command_binary_path_reads_first_program_argument() {
     assert_eq!(
         command_binary_path("/Users/test/clipmem/target/debug/clipmem watch --skip-initial"),
         Some("/Users/test/clipmem/target/debug/clipmem".to_string())
@@ -58,7 +60,7 @@ pub(in crate::cli) fn command_binary_path_reads_first_program_argument() {
 }
 
 #[test]
-pub(in crate::cli) fn launchagent_plist_reports_configured_binary_path() {
+fn launchagent_plist_reports_configured_binary_path() {
     let path = std::env::temp_dir().join(format!(
         "clipmem-service-test-{}-{}.plist",
         std::process::id(),
@@ -90,7 +92,7 @@ pub(in crate::cli) fn launchagent_plist_reports_configured_binary_path() {
 }
 
 #[test]
-pub(in crate::cli) fn launchagent_plist_xml_fallback_reports_configured_binary_path() {
+fn launchagent_plist_xml_fallback_reports_configured_binary_path() {
     let path = std::env::temp_dir().join(format!(
         "clipmem-service-test-{}-{}.plist",
         std::process::id(),
@@ -121,7 +123,7 @@ pub(in crate::cli) fn launchagent_plist_xml_fallback_reports_configured_binary_p
 }
 
 #[test]
-pub(in crate::cli) fn watcher_binary_mismatch_reports_configured_path() {
+fn watcher_binary_mismatch_reports_configured_path() {
     let provider = ServiceProviderStatus {
         provider: ServiceProvider::Launchagent,
         label: "io.openclaw.clipmem.watch".to_string(),
