@@ -28,9 +28,19 @@ pub(in crate::cli) fn recall(db_path: &Path, args: &RecallArgs) -> Result<()> {
         compute_recall(&db, args, &filters),
         "recall failed; if this is unexpected, run `clipmem service status` and `clipmem doctor`",
     )?;
+    let envelope = build_recall_envelope(&db, args, &filters, &recall)?;
+    emit_recall_output(format, &envelope)
+}
+
+fn build_recall_envelope(
+    db: &Database,
+    args: &RecallArgs,
+    filters: &RetrievalFilters,
+    recall: &RecallComputation,
+) -> Result<RecallEnvelope> {
     let generated_at = generated_at_now()?;
     let projections = load_snapshot_projections(
-        &db,
+        db,
         std::iter::once(recall.best.hit.snapshot_id()).chain(
             recall
                 .alternatives
@@ -49,12 +59,12 @@ pub(in crate::cli) fn recall(db_path: &Path, args: &RecallArgs) -> Result<()> {
         .quote
         .then(|| best_candidate.best_text.clone())
         .filter(|text| !text.is_empty());
-    let envelope = RecallEnvelope {
+    Ok(RecallEnvelope {
         schema_version: OUTPUT_SCHEMA_VERSION,
         command: "recall",
         generated_at,
         applied_filters: merge_applied_filters(
-            &filters,
+            filters,
             json!({
                 "limit": args.limit,
                 "query_present": args.query.is_some(),
@@ -82,10 +92,9 @@ pub(in crate::cli) fn recall(db_path: &Path, args: &RecallArgs) -> Result<()> {
             .collect(),
         best_match_confidence: confidence,
         best_match_score,
-        why_selected: recall.why_selected,
+        why_selected: recall.why_selected.clone(),
         quoted_text,
-    };
-    emit_recall_output(format, &envelope)
+    })
 }
 
 pub(in crate::cli) fn query_search_results(
