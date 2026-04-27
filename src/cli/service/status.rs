@@ -13,49 +13,12 @@ use super::render::render_retention_value;
 pub(crate) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
     ensure_supported()?;
     let context = build_context(db_path)?;
-    let direct_row = launchctl_row_probe(DIRECT_LABEL);
-    let homebrew_row = launchctl_row_probe(HOMEBREW_LABEL);
-    let direct_configured_binary =
-        configured_binary_path_from_plist_probe(&context.direct_plist_path);
-    let homebrew_configured_binary =
-        configured_binary_path_from_plist_probe(&context.homebrew_plist_path);
-    let direct_installed = context.direct_plist_path.is_file() || direct_row.value.is_some();
-    let homebrew_installed = context.homebrew_plist_path.is_file() || homebrew_row.value.is_some();
-    let direct_status = provider_status_probe(ProviderStatusInput {
-        provider: ServiceProvider::Launchagent,
-        label: DIRECT_LABEL,
-        installed: direct_installed,
-        row: direct_row.value,
-        plist_path: Some(context.direct_plist_path.clone()),
-        configured_binary_path: direct_configured_binary.value,
-        stdout_log_path: Some(context.direct_stdout_path.clone()),
-        stderr_log_path: Some(context.direct_stderr_path.clone()),
-    });
-    let homebrew_status = provider_status_probe(ProviderStatusInput {
-        provider: ServiceProvider::Homebrew,
-        label: HOMEBREW_LABEL,
-        installed: homebrew_installed,
-        row: homebrew_row.value,
-        plist_path: Some(context.homebrew_plist_path.clone()),
-        configured_binary_path: homebrew_configured_binary.value,
-        stdout_log_path: context
-            .homebrew_prefix
-            .as_ref()
-            .map(|prefix| prefix.join("var/log/clipmem.log")),
-        stderr_log_path: context
-            .homebrew_prefix
-            .as_ref()
-            .map(|prefix| prefix.join("var/log/clipmem.error.log")),
-    });
-    let mut probe_warnings = Vec::new();
-    probe_warnings.extend(direct_row.warnings);
-    probe_warnings.extend(homebrew_row.warnings);
-    probe_warnings.extend(direct_configured_binary.warnings);
-    probe_warnings.extend(homebrew_configured_binary.warnings);
-    probe_warnings.extend(direct_status.warnings);
-    probe_warnings.extend(homebrew_status.warnings);
-    let direct_status = direct_status.value;
-    let homebrew_status = homebrew_status.value;
+    let direct_probe = probe_provider_status(ProviderProbeSpec::launchagent(&context));
+    let homebrew_probe = probe_provider_status(ProviderProbeSpec::homebrew(&context));
+    let mut probe_warnings = direct_probe.warnings;
+    probe_warnings.extend(homebrew_probe.warnings);
+    let direct_status = direct_probe.status;
+    let homebrew_status = homebrew_probe.status;
     let conflict = homebrew_status.installed && direct_status.installed;
     let selection = select_provider(&context);
     let database_status = ServiceDatabaseStatus::load(&context.db_path);
@@ -96,6 +59,77 @@ pub(crate) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
         watcher_binary_mismatch_note,
         notes,
     })
+}
+
+struct ProviderProbeSpec {
+    provider: ServiceProvider,
+    label: &'static str,
+    plist_path: PathBuf,
+    stdout_log_path: Option<PathBuf>,
+    stderr_log_path: Option<PathBuf>,
+}
+
+impl ProviderProbeSpec {
+    fn launchagent(context: &ServiceContext) -> Self {
+        Self {
+            provider: ServiceProvider::Launchagent,
+            label: DIRECT_LABEL,
+            plist_path: context.direct_plist_path.clone(),
+            stdout_log_path: Some(context.direct_stdout_path.clone()),
+            stderr_log_path: Some(context.direct_stderr_path.clone()),
+        }
+    }
+
+    fn homebrew(context: &ServiceContext) -> Self {
+        Self {
+            provider: ServiceProvider::Homebrew,
+            label: HOMEBREW_LABEL,
+            plist_path: context.homebrew_plist_path.clone(),
+            stdout_log_path: context
+                .homebrew_prefix
+                .as_ref()
+                .map(|prefix| prefix.join("var/log/clipmem.log")),
+            stderr_log_path: context
+                .homebrew_prefix
+                .as_ref()
+                .map(|prefix| prefix.join("var/log/clipmem.error.log")),
+        }
+    }
+}
+
+struct ProviderProbeResult {
+    status: ServiceProviderStatus,
+    warnings: Vec<String>,
+}
+
+fn probe_provider_status(spec: ProviderProbeSpec) -> ProviderProbeResult {
+    let ServiceProbe {
+        value: row,
+        mut warnings,
+    } = launchctl_row_probe(spec.label);
+    let ServiceProbe {
+        value: configured_binary_path,
+        warnings: configured_binary_warnings,
+    } = configured_binary_path_from_plist_probe(&spec.plist_path);
+    warnings.extend(configured_binary_warnings);
+
+    let installed = spec.plist_path.is_file() || row.is_some();
+    let ServiceProbe {
+        value: status,
+        warnings: status_warnings,
+    } = provider_status_probe(ProviderStatusInput {
+        provider: spec.provider,
+        label: spec.label,
+        installed,
+        row,
+        plist_path: Some(spec.plist_path),
+        configured_binary_path,
+        stdout_log_path: spec.stdout_log_path,
+        stderr_log_path: spec.stderr_log_path,
+    });
+    warnings.extend(status_warnings);
+
+    ProviderProbeResult { status, warnings }
 }
 
 #[derive(Debug)]
