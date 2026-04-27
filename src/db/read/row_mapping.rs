@@ -1,19 +1,12 @@
-use rusqlite::{Error as SqlError, ErrorCode, Row};
+use rusqlite::Row;
 
-use crate::db::read::types::{QueryAnalysis, LIST_VALUE_SEPARATOR, MATCHED_FIELDS_SEPARATOR};
+use crate::db::read::file_url::normalize_file_path;
 use crate::db::sqlite_helpers::{row_enum, row_usize};
 use crate::db::types::{Page, SearchMode, SearchResults};
 use crate::model::{SearchHit, SearchHitParts, TimelineEvent};
 
-pub(in crate::db) fn is_simple_fts_query(analysis: &QueryAnalysis) -> bool {
-    analysis.exact_phrase.is_none()
-        && !analysis.literal_preferred
-        && !analysis.trimmed.is_empty()
-        && analysis
-            .trimmed
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric())
-}
+const LIST_VALUE_SEPARATOR: char = '\u{1f}';
+const MATCHED_FIELDS_SEPARATOR: char = '\u{1e}';
 
 pub(in crate::db) fn map_search_hit_row(
     row: &Row<'_>,
@@ -192,205 +185,12 @@ pub(in crate::db) fn split_match_fields(value: &str) -> Vec<String> {
     }
 }
 
-pub(in crate::db) fn normalize_file_path(value: &str) -> String {
-    decode_file_url_path(value).unwrap_or_else(|| value.to_string())
-}
-
-pub(in crate::db) fn decode_file_url_path(value: &str) -> Option<String> {
-    const PREFIX: &str = "file://";
-    if !has_ascii_prefix(value, PREFIX) {
-        return None;
-    }
-
-    let rest = strip_localhost_authority(&value[PREFIX.len()..]);
-
-    if rest.is_empty() {
-        None
-    } else if rest.as_bytes().contains(&b'%') {
-        Some(percent_decode(rest))
-    } else {
-        Some(rest.to_string())
-    }
-}
-
-fn strip_localhost_authority(value: &str) -> &str {
-    const LOCALHOST: &str = "localhost";
-    if has_ascii_prefix(value, LOCALHOST)
-        && (value.len() == LOCALHOST.len() || value.as_bytes()[LOCALHOST.len()] == b'/')
-    {
-        &value[LOCALHOST.len()..]
-    } else {
-        value
-    }
-}
-
-fn has_ascii_prefix(value: &str, prefix: &str) -> bool {
-    value
-        .as_bytes()
-        .get(..prefix.len())
-        .is_some_and(|candidate| candidate.eq_ignore_ascii_case(prefix.as_bytes()))
-}
-
-pub(in crate::db) fn percent_decode(value: &str) -> String {
-    let bytes = value.as_bytes();
-    if !bytes.contains(&b'%') {
-        return value.to_string();
-    }
-
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-
-    while index < bytes.len() {
-        if bytes[index] == b'%' && index + 2 < bytes.len() {
-            if let (Some(first), Some(second)) =
-                (hex_value(bytes[index + 1]), hex_value(bytes[index + 2]))
-            {
-                out.push((first << 4) | second);
-                index += 3;
-                continue;
-            }
-        }
-
-        out.push(bytes[index]);
-        index += 1;
-    }
-
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-pub(in crate::db) fn hex_value(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
-    }
-}
-
-pub(in crate::db) fn analyze_query(query: &str) -> QueryAnalysis {
-    let trimmed = query.trim().to_string();
-    let lower = trimmed.to_ascii_lowercase();
-    let exact_phrase = trimmed
-        .strip_prefix('"')
-        .and_then(|value| value.strip_suffix('"'))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned);
-
-    let is_url_like = lower.starts_with("http://")
-        || lower.starts_with("https://")
-        || lower.starts_with("file://");
-    let is_path_like = trimmed.starts_with("~/")
-        || trimmed.starts_with('/')
-        || trimmed.starts_with("./")
-        || trimmed.starts_with("../")
-        || trimmed.contains('\\');
-    let is_bundle_id_like = lower.contains('.')
-        && !lower.contains(' ')
-        && !is_url_like
-        && !lower.contains('/')
-        && !lower.contains('\\')
-        && !lower.starts_with("~/");
-    let punctuation_heavy =
-        trimmed.contains(':') || trimmed.contains('/') || trimmed.contains('\\');
-    let shell_fragment = trimmed.contains(" -")
-        || trimmed.contains(" --")
-        || trimmed.contains(" | ")
-        || trimmed.contains(" && ")
-        || trimmed.contains('=')
-        || trimmed.contains('$');
-    let literal_preferred = trimmed.contains('%')
-        || trimmed.contains('_')
-        || trimmed.contains('\\')
-        || is_url_like
-        || is_path_like
-        || is_bundle_id_like
-        || punctuation_heavy
-        || shell_fragment;
-    let path_fragment = if let Some(value) = trimmed.strip_prefix("~/") {
-        Some(file_url_cache_path_fragment(value.trim_start_matches('/')))
-    } else if lower.starts_with("file://") {
-        Some(file_url_cache_path_fragment(&normalize_file_path(&trimmed)))
-    } else if trimmed.starts_with('/')
-        || trimmed.starts_with("./")
-        || trimmed.starts_with("../")
-        || (trimmed.contains('\\')
-            && (trimmed.starts_with(".\\")
-                || trimmed.starts_with("..\\")
-                || trimmed.starts_with('\\')
-                || trimmed.contains(":\\")))
-    {
-        Some(file_url_cache_path_fragment(&trimmed))
-    } else {
-        None
-    }
-    .filter(|value| !value.is_empty());
-
-    QueryAnalysis {
-        trimmed,
-        lower,
-        exact_phrase,
-        literal_preferred,
-        path_fragment,
-    }
-}
-
-pub(in crate::db) fn file_url_cache_path_fragment(value: &str) -> String {
-    value
-        .to_ascii_lowercase()
-        .bytes()
-        .map(|byte| match byte {
-            b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' | b':' => {
-                (byte as char).to_string()
-            }
-            _ => format!("%{byte:02x}"),
-        })
-        .collect()
-}
-
-pub(in crate::db) fn is_invalid_fts_query(error: &SqlError) -> bool {
-    let sqlite_unknown_error = matches!(error.sqlite_error_code(), Some(ErrorCode::Unknown));
-
-    match error {
-        SqlError::SqlInputError { msg, .. } => invalid_fts_message(msg),
-        SqlError::SqliteFailure(_, Some(msg)) if sqlite_unknown_error => invalid_fts_message(msg),
-        _ => false,
-    }
-}
-
-pub(in crate::db) fn invalid_fts_message(message: &str) -> bool {
-    let message = message.to_ascii_lowercase();
-    message.contains("fts5: syntax error")
-        || message.contains("malformed match expression")
-        || message.contains("unterminated string")
-        || message.contains("no such column:")
-}
-
-pub(in crate::db) fn literal_fts_match_query(analysis: &QueryAnalysis) -> Option<String> {
-    let candidate = analysis.path_fragment.as_deref().unwrap_or(&analysis.lower);
-
-    if candidate.chars().count() < 3 {
-        return None;
-    }
-
-    if analysis
-        .trimmed
-        .chars()
-        .any(|ch| matches!(ch, '%' | '_' | '\\'))
-    {
-        return None;
-    }
-
-    Some(format!("\"{}\"", candidate.replace('"', "\"\"")))
-}
-
 #[cfg(test)]
 mod profile_tests {
     use std::time::{Duration, Instant};
 
-    use super::{
-        hex_value, split_aggregated_file_paths, split_aggregated_values, LIST_VALUE_SEPARATOR,
-    };
+    use super::{split_aggregated_file_paths, split_aggregated_values, LIST_VALUE_SEPARATOR};
+    use crate::db::read::file_url::hex_value;
 
     #[test]
     #[ignore = "profiling harness for aggregated file path row mapping"]

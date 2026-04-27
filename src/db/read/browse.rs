@@ -7,10 +7,10 @@ use crate::db::read::filter_sql::{
     can_use_snapshot_stats_since_filter, effective_since_param, event_filter_clause,
     requires_matching_events, snapshot_filter_clause,
 };
-use crate::db::read::mapping::{
+use crate::db::read::queries::{recent_query, timeline_query};
+use crate::db::read::row_mapping::{
     map_search_hit_row, map_timeline_event_row, paginate_rows, paginate_timeline_rows,
 };
-use crate::db::read::queries::{recent_query, timeline_query};
 use crate::db::read::stats::stats_params;
 use crate::db::sqlite_helpers::{collect_rows, usize_to_i64};
 use crate::db::types::{

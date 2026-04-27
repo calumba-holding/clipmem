@@ -3,11 +3,11 @@ use anyhow::Result;
 use crate::db::{Database, RetrievalFilters, SearchMode, SearchResults};
 use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
 
-use crate::db::read::mapping::{
-    analyze_query, invalid_fts_message, is_simple_fts_query, literal_fts_match_query,
-    normalize_file_path,
-};
+use crate::db::read::file_url::normalize_file_path;
 use crate::db::read::queries::fts_query;
+use crate::db::read::query_analysis::{
+    analyze_query, invalid_fts_message, is_simple_fts_query, literal_fts_match_query,
+};
 
 pub(in crate::db) fn fake_snapshot(
     change_count: i64,

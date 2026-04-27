@@ -1,11 +1,12 @@
 mod browse;
+mod file_url;
 mod filter_sql;
-mod mapping;
 mod queries;
+mod query_analysis;
+mod row_mapping;
 mod search;
 mod snapshot;
 mod stats;
-mod types;
 
 #[cfg(test)]
 mod tests;
