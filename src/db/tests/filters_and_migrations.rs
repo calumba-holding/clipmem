@@ -105,6 +105,15 @@ fn search_literal_matches_file_url_paths() -> Result<()> {
         hits.hits()[0].preview_text(),
         "file:///tmp/repo/42/Cargo.toml"
     );
+
+    let filtered_hits =
+        db.search_literal("/tmp/repo/42/Cargo.toml", 10, &filters_with_app("finder"))?;
+
+    assert_eq!(filtered_hits.hits().len(), 1);
+    assert_eq!(
+        filtered_hits.hits()[0].snapshot_id(),
+        hits.hits()[0].snapshot_id()
+    );
     Ok(())
 }
 

@@ -330,13 +330,13 @@ impl Database {
             .path_fragment
             .as_ref()
             .map(|value| format!("%{}%", escape_like_pattern(value)));
-        let rows = if let Some(literal_match) = literal_match.as_deref() {
-            stmt.query_map(
+        let rows = stmt
+            .query_map(
                 named_params! {
                     ":query_lower" : analysis.lower.as_str(),
                     ":like" : like,
                     ":prefix_like" : prefix_like.as_str(),
-                    ":literal_match" : literal_match,
+                    ":literal_match" : literal_match.as_deref(),
                     ":path_fragment_like" : path_fragment_like.as_deref(),
                     ":exact_phrase_lower" : analysis.exact_phrase.as_deref(),
                     ":since" : params.since.as_deref(),
@@ -358,35 +358,7 @@ impl Database {
                 },
                 map_scored_search_hit_row,
             )
-        } else {
-            stmt.query_map(
-                named_params! {
-                    ":query_lower" : analysis.lower.as_str(),
-                    ":like" : like,
-                    ":prefix_like" : prefix_like.as_str(),
-                    ":path_fragment_like" : path_fragment_like.as_deref(),
-                    ":exact_phrase_lower" : analysis.exact_phrase.as_deref(),
-                    ":since" : params.since.as_deref(),
-                    ":until" : params.until,
-                    ":app_like" : params.app_like.as_deref(),
-                    ":bundle_id" : params.bundle_id.as_deref(),
-                    ":kind" : params.kind,
-                    ":has_text" : params.has_text,
-                    ":has_url" : params.has_url,
-                    ":has_file_url" : params.has_file_url,
-                    ":has_image" : params.has_image,
-                    ":has_pdf" : params.has_pdf,
-                    ":min_bytes" : params.min_bytes,
-                    ":max_bytes" : params.max_bytes,
-                    ":cursor_score" : params.cursor_score,
-                    ":cursor_last_seen_at" : params.cursor_last_seen_at,
-                    ":cursor_snapshot_id" : params.cursor_snapshot_id,
-                    ":limit" : params.fetch_limit,
-                },
-                map_scored_search_hit_row,
-            )
-        }
-        .context("execute literal search query")?;
+            .context("execute literal search query")?;
 
         let native_hits = collect_search_results(rows, limit, SearchMode::Literal, "literal")?;
         let ocr_hits = self.search_ocr_literal_hits(&analysis, limit, filters, cursor)?;
@@ -529,10 +501,10 @@ impl Database {
             .conn
             .prepare(&sql)
             .context("prepare file-path literal search query")?;
-        let rows = if let Some(literal_match) = literal_match.as_deref() {
-            stmt.query_map(
+        let rows = stmt
+            .query_map(
                 named_params! {
-                    ":literal_match" : literal_match,
+                    ":literal_match" : literal_match.as_deref(),
                     ":path_fragment" : path_fragment,
                     ":path_like" : path_like.as_str(),
                     ":since" : params.since.as_deref(),
@@ -554,32 +526,7 @@ impl Database {
                 },
                 map_scored_search_hit_row,
             )
-        } else {
-            stmt.query_map(
-                named_params! {
-                    ":path_fragment" : path_fragment,
-                    ":path_like" : path_like.as_str(),
-                    ":since" : params.since.as_deref(),
-                    ":until" : params.until,
-                    ":app_like" : params.app_like.as_deref(),
-                    ":bundle_id" : params.bundle_id.as_deref(),
-                    ":kind" : params.kind,
-                    ":has_text" : params.has_text,
-                    ":has_url" : params.has_url,
-                    ":has_file_url" : params.has_file_url,
-                    ":has_image" : params.has_image,
-                    ":has_pdf" : params.has_pdf,
-                    ":min_bytes" : params.min_bytes,
-                    ":max_bytes" : params.max_bytes,
-                    ":cursor_score" : params.cursor_score,
-                    ":cursor_last_seen_at" : params.cursor_last_seen_at,
-                    ":cursor_snapshot_id" : params.cursor_snapshot_id,
-                    ":limit" : params.fetch_limit,
-                },
-                map_scored_search_hit_row,
-            )
-        }
-        .context("execute file-path literal search query")?;
+            .context("execute file-path literal search query")?;
 
         collect_search_results(rows, limit, SearchMode::Literal, "file-path literal")
     }

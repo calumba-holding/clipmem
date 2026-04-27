@@ -261,6 +261,7 @@ pub(in crate::db) fn literal_query(
                )
                AND {snapshot_filter_clause}
                AND {base_event_filter_clause}
+               AND {literal_match_parameter_bindings_clause}
          ) base
          WHERE (
              :cursor_score IS NULL
@@ -283,6 +284,8 @@ pub(in crate::db) fn literal_query(
             include_matching_events,
             use_snapshot_event_cache,
         ),
+        literal_match_parameter_bindings_clause =
+            parameter_bindings_clause(&[":literal_match"]),
         snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
     )
 }
@@ -383,6 +386,7 @@ pub(in crate::db) fn file_path_literal_query(
              WHERE lower(COALESCE(sp.file_urls, '')) LIKE :path_like ESCAPE '\\'
                AND {snapshot_filter_clause}
                AND {base_event_filter_clause}
+               AND {literal_match_parameter_bindings_clause}
          ) base
          WHERE (
              :cursor_score IS NULL
@@ -406,6 +410,8 @@ pub(in crate::db) fn file_path_literal_query(
             include_matching_events,
             use_snapshot_event_cache,
         ),
+        literal_match_parameter_bindings_clause =
+            parameter_bindings_clause(&[":literal_match"]),
     )
 }
 
