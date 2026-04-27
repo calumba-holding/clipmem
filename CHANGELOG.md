@@ -29,6 +29,8 @@ versioning where practical.
 - Fixed file URL path normalization so `file://localhost/...` clipboard
   entries decode and search correctly even when the `localhost` authority or
   URL scheme uses uppercase characters.
+- Corrected the `should_capture_change` Rustdoc so it describes the boolean
+  watch-state contract instead of a nonexistent persistence error path.
 
 ### Security
 

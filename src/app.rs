@@ -22,11 +22,10 @@ impl Default for WatchState {
     }
 }
 
-/// Update watch state for one captured snapshot and persist it when needed.
+/// Return whether this `change_count` should be captured.
 ///
-/// # Errors
-///
-/// Returns an error if storing the snapshot or its capture event fails.
+/// When `skip_initial` is enabled, the first observed change is marked handled
+/// without being captured.
 pub fn should_capture_change(
     change_count: i64,
     skip_initial: bool,
