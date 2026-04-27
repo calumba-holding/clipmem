@@ -3,6 +3,53 @@ use clap::error::ErrorKind;
 use super::exit::{CliError, CliExitCode};
 use super::output::UnsupportedFormatError;
 
+#[derive(Debug)]
+pub(in crate::cli) struct CliCommandError {
+    exit_code: CliExitCode,
+    message: String,
+}
+
+impl CliCommandError {
+    fn new(exit_code: CliExitCode, message: impl Into<String>) -> Self {
+        Self {
+            exit_code,
+            message: message.into(),
+        }
+    }
+
+    const fn exit_code(&self) -> CliExitCode {
+        self.exit_code
+    }
+
+    fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl std::fmt::Display for CliCommandError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for CliCommandError {}
+
+pub(in crate::cli) fn invalid_args_error(message: impl Into<String>) -> anyhow::Error {
+    CliCommandError::new(CliExitCode::InvalidArgs, message).into()
+}
+
+pub(in crate::cli) fn not_found_error(message: impl Into<String>) -> anyhow::Error {
+    CliCommandError::new(CliExitCode::NotFound, message).into()
+}
+
+pub(in crate::cli) fn db_error(message: impl Into<String>) -> anyhow::Error {
+    CliCommandError::new(CliExitCode::DbError, message).into()
+}
+
+pub(in crate::cli) fn platform_error(message: impl Into<String>) -> anyhow::Error {
+    CliCommandError::new(CliExitCode::PlatformError, message).into()
+}
+
 pub(super) fn classify_clap_error(error: clap::Error) -> CliError {
     CliError::new(classify_clap_exit_code(error.kind()), error.to_string())
 }
@@ -15,6 +62,10 @@ pub(super) fn classify_clap_exit_code(kind: ErrorKind) -> CliExitCode {
 }
 
 pub(super) fn classify_command_error(error: anyhow::Error) -> CliError {
+    if let Some(error) = error.downcast_ref::<CliCommandError>() {
+        return CliError::new(error.exit_code(), error.message().to_string());
+    }
+
     let message = sanitize_error_message(&error);
     let exit_code = if is_unsupported_format_error(&error, &message) {
         CliExitCode::UnsupportedFormat

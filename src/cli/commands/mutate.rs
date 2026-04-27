@@ -14,6 +14,7 @@ use crate::cli::commands::runtime::{open_existing_db, open_or_init_db};
 use crate::cli::commands::types::{
     ExportOutput, RestoreOutput, SettingsIgnoreListOutput, SettingsView,
 };
+use crate::cli::errors::{invalid_args_error, not_found_error};
 use crate::cli::formats::{format_duration_compact, OutputFormat, ProgressFormat};
 use crate::cli::human::{
     render_doctor_human, render_export_human, render_forget_human, render_image_optimization_human,
@@ -38,7 +39,7 @@ pub(in crate::cli) fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -
     anyhow::Context::with_context(db.find_snapshot(args.snapshot_id, 1), || {
         format!("export failed for snapshot {}", args.snapshot_id)
     })?
-    .ok_or_else(|| anyhow!("snapshot {} was not found", args.snapshot_id))?;
+    .ok_or_else(|| not_found_error(format!("snapshot {} was not found", args.snapshot_id)))?;
     if !db.snapshot_matches_filters(args.snapshot_id, &filters)? {
         return Err(anyhow!(
             "snapshot {} does not satisfy the active filters",
@@ -48,12 +49,10 @@ pub(in crate::cli) fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -
     let representation = db
         .find_representation_bytes(args.snapshot_id, args.item, &args.uti)?
         .ok_or_else(|| {
-            anyhow!(
+            not_found_error(format!(
                 "representation not found for snapshot {} item {} uti {}",
-                args.snapshot_id,
-                args.item,
-                args.uti
-            )
+                args.snapshot_id, args.item, args.uti
+            ))
         })?;
 
     if let Some(parent) = args.out.parent() {
@@ -92,7 +91,7 @@ pub(in crate::cli) fn restore_snapshot(db_path: &Path, args: &RestoreArgs) -> Re
     let snapshot = anyhow::Context::with_context(db.find_snapshot(args.snapshot_id, 1), || {
         format!("restore failed for snapshot {}", args.snapshot_id)
     })?
-    .ok_or_else(|| anyhow!("snapshot {} was not found", args.snapshot_id))?;
+    .ok_or_else(|| not_found_error(format!("snapshot {} was not found", args.snapshot_id)))?;
     db.register_pending_restore(snapshot.sha256())
         .context("register pending restore")?;
     let report = match restore_items(snapshot.items()) {
@@ -126,7 +125,7 @@ pub(in crate::cli) fn forget_snapshot(db_path: &Path, args: &ForgetArgs) -> Resu
     let report = anyhow::Context::with_context(db.forget_snapshot(args.snapshot_id), || {
         format!("forget failed for snapshot {}", args.snapshot_id)
     })?
-    .ok_or_else(|| anyhow!("snapshot {} was not found", args.snapshot_id))?;
+    .ok_or_else(|| not_found_error(format!("snapshot {} was not found", args.snapshot_id)))?;
     match format {
         OutputFormat::Json => emit_json_or_text(true, &report, render_forget_text)?,
         OutputFormat::Human => print!("{}", render_forget_human(&report)),
@@ -351,22 +350,22 @@ pub(in crate::cli) fn create_export_destination(path: &Path, force: bool) -> Res
         Ok(metadata) => {
             let file_type = metadata.file_type();
             if file_type.is_symlink() {
-                return Err(anyhow!(
+                return Err(invalid_args_error(format!(
                     "export destination {} is a symbolic link; choose a regular file path instead",
                     path.display()
-                ));
+                )));
             }
             if !metadata.is_file() {
-                return Err(anyhow!(
+                return Err(invalid_args_error(format!(
                     "export destination {} is not a regular file",
                     path.display()
-                ));
+                )));
             }
             if !force {
-                return Err(anyhow!(
+                return Err(invalid_args_error(format!(
                     "export destination {} already exists (pass --force to replace it)",
                     path.display()
-                ));
+                )));
             }
 
             std::fs::remove_file(path)

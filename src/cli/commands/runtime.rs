@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering as AtomicOrdering;
 use std::thread;
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result};
 
 use crate::app::{format_watch_capture_line, mark_change_handled, WatchState};
 use crate::db::{CaptureStoreOutcome, Database};
@@ -14,6 +14,7 @@ use super::types::{
     capture_skip_reason_label, CaptureOnceOutput, CaptureOnceSkippedOutput, CaptureOnceStoredOutput,
 };
 use super::OCR_WORKER_RUNNING;
+use crate::cli::errors::{db_error, platform_error};
 use crate::cli::human::render_capture_once_human;
 use crate::cli::output::{emit_json_or_text, render_capture_once_text};
 use crate::cli::schema::{CaptureOnceArgs, WatchArgs};
@@ -51,16 +52,15 @@ where
     CountFn: FnOnce() -> Result<i64>,
     CaptureFn: FnOnce() -> Result<ClipboardSnapshot>,
 {
-    let change_count = anyhow::Context::context(
-        current_change_count_fn(),
-        "read clipboard change count failed",
-    )?;
+    let change_count = current_change_count_fn()
+        .map_err(|error| platform_error(format!("read clipboard change count failed: {error}")))?;
 
     if !crate::app::should_capture_change(change_count, args.skip_initial, state) {
         return Ok(());
     }
 
-    let snapshot = anyhow::Context::context(capture_snapshot_fn(), "capture failed")?;
+    let snapshot = capture_snapshot_fn()
+        .map_err(|error| platform_error(format!("capture failed: {error}")))?;
     let settings = db
         .capture_settings()
         .context("load capture settings failed")?;
@@ -150,8 +150,8 @@ pub(in crate::cli) fn start_ocr_worker(db_path: PathBuf) {
 
 pub(in crate::cli) fn capture_once(db_path: &Path, args: &CaptureOnceArgs) -> Result<()> {
     let mut db = open_or_init_db(db_path)?;
-    let snapshot =
-        anyhow::Context::context(capture_snapshot(), "capture-once clipboard read failed")?;
+    let snapshot = capture_snapshot()
+        .map_err(|error| platform_error(format!("capture-once clipboard read failed: {error}")))?;
     let payload = match anyhow::Context::context(
         db.store_capture_if_allowed(&snapshot),
         "capture-once database write failed",
@@ -183,10 +183,10 @@ pub(in crate::cli) fn capture_once(db_path: &Path, args: &CaptureOnceArgs) -> Re
 
 pub(in crate::cli) fn open_existing_db(path: &Path) -> Result<Database> {
     if !path.is_file() {
-        bail!(
+        return Err(db_error(format!(
             "database does not exist at {}. Run `clipmem setup` to initialize capture.",
             path.display()
-        );
+        )));
     }
     match Database::open_existing(path) {
         Ok(db) => {
@@ -195,9 +195,9 @@ pub(in crate::cli) fn open_existing_db(path: &Path) -> Result<Database> {
                     .chain()
                     .any(|cause| cause.to_string().contains("prerelease schema"))
                 {
-                    bail!(
+                    return Err(db_error(
                         "database operation failed; this may be an incompatible prerelease schema. Move the database aside and run `clipmem setup`."
-                    );
+                    ));
                 }
                 return Err(error);
             }
@@ -208,10 +208,10 @@ pub(in crate::cli) fn open_existing_db(path: &Path) -> Result<Database> {
                 .chain()
                 .any(|cause| cause.to_string().contains("incompatible prerelease schema"))
             {
-                Err(anyhow!(
+                Err(db_error(format!(
                     "incompatible prerelease schema detected at {}. Move the database aside and run `clipmem setup`.",
                     path.display()
-                ))
+                )))
             } else {
                 Err(error).with_context(|| format!("failed to open database at {}", path.display()))
             }

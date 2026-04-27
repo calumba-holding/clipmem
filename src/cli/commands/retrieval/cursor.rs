@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::cli::errors::invalid_args_error;
 use crate::db::{
     RecentCursorState, RetrievalFilters, SearchCursorState, SearchMode, TimelineCursorState,
     TimelineSort,
@@ -17,25 +18,27 @@ pub(in crate::cli) fn parse_search_cursor(
 ) -> Result<SearchCursorState> {
     let token: SearchCursorToken = decode_cursor(encoded)?;
     if token.command != "search" {
-        return Err(anyhow!(
+        return Err(invalid_args_error(format!(
             "cursor is for command `{}` but was used with `search`",
             token.command
-        ));
+        )));
     }
     if token.query != query || token.requested_mode != requested_mode {
-        return Err(anyhow!(
-            "cursor does not match the active search query or mode"
+        return Err(invalid_args_error(
+            "cursor does not match the active search query or mode",
         ));
     }
     if token.filters != *filters {
-        return Err(anyhow!("cursor does not match the active search filters"));
+        return Err(invalid_args_error(
+            "cursor does not match the active search filters",
+        ));
     }
     if requested_mode != SearchMode::Auto && token.mode_used != requested_mode {
-        return Err(anyhow!(
+        return Err(invalid_args_error(format!(
             "cursor mode `{}` does not match the requested search mode `{}`",
             token.mode_used.as_str(),
             requested_mode.as_str()
-        ));
+        )));
     }
 
     Ok(SearchCursorState::new(
@@ -52,13 +55,15 @@ pub(in crate::cli) fn parse_recent_cursor(
 ) -> Result<RecentCursorState> {
     let token: RecentCursorToken = decode_cursor(encoded)?;
     if token.command != "recent" {
-        return Err(anyhow!(
+        return Err(invalid_args_error(format!(
             "cursor is for command `{}` but was used with `recent`",
             token.command
-        ));
+        )));
     }
     if token.filters != *filters {
-        return Err(anyhow!("cursor does not match the active recent filters"));
+        return Err(invalid_args_error(
+            "cursor does not match the active recent filters",
+        ));
     }
 
     Ok(RecentCursorState::new(
@@ -74,14 +79,14 @@ pub(in crate::cli) fn parse_timeline_cursor(
 ) -> Result<TimelineCursorState> {
     let token: TimelineCursorToken = decode_cursor(encoded)?;
     if token.command != "timeline" {
-        return Err(anyhow!(
+        return Err(invalid_args_error(format!(
             "cursor is for command `{}` but was used with `timeline`",
             token.command
-        ));
+        )));
     }
     if token.filters != *filters || token.sort != sort {
-        return Err(anyhow!(
-            "cursor does not match the active timeline filters or sort"
+        return Err(invalid_args_error(
+            "cursor does not match the active timeline filters or sort",
         ));
     }
 

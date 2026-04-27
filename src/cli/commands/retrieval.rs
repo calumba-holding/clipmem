@@ -5,6 +5,7 @@ use serde_json::json;
 
 use crate::model::{SearchHit, TimelineEvent};
 
+use crate::cli::errors::not_found_error;
 use crate::cli::formats::{OutputFormat, StatsOutputFormat};
 use crate::cli::human::render_stats_human;
 use crate::cli::output::{
@@ -242,7 +243,7 @@ pub(in crate::cli) fn show_snapshot(db_path: &Path, args: &GetArgs) -> Result<()
         anyhow::Context::with_context(db.find_snapshot(args.snapshot_id, args.events), || {
             format!("get failed for snapshot {}", args.snapshot_id)
         })?
-        .ok_or_else(|| anyhow!("snapshot {} was not found", args.snapshot_id))?;
+        .ok_or_else(|| not_found_error(format!("snapshot {} was not found", args.snapshot_id)))?;
     if !db.snapshot_matches_filters(args.snapshot_id, &filters)? {
         return Err(anyhow!(
             "snapshot {} does not satisfy the active filters",
