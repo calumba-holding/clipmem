@@ -8,8 +8,8 @@ use rusqlite::{params, OptionalExtension, TransactionBehavior};
 use crate::db::core::{
     collect_rows, pragma_usize, row_usize, sanitise_limit, storage_file_sizes, usize_to_i64,
 };
-use crate::db::store::capture_and_settings::{
-    IMAGE_OPTIMIZATION_FORMAT, IMAGE_OPTIMIZATION_MAX_DIMENSION,
+use crate::db::store::config::{
+    ImageOptimizationCandidate, IMAGE_OPTIMIZATION_FORMAT, IMAGE_OPTIMIZATION_MAX_DIMENSION,
     IMAGE_OPTIMIZATION_MIN_ABSOLUTE_SAVINGS, IMAGE_OPTIMIZATION_MIN_RELATIVE_SAVINGS_DENOMINATOR,
     IMAGE_OPTIMIZATION_MIN_RELATIVE_SAVINGS_NUMERATOR, WEBP_UTI,
 };
@@ -19,16 +19,6 @@ use crate::db::store::rebuild::{
 };
 use crate::db::types::Database;
 use crate::model::{hash_bytes, truncate_chars};
-
-#[derive(Debug, Clone)]
-pub(in crate::db) struct ImageOptimizationCandidate {
-    pub(in crate::db) snapshot_id: i64,
-    pub(in crate::db) item_index: i64,
-    pub(in crate::db) uti: String,
-    pub(in crate::db) byte_len: usize,
-    pub(in crate::db) raw_sha256: String,
-    pub(in crate::db) blob_value: Vec<u8>,
-}
 
 #[derive(Debug, Clone)]
 pub(in crate::db) struct OptimizedImage {

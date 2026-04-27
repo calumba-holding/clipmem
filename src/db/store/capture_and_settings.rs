@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
 use crate::db::core::{collect_rows, row_usize, sanitise_limit, storage_file_sizes, usize_to_i64};
+use crate::db::store::config::IMAGE_OPTIMIZATION_FORMAT;
 use crate::db::store::ocr::{
     enqueue_ocr_candidates_tx, enqueue_ocr_for_snapshot_tx, rebuild_snapshot_ocr_cache,
     rebuild_snapshot_ocr_cache_for_hash,
@@ -24,14 +25,6 @@ use crate::db::types::{
 };
 use crate::model::{CaptureStoreResult, ClipboardSnapshot};
 use crate::sensitive;
-
-pub(in crate::db) const WEBP_UTI: &str = "org.webmproject.webp";
-pub(in crate::db) const IMAGE_OPTIMIZATION_FORMAT: &str = "webp_lossless";
-pub(in crate::db) const IMAGE_OPTIMIZATION_MIN_ABSOLUTE_SAVINGS: usize = 64 * 1024;
-pub(in crate::db) const IMAGE_OPTIMIZATION_MIN_RELATIVE_SAVINGS_NUMERATOR: usize = 1;
-pub(in crate::db) const IMAGE_OPTIMIZATION_MIN_RELATIVE_SAVINGS_DENOMINATOR: usize = 10;
-pub(in crate::db) const IMAGE_OPTIMIZATION_MAX_DIMENSION: u32 = 16_384;
-pub(in crate::db) const RESTORE_SUPPRESSION_WINDOW_SECONDS: i64 = 30;
 
 impl Database {
     /// Store a captured clipboard snapshot and append a capture event for the observation.
