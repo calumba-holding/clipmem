@@ -3,8 +3,8 @@ use std::fmt::Write;
 use serde_json::Value;
 
 use crate::cli::output::model::{
-    ListEnvelope, ListRow, RecallEnvelope, RecallOutputRow, ToonRecallRowProjection,
-    ToonSnapshotRowProjection, ToonTimelineRowProjection,
+    ListEnvelope, ListRow, RecallEnvelope, RecallOutputRow, ToonSearchRowProjection,
+    ToonTimelineRowProjection,
 };
 
 pub(in crate::cli) fn render_list_toon(envelope: &ListEnvelope) -> String {
@@ -42,7 +42,7 @@ pub(in crate::cli) fn render_list_toon(envelope: &ListEnvelope) -> String {
     let fields = if envelope.command == "timeline" {
         ToonTimelineRowProjection::FIELDS.as_slice()
     } else {
-        ToonSnapshotRowProjection::FIELDS.as_slice()
+        ToonSearchRowProjection::FIELDS.as_slice()
     };
     let _ = writeln!(
         out,
@@ -53,7 +53,7 @@ pub(in crate::cli) fn render_list_toon(envelope: &ListEnvelope) -> String {
 
     for row in &envelope.results {
         let values = match row {
-            ListRow::Snapshot(row) => ToonSnapshotRowProjection::from_row(row).values(),
+            ListRow::Snapshot(row) => ToonSearchRowProjection::from_snapshot_row(row).values(),
             ListRow::Timeline(row) => ToonTimelineRowProjection::from_row(row).values(),
         };
         out.push_str("  ");
@@ -132,10 +132,10 @@ pub(in crate::cli) fn render_recall_rows_toon(
         out,
         "{key}[#{}\t]{{{}}}:",
         rows.len(),
-        ToonRecallRowProjection::FIELDS.join("\t")
+        ToonSearchRowProjection::FIELDS.join("\t")
     );
     for row in rows {
-        let values = ToonRecallRowProjection::from_row(row).values();
+        let values = ToonSearchRowProjection::from_recall_row(row).values();
         out.push_str("  ");
         push_toon_scalars_tab_separated(out, &values);
         out.push('\n');

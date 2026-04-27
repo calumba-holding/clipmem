@@ -14,7 +14,7 @@ use super::json::write_json_pretty;
 use super::markdown::{render_get_markdown, render_list_markdown, render_recall_markdown};
 use super::model::{
     GetEnvelope, ListEnvelope, ListRow, RecallEnvelope, RecallMatchConfidence, RecallOutputRow,
-    SnapshotListRow, TimelineListRow, ToonSnapshotRowProjection, ToonTimelineRowProjection,
+    SnapshotListRow, TimelineListRow, ToonSearchRowProjection, ToonTimelineRowProjection,
     OUTPUT_SCHEMA_VERSION,
 };
 use super::text::{
@@ -572,7 +572,7 @@ fn render_list_toon_join_encoded_for_profile(envelope: &ListEnvelope) -> String 
     let fields = if envelope.command == "timeline" {
         ToonTimelineRowProjection::FIELDS.as_slice()
     } else {
-        ToonSnapshotRowProjection::FIELDS.as_slice()
+        ToonSearchRowProjection::FIELDS.as_slice()
     };
     let _ = writeln!(
         out,
@@ -583,7 +583,7 @@ fn render_list_toon_join_encoded_for_profile(envelope: &ListEnvelope) -> String 
 
     for row in &envelope.results {
         let values = match row {
-            ListRow::Snapshot(row) => ToonSnapshotRowProjection::from_row(row).values(),
+            ListRow::Snapshot(row) => ToonSearchRowProjection::from_snapshot_row(row).values(),
             ListRow::Timeline(row) => ToonTimelineRowProjection::from_row(row).values(),
         };
         let encoded = values

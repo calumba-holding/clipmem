@@ -197,7 +197,7 @@ pub(in crate::cli) struct RecallOutputRow {
     pub(in crate::cli) snippet: String,
 }
 
-pub(in crate::cli) struct ToonSnapshotRowProjection {
+pub(in crate::cli) struct ToonSearchRowProjection {
     pub(in crate::cli) snapshot_id: i64,
     pub(in crate::cli) event_id: i64,
     pub(in crate::cli) observed_at: String,
@@ -214,7 +214,7 @@ pub(in crate::cli) struct ToonSnapshotRowProjection {
     pub(in crate::cli) why_matched: Option<String>,
 }
 
-impl ToonSnapshotRowProjection {
+impl ToonSearchRowProjection {
     pub(in crate::cli) const FIELDS: [&'static str; 14] = [
         "snapshot_id",
         "event_id",
@@ -232,8 +232,8 @@ impl ToonSnapshotRowProjection {
         "why_matched",
     ];
 
-    pub(in crate::cli) fn from_row(row: &SnapshotListRow) -> Self {
-        Self {
+    pub(in crate::cli) fn from_snapshot_row(row: &SnapshotListRow) -> Self {
+        Self::from_parts(ToonSearchRowParts {
             snapshot_id: row.snapshot_id,
             event_id: row.event_id,
             observed_at: row.observed_at.clone(),
@@ -252,6 +252,49 @@ impl ToonSnapshotRowProjection {
             total_bytes: row.total_bytes,
             score: row.score,
             why_matched: row.why_matched.clone(),
+        })
+    }
+
+    pub(in crate::cli) fn from_recall_row(row: &RecallOutputRow) -> Self {
+        Self::from_parts(ToonSearchRowParts {
+            snapshot_id: row.snapshot_id,
+            event_id: row.event_id,
+            observed_at: row.observed_at.clone(),
+            first_seen_at: row.first_seen_at.clone(),
+            last_seen_at: row.last_seen_at.clone(),
+            kind: row.kind.clone(),
+            app_name: row.app_name.clone(),
+            app_bundle_id: row.app_bundle_id.clone(),
+            display_text: first_non_empty_text(&[
+                row.snippet.as_str(),
+                row.best_text.as_str(),
+                row.preview_text.as_str(),
+                row.text_summary.as_str(),
+            ]),
+            capture_count: row.capture_count,
+            item_count: row.item_count,
+            total_bytes: row.total_bytes,
+            score: row.score,
+            why_matched: row.why_matched.clone(),
+        })
+    }
+
+    fn from_parts(parts: ToonSearchRowParts) -> Self {
+        Self {
+            snapshot_id: parts.snapshot_id,
+            event_id: parts.event_id,
+            observed_at: parts.observed_at,
+            first_seen_at: parts.first_seen_at,
+            last_seen_at: parts.last_seen_at,
+            kind: parts.kind,
+            app_name: parts.app_name,
+            app_bundle_id: parts.app_bundle_id,
+            display_text: parts.display_text,
+            capture_count: parts.capture_count,
+            item_count: parts.item_count,
+            total_bytes: parts.total_bytes,
+            score: parts.score,
+            why_matched: parts.why_matched,
         }
     }
 
@@ -275,6 +318,23 @@ impl ToonSnapshotRowProjection {
             self.why_matched.clone().map_or(Value::Null, Value::String),
         ]
     }
+}
+
+struct ToonSearchRowParts {
+    snapshot_id: i64,
+    event_id: i64,
+    observed_at: String,
+    first_seen_at: String,
+    last_seen_at: String,
+    kind: String,
+    app_name: Option<String>,
+    app_bundle_id: Option<String>,
+    display_text: String,
+    capture_count: usize,
+    item_count: usize,
+    total_bytes: usize,
+    score: Option<f64>,
+    why_matched: Option<String>,
 }
 
 pub(in crate::cli) struct ToonTimelineRowProjection {
@@ -337,87 +397,6 @@ impl ToonTimelineRowProjection {
             Value::String(self.display_text.clone()),
             Value::from(self.item_count as u64),
             Value::from(self.total_bytes as u64),
-        ]
-    }
-}
-
-pub(in crate::cli) struct ToonRecallRowProjection {
-    pub(in crate::cli) snapshot_id: i64,
-    pub(in crate::cli) event_id: i64,
-    pub(in crate::cli) observed_at: String,
-    pub(in crate::cli) first_seen_at: String,
-    pub(in crate::cli) last_seen_at: String,
-    pub(in crate::cli) kind: String,
-    pub(in crate::cli) app_name: Option<String>,
-    pub(in crate::cli) app_bundle_id: Option<String>,
-    pub(in crate::cli) display_text: String,
-    pub(in crate::cli) capture_count: usize,
-    pub(in crate::cli) item_count: usize,
-    pub(in crate::cli) total_bytes: usize,
-    pub(in crate::cli) score: Option<f64>,
-    pub(in crate::cli) why_matched: Option<String>,
-}
-
-impl ToonRecallRowProjection {
-    pub(in crate::cli) const FIELDS: [&'static str; 14] = [
-        "snapshot_id",
-        "event_id",
-        "observed_at",
-        "first_seen_at",
-        "last_seen_at",
-        "kind",
-        "app_name",
-        "app_bundle_id",
-        "display_text",
-        "capture_count",
-        "item_count",
-        "total_bytes",
-        "score",
-        "why_matched",
-    ];
-
-    pub(in crate::cli) fn from_row(row: &RecallOutputRow) -> Self {
-        Self {
-            snapshot_id: row.snapshot_id,
-            event_id: row.event_id,
-            observed_at: row.observed_at.clone(),
-            first_seen_at: row.first_seen_at.clone(),
-            last_seen_at: row.last_seen_at.clone(),
-            kind: row.kind.clone(),
-            app_name: row.app_name.clone(),
-            app_bundle_id: row.app_bundle_id.clone(),
-            display_text: first_non_empty_text(&[
-                row.snippet.as_str(),
-                row.best_text.as_str(),
-                row.preview_text.as_str(),
-                row.text_summary.as_str(),
-            ]),
-            capture_count: row.capture_count,
-            item_count: row.item_count,
-            total_bytes: row.total_bytes,
-            score: row.score,
-            why_matched: row.why_matched.clone(),
-        }
-    }
-
-    pub(in crate::cli) fn values(&self) -> Vec<Value> {
-        vec![
-            Value::from(self.snapshot_id),
-            Value::from(self.event_id),
-            Value::String(self.observed_at.clone()),
-            Value::String(self.first_seen_at.clone()),
-            Value::String(self.last_seen_at.clone()),
-            Value::String(self.kind.clone()),
-            self.app_name.clone().map_or(Value::Null, Value::String),
-            self.app_bundle_id
-                .clone()
-                .map_or(Value::Null, Value::String),
-            Value::String(self.display_text.clone()),
-            Value::from(self.capture_count as u64),
-            Value::from(self.item_count as u64),
-            Value::from(self.total_bytes as u64),
-            self.score.map_or(Value::Null, Value::from),
-            self.why_matched.clone().map_or(Value::Null, Value::String),
         ]
     }
 }
