@@ -22,21 +22,13 @@ impl Default for WatchState {
     }
 }
 
-/// Return whether this `change_count` should be captured.
-///
-/// When `skip_initial` is enabled, the first observed change is marked handled
-/// without being captured.
-pub fn should_capture_change(
-    change_count: i64,
-    skip_initial: bool,
-    state: &mut WatchState,
-) -> bool {
-    if state.first_loop && skip_initial {
-        mark_change_handled(change_count, state);
-        return false;
-    }
+/// Return whether the first observed change should be marked handled without capture.
+pub fn should_skip_initial_change(skip_initial: bool, state: &WatchState) -> bool {
+    skip_initial && state.first_loop
+}
 
-    state.first_loop = false;
+/// Return whether this `change_count` should be captured.
+pub fn should_capture_change(change_count: i64, state: &WatchState) -> bool {
     state.last_handled_change_count != Some(change_count)
 }
 
@@ -76,7 +68,8 @@ mod tests {
     use anyhow::Result;
 
     use super::{
-        format_watch_capture_line, mark_change_handled, should_capture_change, WatchState,
+        format_watch_capture_line, mark_change_handled, should_capture_change,
+        should_skip_initial_change, WatchState,
     };
     use crate::db::{Database, RetrievalFilters};
     use crate::model::{
@@ -89,7 +82,7 @@ mod tests {
         snapshot: &ClipboardSnapshot,
         state: &mut WatchState,
     ) -> Result<Option<CaptureStoreResult>> {
-        if !should_capture_change(snapshot.change_count(), false, state) {
+        if !should_capture_change(snapshot.change_count(), state) {
             return Ok(None);
         }
 
@@ -107,9 +100,11 @@ mod tests {
             Vec::new(),
         );
 
-        let should_capture = should_capture_change(snapshot.change_count(), true, &mut state);
+        if should_skip_initial_change(true, &state) {
+            mark_change_handled(snapshot.change_count(), &mut state);
+        }
 
-        assert!(!should_capture);
+        assert!(!should_capture_change(snapshot.change_count(), &state));
         assert!(db.recent(10, &RetrievalFilters::default())?.is_empty());
         Ok(())
     }

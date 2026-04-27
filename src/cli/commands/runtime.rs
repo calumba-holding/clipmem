@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 
-use crate::app::{format_watch_capture_line, mark_change_handled, WatchState};
+use crate::app::{
+    format_watch_capture_line, mark_change_handled, should_skip_initial_change, WatchState,
+};
 use crate::db::{CaptureStoreOutcome, Database};
 use crate::model::ClipboardSnapshot;
 use crate::platform::{capture_snapshot, current_change_count};
@@ -58,7 +60,12 @@ where
     let change_count = current_change_count_fn()
         .map_err(|error| platform_error(format!("read clipboard change count failed: {error}")))?;
 
-    if !crate::app::should_capture_change(change_count, args.skip_initial, state) {
+    if should_skip_initial_change(args.skip_initial, state) {
+        mark_change_handled(change_count, state);
+        return Ok(());
+    }
+
+    if !crate::app::should_capture_change(change_count, state) {
         return Ok(());
     }
 
