@@ -12,7 +12,8 @@ use crate::cli::formats::OutputFormat;
 use crate::cli::human::{
     render_export_human, render_forget_human, render_purge_human, render_restore_human,
 };
-use crate::cli::output::{emit_json_or_text, ExportOutput, RestoreOutput};
+use crate::cli::output::{ExportOutput, RestoreOutput};
+use crate::cli::presentation::emit_json_or_text;
 use crate::cli::schema::{ExportArgs, ForgetArgs, PurgeArgs, RestoreArgs};
 
 use super::mutation_support::require_text_or_json;

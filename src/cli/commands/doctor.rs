@@ -3,7 +3,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::cli::human::render_doctor_human;
-use crate::cli::output::{emit_json_or_text, render_doctor_text};
+use crate::cli::output::render_doctor_text;
+use crate::cli::presentation::emit_json_or_text;
 use crate::cli::schema::DoctorArgs;
 
 use super::runtime::open_existing_db;

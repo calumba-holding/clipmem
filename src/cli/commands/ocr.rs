@@ -6,7 +6,7 @@ use crate::db::{OcrRunReport, OcrStatusReport};
 
 use crate::cli::formats::OutputFormat;
 use crate::cli::human::{render_ocr_run_human, render_ocr_status_human};
-use crate::cli::output::emit_json_or_text;
+use crate::cli::presentation::emit_json_or_text;
 use crate::cli::schema::{OcrArgs, OcrCommand, OcrRunArgs, OcrStatusArgs};
 
 use super::mutation_support::require_text_or_json;

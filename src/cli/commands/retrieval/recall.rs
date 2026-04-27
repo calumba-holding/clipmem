@@ -9,9 +9,9 @@ use crate::db::{Database, RetrievalFilters, SearchMode, SearchResults};
 use crate::model::SearchHit;
 
 use crate::cli::output::{
-    emit_recall_output, generated_at_now, RecallEnvelope, RecallMatchConfidence, RecallOutputRow,
-    OUTPUT_SCHEMA_VERSION,
+    RecallEnvelope, RecallMatchConfidence, RecallOutputRow, OUTPUT_SCHEMA_VERSION,
 };
+use crate::cli::presentation::{emit_recall_output, generated_at_now};
 use crate::cli::schema::RecallArgs;
 
 use super::super::retrieval_support::{

@@ -8,6 +8,7 @@ mod help;
 mod human;
 mod output;
 mod parsing;
+mod presentation;
 mod runtime;
 mod schema;
 mod service;

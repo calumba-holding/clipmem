@@ -7,8 +7,10 @@ use crate::model::{SearchHit, TimelineEvent};
 
 use crate::cli::errors::not_found_error;
 use crate::cli::output::{
-    emit_get_output, emit_list_output, emit_stats_output, generated_at_now, GetEnvelope,
-    ListEnvelope, ListRow, StatsEnvelope, OUTPUT_SCHEMA_VERSION,
+    GetEnvelope, ListEnvelope, ListRow, StatsEnvelope, OUTPUT_SCHEMA_VERSION,
+};
+use crate::cli::presentation::{
+    emit_get_output, emit_list_output, emit_stats_output, generated_at_now,
 };
 use crate::cli::schema::{GetArgs, RecentArgs, SearchArgs, StatsArgs, TimelineArgs};
 

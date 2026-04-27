@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::Result;
 
 use super::super::human::render_service_status_human;
-use super::super::output::emit_json_or_text;
+use super::super::presentation::emit_json_or_text;
 use super::super::schema::{
     AgentsArgs, AgentsCommand, Command, HermesArgs, HermesCommand, OpenClawArgs, OpenClawCommand,
     ServiceArgs, ServiceCommand, ServiceStatusArgs, SetupArgs,

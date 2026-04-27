@@ -6,10 +6,8 @@ use crate::db::{CapturePolicy, CaptureSettings};
 
 use crate::cli::display::format_duration_compact;
 use crate::cli::formats::OutputFormat;
-use crate::cli::output::{
-    emit_settings_ignore_list_output, emit_settings_view_output, SettingsIgnoreListOutput,
-    SettingsView,
-};
+use crate::cli::output::{SettingsIgnoreListOutput, SettingsView};
+use crate::cli::presentation::{emit_settings_ignore_list_output, emit_settings_view_output};
 use crate::cli::schema::{
     SettingsApiKeyFilterArgs, SettingsArgs, SettingsCommand, SettingsIgnoreArgs,
     SettingsIgnoreCommand, SettingsIgnoreListArgs, SettingsOcrArgs, SettingsPauseArgs,

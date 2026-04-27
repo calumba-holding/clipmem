@@ -16,9 +16,9 @@ use crate::platform::{capture_snapshot, current_change_count};
 use crate::cli::errors::{db_error, platform_error};
 use crate::cli::human::render_capture_once_human;
 use crate::cli::output::{
-    emit_json_or_text, render_capture_once_text, CaptureOnceOutput, CaptureOnceSkippedOutput,
-    CaptureOnceStoredOutput,
+    render_capture_once_text, CaptureOnceOutput, CaptureOnceSkippedOutput, CaptureOnceStoredOutput,
 };
+use crate::cli::presentation::emit_json_or_text;
 use crate::cli::schema::{CaptureOnceArgs, WatchArgs};
 
 static OCR_WORKERS: LazyLock<Mutex<HashSet<PathBuf>>> =

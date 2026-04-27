@@ -3,9 +3,8 @@ use std::path::Path;
 use anyhow::Result;
 
 use crate::cli::formats::ProgressFormat;
-use crate::cli::output::{
-    emit_image_optimization_output, emit_storage_compact_output, print_json_line,
-};
+use crate::cli::output::print_json_line;
+use crate::cli::presentation::{emit_image_optimization_output, emit_storage_compact_output};
 use crate::cli::schema::{
     StorageArgs, StorageCommand, StorageCompactArgs, StorageOptimizeImagesArgs,
 };
