@@ -84,6 +84,8 @@ struct DecodingTests {
         let firstResult = try #require(envelope.results.first)
         #expect(firstResult.displayText == "git status")
         #expect(firstResult.appHint == "Copied while in Terminal")
+        #expect(firstResult.ocrText == "status from screenshot")
+        #expect(firstResult.ocrStatus == "ready")
     }
 
     @Test func getFixtureDecodesNestedRepresentations() throws {
@@ -93,6 +95,8 @@ struct DecodingTests {
         let firstItem = try #require(envelope.snapshot.items.first)
         let firstRepresentation = try #require(firstItem.representations.first)
         let firstEvent = try #require(envelope.snapshot.recentEvents.first)
+        #expect(envelope.snapshot.ocrText == "status from screenshot")
+        #expect(envelope.snapshot.ocrStatus == "ready")
         #expect(firstRepresentation.uti == "public.utf8-plain-text")
         #expect(firstEvent.frontmostAppName == "Terminal")
     }

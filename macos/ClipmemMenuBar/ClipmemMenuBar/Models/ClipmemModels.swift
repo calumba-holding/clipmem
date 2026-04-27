@@ -147,6 +147,8 @@ struct ClipmemItem: Decodable, Identifiable, Hashable, Sendable {
     var htmlText: String?
     var rtfText: String?
     var textSummary: String?
+    var ocrText: String?
+    var ocrStatus: String?
     var previewText: String?
     var itemCount: Int?
     var totalBytes: Int?
@@ -160,7 +162,7 @@ struct ClipmemItem: Decodable, Identifiable, Hashable, Sendable {
     var id: String { "\(eventId ?? snapshotId)-\(snapshotId)" }
 
     var displayText: String {
-        let candidate = [snippet, bestText, previewText, textSummary].compactMap { $0 }.first { $0.isEmpty == false }
+        let candidate = [snippet, bestText, previewText, textSummary, ocrText].compactMap { $0 }.first { $0.isEmpty == false }
         return candidate ?? "[No extracted text]"
     }
 
@@ -170,11 +172,11 @@ struct ClipmemItem: Decodable, Identifiable, Hashable, Sendable {
     }
 
     var hasText: Bool {
-        bestText?.isEmpty == false || previewText?.isEmpty == false || textSummary?.isEmpty == false
+        bestText?.isEmpty == false || previewText?.isEmpty == false || textSummary?.isEmpty == false || ocrText?.isEmpty == false
     }
 
     var copyablePlainText: String? {
-        [bestText, previewText]
+        [bestText, previewText, ocrText]
             .compactMap { $0 }
             .first { $0.isEmpty == false }
     }
@@ -199,6 +201,8 @@ struct SnapshotDetails: Decodable, Equatable, Sendable {
     var htmlText: String?
     var rtfText: String?
     var textSummary: String?
+    var ocrText: String?
+    var ocrStatus: String?
     var previewText: String?
     var searchText: String?
     var itemCount: Int

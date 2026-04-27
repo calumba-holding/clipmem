@@ -22,6 +22,8 @@
     "html_text": null,
     "rtf_text": null,
     "text_summary": "git status",
+    "ocr_text": "status from screenshot",
+    "ocr_status": "ready",
     "preview_text": "git status",
     "search_text": "git status",
     "item_count": 1,

@@ -110,7 +110,7 @@ struct SnapshotDetailView: View {
     }
 
     private func bestText(from detail: SnapshotDetails) -> String? {
-        [detail.bestText, detail.previewText, detail.textSummary]
+        [detail.bestText, detail.previewText, detail.textSummary, detail.ocrText]
             .compactMap { $0 }
             .first(where: { $0.isEmpty == false })
     }
@@ -125,6 +125,7 @@ struct SnapshotDetailView: View {
                 FieldRow(title: "Last Seen", value: DisplayFormatters.localTimestamp(detail.lastObservedAt))
                 FieldRow(title: "Capture Count", value: String(detail.captureCount))
                 FieldRow(title: "Bytes", value: DisplayFormatters.byteCount(detail.totalBytes) ?? String(detail.totalBytes))
+                FieldRow(title: "OCR status", value: detail.ocrStatus)
                 FieldRow(title: "App Hint", value: detail.lastFrontmostAppName.map { "Copied while in \($0)" })
                 FieldRow(title: "App identifier", value: detail.lastFrontmostAppBundleId, lineLimit: 1)
                 FieldRow(title: "URLs", value: detail.urls.joined(separator: "\n"), lineLimit: 3)
