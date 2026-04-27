@@ -1,8 +1,8 @@
-use clap::{error::ErrorKind, Args, CommandFactory, ValueEnum};
+use clap::{error::ErrorKind, Args, ValueEnum};
 
 use crate::db::StatsTimeBucketEntry;
 
-use super::schema::Cli;
+use super::errors::clap_error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(super) enum OutputFormat {
@@ -122,21 +122,21 @@ impl OutputArgs {
             (false, true, None) | (false, true, Some(OutputFormat::Human)) => {
                 Ok(OutputFormat::Human)
             }
-            (true, false, Some(format)) => Err(Cli::command().error(
+            (true, false, Some(format)) => Err(clap_error(
                 ErrorKind::ArgumentConflict,
                 format!(
                     "`--json` is only compatible with `--format json`, got `--format {}`",
                     format.as_str()
                 ),
             )),
-            (false, true, Some(format)) => Err(Cli::command().error(
+            (false, true, Some(format)) => Err(clap_error(
                 ErrorKind::ArgumentConflict,
                 format!(
                     "`--human` is only compatible with `--format human`, got `--format {}`",
                     format.as_str()
                 ),
             )),
-            (true, true, _) => Err(Cli::command().error(
+            (true, true, _) => Err(clap_error(
                 ErrorKind::ArgumentConflict,
                 "`--human` cannot be combined with `--json`",
             )),
@@ -161,7 +161,7 @@ impl RecallOutputArgs {
             (false, Some(format)) => Ok(format),
             (false, None) => Ok(RecallOutputFormat::Md),
             (true, None) | (true, Some(RecallOutputFormat::Human)) => Ok(RecallOutputFormat::Human),
-            (true, Some(format)) => Err(Cli::command().error(
+            (true, Some(format)) => Err(clap_error(
                 ErrorKind::ArgumentConflict,
                 format!(
                     "`--human` is only compatible with `--format human`, got `--format {}`",
@@ -198,21 +198,21 @@ impl StatsOutputArgs {
             (false, true, None) | (false, true, Some(StatsOutputFormat::Human)) => {
                 Ok(StatsOutputFormat::Human)
             }
-            (true, false, Some(format)) => Err(Cli::command().error(
+            (true, false, Some(format)) => Err(clap_error(
                 ErrorKind::ArgumentConflict,
                 format!(
                     "`--json` is only compatible with `--format json`, got `--format {}`",
                     format.as_str()
                 ),
             )),
-            (false, true, Some(format)) => Err(Cli::command().error(
+            (false, true, Some(format)) => Err(clap_error(
                 ErrorKind::ArgumentConflict,
                 format!(
                     "`--human` is only compatible with `--format human`, got `--format {}`",
                     format.as_str()
                 ),
             )),
-            (true, true, _) => Err(Cli::command().error(
+            (true, true, _) => Err(clap_error(
                 ErrorKind::ArgumentConflict,
                 "`--human` cannot be combined with `--json`",
             )),

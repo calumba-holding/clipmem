@@ -50,6 +50,10 @@ pub(in crate::cli) fn platform_error(message: impl Into<String>) -> anyhow::Erro
     CliCommandError::new(CliExitCode::PlatformError, message).into()
 }
 
+pub(super) fn clap_error(kind: ErrorKind, message: impl Into<String>) -> clap::Error {
+    clap::Command::new("clipmem").error(kind, message.into())
+}
+
 pub(super) fn classify_clap_error(error: clap::Error) -> CliError {
     CliError::new(classify_clap_exit_code(error.kind()), error.to_string())
 }
