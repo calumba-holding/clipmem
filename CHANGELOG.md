@@ -23,6 +23,8 @@ versioning where practical.
 - Grouped retrieval CLI command helpers under a dedicated command submodule,
   reducing the flat command directory and making search, recall, cursor, and
   filter code easier to navigate together.
+- Narrowed macOS `objc2` framework crate features to the APIs `clipmem` uses,
+  reducing unnecessary default framework bindings in builds.
 
 ### Fixed
 
