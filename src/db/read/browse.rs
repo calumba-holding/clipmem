@@ -8,7 +8,7 @@ use super::filter_sql::{
 use super::queries::{recent_query, timeline_query};
 use super::row_mapping::{map_search_hit_row, map_timeline_event_row};
 use super::search_results::{paginate_rows, paginate_timeline_rows};
-use super::stats::stats_params;
+use super::stats::{stats_params, StatsReadSource};
 use crate::db::core::clamp_result_limit;
 use crate::db::sqlite_helpers::{collect_rows, usize_to_i64};
 use crate::db::types::{
@@ -220,7 +220,7 @@ impl Database {
     /// be prepared or executed.
     pub fn stats(&self, filters: &RetrievalFilters) -> Result<StatsReport> {
         if *filters == RetrievalFilters::default() {
-            return self.stats_unfiltered();
+            return self.load_stats_report(StatsReadSource::Unfiltered);
         }
 
         let params = stats_params(filters)?;
@@ -230,68 +230,6 @@ impl Database {
         self.materialize_stats_matching_snapshots(filters, &params)?;
         self.index_stats_matching_snapshots()?;
 
-        let overview = self.load_stats_overview()?;
-        let kind_breakdown = self.load_stats_kind_breakdown()?;
-        let top_apps = self.load_stats_top_apps()?;
-        let busiest_hours = self.load_stats_hours()?;
-        let busiest_weekdays = self.load_stats_weekdays()?;
-        let largest_snapshots =
-            self.load_stats_snapshot_leaderboard("total_bytes DESC, snapshot_id ASC", 5)?;
-        let most_captured_snapshots =
-            self.load_stats_snapshot_leaderboard("capture_count DESC, snapshot_id ASC", 5)?;
-        let most_recopied_snapshot = most_captured_snapshots.first().cloned();
-
-        Ok(StatsReport {
-            snapshot_count: overview.snapshot_count,
-            capture_event_count: overview.capture_event_count,
-            unique_app_count: overview.unique_app_count,
-            total_bytes: overview.total_bytes,
-            average_bytes_per_snapshot: overview.average_bytes_per_snapshot(),
-            average_captures_per_snapshot: overview.average_captures_per_snapshot(),
-            dedupe_ratio: overview.dedupe_ratio(),
-            first_observed_at: overview.first_observed_at,
-            last_observed_at: overview.last_observed_at,
-            archive_span_seconds: overview.archive_span_seconds,
-            most_recopied_snapshot,
-            kind_breakdown,
-            top_apps,
-            busiest_hours,
-            busiest_weekdays,
-            largest_snapshots,
-            most_captured_snapshots,
-        })
-    }
-
-    fn stats_unfiltered(&self) -> Result<StatsReport> {
-        let overview = self.load_unfiltered_stats_overview()?;
-        let kind_breakdown = self.load_unfiltered_stats_kind_breakdown()?;
-        let top_apps = self.load_unfiltered_stats_top_apps()?;
-        let busiest_hours = self.load_unfiltered_stats_hours()?;
-        let busiest_weekdays = self.load_unfiltered_stats_weekdays()?;
-        let largest_snapshots =
-            self.load_unfiltered_stats_snapshot_leaderboard("s.total_bytes DESC, s.id ASC", 5)?;
-        let most_captured_snapshots =
-            self.load_unfiltered_stats_snapshot_leaderboard("ss.capture_count DESC, s.id ASC", 5)?;
-        let most_recopied_snapshot = most_captured_snapshots.first().cloned();
-
-        Ok(StatsReport {
-            snapshot_count: overview.snapshot_count,
-            capture_event_count: overview.capture_event_count,
-            unique_app_count: overview.unique_app_count,
-            total_bytes: overview.total_bytes,
-            average_bytes_per_snapshot: overview.average_bytes_per_snapshot(),
-            average_captures_per_snapshot: overview.average_captures_per_snapshot(),
-            dedupe_ratio: overview.dedupe_ratio(),
-            first_observed_at: overview.first_observed_at,
-            last_observed_at: overview.last_observed_at,
-            archive_span_seconds: overview.archive_span_seconds,
-            most_recopied_snapshot,
-            kind_breakdown,
-            top_apps,
-            busiest_hours,
-            busiest_weekdays,
-            largest_snapshots,
-            most_captured_snapshots,
-        })
+        self.load_stats_report(StatsReadSource::Filtered)
     }
 }
