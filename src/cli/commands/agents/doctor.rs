@@ -1,6 +1,31 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use crate::cli::commands::types::{AgentDoctorCheck, AgentDoctorStatus};
+#[derive(Debug, Clone)]
+pub(in crate::cli) struct OpenClawDoctorReport {
+    pub(in crate::cli) target_dir: PathBuf,
+    pub(in crate::cli) checks: Vec<AgentDoctorCheck>,
+}
+
+#[derive(Debug, Clone)]
+pub(in crate::cli) struct AgentDoctorCheck {
+    pub(in crate::cli) status: AgentDoctorStatus,
+    pub(in crate::cli) label: String,
+    pub(in crate::cli) detail: String,
+    pub(in crate::cli) next_steps: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::cli) enum AgentDoctorStatus {
+    Ok,
+    Warn,
+    Fail,
+}
+
+#[derive(Debug, Clone)]
+pub(in crate::cli) struct HermesDoctorReport {
+    pub(in crate::cli) target_dir: PathBuf,
+    pub(in crate::cli) checks: Vec<AgentDoctorCheck>,
+}
 
 pub(in crate::cli) fn render_agent_doctor_report(
     target_label: &str,
@@ -38,8 +63,7 @@ fn doctor_status_label(status: AgentDoctorStatus) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::render_agent_doctor_report;
-    use crate::cli::commands::types::{AgentDoctorCheck, AgentDoctorStatus};
+    use super::{render_agent_doctor_report, AgentDoctorCheck, AgentDoctorStatus};
 
     #[test]
     fn render_agent_doctor_report_lists_statuses_details_and_next_steps() {

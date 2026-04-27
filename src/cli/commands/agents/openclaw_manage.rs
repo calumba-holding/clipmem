@@ -56,10 +56,9 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use crate::cli::commands::agents::package::{
-        packaged_openclaw_files, resolve_openclaw_skill_dir,
+        packaged_openclaw_files, resolve_openclaw_skill_dir, OPENCLAW_SKILL_NAME,
     };
-    use crate::cli::commands::agents::support::install_packaged_skill;
-    use crate::cli::commands::types::{PackagedSkillFile, OPENCLAW_SKILL_NAME};
+    use crate::cli::commands::agents::support::{install_packaged_skill, PackagedSkillFile};
 
     fn temp_skill_dir(name: &str) -> std::path::PathBuf {
         let nonce = SystemTime::now()

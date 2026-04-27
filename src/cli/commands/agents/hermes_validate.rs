@@ -4,13 +4,15 @@ use std::process::Command as ProcessCommand;
 use anyhow::{anyhow, Context, Result};
 
 use crate::cli::commands::agents::doctor::render_agent_doctor_report;
-use crate::cli::commands::agents::package::{packaged_hermes_files, resolve_hermes_skill_dir};
+use crate::cli::commands::agents::doctor::{
+    AgentDoctorCheck, AgentDoctorStatus, HermesDoctorReport,
+};
+use crate::cli::commands::agents::package::{
+    packaged_hermes_files, resolve_hermes_skill_dir, HERMES_SKILL_NAME,
+};
 use crate::cli::commands::agents::support::{
     binary_check, find_executable, frontmatter_value, parse_skill_frontmatter,
     required_frontmatter_value, validate_packaged_skill_file, validate_required_skill_references,
-};
-use crate::cli::commands::types::{
-    AgentDoctorCheck, AgentDoctorStatus, HermesDoctorReport, HERMES_SKILL_NAME,
 };
 use crate::cli::schema::HermesDoctorArgs;
 

@@ -8,11 +8,10 @@ mod retrieval;
 mod runtime;
 mod settings;
 mod storage;
-mod types;
 
+pub(super) use self::archive_mutate::{ExportOutput, RestoreOutput};
 pub(super) use self::entry::run_command;
-pub(super) use self::types::{
-    CaptureOnceOutput, ExportOutput, RestoreOutput, SettingsIgnoreListOutput, SettingsView,
-};
+pub(super) use self::runtime::CaptureOnceOutput;
 #[cfg(test)]
-pub(super) use self::types::{CaptureOnceSkippedOutput, CaptureOnceStoredOutput};
+pub(super) use self::runtime::{CaptureOnceSkippedOutput, CaptureOnceStoredOutput};
+pub(super) use self::settings::{SettingsIgnoreListOutput, SettingsView};

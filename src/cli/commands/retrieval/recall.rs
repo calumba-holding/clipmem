@@ -9,7 +9,6 @@ use crate::db::{Database, RetrievalFilters, SearchCursorState, SearchMode, Searc
 use crate::model::SearchHit;
 
 use crate::cli::commands::runtime::open_existing_db;
-use crate::cli::commands::types::{RecallCandidate, RecallCandidateSource, RecallComputation};
 use crate::cli::output::{
     emit_recall_output, generated_at_now, RecallEnvelope, RecallMatchConfidence, RecallOutputRow,
     OUTPUT_SCHEMA_VERSION,
@@ -19,6 +18,29 @@ use crate::cli::schema::{RecallArgs, SearchArgs};
 use super::filters::{
     load_snapshot_projections, merge_applied_filters, normalize_retrieval_filters,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::cli) enum RecallCandidateSource {
+    Search,
+    Recent,
+}
+
+#[derive(Debug, Clone)]
+pub(in crate::cli) struct RecallCandidate {
+    pub(in crate::cli) hit: SearchHit,
+    pub(in crate::cli) source: RecallCandidateSource,
+    pub(in crate::cli) normalized_score: f64,
+    pub(in crate::cli) sort_score: f64,
+    pub(in crate::cli) app_preferred: bool,
+}
+
+#[derive(Debug)]
+pub(in crate::cli) struct RecallComputation {
+    pub(in crate::cli) best: RecallCandidate,
+    pub(in crate::cli) alternatives: Vec<RecallCandidate>,
+    pub(in crate::cli) why_selected: String,
+    pub(in crate::cli) search_mode_used: Option<SearchMode>,
+}
 
 pub(in crate::cli) fn recall(db_path: &Path, args: &RecallArgs) -> Result<()> {
     let format = args.output.resolved()?;

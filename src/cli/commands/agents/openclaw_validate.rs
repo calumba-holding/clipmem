@@ -4,15 +4,16 @@ use std::process::Command as ProcessCommand;
 use anyhow::{anyhow, Context, Result};
 
 use crate::cli::commands::agents::doctor::render_agent_doctor_report;
+use crate::cli::commands::agents::doctor::{
+    AgentDoctorCheck, AgentDoctorStatus, OpenClawDoctorReport,
+};
 use crate::cli::commands::agents::package::{
     packaged_openclaw_files, resolve_openclaw_skill_dir, resolve_openclaw_workspace_root,
+    OPENCLAW_SKILL_NAME,
 };
 use crate::cli::commands::agents::support::{
     binary_check, find_executable, frontmatter_value, parse_skill_frontmatter,
     required_frontmatter_value, validate_packaged_skill_file, validate_required_skill_references,
-};
-use crate::cli::commands::types::{
-    AgentDoctorCheck, AgentDoctorStatus, OpenClawDoctorReport, OPENCLAW_SKILL_NAME,
 };
 use crate::cli::schema::OpenClawDoctorArgs;
 

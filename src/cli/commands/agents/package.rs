@@ -3,15 +3,71 @@ use std::process::Command as ProcessCommand;
 
 use anyhow::Result;
 
-use crate::cli::commands::agents::support::{find_executable, home_dir};
-use crate::cli::commands::types::{
-    PackagedSkillFile, HERMES_CHECK_SETUP_SH, HERMES_COMMANDS_REF, HERMES_EXAMPLES_REF,
-    HERMES_JSON_SCHEMA_REF, HERMES_SETUP_CHECK_REF, HERMES_SKILL_MD, HERMES_SKILL_NAME,
-    HERMES_SKILL_ROOT, HERMES_TROUBLESHOOTING_REF, OPENCLAW_CHECK_SETUP_SH, OPENCLAW_COMMANDS_REF,
-    OPENCLAW_EXAMPLES_REF, OPENCLAW_JSON_SCHEMA_REF, OPENCLAW_SETUP_CHECK_REF,
-    OPENCLAW_SHARED_ROOT, OPENCLAW_SKILL_MD, OPENCLAW_SKILL_NAME, OPENCLAW_TROUBLESHOOTING_REF,
-    OPENCLAW_WORKSPACE_ROOT,
-};
+use crate::cli::commands::agents::support::{find_executable, home_dir, PackagedSkillFile};
+
+pub(in crate::cli) const OPENCLAW_SKILL_NAME: &str = "clipboard-memory";
+pub(in crate::cli) const OPENCLAW_SHARED_ROOT: &str = ".openclaw/skills";
+pub(in crate::cli) const OPENCLAW_WORKSPACE_ROOT: &str = ".openclaw/workspace";
+pub(in crate::cli) const HERMES_SKILL_NAME: &str = "clipboard-memory";
+pub(in crate::cli) const HERMES_SKILL_ROOT: &str = ".hermes/skills/productivity";
+
+pub(in crate::cli) const OPENCLAW_SKILL_MD: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/openclaw/clipboard-memory/SKILL.md"
+));
+pub(in crate::cli) const OPENCLAW_COMMANDS_REF: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/openclaw/clipboard-memory/references/commands.md"
+));
+pub(in crate::cli) const OPENCLAW_TROUBLESHOOTING_REF: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/openclaw/clipboard-memory/references/troubleshooting.md"
+));
+pub(in crate::cli) const OPENCLAW_JSON_SCHEMA_REF: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/openclaw/clipboard-memory/references/json-schema.md"
+));
+pub(in crate::cli) const OPENCLAW_EXAMPLES_REF: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/openclaw/clipboard-memory/references/examples.md"
+));
+pub(in crate::cli) const OPENCLAW_SETUP_CHECK_REF: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/openclaw/clipboard-memory/references/setup-check.md"
+));
+pub(in crate::cli) const OPENCLAW_CHECK_SETUP_SH: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/openclaw/clipboard-memory/scripts/check-setup.sh"
+));
+
+pub(in crate::cli) const HERMES_SKILL_MD: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/hermes/clipboard-memory/SKILL.md"
+));
+pub(in crate::cli) const HERMES_COMMANDS_REF: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/hermes/clipboard-memory/references/commands.md"
+));
+pub(in crate::cli) const HERMES_TROUBLESHOOTING_REF: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/hermes/clipboard-memory/references/troubleshooting.md"
+));
+pub(in crate::cli) const HERMES_JSON_SCHEMA_REF: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/hermes/clipboard-memory/references/json-schema.md"
+));
+pub(in crate::cli) const HERMES_EXAMPLES_REF: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/hermes/clipboard-memory/references/examples.md"
+));
+pub(in crate::cli) const HERMES_SETUP_CHECK_REF: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/hermes/clipboard-memory/references/setup-check.md"
+));
+pub(in crate::cli) const HERMES_CHECK_SETUP_SH: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/extras/hermes/clipboard-memory/scripts/check-setup.sh"
+));
 
 pub(in crate::cli) fn packaged_openclaw_skill() -> String {
     OPENCLAW_SKILL_MD.to_string()

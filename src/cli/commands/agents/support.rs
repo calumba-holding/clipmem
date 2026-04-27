@@ -3,7 +3,13 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 
-use crate::cli::commands::types::{AgentDoctorCheck, AgentDoctorStatus, PackagedSkillFile};
+use crate::cli::commands::agents::doctor::{AgentDoctorCheck, AgentDoctorStatus};
+
+#[derive(Debug, Clone, Copy)]
+pub(in crate::cli) struct PackagedSkillFile {
+    pub(in crate::cli) relative_path: &'static str,
+    pub(in crate::cli) contents: &'static str,
+}
 
 pub(in crate::cli) fn install_packaged_skill(
     target_dir: &Path,

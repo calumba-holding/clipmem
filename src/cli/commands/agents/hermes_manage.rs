@@ -51,8 +51,9 @@ pub(in crate::cli) fn install_hermes_package(target_dir: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use crate::cli::commands::agents::package::{packaged_hermes_files, resolve_hermes_skill_dir};
-    use crate::cli::commands::types::HERMES_SKILL_NAME;
+    use crate::cli::commands::agents::package::{
+        packaged_hermes_files, resolve_hermes_skill_dir, HERMES_SKILL_NAME,
+    };
 
     #[test]
     fn resolve_hermes_skill_dir_uses_explicit_destination() {

@@ -8,7 +8,34 @@ use crate::db::{
 };
 use crate::model::{SearchHit, TimelineEvent};
 
-use crate::cli::commands::types::{RecentCursorToken, SearchCursorToken, TimelineCursorToken};
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(in crate::cli) struct SearchCursorToken {
+    pub(in crate::cli) command: String,
+    pub(in crate::cli) query: String,
+    pub(in crate::cli) requested_mode: SearchMode,
+    pub(in crate::cli) mode_used: SearchMode,
+    pub(in crate::cli) filters: RetrievalFilters,
+    pub(in crate::cli) last_seen_at: String,
+    pub(in crate::cli) snapshot_id: i64,
+    pub(in crate::cli) score: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(in crate::cli) struct RecentCursorToken {
+    pub(in crate::cli) command: String,
+    pub(in crate::cli) filters: RetrievalFilters,
+    pub(in crate::cli) last_seen_at: String,
+    pub(in crate::cli) snapshot_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(in crate::cli) struct TimelineCursorToken {
+    pub(in crate::cli) command: String,
+    pub(in crate::cli) filters: RetrievalFilters,
+    pub(in crate::cli) sort: TimelineSort,
+    pub(in crate::cli) observed_at: String,
+    pub(in crate::cli) event_id: i64,
+}
 
 pub(in crate::cli) fn parse_search_cursor(
     encoded: &str,
@@ -153,13 +180,13 @@ pub(in crate::cli) fn decode_cursor<T: for<'de> Deserialize<'de>>(encoded: &str)
 mod tests {
     use serde_json::Value;
 
-    use crate::cli::commands::types::{SearchCursorToken, TimelineCursorToken};
     use crate::db::{RetrievalFilters, SearchMode, TimelineSort};
     use crate::model::{SearchHit, SearchHitParts, SnapshotKind, TimelineEvent};
 
     use super::{
         decode_cursor, encode_cursor, encode_recent_cursor, encode_search_cursor,
         encode_timeline_cursor, parse_recent_cursor, parse_search_cursor, parse_timeline_cursor,
+        SearchCursorToken, TimelineCursorToken,
     };
 
     #[test]
