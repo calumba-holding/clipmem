@@ -5,7 +5,7 @@ use crate::db::core::{collect_rows, row_usize, usize_to_i64};
 use crate::db::store::capture_and_settings::RESTORE_SUPPRESSION_WINDOW_SECONDS;
 use crate::db::store::optimize::ImageOptimizationCandidate;
 use crate::db::types::{PurgeReport, SnapshotDeletionReport};
-use crate::model::{truncate_chars, ClipboardItem};
+use crate::model::{truncate_chars, ClipboardItem, ClipboardKind, SnapshotKind};
 
 pub(in crate::db) fn rebuild_snapshot_summary(
     tx: &rusqlite::Transaction<'_>,
@@ -52,7 +52,7 @@ pub(in crate::db) fn rebuild_snapshot_summary(
         .filter(|search| !search.is_empty())
         .collect::<Vec<_>>()
         .join("\n\n");
-    let snapshot_kind = snapshot_kind_from_item_rows(&items);
+    let snapshot_kind = snapshot_kind_from_item_rows(&items)?;
 
     tx.execute(
         r"
@@ -66,7 +66,7 @@ pub(in crate::db) fn rebuild_snapshot_summary(
         ",
         params![
             snapshot_id,
-            snapshot_kind,
+            snapshot_kind.as_str(),
             preview_text,
             search_text,
             usize_to_i64(item_count)?,
@@ -79,17 +79,23 @@ pub(in crate::db) fn rebuild_snapshot_summary(
 
 pub(in crate::db) fn snapshot_kind_from_item_rows(
     items: &[(String, String, String, usize)],
-) -> String {
+) -> Result<SnapshotKind> {
     if items.is_empty() {
-        return "empty".to_string();
+        return Ok(SnapshotKind::Empty);
     }
 
-    let first = &items[0].0;
-    if items.iter().all(|(kind, _, _, _)| kind == first) {
-        first.clone()
-    } else {
-        "mixed".to_string()
+    let first = parse_item_kind(&items[0].0)?;
+    for (kind, _, _, _) in items.iter().skip(1) {
+        if parse_item_kind(kind)? != first {
+            return Ok(SnapshotKind::Mixed);
+        }
     }
+    Ok(SnapshotKind::from(first))
+}
+
+fn parse_item_kind(kind: &str) -> Result<ClipboardKind> {
+    kind.parse::<ClipboardKind>()
+        .with_context(|| format!("parse snapshot item kind {kind:?}"))
 }
 
 pub(in crate::db) fn snapshot_fingerprint_with_replacement(
@@ -411,4 +417,45 @@ pub(in crate::db) fn load_purge_report(
         },
     )
     .context("load purge report")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::snapshot_kind_from_item_rows;
+    use crate::model::SnapshotKind;
+
+    fn item_row(kind: &str) -> (String, String, String, usize) {
+        (kind.to_string(), String::new(), String::new(), 0)
+    }
+
+    #[test]
+    fn snapshot_kind_from_item_rows_returns_typed_kinds() {
+        assert_eq!(
+            snapshot_kind_from_item_rows(&[]).expect("empty kind should derive"),
+            SnapshotKind::Empty
+        );
+        assert_eq!(
+            snapshot_kind_from_item_rows(&[item_row("plain_text")])
+                .expect("single item kind should derive"),
+            SnapshotKind::PlainText
+        );
+        assert_eq!(
+            snapshot_kind_from_item_rows(&[item_row("plain_text"), item_row("image")])
+                .expect("mixed item kind should derive"),
+            SnapshotKind::Mixed
+        );
+    }
+
+    #[test]
+    fn snapshot_kind_from_item_rows_rejects_invalid_item_kind() {
+        let error = snapshot_kind_from_item_rows(&[item_row("mixed")])
+            .expect_err("snapshot-only kind should not parse as an item kind");
+
+        assert!(
+            error
+                .to_string()
+                .contains("parse snapshot item kind \"mixed\""),
+            "unexpected error: {error:#}"
+        );
+    }
 }
