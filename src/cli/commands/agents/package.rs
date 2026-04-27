@@ -188,3 +188,95 @@ pub(in crate::cli) fn resolve_hermes_skill_dir(dest: Option<&Path>) -> Result<Pa
 
     Ok(home_dir()?.join(HERMES_SKILL_ROOT).join(HERMES_SKILL_NAME))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::{
+        packaged_hermes_files, packaged_hermes_skill, packaged_openclaw_files,
+        packaged_openclaw_skill, resolve_hermes_skill_dir, resolve_openclaw_skill_dir,
+        HERMES_CHECK_SETUP_SH, HERMES_COMMANDS_REF, HERMES_EXAMPLES_REF, HERMES_JSON_SCHEMA_REF,
+        HERMES_SETUP_CHECK_REF, HERMES_SKILL_MD, HERMES_SKILL_NAME, HERMES_TROUBLESHOOTING_REF,
+        OPENCLAW_CHECK_SETUP_SH, OPENCLAW_COMMANDS_REF, OPENCLAW_EXAMPLES_REF,
+        OPENCLAW_JSON_SCHEMA_REF, OPENCLAW_SETUP_CHECK_REF, OPENCLAW_SKILL_MD, OPENCLAW_SKILL_NAME,
+        OPENCLAW_TROUBLESHOOTING_REF,
+    };
+
+    #[test]
+    fn packaged_skill_strings_return_embedded_skill_markdown() {
+        assert_eq!(packaged_openclaw_skill(), OPENCLAW_SKILL_MD);
+        assert_eq!(packaged_hermes_skill(), HERMES_SKILL_MD);
+        assert!(packaged_openclaw_skill().contains(OPENCLAW_SKILL_NAME));
+        assert!(packaged_hermes_skill().contains(HERMES_SKILL_NAME));
+    }
+
+    #[test]
+    fn packaged_openclaw_manifest_lists_all_embedded_files() {
+        let files = packaged_openclaw_files();
+        let manifest = files
+            .iter()
+            .map(|file| (file.relative_path, file.contents))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            manifest,
+            vec![
+                ("SKILL.md", OPENCLAW_SKILL_MD),
+                ("references/commands.md", OPENCLAW_COMMANDS_REF),
+                (
+                    "references/troubleshooting.md",
+                    OPENCLAW_TROUBLESHOOTING_REF
+                ),
+                ("references/json-schema.md", OPENCLAW_JSON_SCHEMA_REF),
+                ("references/examples.md", OPENCLAW_EXAMPLES_REF),
+                ("references/setup-check.md", OPENCLAW_SETUP_CHECK_REF),
+                ("scripts/check-setup.sh", OPENCLAW_CHECK_SETUP_SH),
+            ]
+        );
+    }
+
+    #[test]
+    fn packaged_hermes_manifest_lists_all_embedded_files() {
+        let files = packaged_hermes_files();
+        let manifest = files
+            .iter()
+            .map(|file| (file.relative_path, file.contents))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            manifest,
+            vec![
+                ("SKILL.md", HERMES_SKILL_MD),
+                ("references/commands.md", HERMES_COMMANDS_REF),
+                ("references/troubleshooting.md", HERMES_TROUBLESHOOTING_REF),
+                ("references/json-schema.md", HERMES_JSON_SCHEMA_REF),
+                ("references/examples.md", HERMES_EXAMPLES_REF),
+                ("references/setup-check.md", HERMES_SETUP_CHECK_REF),
+                ("scripts/check-setup.sh", HERMES_CHECK_SETUP_SH),
+            ]
+        );
+    }
+
+    #[test]
+    fn explicit_skill_destinations_bypass_default_resolution() {
+        let openclaw_dest = Path::new("/tmp/custom-openclaw-skill");
+        let hermes_dest = Path::new("/tmp/custom-hermes-skill");
+
+        assert_eq!(
+            resolve_openclaw_skill_dir(Some(openclaw_dest), false)
+                .expect("explicit OpenClaw destination should resolve"),
+            openclaw_dest
+        );
+        assert_eq!(
+            resolve_openclaw_skill_dir(Some(openclaw_dest), true)
+                .expect("explicit shared OpenClaw destination should resolve"),
+            openclaw_dest
+        );
+        assert_eq!(
+            resolve_hermes_skill_dir(Some(hermes_dest))
+                .expect("explicit Hermes destination should resolve"),
+            hermes_dest
+        );
+    }
+}
