@@ -6,7 +6,7 @@ use crate::model::{
     rtf_to_text_lossy, truncate_chars, ClipboardKind,
 };
 
-use super::core::{collect_rows, row_enum};
+use super::sqlite_helpers::{collect_rows, row_enum};
 
 pub(super) const SCHEMA: &str = include_str!("schema.sql");
 pub(super) const CURRENT_SCHEMA_VERSION: i64 = 17;

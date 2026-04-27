@@ -1,7 +1,7 @@
 use rusqlite::{Error as SqlError, ErrorCode, Row};
 
-use crate::db::core::{row_enum, row_usize};
 use crate::db::read::types::{QueryAnalysis, LIST_VALUE_SEPARATOR, MATCHED_FIELDS_SEPARATOR};
+use crate::db::sqlite_helpers::{row_enum, row_usize};
 use crate::db::types::{Page, SearchMode, SearchResults};
 use crate::model::{SearchHit, SearchHitParts, TimelineEvent};
 

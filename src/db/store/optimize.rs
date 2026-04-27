@@ -5,9 +5,8 @@ use anyhow::{ensure, Context, Result};
 use image::{ExtendedColorType, ImageEncoder, ImageReader, Limits};
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
-use crate::db::core::{
-    collect_rows, pragma_usize, row_usize, sanitise_limit, storage_file_sizes, usize_to_i64,
-};
+use crate::db::core::{pragma_usize, sanitise_limit, storage_file_sizes};
+use crate::db::sqlite_helpers::{collect_rows, row_usize, usize_to_i64};
 use crate::db::store::config::{
     ImageOptimizationCandidate, IMAGE_OPTIMIZATION_FORMAT, IMAGE_OPTIMIZATION_MAX_DIMENSION,
     IMAGE_OPTIMIZATION_MIN_ABSOLUTE_SAVINGS, IMAGE_OPTIMIZATION_MIN_RELATIVE_SAVINGS_DENOMINATOR,

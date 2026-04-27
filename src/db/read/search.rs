@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use rusqlite::{named_params, params, Error as SqlError, Result as SqlResult};
 
-use crate::db::core::{collect_rows, sanitise_limit, usize_to_i64};
+use crate::db::core::sanitise_limit;
 use crate::db::read::filter_sql::{
     app_like_pattern, can_use_snapshot_event_cache, effective_since_param, escape_like_pattern,
     has_temporal_event_filters, requires_matching_events,
@@ -14,6 +14,7 @@ use crate::db::read::queries::{
     file_path_literal_query, fts_query, literal_query, ocr_fts_query, ocr_literal_query,
 };
 use crate::db::read::types::QueryAnalysis;
+use crate::db::sqlite_helpers::{collect_rows, usize_to_i64};
 use crate::db::types::{Database, RetrievalFilters, SearchCursorState, SearchMode, SearchResults};
 use crate::model::SearchHit;
 

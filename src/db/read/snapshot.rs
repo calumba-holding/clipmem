@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 use rusqlite::{params, OptionalExtension};
 
-use crate::db::core::{collect_rows, row_enum, row_usize, sanitise_limit, usize_to_i64};
+use crate::db::core::sanitise_limit;
+use crate::db::sqlite_helpers::{collect_rows, row_enum, row_usize, usize_to_i64};
 use crate::db::types::Database;
 use crate::model::{
     CaptureEvent, ClipboardItem, ClipboardRepresentation, DoctorReport, FlattenedTextProjection,
@@ -362,7 +363,7 @@ mod profile_tests {
     use anyhow::{Context, Result};
     use rusqlite::params;
 
-    use crate::db::core::{collect_rows, row_enum, row_usize, usize_to_i64};
+    use crate::db::sqlite_helpers::{collect_rows, row_enum, row_usize, usize_to_i64};
     use crate::db::types::Database;
     use crate::model::{
         build_item, build_representation, build_snapshot, CaptureContext, ClipboardItem,

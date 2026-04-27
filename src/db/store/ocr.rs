@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 
-use crate::db::core::collect_rows;
+use crate::db::sqlite_helpers::collect_rows;
 
 pub(in crate::db) fn enqueue_ocr_candidates_tx(
     tx: &rusqlite::Transaction<'_>,

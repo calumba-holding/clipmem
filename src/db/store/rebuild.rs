@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use rusqlite::{params, OptionalExtension};
 
-use crate::db::core::{collect_rows, row_usize, usize_to_i64};
+use crate::db::sqlite_helpers::{collect_rows, row_usize, usize_to_i64};
 use crate::db::store::config::{ImageOptimizationCandidate, RESTORE_SUPPRESSION_WINDOW_SECONDS};
 use crate::db::types::{PurgeReport, SnapshotDeletionReport};
 use crate::model::{truncate_chars, ClipboardItem, ClipboardKind, SnapshotKind};

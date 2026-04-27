@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use rusqlite::named_params;
 
-use crate::db::core::{collect_rows, row_enum, row_usize, usize_to_i64};
 use crate::db::read::filter_sql::{app_like_pattern, effective_since_param};
+use crate::db::sqlite_helpers::{collect_rows, row_enum, row_usize, usize_to_i64};
 use crate::db::types::{
     Database, RetrievalFilters, RetrievalKind, StatsAppEntry, StatsKindBreakdownEntry,
     StatsSnapshotLeaderboardEntry, StatsTimeBucketEntry,

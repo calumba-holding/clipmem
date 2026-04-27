@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
-use crate::db::core::{collect_rows, row_usize, sanitise_limit, storage_file_sizes, usize_to_i64};
+use crate::db::core::{sanitise_limit, storage_file_sizes};
+use crate::db::sqlite_helpers::{collect_rows, row_usize, usize_to_i64};
 use crate::db::store::config::IMAGE_OPTIMIZATION_FORMAT;
 use crate::db::store::ocr::{
     enqueue_ocr_candidates_tx, enqueue_ocr_for_snapshot_tx, rebuild_snapshot_ocr_cache,
