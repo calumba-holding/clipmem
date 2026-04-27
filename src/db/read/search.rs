@@ -6,7 +6,7 @@ use crate::db::read::mapping::{
     analyze_query, app_like_pattern, can_use_snapshot_event_cache, effective_since_param,
     escape_like_pattern, has_temporal_event_filters, is_invalid_fts_query, is_simple_fts_query,
     literal_fts_match_query, map_scored_search_hit_row, map_search_hit_row,
-    merge_scored_search_results, paginate_rows, requires_matching_events,
+    merge_scored_search_results, paginate_rows, requires_matching_events, QueryAnalysis,
 };
 use crate::db::read::queries::{
     file_path_literal_query, fts_query, literal_query, ocr_fts_query, ocr_literal_query,
@@ -14,8 +14,6 @@ use crate::db::read::queries::{
 use crate::db::types::{Database, RetrievalFilters, SearchCursorState, SearchMode, SearchResults};
 use crate::model::SearchHit;
 
-pub(in crate::db) const LIST_VALUE_SEPARATOR: char = '\u{1f}';
-pub(in crate::db) const MATCHED_FIELDS_SEPARATOR: char = '\u{1e}';
 pub(in crate::db) const FAST_FILE_PATH_LITERAL_QUERY: &str = r"
     SELECT
         s.id AS snapshot_id,
@@ -51,15 +49,6 @@ pub(in crate::db) const FAST_FILE_PATH_LITERAL_QUERY: &str = r"
     ORDER BY score DESC, ss.last_observed_at DESC, s.id DESC
     LIMIT :limit
 ";
-
-#[derive(Debug, Clone)]
-pub(in crate::db) struct QueryAnalysis {
-    pub(in crate::db) trimmed: String,
-    pub(in crate::db) lower: String,
-    pub(in crate::db) exact_phrase: Option<String>,
-    pub(in crate::db) literal_preferred: bool,
-    pub(in crate::db) path_fragment: Option<String>,
-}
 
 struct SearchExecutionParams<'a> {
     fetch_limit: i64,

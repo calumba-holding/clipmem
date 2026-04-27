@@ -2,9 +2,20 @@ use anyhow::Result;
 use rusqlite::{Error as SqlError, ErrorCode, Row};
 
 use crate::db::core::{row_enum, row_usize};
-use crate::db::read::search::{QueryAnalysis, LIST_VALUE_SEPARATOR, MATCHED_FIELDS_SEPARATOR};
 use crate::db::types::{Page, RetrievalFilters, SearchMode, SearchResults};
 use crate::model::{SearchHit, SearchHitParts, TimelineEvent};
+
+pub(in crate::db) const LIST_VALUE_SEPARATOR: char = '\u{1f}';
+pub(in crate::db) const MATCHED_FIELDS_SEPARATOR: char = '\u{1e}';
+
+#[derive(Debug, Clone)]
+pub(in crate::db) struct QueryAnalysis {
+    pub(in crate::db) trimmed: String,
+    pub(in crate::db) lower: String,
+    pub(in crate::db) exact_phrase: Option<String>,
+    pub(in crate::db) literal_preferred: bool,
+    pub(in crate::db) path_fragment: Option<String>,
+}
 
 pub(in crate::db) fn has_temporal_event_filters(filters: &RetrievalFilters) -> bool {
     filters.since().is_some() || filters.until().is_some() || filters.hours().is_some()
