@@ -346,29 +346,29 @@ pub(in crate::db) fn map_search_hit_row(
     row: &Row<'_>,
     has_score: bool,
 ) -> rusqlite::Result<SearchHit> {
-    let urls = split_aggregated_values(&row.get::<_, String>(13)?);
-    let file_paths = split_aggregated_file_paths(&row.get::<_, String>(14)?);
-    let matched_fields = split_match_fields(&row.get::<_, String>(7)?);
+    let urls = split_aggregated_values(&row.get::<_, String>("urls")?);
+    let file_paths = split_aggregated_file_paths(&row.get::<_, String>("file_urls")?);
+    let matched_fields = split_match_fields(&row.get::<_, String>("matched_fields")?);
 
     Ok(SearchHit::from_parts(SearchHitParts {
-        snapshot_id: row.get(0)?,
-        event_id: row.get(1)?,
-        sha256: row.get(2)?,
-        snapshot_kind: row_enum(row, 3)?,
-        preview_text: row.get(4)?,
-        search_text: row.get(5)?,
-        why_matched: row.get(6)?,
+        snapshot_id: row.get("snapshot_id")?,
+        event_id: row.get("event_id")?,
+        sha256: row.get("sha256")?,
+        snapshot_kind: row_enum_named(row, "snapshot_kind")?,
+        preview_text: row.get("preview_text")?,
+        search_text: row.get("search_text")?,
+        why_matched: row.get("why_matched")?,
         matched_fields,
-        capture_count: row_usize(row, 8)?,
-        first_observed_at: row.get(9)?,
-        last_observed_at: row.get(10)?,
-        last_frontmost_app_name: row.get(11)?,
-        last_frontmost_app_bundle_id: row.get(12)?,
+        capture_count: row_usize_named(row, "capture_count")?,
+        first_observed_at: row.get("first_observed_at")?,
+        last_observed_at: row.get("last_observed_at")?,
+        last_frontmost_app_name: row.get("last_frontmost_app_name")?,
+        last_frontmost_app_bundle_id: row.get("last_frontmost_app_bundle_id")?,
         urls,
         file_paths,
-        total_bytes: row_usize(row, 15)?,
-        item_count: row_usize(row, 16)?,
-        score: if has_score { row.get(17)? } else { None },
+        total_bytes: row_usize_named(row, "total_bytes")?,
+        item_count: row_usize_named(row, "item_count")?,
+        score: if has_score { row.get("score")? } else { None },
     }))
 }
 
@@ -377,25 +377,39 @@ pub(in crate::db) fn map_scored_search_hit_row(row: &Row<'_>) -> rusqlite::Resul
 }
 
 pub(in crate::db) fn map_timeline_event_row(row: &Row<'_>) -> rusqlite::Result<TimelineEvent> {
-    let urls = split_aggregated_values(&row.get::<_, String>(10)?);
-    let file_paths = split_aggregated_file_paths(&row.get::<_, String>(11)?);
+    let urls = split_aggregated_values(&row.get::<_, String>("urls")?);
+    let file_paths = split_aggregated_file_paths(&row.get::<_, String>("file_urls")?);
 
     Ok(TimelineEvent::new(
-        row.get(0)?,
-        row.get(1)?,
-        row.get(2)?,
-        row.get(3)?,
-        row.get(4)?,
-        row_enum(row, 5)?,
-        row.get(6)?,
-        row.get(7)?,
-        row.get(8)?,
-        row.get(9)?,
+        row.get("event_id")?,
+        row.get("snapshot_id")?,
+        row.get("observed_at")?,
+        row.get("change_count")?,
+        row.get("sha256")?,
+        row_enum_named(row, "snapshot_kind")?,
+        row.get("best_text")?,
+        row.get("preview_text")?,
+        row.get("frontmost_app_name")?,
+        row.get("frontmost_app_bundle_id")?,
         urls,
         file_paths,
-        row_usize(row, 12)?,
-        row_usize(row, 13)?,
+        row_usize_named(row, "total_bytes")?,
+        row_usize_named(row, "item_count")?,
     ))
+}
+
+fn row_enum_named<T>(row: &Row<'_>, column: &str) -> rusqlite::Result<T>
+where
+    T: std::str::FromStr,
+    T::Err: std::error::Error + Send + Sync + 'static,
+{
+    let index = row.as_ref().column_index(column)?;
+    row_enum(row, index)
+}
+
+fn row_usize_named(row: &Row<'_>, column: &str) -> rusqlite::Result<usize> {
+    let index = row.as_ref().column_index(column)?;
+    row_usize(row, index)
 }
 
 pub(in crate::db) fn paginate_rows(mut rows: Vec<SearchHit>, limit: usize) -> Page<SearchHit> {
