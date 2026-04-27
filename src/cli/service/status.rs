@@ -6,7 +6,7 @@ use anyhow::Result;
 
 use crate::db::Database;
 
-use super::manage::{build_context, conflict_message, ensure_supported, select_provider};
+use super::context::{build_context, conflict_message, ensure_supported, select_provider};
 use super::model::*;
 use super::render::render_retention_value;
 
