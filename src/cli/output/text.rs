@@ -8,7 +8,7 @@ use super::support::{
     format_utc_timestamp, push_blank_line, push_snapshot_leaderboard,
     push_snapshot_leaderboard_entry,
 };
-use crate::cli::formats::{format_duration_seconds, peak_bucket};
+use crate::cli::display::{format_duration_seconds, peak_bucket};
 use crate::db::{ImageOptimizationReport, StorageCompactReport};
 use crate::model::{DoctorReport, SnapshotDetails};
 

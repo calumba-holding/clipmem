@@ -1,5 +1,6 @@
 mod commands;
 mod db_path;
+mod display;
 mod errors;
 mod exit;
 mod formats;

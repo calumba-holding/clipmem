@@ -4,7 +4,8 @@ use anyhow::Result;
 
 use crate::db::{CapturePolicy, CaptureSettings};
 
-use crate::cli::formats::{format_duration_compact, OutputFormat};
+use crate::cli::display::format_duration_compact;
+use crate::cli::formats::OutputFormat;
 use crate::cli::output::{
     emit_settings_ignore_list_output, emit_settings_view_output, SettingsIgnoreListOutput,
     SettingsView,

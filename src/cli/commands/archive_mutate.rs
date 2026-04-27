@@ -6,8 +6,9 @@ use anyhow::{anyhow, Context, Result};
 use crate::db::{PurgeReport, SnapshotDeletionReport};
 use crate::platform::restore_items;
 
+use crate::cli::display::format_duration_compact;
 use crate::cli::errors::{invalid_args_error, not_found_error};
-use crate::cli::formats::{format_duration_compact, OutputFormat};
+use crate::cli::formats::OutputFormat;
 use crate::cli::human::{
     render_export_human, render_forget_human, render_purge_human, render_restore_human,
 };

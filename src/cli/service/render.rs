@@ -1,6 +1,6 @@
 use std::fmt::Write as _;
 
-use crate::cli::formats::format_duration_compact;
+use crate::cli::display::format_duration_compact;
 use crate::db::{CaptureSettings, CaptureSkipReason};
 
 use super::model::{
