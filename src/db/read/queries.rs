@@ -1,6 +1,6 @@
 use crate::db::read::filter_sql::{
     base_event_filter_clause, event_filter_clause, event_filter_where_clause,
-    snapshot_filter_clause, snapshot_stats_since_filter_clause,
+    parameter_bindings_clause, snapshot_filter_clause, snapshot_stats_since_filter_clause,
 };
 use crate::db::types::TimelineSort;
 
@@ -476,8 +476,7 @@ pub(in crate::db) fn fts_query(
              JOIN snapshot_stats ss ON ss.snapshot_id = s.id
              LEFT JOIN snapshot_event_filter_cache se ON se.snapshot_id = s.id
              WHERE snapshots_fts MATCH :query
-               AND (:query_lower IS NULL OR :query_lower IS NOT NULL)
-               AND (:exact_phrase_lower IS NULL OR :exact_phrase_lower IS NOT NULL)
+               AND {search_parameter_bindings_clause}
                AND {snapshot_filter_clause}
                AND {event_filter_where_clause}
          )
@@ -551,6 +550,8 @@ pub(in crate::db) fn fts_query(
             has_temporal_event_filters,
         ),
         snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
+        search_parameter_bindings_clause =
+            parameter_bindings_clause(&[":query_lower", ":exact_phrase_lower"]),
         why_matched_expression = why_matched_expression,
         matched_fields_expression = matched_fields_expression,
         score_expression = score_expression,
@@ -694,7 +695,7 @@ pub(in crate::db) fn ocr_literal_query(
          LEFT JOIN snapshot_event_filter_cache se ON se.snapshot_id = s.id
          WHERE soc.ocr_text != ''
            AND lower(soc.ocr_text) LIKE :like ESCAPE '\\'
-           AND (:literal_match IS NULL OR :literal_match IS NOT NULL)
+           AND {literal_match_parameter_bindings_clause}
            AND {snapshot_filter_clause}
            AND {base_event_filter_clause}
            AND (
@@ -718,6 +719,8 @@ pub(in crate::db) fn ocr_literal_query(
             include_matching_events,
             use_snapshot_event_cache,
         ),
+        literal_match_parameter_bindings_clause =
+            parameter_bindings_clause(&[":literal_match"]),
         snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
     )
 }

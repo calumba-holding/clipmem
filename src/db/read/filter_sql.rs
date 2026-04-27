@@ -2,6 +2,8 @@ use anyhow::Result;
 
 use crate::db::types::RetrievalFilters;
 
+const EVENT_FILTER_PARAMETERS: &[&str] = &[":since", ":until", ":app_like", ":bundle_id"];
+
 pub(in crate::db) fn has_temporal_event_filters(filters: &RetrievalFilters) -> bool {
     filters.since().is_some() || filters.until().is_some() || filters.hours().is_some()
 }
@@ -35,17 +37,24 @@ pub(in crate::db) fn event_filter_clause(alias: &str) -> String {
     )
 }
 
-pub(in crate::db) fn event_filter_bind_clause() -> &'static str {
-    "(:since IS NULL OR 1)
-     AND (:until IS NULL OR 1)
-     AND (:app_like IS NULL OR 1)
-     AND (:bundle_id IS NULL OR 1)"
+// Some query variants bind a shared named-parameter set even when a parameter
+// has no semantic predicate. Keep those binding-only placeholders explicit.
+pub(in crate::db) fn parameter_bindings_clause(parameters: &[&str]) -> String {
+    parameters
+        .iter()
+        .map(|parameter| format!("({parameter} IS NULL OR {parameter} IS NOT NULL)"))
+        .collect::<Vec<_>>()
+        .join("\n         AND ")
+}
+
+pub(in crate::db) fn event_filter_parameter_bindings_clause() -> String {
+    parameter_bindings_clause(EVENT_FILTER_PARAMETERS)
 }
 
 pub(in crate::db) fn snapshot_event_filter_clause(cache_alias: &str) -> String {
+    let temporal_parameter_bindings = parameter_bindings_clause(&[":since", ":until"]);
     format!(
-        "(:since IS NULL OR 1)
-         AND (:until IS NULL OR 1)
+        "{temporal_parameter_bindings}
          AND (:app_like IS NULL OR ({cache_alias}.app_names_lower != '' AND {cache_alias}.app_names_lower LIKE :app_like ESCAPE '\\'))
          AND (:bundle_id IS NULL OR instr(char(31) || {cache_alias}.bundle_ids_lower || char(31), char(31) || :bundle_id || char(31)) > 0)"
     )
@@ -57,22 +66,23 @@ pub(in crate::db) fn base_event_filter_clause(
     use_snapshot_event_cache: bool,
 ) -> String {
     if include_matching_events {
-        event_filter_bind_clause().to_string()
+        event_filter_parameter_bindings_clause()
     } else if use_snapshot_event_cache {
         snapshot_event_filter_clause(cache_alias)
     } else {
-        event_filter_bind_clause().to_string()
+        event_filter_parameter_bindings_clause()
     }
 }
 
 pub(in crate::db) fn snapshot_stats_since_filter_clause(
     use_snapshot_stats_since_filter: bool,
-) -> &'static str {
+) -> String {
     if use_snapshot_stats_since_filter {
         "ss.last_observed_at >= datetime(:since)
          AND datetime(ss.last_observed_at) >= datetime(:since)"
+            .to_string()
     } else {
-        "(:since IS NULL OR 1)"
+        parameter_bindings_clause(&[":since"])
     }
 }
 
@@ -95,7 +105,7 @@ pub(in crate::db) fn event_filter_where_clause(
             event_filter_clause("ce")
         )
     } else {
-        event_filter_bind_clause().to_string()
+        event_filter_parameter_bindings_clause()
     }
 }
 
