@@ -11,7 +11,7 @@ use crate::cli::commands::types::{
     HERMES_EXAMPLES_REF, HERMES_JSON_SCHEMA_REF, HERMES_SETUP_CHECK_REF, HERMES_SKILL_MD,
     HERMES_SKILL_NAME, HERMES_SKILL_ROOT, HERMES_TROUBLESHOOTING_REF,
 };
-use crate::cli::{HermesDoctorArgs, HermesInstallSkillArgs, HermesUninstallSkillArgs};
+use crate::cli::schema::{HermesDoctorArgs, HermesInstallSkillArgs, HermesUninstallSkillArgs};
 
 pub(in crate::cli) fn hermes_install_skill(args: &HermesInstallSkillArgs) -> Result<()> {
     let target_dir = resolve_hermes_skill_dir(args.dest.as_deref())?;

@@ -1,4 +1,4 @@
-use super::*;
+use std::process::ExitCode;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CliExitCode {

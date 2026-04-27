@@ -4,10 +4,13 @@ use clap::Parser;
 
 use crate::db::{SearchMode, TimelineSort};
 
-use super::{
-    classify_command_error, Cli, CliExitCode, Command, OutputFormat, ProgressFormat,
-    RecallOutputFormat, RetentionValue,
+use super::errors::classify_command_error;
+use super::formats::{OutputFormat, ProgressFormat, RecallOutputFormat, RetentionValue};
+use super::schema::{
+    AgentsCommand, Cli, Command, HermesCommand, OcrCommand, OpenClawCommand, SettingsCommand,
+    SettingsIgnoreCommand, StorageCommand,
 };
+use super::CliExitCode;
 
 #[test]
 fn watch_command_parses_global_db_and_runtime_flags() {
@@ -48,8 +51,8 @@ fn agents_openclaw_commands_parse_install_and_doctor_flags() {
 
     match install_cli.command {
         Command::Agents(args) => match args.command {
-            super::AgentsCommand::Openclaw(args) => match args.command {
-                super::OpenClawCommand::InstallSkill(args) => {
+            AgentsCommand::Openclaw(args) => match args.command {
+                OpenClawCommand::InstallSkill(args) => {
                     assert!(args.shared);
                     assert_eq!(args.dest, Some(PathBuf::from("/tmp/clipboard-memory")));
                     assert!(args.force);
@@ -71,8 +74,8 @@ fn agents_openclaw_commands_parse_install_and_doctor_flags() {
     ]);
     match doctor_cli.command {
         Command::Agents(args) => match args.command {
-            super::AgentsCommand::Openclaw(args) => match args.command {
-                super::OpenClawCommand::Doctor(args) => {
+            AgentsCommand::Openclaw(args) => match args.command {
+                OpenClawCommand::Doctor(args) => {
                     assert_eq!(args.dest, Some(PathBuf::from("/tmp/clipboard-memory")));
                     assert!(!args.shared);
                 }
@@ -98,8 +101,8 @@ fn agents_hermes_commands_parse_install_doctor_print_and_uninstall() {
 
     match install_cli.command {
         Command::Agents(args) => match args.command {
-            super::AgentsCommand::Hermes(args) => match args.command {
-                super::HermesCommand::InstallSkill(args) => {
+            AgentsCommand::Hermes(args) => match args.command {
+                HermesCommand::InstallSkill(args) => {
                     assert_eq!(args.dest, Some(PathBuf::from("/tmp/clipboard-memory")));
                     assert!(args.force);
                 }
@@ -120,8 +123,8 @@ fn agents_hermes_commands_parse_install_doctor_print_and_uninstall() {
     ]);
     match doctor_cli.command {
         Command::Agents(args) => match args.command {
-            super::AgentsCommand::Hermes(args) => match args.command {
-                super::HermesCommand::Doctor(args) => {
+            AgentsCommand::Hermes(args) => match args.command {
+                HermesCommand::Doctor(args) => {
                     assert_eq!(args.dest, Some(PathBuf::from("/tmp/clipboard-memory")));
                 }
                 other => panic!("expected doctor command, got {other:?}"),
@@ -134,8 +137,8 @@ fn agents_hermes_commands_parse_install_doctor_print_and_uninstall() {
     let print_cli = Cli::parse_from(["clipmem", "agents", "hermes", "print-skill"]);
     match print_cli.command {
         Command::Agents(args) => match args.command {
-            super::AgentsCommand::Hermes(args) => {
-                assert!(matches!(args.command, super::HermesCommand::PrintSkill));
+            AgentsCommand::Hermes(args) => {
+                assert!(matches!(args.command, HermesCommand::PrintSkill));
             }
             other => panic!("expected hermes command, got {other:?}"),
         },
@@ -145,11 +148,8 @@ fn agents_hermes_commands_parse_install_doctor_print_and_uninstall() {
     let uninstall_cli = Cli::parse_from(["clipmem", "agents", "hermes", "uninstall-skill"]);
     match uninstall_cli.command {
         Command::Agents(args) => match args.command {
-            super::AgentsCommand::Hermes(args) => {
-                assert!(matches!(
-                    args.command,
-                    super::HermesCommand::UninstallSkill(_)
-                ));
+            AgentsCommand::Hermes(args) => {
+                assert!(matches!(args.command, HermesCommand::UninstallSkill(_)));
             }
             other => panic!("expected hermes command, got {other:?}"),
         },
@@ -533,7 +533,7 @@ fn storage_commands_parse_expected_arguments() {
     ]);
     match compact_cli.command {
         Command::Storage(args) => match args.command {
-            super::StorageCommand::Compact(args) => {
+            StorageCommand::Compact(args) => {
                 assert!(args.dry_run);
                 assert_eq!(args.output.resolved().unwrap(), OutputFormat::Json);
             }
@@ -554,7 +554,7 @@ fn storage_commands_parse_expected_arguments() {
     ]);
     match optimize_cli.command {
         Command::Storage(args) => match args.command {
-            super::StorageCommand::OptimizeImages(args) => {
+            StorageCommand::OptimizeImages(args) => {
                 assert!(!args.dry_run);
                 assert!(args.no_compact);
                 assert_eq!(args.limit, 50);
@@ -574,7 +574,7 @@ fn storage_commands_parse_expected_arguments() {
     ]);
     match progress_cli.command {
         Command::Storage(args) => match args.command {
-            super::StorageCommand::OptimizeImages(args) => {
+            StorageCommand::OptimizeImages(args) => {
                 assert_eq!(args.progress, Some(ProgressFormat::Jsonl));
             }
             other => panic!("expected storage optimize-images command, got {other:?}"),
@@ -606,7 +606,7 @@ fn settings_commands_parse_policy_variants() {
     let show_cli = Cli::parse_from(["clipmem", "settings", "show", "--format", "json"]);
     match show_cli.command {
         Command::Settings(args) => match args.command {
-            super::SettingsCommand::Show(args) => {
+            SettingsCommand::Show(args) => {
                 assert_eq!(args.output.resolved().unwrap(), OutputFormat::Json);
             }
             other => panic!("expected settings show command, got {other:?}"),
@@ -617,7 +617,7 @@ fn settings_commands_parse_policy_variants() {
     let pause_cli = Cli::parse_from(["clipmem", "settings", "pause", "on"]);
     match pause_cli.command {
         Command::Settings(args) => match args.command {
-            super::SettingsCommand::Pause(args) => assert!(args.state.is_paused()),
+            SettingsCommand::Pause(args) => assert!(args.state.is_paused()),
             other => panic!("expected settings pause command, got {other:?}"),
         },
         other => panic!("expected settings command, got {other:?}"),
@@ -626,7 +626,7 @@ fn settings_commands_parse_policy_variants() {
     let filter_cli = Cli::parse_from(["clipmem", "settings", "api-key-filter", "on"]);
     match filter_cli.command {
         Command::Settings(args) => match args.command {
-            super::SettingsCommand::ApiKeyFilter(args) => assert!(args.state.is_paused()),
+            SettingsCommand::ApiKeyFilter(args) => assert!(args.state.is_paused()),
             other => panic!("expected settings api-key-filter command, got {other:?}"),
         },
         other => panic!("expected settings command, got {other:?}"),
@@ -635,7 +635,7 @@ fn settings_commands_parse_policy_variants() {
     let ocr_cli = Cli::parse_from(["clipmem", "settings", "ocr", "on"]);
     match ocr_cli.command {
         Command::Settings(args) => match args.command {
-            super::SettingsCommand::Ocr(args) => assert!(args.state.is_paused()),
+            SettingsCommand::Ocr(args) => assert!(args.state.is_paused()),
             other => panic!("expected settings ocr command, got {other:?}"),
         },
         other => panic!("expected settings command, got {other:?}"),
@@ -644,7 +644,7 @@ fn settings_commands_parse_policy_variants() {
     let retention_cli = Cli::parse_from(["clipmem", "settings", "retention", "forever"]);
     match retention_cli.command {
         Command::Settings(args) => match args.command {
-            super::SettingsCommand::Retention(args) => {
+            SettingsCommand::Retention(args) => {
                 assert!(matches!(args.value, RetentionValue::Forever));
                 assert_eq!(args.value.retention_seconds(), None);
             }
@@ -657,8 +657,8 @@ fn settings_commands_parse_policy_variants() {
         Cli::parse_from(["clipmem", "settings", "ignore", "add", "com.apple.Terminal"]);
     match ignore_cli.command {
         Command::Settings(args) => match args.command {
-            super::SettingsCommand::Ignore(args) => match args.command {
-                super::SettingsIgnoreCommand::Add(args) => {
+            SettingsCommand::Ignore(args) => match args.command {
+                SettingsIgnoreCommand::Add(args) => {
                     assert_eq!(args.bundle_id, "com.apple.Terminal");
                 }
                 other => panic!("expected settings ignore add command, got {other:?}"),
@@ -674,7 +674,7 @@ fn ocr_commands_parse_status_and_run_options() {
     let status_cli = Cli::parse_from(["clipmem", "ocr", "status", "--format", "json"]);
     match status_cli.command {
         Command::Ocr(args) => match args.command {
-            super::OcrCommand::Status(args) => {
+            OcrCommand::Status(args) => {
                 assert_eq!(args.output.resolved().unwrap(), OutputFormat::Json);
             }
             other => panic!("expected ocr status command, got {other:?}"),
@@ -696,7 +696,7 @@ fn ocr_commands_parse_status_and_run_options() {
     ]);
     match run_cli.command {
         Command::Ocr(args) => match args.command {
-            super::OcrCommand::Run(args) => {
+            OcrCommand::Run(args) => {
                 assert_eq!(args.limit, 7);
                 assert_eq!(args.snapshot, Some(42));
                 assert!(args.retry_failed);

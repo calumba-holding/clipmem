@@ -16,7 +16,7 @@ use super::types::{
 use super::OCR_WORKER_RUNNING;
 use crate::cli::human::render_capture_once_human;
 use crate::cli::output::{emit_json_or_text, render_capture_once_text};
-use crate::cli::{CaptureOnceArgs, WatchArgs};
+use crate::cli::schema::{CaptureOnceArgs, WatchArgs};
 
 pub(in crate::cli) fn watch(db_path: &Path, args: &WatchArgs) -> Result<()> {
     let mut db = open_or_init_db(db_path)?;

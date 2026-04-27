@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use serde::Serialize;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
+use crate::cli::formats::{OutputFormat, RecallOutputFormat};
 use crate::cli::human::{render_get_human, render_list_human, render_recall_human};
 use crate::cli::output::json::{print_json, print_json_line, print_jsonl_list};
 use crate::cli::output::markdown::{
@@ -11,7 +12,6 @@ use crate::cli::output::model::{
     GetEnvelope, ListEnvelope, RecallEnvelope, UnsupportedFormatError,
 };
 use crate::cli::output::toon::{render_list_toon, render_recall_toon};
-use crate::cli::{OutputFormat, RecallOutputFormat};
 
 pub(in crate::cli) fn generated_at_now() -> Result<String> {
     OffsetDateTime::now_utc()

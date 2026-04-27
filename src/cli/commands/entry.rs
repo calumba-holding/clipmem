@@ -4,13 +4,13 @@ use anyhow::Result;
 
 use crate::cli::human::render_service_status_human;
 use crate::cli::output::emit_json_or_text;
+use crate::cli::schema::{
+    AgentsArgs, AgentsCommand, Command, HermesArgs, HermesCommand, OpenClawArgs, OpenClawCommand,
+    ServiceArgs, ServiceCommand, ServiceStatusArgs, SetupArgs,
+};
 use crate::cli::service as service_api;
 use crate::cli::service::{
     render_service_action_text, render_service_status_text, render_setup_text,
-};
-use crate::cli::{
-    AgentsArgs, AgentsCommand, Command, HermesArgs, HermesCommand, OpenClawArgs, OpenClawCommand,
-    ServiceArgs, ServiceCommand, ServiceStatusArgs, SetupArgs,
 };
 
 use super::hermes_manage::{

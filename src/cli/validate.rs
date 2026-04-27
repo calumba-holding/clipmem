@@ -1,4 +1,10 @@
-use super::*;
+use clap::{error::ErrorKind, CommandFactory};
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+
+use super::schema::{
+    Cli, Command, OcrCommand, ServiceCommand, SettingsCommand, SettingsIgnoreCommand,
+    StorageCommand, StorageOptimizeImagesArgs,
+};
 
 pub(super) fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
     match &cli.command {

@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use crate::db::{CaptureSettings, CaptureSkipReason};
 
-use super::format_duration_compact;
+use super::formats::format_duration_compact;
 
 mod launchctl;
 mod manage;

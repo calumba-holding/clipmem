@@ -11,7 +11,7 @@ use crate::cli::commands::openclaw_validate::{
 use crate::cli::commands::types::{
     HermesDoctorReport, OpenClawDoctorCheck, OpenClawDoctorStatus, HERMES_SKILL_NAME,
 };
-use crate::cli::HermesDoctorArgs;
+use crate::cli::schema::HermesDoctorArgs;
 
 #[cfg(test)]
 use crate::cli::commands::hermes_manage::packaged_hermes_skill;

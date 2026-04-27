@@ -12,7 +12,9 @@ use crate::cli::commands::types::{
     OPENCLAW_SHARED_ROOT, OPENCLAW_SKILL_MD, OPENCLAW_SKILL_NAME, OPENCLAW_TROUBLESHOOTING_REF,
     OPENCLAW_WORKSPACE_ROOT,
 };
-use crate::cli::{OpenClawDoctorArgs, OpenClawInstallSkillArgs, OpenClawUninstallSkillArgs};
+use crate::cli::schema::{
+    OpenClawDoctorArgs, OpenClawInstallSkillArgs, OpenClawUninstallSkillArgs,
+};
 
 pub(in crate::cli) fn openclaw_install_skill(args: &OpenClawInstallSkillArgs) -> Result<()> {
     let target_dir = resolve_openclaw_skill_dir(args.dest.as_deref(), args.shared)?;

@@ -14,7 +14,7 @@ use crate::cli::output::{
     emit_recall_output, generated_at_now, RecallEnvelope, RecallMatchConfidence, RecallOutputRow,
     OUTPUT_SCHEMA_VERSION,
 };
-use crate::cli::{RecallArgs, SearchArgs};
+use crate::cli::schema::{RecallArgs, SearchArgs};
 
 use super::filters::{
     load_snapshot_projections, merge_applied_filters, normalize_retrieval_filters,

@@ -1,4 +1,7 @@
-use super::*;
+use clap::error::ErrorKind;
+
+use super::exit::{CliError, CliExitCode};
+use super::output::UnsupportedFormatError;
 
 pub(super) fn classify_clap_error(error: clap::Error) -> CliError {
     CliError::new(classify_clap_exit_code(error.kind()), error.to_string())
@@ -80,9 +83,7 @@ pub(super) fn is_not_found_error(error: &anyhow::Error, message: &str) -> bool {
 }
 
 pub(super) fn is_unsupported_format_error(_error: &anyhow::Error, message: &str) -> bool {
-    _error
-        .downcast_ref::<output::UnsupportedFormatError>()
-        .is_some()
+    _error.downcast_ref::<UnsupportedFormatError>().is_some()
         || message.contains("unsupported format")
 }
 

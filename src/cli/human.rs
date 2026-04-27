@@ -12,11 +12,11 @@ use crate::model::{DoctorReport, SnapshotDetails};
 use super::commands::{
     CaptureOnceOutput, ExportOutput, RestoreOutput, SettingsIgnoreListOutput, SettingsView,
 };
+use super::formats::{format_duration_seconds, peak_bucket};
 use super::output::{
     GetEnvelope, ListEnvelope, ListRow, RecallEnvelope, RecallMatchConfidence, StatsEnvelope,
 };
 use super::service::{ServiceProviderStatus, ServiceStatusReport};
-use super::{format_duration_seconds, peak_bucket};
 
 mod actions;
 mod detail;

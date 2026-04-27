@@ -6,7 +6,7 @@ use serde_json::json;
 use crate::db::{Database, RetrievalFilters};
 use crate::model::FlattenedTextProjection;
 
-use crate::cli::RetrievalFilterArgs;
+use crate::cli::schema::RetrievalFilterArgs;
 
 #[cfg(test)]
 use super::cursor::{
@@ -25,7 +25,7 @@ use crate::cli::commands::openclaw_validate::{
 #[cfg(test)]
 use crate::cli::commands::runtime::run_watch_iteration_with_capture;
 #[cfg(test)]
-use crate::cli::{SearchArgs, WatchArgs};
+use crate::cli::schema::{SearchArgs, WatchArgs};
 #[cfg(test)]
 use crate::db::{SearchMode, SearchResults};
 
@@ -89,6 +89,8 @@ mod tests {
         validate_openclaw_skill_content, SearchArgs, SearchMode, SearchResults, WatchArgs,
         WatchState,
     };
+    use crate::cli::formats::OutputArgs;
+    use crate::cli::schema::RetrievalFilterArgs;
     use crate::db::{Database, RetrievalFilters};
     use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
 
@@ -163,7 +165,7 @@ mod tests {
                 mode: SearchMode::Literal,
                 limit: 10,
                 cursor: None,
-                filters: crate::cli::RetrievalFilterArgs {
+                filters: RetrievalFilterArgs {
                     since: None,
                     until: None,
                     hours: None,
@@ -178,7 +180,7 @@ mod tests {
                     min_bytes: None,
                     max_bytes: None,
                 },
-                output: crate::cli::OutputArgs {
+                output: OutputArgs {
                     format: None,
                     json: false,
                     human: false,

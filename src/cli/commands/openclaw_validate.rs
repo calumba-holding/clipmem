@@ -10,7 +10,7 @@ use crate::cli::commands::openclaw_manage::{
 use crate::cli::commands::types::{
     OpenClawDoctorCheck, OpenClawDoctorReport, OpenClawDoctorStatus, OPENCLAW_SKILL_NAME,
 };
-use crate::cli::OpenClawDoctorArgs;
+use crate::cli::schema::OpenClawDoctorArgs;
 
 pub(in crate::cli) fn build_openclaw_doctor_report(
     args: &OpenClawDoctorArgs,

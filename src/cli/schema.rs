@@ -1,4 +1,29 @@
-use super::*;
+use std::path::PathBuf;
+
+use clap::{Args, Parser, Subcommand};
+
+use crate::db::{RetrievalFilters, RetrievalKind, SearchMode, TimelineSort};
+
+use super::formats::{
+    DurationValue, OutputArgs, PauseState, ProgressFormat, RecallOutputArgs, RetentionValue,
+    StatsOutputArgs,
+};
+use super::help::{
+    CAPTURE_ONCE_AFTER_HELP, DOCTOR_AFTER_HELP, EXPORT_AFTER_HELP, FORGET_AFTER_HELP,
+    GET_AFTER_HELP, HERMES_DOCTOR_AFTER_HELP, HERMES_INSTALL_AFTER_HELP, HERMES_PRINT_AFTER_HELP,
+    HERMES_UNINSTALL_AFTER_HELP, OCR_AFTER_HELP, OPENCLAW_DOCTOR_AFTER_HELP,
+    OPENCLAW_INSTALL_AFTER_HELP, OPENCLAW_PRINT_AFTER_HELP, OPENCLAW_UNINSTALL_AFTER_HELP,
+    PURGE_AFTER_HELP, RECALL_AFTER_HELP, RECENT_AFTER_HELP, RESTORE_AFTER_HELP, ROOT_AFTER_HELP,
+    SEARCH_AFTER_HELP, SERVICE_AFTER_HELP, SERVICE_STATUS_AFTER_HELP, SETTINGS_AFTER_HELP,
+    SETUP_AFTER_HELP, STATS_AFTER_HELP, STORAGE_AFTER_HELP, TIMELINE_AFTER_HELP, WATCH_AFTER_HELP,
+};
+use super::parsing::{
+    parse_bounded_limit, parse_duration_value, parse_nonnegative_bytes, parse_normalized_score,
+    parse_retention_value, parse_rfc3339_timestamp,
+};
+use super::validate::{
+    normalize_nonempty_filter_value, validate_byte_window, validate_time_window,
+};
 
 #[derive(Debug, Parser)]
 #[command(name = "clipmem")]

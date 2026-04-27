@@ -1,5 +1,8 @@
-use super::*;
+use clap::{error::ErrorKind, Args, CommandFactory, ValueEnum};
+
 use crate::db::StatsTimeBucketEntry;
+
+use super::schema::Cli;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(super) enum OutputFormat {
