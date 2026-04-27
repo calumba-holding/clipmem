@@ -617,7 +617,7 @@ fn settings_commands_parse_policy_variants() {
     let pause_cli = Cli::parse_from(["clipmem", "settings", "pause", "on"]);
     match pause_cli.command {
         Command::Settings(args) => match args.command {
-            SettingsCommand::Pause(args) => assert!(args.state.is_paused()),
+            SettingsCommand::Pause(args) => assert!(args.state.is_on()),
             other => panic!("expected settings pause command, got {other:?}"),
         },
         other => panic!("expected settings command, got {other:?}"),
@@ -626,7 +626,7 @@ fn settings_commands_parse_policy_variants() {
     let filter_cli = Cli::parse_from(["clipmem", "settings", "api-key-filter", "on"]);
     match filter_cli.command {
         Command::Settings(args) => match args.command {
-            SettingsCommand::ApiKeyFilter(args) => assert!(args.state.is_paused()),
+            SettingsCommand::ApiKeyFilter(args) => assert!(args.state.is_on()),
             other => panic!("expected settings api-key-filter command, got {other:?}"),
         },
         other => panic!("expected settings command, got {other:?}"),
@@ -635,7 +635,7 @@ fn settings_commands_parse_policy_variants() {
     let ocr_cli = Cli::parse_from(["clipmem", "settings", "ocr", "on"]);
     match ocr_cli.command {
         Command::Settings(args) => match args.command {
-            SettingsCommand::Ocr(args) => assert!(args.state.is_paused()),
+            SettingsCommand::Ocr(args) => assert!(args.state.is_on()),
             other => panic!("expected settings ocr command, got {other:?}"),
         },
         other => panic!("expected settings command, got {other:?}"),

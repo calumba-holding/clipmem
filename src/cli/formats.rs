@@ -93,7 +93,7 @@ pub(super) enum RetentionValue {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-pub(super) enum PauseState {
+pub(super) enum ToggleState {
     On,
     Off,
 }
@@ -247,9 +247,9 @@ impl RetentionValue {
     }
 }
 
-impl PauseState {
+impl ToggleState {
     #[must_use]
-    pub(super) fn is_paused(self) -> bool {
+    pub(super) fn is_on(self) -> bool {
         matches!(self, Self::On)
     }
 }

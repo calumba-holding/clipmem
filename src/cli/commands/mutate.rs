@@ -263,7 +263,7 @@ pub(in crate::cli) fn settings_show(db_path: &Path, args: &SettingsShowArgs) -> 
 
 pub(in crate::cli) fn settings_pause(db_path: &Path, args: &SettingsPauseArgs) -> Result<()> {
     let db = open_or_init_db(db_path)?;
-    let settings = db.set_paused(args.state.is_paused())?;
+    let settings = db.set_paused(args.state.is_on())?;
     let view = settings_view(CapturePolicy::new(settings, db.list_ignored_bundle_ids()?));
     emit_json_or_text(false, &view, render_settings_view_text)?;
     Ok(())
@@ -274,7 +274,7 @@ pub(in crate::cli) fn settings_api_key_filter(
     args: &SettingsApiKeyFilterArgs,
 ) -> Result<()> {
     let db = open_or_init_db(db_path)?;
-    let settings = db.set_api_key_filter_enabled(args.state.is_paused())?;
+    let settings = db.set_api_key_filter_enabled(args.state.is_on())?;
     let view = settings_view(CapturePolicy::new(settings, db.list_ignored_bundle_ids()?));
     emit_json_or_text(false, &view, render_settings_view_text)?;
     Ok(())
@@ -282,7 +282,7 @@ pub(in crate::cli) fn settings_api_key_filter(
 
 pub(in crate::cli) fn settings_ocr(db_path: &Path, args: &SettingsOcrArgs) -> Result<()> {
     let db = open_or_init_db(db_path)?;
-    let settings = db.set_ocr_enabled(args.state.is_paused())?;
+    let settings = db.set_ocr_enabled(args.state.is_on())?;
     let view = settings_view(CapturePolicy::new(settings, db.list_ignored_bundle_ids()?));
     emit_json_or_text(false, &view, render_settings_view_text)?;
     Ok(())

@@ -5,8 +5,8 @@ use clap::{Args, Parser, Subcommand};
 use crate::db::{RetrievalFilters, RetrievalKind, SearchMode, TimelineSort};
 
 use super::formats::{
-    DurationValue, OutputArgs, PauseState, ProgressFormat, RecallOutputArgs, RetentionValue,
-    StatsOutputArgs,
+    DurationValue, OutputArgs, ProgressFormat, RecallOutputArgs, RetentionValue, StatsOutputArgs,
+    ToggleState,
 };
 use super::help::{
     CAPTURE_ONCE_AFTER_HELP, DOCTOR_AFTER_HELP, EXPORT_AFTER_HELP, FORGET_AFTER_HELP,
@@ -559,19 +559,19 @@ pub(super) struct SettingsShowArgs {
 #[derive(Debug, Args)]
 pub(super) struct SettingsPauseArgs {
     /// `on` pauses capture, `off` resumes it.
-    pub(super) state: PauseState,
+    pub(super) state: ToggleState,
 }
 
 #[derive(Debug, Args)]
 pub(super) struct SettingsApiKeyFilterArgs {
     /// `on` skips clipboard snapshots that look like API keys, `off` stores them normally.
-    pub(super) state: PauseState,
+    pub(super) state: ToggleState,
 }
 
 #[derive(Debug, Args)]
 pub(super) struct SettingsOcrArgs {
     /// `on` enables automatic OCR for image captures, `off` disables it.
-    pub(super) state: PauseState,
+    pub(super) state: ToggleState,
 }
 
 #[derive(Debug, Args)]
