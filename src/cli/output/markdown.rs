@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use crate::cli::output::model::{GetEnvelope, ListEnvelope, ListRow, RecallEnvelope};
 use crate::cli::output::support::{
-    escape_markdown_cell, render_confidence_label, render_filter_pairs, truncate_for_markdown,
+    escape_markdown_cell, render_filter_pairs, truncate_for_markdown,
 };
 
 pub(in crate::cli) fn render_list_markdown(envelope: &ListEnvelope) -> String {
@@ -214,7 +214,7 @@ pub(in crate::cli) fn render_recall_markdown(envelope: &RecallEnvelope) -> Strin
             .as_deref()
             .or(best.app_bundle_id.as_deref())
             .unwrap_or("unknown app"),
-        render_confidence_label(&envelope.best_match_confidence),
+        envelope.best_match_confidence.as_str(),
         envelope
             .best_match_score
             .map(|score| format!(" · score {score:.3}"))

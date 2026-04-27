@@ -5,8 +5,6 @@ use serde_json::Value;
 use crate::db::StatsSnapshotLeaderboardEntry;
 use crate::model::SearchHit;
 
-use super::model::RecallMatchConfidence;
-
 pub(in crate::cli) fn render_filter_pairs(filters: &Value) -> String {
     let Some(object) = filters.as_object() else {
         return "none".to_string();
@@ -24,16 +22,6 @@ pub(in crate::cli) fn render_filter_pairs(filters: &Value) -> String {
         })
         .collect::<Vec<_>>()
         .join(", ")
-}
-
-pub(in crate::cli) const fn render_confidence_label(
-    confidence: &RecallMatchConfidence,
-) -> &'static str {
-    match confidence {
-        RecallMatchConfidence::High => "high",
-        RecallMatchConfidence::Medium => "medium",
-        RecallMatchConfidence::Low => "low",
-    }
 }
 
 pub(in crate::cli) fn best_text_from_hit(hit: &SearchHit) -> String {

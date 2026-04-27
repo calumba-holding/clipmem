@@ -78,6 +78,15 @@ impl RecallMatchConfidence {
             Self::Low
         }
     }
+
+    #[must_use]
+    pub(in crate::cli) const fn as_str(&self) -> &'static str {
+        match self {
+            Self::High => "high",
+            Self::Medium => "medium",
+            Self::Low => "low",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
