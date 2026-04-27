@@ -15,9 +15,16 @@ struct CommandResult: Sendable {
 }
 
 struct CommandRunner: Sendable {
+    private let processStarted: (@Sendable () -> Void)?
+
+    init(processStarted: (@Sendable () -> Void)? = nil) {
+        self.processStarted = processStarted
+    }
+
     func run(executable: String, arguments: [String]) async throws -> CommandResult {
         let runningProcess = RunningProcess()
         let cancellationState = CancellationState()
+        let processStarted = processStarted
         return try await withTaskCancellationHandler {
             try await Task.detached(priority: .userInitiated) {
                 let process = Process()
@@ -55,6 +62,7 @@ struct CommandRunner: Sendable {
                     throw error
                 }
 
+                processStarted?()
                 process.waitUntilExit()
                 let stdoutData = stdoutReader.wait()
                 let stderrData = stderrReader.wait()
@@ -75,6 +83,7 @@ struct CommandRunner: Sendable {
         let runningProcess = RunningProcess()
         let cancellationState = CancellationState()
         let pipeHandles = PipeHandles()
+        let processStarted = processStarted
         return try await withTaskCancellationHandler {
             try await Task.detached(priority: .userInitiated) {
                 let process = Process()
@@ -100,6 +109,7 @@ struct CommandRunner: Sendable {
                 do {
                     try cancellationState.checkCancellation()
                     try process.run()
+                    processStarted?()
                     let stdoutData = try await Self.consumeStdout(
                         from: stdout.fileHandleForReading,
                         cancellationState: cancellationState,

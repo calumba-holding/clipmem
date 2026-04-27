@@ -16,11 +16,15 @@ struct CommandRunnerTests {
     }
 
     @Test func cancellationTerminatesRunningProcess() async throws {
+        let processStarted = AsyncSignal()
+        let runner = CommandRunner(processStarted: {
+            processStarted.signal()
+        })
         let task = Task {
-            try await CommandRunner().run(executable: "/bin/sh", arguments: ["-c", "exec sleep 30"])
+            try await runner.run(executable: "/bin/sh", arguments: ["-c", "exec sleep 30"])
         }
 
-        try await Task.sleep(for: .milliseconds(100))
+        await processStarted.wait()
         task.cancel()
 
         do {
@@ -69,14 +73,18 @@ struct CommandRunnerTests {
     }
 
     @Test func streamingRunCancellationTerminatesRunningProcess() async throws {
+        let processStarted = AsyncSignal()
+        let runner = CommandRunner(processStarted: {
+            processStarted.signal()
+        })
         let task = Task {
-            try await CommandRunner().runStreaming(
+            try await runner.runStreaming(
                 executable: "/bin/sh",
                 arguments: ["-c", "exec sleep 30"]
             ) { _ in }
         }
 
-        try await Task.sleep(for: .milliseconds(100))
+        await processStarted.wait()
         task.cancel()
 
         do {
@@ -85,6 +93,41 @@ struct CommandRunnerTests {
         } catch is CancellationError {
         } catch {
             Issue.record("Expected CancellationError, got \(error).")
+        }
+    }
+
+    private final class AsyncSignal: @unchecked Sendable {
+        private let lock = NSLock()
+        private var isSignaled = false
+        private var continuations: [CheckedContinuation<Void, Never>] = []
+
+        func wait() async {
+            await withCheckedContinuation { continuation in
+                lock.lock()
+                if isSignaled {
+                    lock.unlock()
+                    continuation.resume()
+                } else {
+                    continuations.append(continuation)
+                    lock.unlock()
+                }
+            }
+        }
+
+        func signal() {
+            lock.lock()
+            if isSignaled {
+                lock.unlock()
+                return
+            }
+            isSignaled = true
+            let continuations = continuations
+            self.continuations.removeAll()
+            lock.unlock()
+
+            for continuation in continuations {
+                continuation.resume()
+            }
         }
     }
 
