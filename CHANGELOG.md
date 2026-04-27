@@ -28,6 +28,8 @@ versioning where practical.
 
 ### Fixed
 
+- Added diagnostic notes to `clipmem service status` when launchctl, plist, or
+  process probes fail so missing service details are easier to troubleshoot.
 - Fixed file URL path normalization so `file://localhost/...` clipboard
   entries decode and search correctly even when the `localhost` authority or
   URL scheme uses uppercase characters.

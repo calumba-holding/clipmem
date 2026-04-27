@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 use crate::db::Database;
 
@@ -13,27 +13,31 @@ use super::render::render_retention_value;
 pub(crate) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
     ensure_supported()?;
     let context = build_context(db_path)?;
-    let direct_row = launchctl_row(DIRECT_LABEL)?;
-    let homebrew_row = launchctl_row(HOMEBREW_LABEL)?;
-    let direct_installed = context.direct_plist_path.is_file() || direct_row.is_some();
-    let homebrew_installed = context.homebrew_plist_path.is_file() || homebrew_row.is_some();
-    let direct_status = provider_status(ProviderStatusInput {
+    let direct_row = launchctl_row_probe(DIRECT_LABEL);
+    let homebrew_row = launchctl_row_probe(HOMEBREW_LABEL);
+    let direct_configured_binary =
+        configured_binary_path_from_plist_probe(&context.direct_plist_path);
+    let homebrew_configured_binary =
+        configured_binary_path_from_plist_probe(&context.homebrew_plist_path);
+    let direct_installed = context.direct_plist_path.is_file() || direct_row.value.is_some();
+    let homebrew_installed = context.homebrew_plist_path.is_file() || homebrew_row.value.is_some();
+    let direct_status = provider_status_probe(ProviderStatusInput {
         provider: ServiceProvider::Launchagent,
         label: DIRECT_LABEL,
         installed: direct_installed,
-        row: direct_row,
+        row: direct_row.value,
         plist_path: Some(context.direct_plist_path.clone()),
-        configured_binary_path: configured_binary_path_from_plist(&context.direct_plist_path),
+        configured_binary_path: direct_configured_binary.value,
         stdout_log_path: Some(context.direct_stdout_path.clone()),
         stderr_log_path: Some(context.direct_stderr_path.clone()),
     });
-    let homebrew_status = provider_status(ProviderStatusInput {
+    let homebrew_status = provider_status_probe(ProviderStatusInput {
         provider: ServiceProvider::Homebrew,
         label: HOMEBREW_LABEL,
         installed: homebrew_installed,
-        row: homebrew_row,
+        row: homebrew_row.value,
         plist_path: Some(context.homebrew_plist_path.clone()),
-        configured_binary_path: configured_binary_path_from_plist(&context.homebrew_plist_path),
+        configured_binary_path: homebrew_configured_binary.value,
         stdout_log_path: context
             .homebrew_prefix
             .as_ref()
@@ -43,6 +47,15 @@ pub(crate) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
             .as_ref()
             .map(|prefix| prefix.join("var/log/clipmem.error.log")),
     });
+    let mut probe_warnings = Vec::new();
+    probe_warnings.extend(direct_row.warnings);
+    probe_warnings.extend(homebrew_row.warnings);
+    probe_warnings.extend(direct_configured_binary.warnings);
+    probe_warnings.extend(homebrew_configured_binary.warnings);
+    probe_warnings.extend(direct_status.warnings);
+    probe_warnings.extend(homebrew_status.warnings);
+    let direct_status = direct_status.value;
+    let homebrew_status = homebrew_status.value;
     let conflict = homebrew_status.installed && direct_status.installed;
     let selection = select_provider(&context);
 
@@ -98,6 +111,7 @@ pub(crate) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
         && !direct_status.running;
 
     let mut notes = selection.notes;
+    notes.extend(probe_warnings);
     if conflict {
         notes.push(conflict_message());
     }
@@ -144,16 +158,51 @@ pub(crate) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
     })
 }
 
-pub(in crate::cli) fn launchctl_row(label: &str) -> Result<Option<LaunchctlRow>> {
-    let output = ProcessCommand::new("launchctl")
-        .arg("list")
-        .output()
-        .context("run launchctl list")?;
+#[derive(Debug)]
+struct ServiceProbe<T> {
+    value: T,
+    warnings: Vec<String>,
+}
+
+impl<T> ServiceProbe<T> {
+    fn ok(value: T) -> Self {
+        Self {
+            value,
+            warnings: Vec::new(),
+        }
+    }
+
+    fn warning(value: T, warning: impl Into<String>) -> Self {
+        Self {
+            value,
+            warnings: vec![warning.into()],
+        }
+    }
+}
+
+fn launchctl_row_probe(label: &str) -> ServiceProbe<Option<LaunchctlRow>> {
+    let output = ProcessCommand::new("launchctl").arg("list").output();
+    let output = match output {
+        Ok(output) => output,
+        Err(error) => {
+            return ServiceProbe::warning(
+                None,
+                format!("Could not run `launchctl list` for {label}: {error}"),
+            );
+        }
+    };
     if !output.status.success() {
-        return Ok(None);
+        return ServiceProbe::warning(
+            None,
+            format!(
+                "`launchctl list` exited with {} while probing {label}",
+                output.status
+            ),
+        );
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut warnings = Vec::new();
     for line in stdout.lines() {
         let mut parts = line.split_whitespace();
         let Some(pid) = parts.next() else {
@@ -166,30 +215,29 @@ pub(in crate::cli) fn launchctl_row(label: &str) -> Result<Option<LaunchctlRow>>
         if found_label != label {
             continue;
         }
-        return Ok(Some(LaunchctlRow {
-            pid: if pid == "-" {
-                None
-            } else {
-                pid.parse::<i64>().ok()
-            },
-        }));
+        let parsed_pid = if pid == "-" {
+            None
+        } else {
+            match pid.parse::<i64>() {
+                Ok(pid) => Some(pid),
+                Err(error) => {
+                    warnings.push(format!(
+                        "`launchctl list` reported invalid pid `{pid}` for {label}: {error}"
+                    ));
+                    None
+                }
+            }
+        };
+        return ServiceProbe {
+            value: Some(LaunchctlRow { pid: parsed_pid }),
+            warnings,
+        };
     }
 
-    Ok(None)
+    ServiceProbe::ok(None)
 }
 
-pub(in crate::cli) struct ProviderStatusInput {
-    provider: ServiceProvider,
-    label: &'static str,
-    installed: bool,
-    row: Option<LaunchctlRow>,
-    plist_path: Option<PathBuf>,
-    configured_binary_path: Option<String>,
-    stdout_log_path: Option<PathBuf>,
-    stderr_log_path: Option<PathBuf>,
-}
-
-pub(in crate::cli) fn provider_status(input: ProviderStatusInput) -> ServiceProviderStatus {
+fn provider_status_probe(input: ProviderStatusInput) -> ServiceProbe<ServiceProviderStatus> {
     let ProviderStatusInput {
         provider,
         label,
@@ -206,7 +254,12 @@ pub(in crate::cli) fn provider_status(input: ProviderStatusInput) -> ServiceProv
         Some(_) => (true, false, None),
         None => (false, false, None),
     };
-    let running_command = pid.and_then(process_command);
+    let running_command = pid.map(process_command_probe);
+    let mut warnings = Vec::new();
+    let running_command = running_command.and_then(|probe| {
+        warnings.extend(probe.warnings);
+        probe.value
+    });
     let running_binary_path = running_command.as_deref().and_then(command_binary_path);
     let state = if running {
         ServiceState::Running
@@ -218,29 +271,37 @@ pub(in crate::cli) fn provider_status(input: ProviderStatusInput) -> ServiceProv
         ServiceState::NotInstalled
     };
 
-    ServiceProviderStatus {
-        provider,
-        label: label.to_string(),
-        state,
-        installed,
-        loaded,
-        running,
-        pid,
-        plist_path: plist_path.map(|path| path.display().to_string()),
-        configured_binary_path,
-        running_command,
-        running_binary_path,
-        stdout_log_path: stdout_log_path.map(|path| path.display().to_string()),
-        stderr_log_path: stderr_log_path.map(|path| path.display().to_string()),
+    ServiceProbe {
+        value: ServiceProviderStatus {
+            provider,
+            label: label.to_string(),
+            state,
+            installed,
+            loaded,
+            running,
+            pid,
+            plist_path: plist_path.map(|path| path.display().to_string()),
+            configured_binary_path,
+            running_command,
+            running_binary_path,
+            stdout_log_path: stdout_log_path.map(|path| path.display().to_string()),
+            stderr_log_path: stderr_log_path.map(|path| path.display().to_string()),
+        },
+        warnings,
     }
 }
 
+#[cfg(test)]
 pub(crate) fn configured_binary_path_from_plist(plist_path: &Path) -> Option<String> {
+    configured_binary_path_from_plist_probe(plist_path).value
+}
+
+fn configured_binary_path_from_plist_probe(plist_path: &Path) -> ServiceProbe<Option<String>> {
     if !plist_path.is_file() {
-        return None;
+        return ServiceProbe::ok(None);
     }
 
-    let Some(output) = ProcessCommand::new("plutil")
+    let output = ProcessCommand::new("plutil")
         .args([
             "-extract",
             "ProgramArguments.0",
@@ -249,36 +310,179 @@ pub(crate) fn configured_binary_path_from_plist(plist_path: &Path) -> Option<Str
             "-",
             &plist_path.display().to_string(),
         ])
-        .output()
-        .ok()
+        .output();
+    match output {
+        Ok(output) if output.status.success() => {
+            let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !value.is_empty() {
+                return ServiceProbe::ok(Some(value));
+            }
+            let mut fallback = configured_binary_path_from_plist_xml_probe(plist_path);
+            fallback.warnings.insert(
+                0,
+                format!(
+                    "`plutil` returned an empty ProgramArguments.0 for {}",
+                    plist_path.display()
+                ),
+            );
+            fallback
+        }
+        Ok(output) => {
+            let mut fallback = configured_binary_path_from_plist_xml_probe(plist_path);
+            fallback.warnings.insert(
+                0,
+                format!(
+                    "`plutil` exited with {} while reading {}",
+                    output.status,
+                    plist_path.display()
+                ),
+            );
+            fallback
+        }
+        Err(error) => {
+            let mut fallback = configured_binary_path_from_plist_xml_probe(plist_path);
+            fallback.warnings.insert(
+                0,
+                format!(
+                    "Could not run `plutil` for {}: {error}",
+                    plist_path.display()
+                ),
+            );
+            fallback
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn configured_binary_path_from_plist_xml(plist_path: &Path) -> Option<String> {
+    configured_binary_path_from_plist_xml_probe(plist_path).value
+}
+
+fn configured_binary_path_from_plist_xml_probe(plist_path: &Path) -> ServiceProbe<Option<String>> {
+    let plist = match fs::read_to_string(plist_path) {
+        Ok(plist) => plist,
+        Err(error) => {
+            return ServiceProbe::warning(
+                None,
+                format!(
+                    "Could not read plist XML fallback {}: {error}",
+                    plist_path.display()
+                ),
+            );
+        }
+    };
+    let Some(program_args) = plist.find("<key>ProgramArguments</key>") else {
+        return ServiceProbe::warning(
+            None,
+            format!("Plist {} has no ProgramArguments key", plist_path.display()),
+        );
+    };
+    let after_key = &plist[program_args..];
+    let Some(array_start) = after_key.find("<array") else {
+        return ServiceProbe::warning(
+            None,
+            format!(
+                "Plist {} has ProgramArguments without an array",
+                plist_path.display()
+            ),
+        );
+    };
+    let Some(array_tag_end) = after_key[array_start..].find('>') else {
+        return ServiceProbe::warning(
+            None,
+            format!(
+                "Plist {} has malformed ProgramArguments array",
+                plist_path.display()
+            ),
+        );
+    };
+    let after_array_tag = array_tag_end + array_start + 1;
+    let array = &after_key[after_array_tag..];
+    let Some(array_end) = array.find("</array>") else {
+        return ServiceProbe::warning(
+            None,
+            format!(
+                "Plist {} has unterminated ProgramArguments array",
+                plist_path.display()
+            ),
+        );
+    };
+    let array = &array[..array_end];
+    let Some(string_start) = array.find("<string>").map(|index| index + "<string>".len()) else {
+        return ServiceProbe::warning(
+            None,
+            format!(
+                "Plist {} has no ProgramArguments string value",
+                plist_path.display()
+            ),
+        );
+    };
+    let Some(string_end) = array[string_start..]
+        .find("</string>")
+        .map(|index| index + string_start)
     else {
-        return configured_binary_path_from_plist_xml(plist_path);
+        return ServiceProbe::warning(
+            None,
+            format!(
+                "Plist {} has unterminated ProgramArguments string value",
+                plist_path.display()
+            ),
+        );
+    };
+    let value = decode_plist_xml_text(array[string_start..string_end].trim());
+    if value.is_empty() {
+        ServiceProbe::warning(
+            None,
+            format!(
+                "Plist {} has an empty ProgramArguments string value",
+                plist_path.display()
+            ),
+        )
+    } else {
+        ServiceProbe::ok(Some(value))
+    }
+}
+
+fn process_command_probe(pid: i64) -> ServiceProbe<Option<String>> {
+    let output = ProcessCommand::new("ps")
+        .args(["-ww", "-p", &pid.to_string(), "-o", "command="])
+        .output();
+    let output = match output {
+        Ok(output) => output,
+        Err(error) => {
+            return ServiceProbe::warning(
+                None,
+                format!("Could not run `ps` for watcher pid {pid}: {error}"),
+            );
+        }
     };
     if !output.status.success() {
-        return configured_binary_path_from_plist_xml(plist_path);
+        return ServiceProbe::warning(
+            None,
+            format!("`ps` exited with {} for watcher pid {pid}", output.status),
+        );
     }
 
     let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if !value.is_empty() {
-        return Some(value);
+    if value.is_empty() {
+        ServiceProbe::warning(
+            None,
+            format!("`ps` returned an empty command for pid {pid}"),
+        )
+    } else {
+        ServiceProbe::ok(Some(value))
     }
-
-    configured_binary_path_from_plist_xml(plist_path)
 }
 
-pub(crate) fn configured_binary_path_from_plist_xml(plist_path: &Path) -> Option<String> {
-    let plist = fs::read_to_string(plist_path).ok()?;
-    let program_args = plist.find("<key>ProgramArguments</key>")?;
-    let after_key = &plist[program_args..];
-    let array_start = after_key.find("<array")?;
-    let after_array_tag = after_key[array_start..].find('>')? + array_start + 1;
-    let array = &after_key[after_array_tag..];
-    let array_end = array.find("</array>")?;
-    let array = &array[..array_end];
-    let string_start = array.find("<string>")? + "<string>".len();
-    let string_end = array[string_start..].find("</string>")? + string_start;
-    let value = decode_plist_xml_text(array[string_start..string_end].trim());
-    (!value.is_empty()).then_some(value)
+pub(in crate::cli) struct ProviderStatusInput {
+    provider: ServiceProvider,
+    label: &'static str,
+    installed: bool,
+    row: Option<LaunchctlRow>,
+    plist_path: Option<PathBuf>,
+    configured_binary_path: Option<String>,
+    stdout_log_path: Option<PathBuf>,
+    stderr_log_path: Option<PathBuf>,
 }
 
 pub(in crate::cli) fn decode_plist_xml_text(value: &str) -> String {
@@ -288,19 +492,6 @@ pub(in crate::cli) fn decode_plist_xml_text(value: &str) -> String {
         .replace("&quot;", "\"")
         .replace("&apos;", "'")
         .replace("&amp;", "&")
-}
-
-pub(in crate::cli) fn process_command(pid: i64) -> Option<String> {
-    let output = ProcessCommand::new("ps")
-        .args(["-ww", "-p", &pid.to_string(), "-o", "command="])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-
-    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    (!value.is_empty()).then_some(value)
 }
 
 pub(crate) fn command_binary_path(command: &str) -> Option<String> {
