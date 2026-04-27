@@ -103,92 +103,213 @@ pub(in crate::db) fn event_filter_where_clause(
     }
 }
 
+struct RetrievalKindPredicate {
+    parameter_value: &'static str,
+    predicate: SnapshotPredicate,
+}
+
+enum SnapshotPredicate {
+    RepresentationKinds(&'static [&'static str]),
+    SnapshotKinds(&'static [&'static str]),
+}
+
+struct PresencePredicate {
+    parameter: &'static str,
+    predicate: PresencePredicateSql,
+}
+
+enum PresencePredicateSql {
+    SearchableText,
+    RepresentationKinds(&'static [&'static str]),
+}
+
+const TEXT_RETRIEVAL_KINDS: &[&str] = &["plain_text", "html", "json", "xml", "rtf"];
+const TEXT_PRESENCE_KINDS: &[&str] = &[
+    "plain_text",
+    "url",
+    "file_url",
+    "html",
+    "json",
+    "xml",
+    "rtf",
+];
+const OTHER_SNAPSHOT_KINDS: &[&str] = &["mixed", "empty"];
+
+const RETRIEVAL_KIND_PREDICATES: &[RetrievalKindPredicate] = &[
+    RetrievalKindPredicate {
+        parameter_value: "text",
+        predicate: SnapshotPredicate::RepresentationKinds(TEXT_RETRIEVAL_KINDS),
+    },
+    RetrievalKindPredicate {
+        parameter_value: "html",
+        predicate: SnapshotPredicate::RepresentationKinds(&["html"]),
+    },
+    RetrievalKindPredicate {
+        parameter_value: "rtf",
+        predicate: SnapshotPredicate::RepresentationKinds(&["rtf"]),
+    },
+    RetrievalKindPredicate {
+        parameter_value: "url",
+        predicate: SnapshotPredicate::RepresentationKinds(&["url"]),
+    },
+    RetrievalKindPredicate {
+        parameter_value: "file",
+        predicate: SnapshotPredicate::RepresentationKinds(&["file_url"]),
+    },
+    RetrievalKindPredicate {
+        parameter_value: "image",
+        predicate: SnapshotPredicate::RepresentationKinds(&["image"]),
+    },
+    RetrievalKindPredicate {
+        parameter_value: "pdf",
+        predicate: SnapshotPredicate::RepresentationKinds(&["pdf"]),
+    },
+    RetrievalKindPredicate {
+        parameter_value: "binary",
+        predicate: SnapshotPredicate::RepresentationKinds(&["binary"]),
+    },
+    RetrievalKindPredicate {
+        parameter_value: "other",
+        predicate: SnapshotPredicate::SnapshotKinds(OTHER_SNAPSHOT_KINDS),
+    },
+];
+
+const PRESENCE_PREDICATES: &[PresencePredicate] = &[
+    PresencePredicate {
+        parameter: ":has_text",
+        predicate: PresencePredicateSql::SearchableText,
+    },
+    PresencePredicate {
+        parameter: ":has_url",
+        predicate: PresencePredicateSql::RepresentationKinds(&["url"]),
+    },
+    PresencePredicate {
+        parameter: ":has_file_url",
+        predicate: PresencePredicateSql::RepresentationKinds(&["file_url"]),
+    },
+    PresencePredicate {
+        parameter: ":has_image",
+        predicate: PresencePredicateSql::RepresentationKinds(&["image"]),
+    },
+    PresencePredicate {
+        parameter: ":has_pdf",
+        predicate: PresencePredicateSql::RepresentationKinds(&["pdf"]),
+    },
+];
+
 pub(in crate::db) fn snapshot_filter_clause(
     snapshot_alias: &str,
     snapshot_id_expr: &str,
 ) -> String {
+    let mut clauses = vec![
+        format!("(:min_bytes IS NULL OR {snapshot_alias}.total_bytes >= :min_bytes)"),
+        format!("(:max_bytes IS NULL OR {snapshot_alias}.total_bytes <= :max_bytes)"),
+        retrieval_kind_filter_clause(snapshot_alias, snapshot_id_expr),
+    ];
+    clauses.extend(
+        PRESENCE_PREDICATES
+            .iter()
+            .map(|predicate| presence_filter_clause(predicate, snapshot_alias, snapshot_id_expr)),
+    );
+    clauses.join("\n         AND ")
+}
+
+fn retrieval_kind_filter_clause(snapshot_alias: &str, snapshot_id_expr: &str) -> String {
+    let predicates = RETRIEVAL_KIND_PREDICATES
+        .iter()
+        .map(|predicate| {
+            format!(
+                "(:kind = '{}' AND {})",
+                predicate.parameter_value,
+                snapshot_predicate_sql(&predicate.predicate, snapshot_alias, snapshot_id_expr)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n             OR ");
+
+    format!("(:kind IS NULL\n             OR {predicates})")
+}
+
+fn presence_filter_clause(
+    predicate: &PresencePredicate,
+    snapshot_alias: &str,
+    snapshot_id_expr: &str,
+) -> String {
     format!(
-        "(:min_bytes IS NULL OR {snapshot_alias}.total_bytes >= :min_bytes)
-         AND (:max_bytes IS NULL OR {snapshot_alias}.total_bytes <= :max_bytes)
-         AND (
-             :kind IS NULL
-             OR (:kind = 'text' AND EXISTS (
-                 SELECT 1 FROM item_representations ir
-                 WHERE ir.snapshot_id = {snapshot_id_expr}
-                   AND ir.kind IN ('plain_text', 'html', 'json', 'xml', 'rtf')
-             ))
-             OR (:kind = 'html' AND EXISTS (
-                 SELECT 1 FROM item_representations ir
-                 WHERE ir.snapshot_id = {snapshot_id_expr}
-                   AND ir.kind = 'html'
-             ))
-             OR (:kind = 'rtf' AND EXISTS (
-                 SELECT 1 FROM item_representations ir
-                 WHERE ir.snapshot_id = {snapshot_id_expr}
-                   AND ir.kind = 'rtf'
-             ))
-             OR (:kind = 'url' AND EXISTS (
-                 SELECT 1 FROM item_representations ir
-                 WHERE ir.snapshot_id = {snapshot_id_expr}
-                   AND ir.kind = 'url'
-             ))
-             OR (:kind = 'file' AND EXISTS (
-                 SELECT 1 FROM item_representations ir
-                 WHERE ir.snapshot_id = {snapshot_id_expr}
-                   AND ir.kind = 'file_url'
-             ))
-             OR (:kind = 'image' AND EXISTS (
-                 SELECT 1 FROM item_representations ir
-                 WHERE ir.snapshot_id = {snapshot_id_expr}
-                   AND ir.kind = 'image'
-             ))
-             OR (:kind = 'pdf' AND EXISTS (
-                 SELECT 1 FROM item_representations ir
-                 WHERE ir.snapshot_id = {snapshot_id_expr}
-                   AND ir.kind = 'pdf'
-             ))
-             OR (:kind = 'binary' AND EXISTS (
-                 SELECT 1 FROM item_representations ir
-                 WHERE ir.snapshot_id = {snapshot_id_expr}
-                   AND ir.kind = 'binary'
-             ))
-             OR (:kind = 'other' AND {snapshot_alias}.snapshot_kind IN ('mixed', 'empty'))
-         )
-         AND (:has_text = 0 OR (
+        "({} = 0 OR {})",
+        predicate.parameter,
+        presence_predicate_sql(&predicate.predicate, snapshot_alias, snapshot_id_expr)
+    )
+}
+
+fn snapshot_predicate_sql(
+    predicate: &SnapshotPredicate,
+    snapshot_alias: &str,
+    snapshot_id_expr: &str,
+) -> String {
+    match predicate {
+        SnapshotPredicate::RepresentationKinds(kinds) => {
+            representation_kind_exists_clause(snapshot_id_expr, kinds, false)
+        }
+        SnapshotPredicate::SnapshotKinds(kinds) => {
+            format!(
+                "{snapshot_alias}.snapshot_kind IN ({})",
+                sql_string_list(kinds)
+            )
+        }
+    }
+}
+
+fn presence_predicate_sql(
+    predicate: &PresencePredicateSql,
+    snapshot_alias: &str,
+    snapshot_id_expr: &str,
+) -> String {
+    match predicate {
+        PresencePredicateSql::SearchableText => format!(
+            "(
              ({snapshot_alias}.preview_text IS NOT NULL AND {snapshot_alias}.preview_text != '')
-             OR EXISTS (
-                 SELECT 1 FROM item_representations ir
-                 WHERE ir.snapshot_id = {snapshot_id_expr}
-                   AND ir.kind IN ('plain_text', 'url', 'file_url', 'html', 'json', 'xml', 'rtf')
-                   AND ir.text_value IS NOT NULL AND ir.text_value != ''
-             )
+             OR {}
              OR EXISTS (
                  SELECT 1 FROM snapshot_ocr_cache soc
                  WHERE soc.snapshot_id = {snapshot_id_expr}
                    AND soc.ocr_text != ''
              )
-         ))
-         AND (:has_url = 0 OR EXISTS (
-             SELECT 1 FROM item_representations ir
-             WHERE ir.snapshot_id = {snapshot_id_expr}
-               AND ir.kind = 'url'
-         ))
-         AND (:has_file_url = 0 OR EXISTS (
-             SELECT 1 FROM item_representations ir
-             WHERE ir.snapshot_id = {snapshot_id_expr}
-               AND ir.kind = 'file_url'
-         ))
-         AND (:has_image = 0 OR EXISTS (
-             SELECT 1 FROM item_representations ir
-             WHERE ir.snapshot_id = {snapshot_id_expr}
-               AND ir.kind = 'image'
-         ))
-         AND (:has_pdf = 0 OR EXISTS (
-             SELECT 1 FROM item_representations ir
-             WHERE ir.snapshot_id = {snapshot_id_expr}
-               AND ir.kind = 'pdf'
-         ))"
+         )",
+            representation_kind_exists_clause(snapshot_id_expr, TEXT_PRESENCE_KINDS, true)
+        ),
+        PresencePredicateSql::RepresentationKinds(kinds) => {
+            representation_kind_exists_clause(snapshot_id_expr, kinds, false)
+        }
+    }
+}
+
+fn representation_kind_exists_clause(
+    snapshot_id_expr: &str,
+    kinds: &[&str],
+    require_text_value: bool,
+) -> String {
+    let text_value_clause = if require_text_value {
+        "\n                   AND ir.text_value IS NOT NULL AND ir.text_value != ''"
+    } else {
+        ""
+    };
+    format!(
+        "EXISTS (
+                 SELECT 1 FROM item_representations ir
+                 WHERE ir.snapshot_id = {snapshot_id_expr}
+                   AND ir.kind IN ({}){text_value_clause}
+             )",
+        sql_string_list(kinds)
     )
+}
+
+fn sql_string_list(values: &[&str]) -> String {
+    values
+        .iter()
+        .map(|value| format!("'{value}'"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub(in crate::db) fn app_like_pattern(filters: &RetrievalFilters) -> Option<String> {
