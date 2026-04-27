@@ -35,6 +35,7 @@ versioning where practical.
 
 ### Fixed
 
+- Removed the narrow `colored` runtime dependency from human CLI output while preserving the existing color/no-color behavior.
 - Fixed the output-format documentation so the recall JSON contract describes
   `best_candidate` and `alternatives` instead of list pagination fields.
 - Added diagnostic notes to `clipmem service status` when launchctl, plist, or

@@ -1,7 +1,4 @@
 use std::fmt::Write;
-use std::io::IsTerminal;
-
-use colored::Colorize;
 
 use crate::db::{
     ImageOptimizationReport, OcrRunReport, OcrStatusReport, PurgeReport, SnapshotDeletionReport,
