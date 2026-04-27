@@ -10,14 +10,18 @@ use crate::model::{
 };
 
 use super::super::commands::{CaptureOnceOutput, CaptureOnceStoredOutput};
-use super::{
-    render_capture_once_text, render_doctor_text, render_get_markdown, render_hits_text,
-    render_list_markdown, render_list_toon, render_recall_markdown, render_recall_toon,
-    render_search_results_text, render_snapshot_text, render_timeline_text, write_json_pretty,
+use super::json::write_json_pretty;
+use super::markdown::{render_get_markdown, render_list_markdown, render_recall_markdown};
+use super::model::{
     GetEnvelope, ListEnvelope, ListRow, RecallEnvelope, RecallMatchConfidence, RecallOutputRow,
     SnapshotListRow, TimelineListRow, ToonSnapshotRowProjection, ToonTimelineRowProjection,
     OUTPUT_SCHEMA_VERSION,
 };
+use super::text::{
+    render_capture_once_text, render_doctor_text, render_hits_text, render_search_results_text,
+    render_snapshot_text, render_timeline_text,
+};
+use super::toon::{render_list_toon, render_recall_toon};
 
 #[test]
 pub(in crate::cli) fn render_capture_once_text_reports_summary_lines() {

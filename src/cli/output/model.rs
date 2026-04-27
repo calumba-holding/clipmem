@@ -1,4 +1,11 @@
-use super::*;
+use serde::Serialize;
+use serde_json::Value;
+
+use crate::cli::output::support::{best_text_from_hit, truncate_for_markdown};
+use crate::db::StatsReport;
+use crate::model::{
+    FlattenedTextProjection, SearchHit, SnapshotDetails, TextFragment, TimelineEvent,
+};
 
 pub(in crate::cli) const OUTPUT_SCHEMA_VERSION: u32 = 2;
 

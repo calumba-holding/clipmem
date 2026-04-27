@@ -1,4 +1,9 @@
-use super::*;
+use std::fmt::Write;
+
+use crate::cli::output::model::{GetEnvelope, ListEnvelope, ListRow, RecallEnvelope};
+use crate::cli::output::support::{
+    escape_markdown_cell, render_confidence_label, render_filter_pairs, truncate_for_markdown,
+};
 
 pub(in crate::cli) fn render_list_markdown(envelope: &ListEnvelope) -> String {
     let mut out = String::new();

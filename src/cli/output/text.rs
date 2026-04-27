@@ -1,4 +1,13 @@
-use super::*;
+use std::fmt::Write;
+
+use crate::cli::commands::CaptureOnceOutput;
+use crate::cli::output::support::{
+    format_utc_timestamp, push_blank_line, push_snapshot_leaderboard,
+    push_snapshot_leaderboard_entry,
+};
+use crate::cli::{format_duration_seconds, peak_bucket};
+use crate::db::{SearchResults, StatsReport};
+use crate::model::{DoctorReport, SearchHit, SnapshotDetails, TimelineEvent};
 
 pub(in crate::cli) fn render_capture_once_text(output: &CaptureOnceOutput) -> String {
     let mut out = String::new();
