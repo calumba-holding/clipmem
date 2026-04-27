@@ -10,8 +10,10 @@ use crate::db::{CaptureStoreOutcome, Database};
 use crate::model::ClipboardSnapshot;
 use crate::platform::{capture_snapshot, current_change_count};
 
-use super::types::{CaptureOnceOutput, CaptureOnceSkippedOutput, CaptureOnceStoredOutput};
-use super::{capture_skip_reason_label, OCR_WORKER_RUNNING};
+use super::types::{
+    capture_skip_reason_label, CaptureOnceOutput, CaptureOnceSkippedOutput, CaptureOnceStoredOutput,
+};
+use super::OCR_WORKER_RUNNING;
 use crate::cli::human::render_capture_once_human;
 use crate::cli::output::{emit_json_or_text, render_capture_once_text};
 use crate::cli::{CaptureOnceArgs, WatchArgs};
