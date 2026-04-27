@@ -71,14 +71,18 @@ pub(in crate::cli) fn render_recall_human(envelope: &RecallEnvelope) -> String {
         theme.score(score, &format!("{:.1}%", score * 100.0))
     );
     let _ = writeln!(out, "Why: {}", envelope.why_selected);
-    if !best.urls.is_empty() {
-        let _ = writeln!(out, "URLs: {}", truncate_cell(&best.urls.join(", "), 88));
+    if !best.projection.urls.is_empty() {
+        let _ = writeln!(
+            out,
+            "URLs: {}",
+            truncate_cell(&best.projection.urls.join(", "), 88)
+        );
     }
-    if !best.file_paths.is_empty() {
+    if !best.projection.file_paths.is_empty() {
         let _ = writeln!(
             out,
             "Files: {}",
-            truncate_cell(&best.file_paths.join(", "), 88)
+            truncate_cell(&best.projection.file_paths.join(", "), 88)
         );
     }
 
@@ -186,7 +190,11 @@ pub(in crate::cli) fn push_snapshot_table(out: &mut String, theme: &HumanTheme, 
             .as_deref()
             .or(row.app_bundle_id.as_deref())
             .unwrap_or("unknown");
-        let text = first_non_empty(&[&row.best_text, &row.preview_text, &row.text_summary]);
+        let text = first_non_empty(&[
+            &row.best_text,
+            &row.preview_text,
+            &row.projection.text_summary,
+        ]);
         if has_score {
             let score_text = render_score_cell(theme, row.score);
             let _ = writeln!(
@@ -238,7 +246,11 @@ pub(in crate::cli) fn push_timeline_table(out: &mut String, theme: &HumanTheme, 
             .as_deref()
             .or(row.app_bundle_id.as_deref())
             .unwrap_or("unknown");
-        let text = first_non_empty(&[&row.best_text, &row.preview_text, &row.text_summary]);
+        let text = first_non_empty(&[
+            &row.best_text,
+            &row.preview_text,
+            &row.projection.text_summary,
+        ]);
         let _ = writeln!(
             out,
             "{:>2}.  {:>7}  {:>8}  {:<14}  {:<16}  {:<7}  {:>8}  {}",

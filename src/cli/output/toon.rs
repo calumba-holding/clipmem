@@ -54,7 +54,7 @@ impl ToonSearchRowProjection {
             display_text: first_non_empty_text(&[
                 row.best_text.as_str(),
                 row.preview_text.as_str(),
-                row.text_summary.as_str(),
+                row.projection.text_summary.as_str(),
             ]),
             capture_count: row.capture_count,
             item_count: row.item_count,
@@ -78,7 +78,7 @@ impl ToonSearchRowProjection {
                 row.snippet.as_str(),
                 row.best_text.as_str(),
                 row.preview_text.as_str(),
-                row.text_summary.as_str(),
+                row.projection.text_summary.as_str(),
             ]),
             capture_count: row.capture_count,
             item_count: row.item_count,
@@ -185,7 +185,7 @@ impl ToonTimelineRowProjection {
             display_text: first_non_empty_text(&[
                 row.best_text.as_str(),
                 row.preview_text.as_str(),
-                row.text_summary.as_str(),
+                row.projection.text_summary.as_str(),
             ]),
             item_count: row.item_count,
             total_bytes: row.total_bytes,

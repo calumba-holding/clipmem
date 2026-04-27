@@ -103,11 +103,11 @@ fn push_snapshot_row_text(out: &mut String, row: &SnapshotListRow) {
     {
         let _ = writeln!(out, "  match:   {why_matched}");
     }
-    if !row.urls.is_empty() {
-        let _ = writeln!(out, "  urls:    {}", row.urls.join(", "));
+    if !row.projection.urls.is_empty() {
+        let _ = writeln!(out, "  urls:    {}", row.projection.urls.join(", "));
     }
-    if !row.file_paths.is_empty() {
-        let _ = writeln!(out, "  files:   {}", row.file_paths.join(", "));
+    if !row.projection.file_paths.is_empty() {
+        let _ = writeln!(out, "  files:   {}", row.projection.file_paths.join(", "));
     }
     if let Some(score) = row.score {
         let _ = writeln!(out, "  score:   {score:.3}");
@@ -139,11 +139,11 @@ fn push_timeline_row_text(out: &mut String, row: &TimelineListRow) {
     if !row.preview_text.is_empty() && row.preview_text != row.best_text {
         let _ = writeln!(out, "  preview: {}", row.preview_text);
     }
-    if !row.urls.is_empty() {
-        let _ = writeln!(out, "  urls:    {}", row.urls.join(", "));
+    if !row.projection.urls.is_empty() {
+        let _ = writeln!(out, "  urls:    {}", row.projection.urls.join(", "));
     }
-    if !row.file_paths.is_empty() {
-        let _ = writeln!(out, "  files:   {}", row.file_paths.join(", "));
+    if !row.projection.file_paths.is_empty() {
+        let _ = writeln!(out, "  files:   {}", row.projection.file_paths.join(", "));
     }
     push_blank_line(out);
 }

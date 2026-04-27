@@ -142,6 +142,19 @@ pub(in crate::cli) struct RecallEnvelope {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub(in crate::cli) struct TextProjectionOutput {
+    pub(in crate::cli) best_text_uti: Option<String>,
+    pub(in crate::cli) text_fragments: Vec<TextFragment>,
+    pub(in crate::cli) urls: Vec<String>,
+    pub(in crate::cli) file_paths: Vec<String>,
+    pub(in crate::cli) html_text: Option<String>,
+    pub(in crate::cli) rtf_text: Option<String>,
+    pub(in crate::cli) text_summary: String,
+    pub(in crate::cli) ocr_text: Option<String>,
+    pub(in crate::cli) ocr_status: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub(in crate::cli) struct SnapshotListRow {
     pub(in crate::cli) snapshot_id: i64,
     pub(in crate::cli) event_id: i64,
@@ -153,15 +166,8 @@ pub(in crate::cli) struct SnapshotListRow {
     pub(in crate::cli) app_name: Option<String>,
     pub(in crate::cli) app_bundle_id: Option<String>,
     pub(in crate::cli) best_text: String,
-    pub(in crate::cli) best_text_uti: Option<String>,
-    pub(in crate::cli) text_fragments: Vec<TextFragment>,
-    pub(in crate::cli) urls: Vec<String>,
-    pub(in crate::cli) file_paths: Vec<String>,
-    pub(in crate::cli) html_text: Option<String>,
-    pub(in crate::cli) rtf_text: Option<String>,
-    pub(in crate::cli) text_summary: String,
-    pub(in crate::cli) ocr_text: Option<String>,
-    pub(in crate::cli) ocr_status: Option<String>,
+    #[serde(flatten)]
+    pub(in crate::cli) projection: TextProjectionOutput,
     pub(in crate::cli) preview_text: String,
     pub(in crate::cli) item_count: usize,
     pub(in crate::cli) total_bytes: usize,
@@ -181,15 +187,8 @@ pub(in crate::cli) struct TimelineListRow {
     pub(in crate::cli) app_name: Option<String>,
     pub(in crate::cli) app_bundle_id: Option<String>,
     pub(in crate::cli) best_text: String,
-    pub(in crate::cli) best_text_uti: Option<String>,
-    pub(in crate::cli) text_fragments: Vec<TextFragment>,
-    pub(in crate::cli) urls: Vec<String>,
-    pub(in crate::cli) file_paths: Vec<String>,
-    pub(in crate::cli) html_text: Option<String>,
-    pub(in crate::cli) rtf_text: Option<String>,
-    pub(in crate::cli) text_summary: String,
-    pub(in crate::cli) ocr_text: Option<String>,
-    pub(in crate::cli) ocr_status: Option<String>,
+    #[serde(flatten)]
+    pub(in crate::cli) projection: TextProjectionOutput,
     pub(in crate::cli) preview_text: String,
     pub(in crate::cli) total_bytes: usize,
     pub(in crate::cli) sha256: String,
@@ -215,15 +214,8 @@ pub(in crate::cli) struct RecallOutputRow {
     pub(in crate::cli) app_name: Option<String>,
     pub(in crate::cli) app_bundle_id: Option<String>,
     pub(in crate::cli) best_text: String,
-    pub(in crate::cli) best_text_uti: Option<String>,
-    pub(in crate::cli) text_fragments: Vec<TextFragment>,
-    pub(in crate::cli) urls: Vec<String>,
-    pub(in crate::cli) file_paths: Vec<String>,
-    pub(in crate::cli) html_text: Option<String>,
-    pub(in crate::cli) rtf_text: Option<String>,
-    pub(in crate::cli) text_summary: String,
-    pub(in crate::cli) ocr_text: Option<String>,
-    pub(in crate::cli) ocr_status: Option<String>,
+    #[serde(flatten)]
+    pub(in crate::cli) projection: TextProjectionOutput,
     pub(in crate::cli) preview_text: String,
     pub(in crate::cli) item_count: usize,
     pub(in crate::cli) total_bytes: usize,
@@ -232,6 +224,23 @@ pub(in crate::cli) struct RecallOutputRow {
     pub(in crate::cli) why_matched: Option<String>,
     pub(in crate::cli) matched_fields: Vec<String>,
     pub(in crate::cli) snippet: String,
+}
+
+impl TextProjectionOutput {
+    #[must_use]
+    pub(in crate::cli) fn from_projection(projection: &FlattenedTextProjection) -> Self {
+        Self {
+            best_text_uti: projection.best_text_uti().map(ToOwned::to_owned),
+            text_fragments: projection.text_fragments().to_vec(),
+            urls: projection.urls().to_vec(),
+            file_paths: projection.file_paths().to_vec(),
+            html_text: projection.html_text().map(ToOwned::to_owned),
+            rtf_text: projection.rtf_text().map(ToOwned::to_owned),
+            text_summary: projection.text_summary().to_string(),
+            ocr_text: projection.ocr_text().map(ToOwned::to_owned),
+            ocr_status: projection.ocr_status().map(ToOwned::to_owned),
+        }
+    }
 }
 
 impl SnapshotListRow {
@@ -255,15 +264,7 @@ impl SnapshotListRow {
             app_name: hit.last_frontmost_app_name().map(ToOwned::to_owned),
             app_bundle_id: hit.last_frontmost_app_bundle_id().map(ToOwned::to_owned),
             best_text: projection.best_text().to_string(),
-            best_text_uti: projection.best_text_uti().map(ToOwned::to_owned),
-            text_fragments: projection.text_fragments().to_vec(),
-            urls: projection.urls().to_vec(),
-            file_paths: projection.file_paths().to_vec(),
-            html_text: projection.html_text().map(ToOwned::to_owned),
-            rtf_text: projection.rtf_text().map(ToOwned::to_owned),
-            text_summary: projection.text_summary().to_string(),
-            ocr_text: projection.ocr_text().map(ToOwned::to_owned),
-            ocr_status: projection.ocr_status().map(ToOwned::to_owned),
+            projection: TextProjectionOutput::from_projection(projection),
             preview_text: hit.preview_text().to_string(),
             item_count: hit.item_count(),
             total_bytes: hit.total_bytes(),
@@ -290,15 +291,7 @@ impl TimelineListRow {
             app_name: event.frontmost_app_name().map(ToOwned::to_owned),
             app_bundle_id: event.frontmost_app_bundle_id().map(ToOwned::to_owned),
             best_text: projection.best_text().to_string(),
-            best_text_uti: projection.best_text_uti().map(ToOwned::to_owned),
-            text_fragments: projection.text_fragments().to_vec(),
-            urls: projection.urls().to_vec(),
-            file_paths: projection.file_paths().to_vec(),
-            html_text: projection.html_text().map(ToOwned::to_owned),
-            rtf_text: projection.rtf_text().map(ToOwned::to_owned),
-            text_summary: projection.text_summary().to_string(),
-            ocr_text: projection.ocr_text().map(ToOwned::to_owned),
-            ocr_status: projection.ocr_status().map(ToOwned::to_owned),
+            projection: TextProjectionOutput::from_projection(projection),
             preview_text: event.preview_text().to_string(),
             total_bytes: event.total_bytes(),
             sha256: event.sha256().to_string(),
@@ -385,15 +378,7 @@ impl RecallOutputRow {
             app_name: hit.last_frontmost_app_name().map(ToOwned::to_owned),
             app_bundle_id: hit.last_frontmost_app_bundle_id().map(ToOwned::to_owned),
             best_text,
-            best_text_uti: projection.best_text_uti().map(ToOwned::to_owned),
-            text_fragments: projection.text_fragments().to_vec(),
-            urls: projection.urls().to_vec(),
-            file_paths: projection.file_paths().to_vec(),
-            html_text: projection.html_text().map(ToOwned::to_owned),
-            rtf_text: projection.rtf_text().map(ToOwned::to_owned),
-            text_summary: projection.text_summary().to_string(),
-            ocr_text: projection.ocr_text().map(ToOwned::to_owned),
-            ocr_status: projection.ocr_status().map(ToOwned::to_owned),
+            projection: TextProjectionOutput::from_projection(projection),
             preview_text: hit.preview_text().to_string(),
             item_count: hit.item_count(),
             total_bytes: hit.total_bytes(),

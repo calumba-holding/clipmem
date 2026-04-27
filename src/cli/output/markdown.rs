@@ -218,11 +218,11 @@ pub(in crate::cli) fn render_recall_markdown(envelope: &RecallEnvelope) -> Strin
             .map(|score| format!(" · score {score:.3}"))
             .unwrap_or_default()
     );
-    if !best.urls.is_empty() {
-        let _ = writeln!(out, "URLs: {}", best.urls.join(", "));
+    if !best.projection.urls.is_empty() {
+        let _ = writeln!(out, "URLs: {}", best.projection.urls.join(", "));
     }
-    if !best.file_paths.is_empty() {
-        let _ = writeln!(out, "Files: {}", best.file_paths.join(", "));
+    if !best.projection.file_paths.is_empty() {
+        let _ = writeln!(out, "Files: {}", best.projection.file_paths.join(", "));
     }
 
     if !envelope.alternatives.is_empty() {
