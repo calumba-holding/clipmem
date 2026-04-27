@@ -366,6 +366,24 @@ fn search_auto_falls_back_for_slashy_path_queries() -> Result<()> {
 }
 
 #[test]
+fn search_auto_literal_phrase_uses_unquoted_escaped_phrase() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    db.store_capture(&fake_snapshot(1, "configXtest"))?;
+    db.store_capture(&fake_snapshot(2, "config_test"))?;
+
+    let results = db.search_auto("\"config_test\"", 10, &unfiltered())?;
+    let previews: Vec<_> = results
+        .hits()
+        .iter()
+        .map(crate::model::SearchHit::preview_text)
+        .collect();
+
+    assert_eq!(results.mode_used(), SearchMode::Literal);
+    assert_eq!(previews, vec!["config_test"]);
+    Ok(())
+}
+
+#[test]
 fn search_auto_handles_leading_colon_queries_without_error() -> Result<()> {
     let mut db = Database::open_in_memory()?;
     db.store_capture(&fake_snapshot(1, "git clone https://example.com/repo"))?;

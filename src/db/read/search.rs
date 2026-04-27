@@ -311,7 +311,13 @@ impl Database {
                 return Ok(results);
             }
         }
-        let like = format!("%{}%", escape_like_pattern(&analysis.trimmed));
+        let literal_search_lower = analysis.literal_search_lower();
+        let literal_search_like = escape_like_pattern(&literal_search_lower);
+        let exact_phrase_like = analysis
+            .exact_phrase
+            .as_ref()
+            .map(|phrase| escape_like_pattern(&phrase.to_ascii_lowercase()));
+        let like = format!("%{literal_search_like}%");
         let include_matching_events = requires_matching_events(filters);
         let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
         let literal_match = literal_fts_match_query(&analysis);
@@ -325,7 +331,7 @@ impl Database {
             .conn
             .prepare(&sql)
             .context("prepare literal search query")?;
-        let prefix_like = format!("{}%", escape_like_pattern(&analysis.lower));
+        let prefix_like = format!("{literal_search_like}%");
         let path_fragment_like = analysis
             .path_fragment
             .as_ref()
@@ -333,12 +339,12 @@ impl Database {
         let rows = stmt
             .query_map(
                 named_params! {
-                    ":query_lower" : analysis.lower.as_str(),
+                    ":query_lower" : literal_search_lower.as_ref(),
                     ":like" : like,
                     ":prefix_like" : prefix_like.as_str(),
                     ":literal_match" : literal_match.as_deref(),
                     ":path_fragment_like" : path_fragment_like.as_deref(),
-                    ":exact_phrase_lower" : analysis.exact_phrase.as_deref(),
+                    ":exact_phrase_lower" : exact_phrase_like.as_deref(),
                     ":since" : params.since.as_deref(),
                     ":until" : params.until,
                     ":app_like" : params.app_like.as_deref(),
@@ -423,8 +429,14 @@ impl Database {
         cursor: Option<&SearchCursorState>,
     ) -> Result<SearchResults> {
         let params = SearchExecutionParams::new(limit, filters, cursor)?;
-        let like = format!("%{}%", escape_like_pattern(&analysis.trimmed));
-        let prefix_like = format!("{}%", escape_like_pattern(&analysis.lower));
+        let literal_search_lower = analysis.literal_search_lower();
+        let literal_search_like = escape_like_pattern(&literal_search_lower);
+        let exact_phrase_like = analysis
+            .exact_phrase
+            .as_ref()
+            .map(|phrase| escape_like_pattern(&phrase.to_ascii_lowercase()));
+        let like = format!("%{literal_search_like}%");
+        let prefix_like = format!("{literal_search_like}%");
         let include_matching_events = requires_matching_events(filters);
         let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
         let literal_match = literal_fts_match_query(analysis);
@@ -441,11 +453,11 @@ impl Database {
         let rows = stmt
             .query_map(
                 named_params! {
-                    ":query_lower" : analysis.lower.as_str(),
+                    ":query_lower" : literal_search_lower.as_ref(),
                     ":like" : like,
                     ":prefix_like" : prefix_like.as_str(),
                     ":literal_match" : literal_match.as_deref(),
-                    ":exact_phrase_lower" : analysis.exact_phrase.as_deref(),
+                    ":exact_phrase_lower" : exact_phrase_like.as_deref(),
                     ":since" : params.since.as_deref(),
                     ":until" : params.until,
                     ":app_like" : params.app_like.as_deref(),

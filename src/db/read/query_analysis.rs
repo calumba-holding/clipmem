@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use rusqlite::{Error as SqlError, ErrorCode};
 
 use crate::file_url::{file_url_cache_path_fragment, normalize_file_path};
@@ -9,6 +11,15 @@ pub(in crate::db) struct QueryAnalysis {
     pub(in crate::db) exact_phrase: Option<String>,
     pub(in crate::db) literal_preferred: bool,
     pub(in crate::db) path_fragment: Option<String>,
+}
+
+impl QueryAnalysis {
+    pub(in crate::db) fn literal_search_lower(&self) -> Cow<'_, str> {
+        self.exact_phrase.as_ref().map_or_else(
+            || Cow::Borrowed(self.lower.as_str()),
+            |phrase| Cow::Owned(phrase.to_ascii_lowercase()),
+        )
+    }
 }
 
 pub(in crate::db) fn is_simple_fts_query(analysis: &QueryAnalysis) -> bool {
@@ -108,7 +119,10 @@ pub(in crate::db) fn invalid_fts_message(message: &str) -> bool {
 }
 
 pub(in crate::db) fn literal_fts_match_query(analysis: &QueryAnalysis) -> Option<String> {
-    let candidate = analysis.path_fragment.as_deref().unwrap_or(&analysis.lower);
+    let candidate = analysis
+        .path_fragment
+        .as_deref()
+        .map_or_else(|| analysis.literal_search_lower(), Cow::Borrowed);
 
     if candidate.chars().count() < 3 {
         return None;

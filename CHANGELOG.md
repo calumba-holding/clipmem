@@ -35,6 +35,9 @@ versioning where practical.
 
 ### Fixed
 
+- Fixed literal-mode exact phrase searches so quoted punctuation-heavy queries
+  such as `"config_test"` search for the unquoted phrase and still treat `%`
+  and `_` as literal characters.
 - Removed the narrow `colored` runtime dependency from human CLI output while preserving the existing color/no-color behavior.
 - Fixed the output-format documentation so the recall JSON contract describes
   `best_candidate` and `alternatives` instead of list pagination fields.
