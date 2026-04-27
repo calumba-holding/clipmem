@@ -1,5 +1,9 @@
 use crate::model::{CaptureStoreResult, ClipboardSnapshot};
 
+/// Tracks the pasteboard change count accounted for by the watch loop.
+///
+/// Callers decide whether to skip or capture a change, then call
+/// `mark_change_handled` once that change count has been accounted for.
 #[derive(Debug, Clone)]
 pub struct WatchState {
     last_handled_change_count: Option<i64>,
@@ -22,12 +26,10 @@ impl Default for WatchState {
     }
 }
 
-/// Return whether the first observed change should be marked handled without capture.
 pub fn should_skip_initial_change(skip_initial: bool, state: &WatchState) -> bool {
     skip_initial && state.first_loop
 }
 
-/// Return whether this `change_count` should be captured.
 pub fn should_capture_change(change_count: i64, state: &WatchState) -> bool {
     state.last_handled_change_count != Some(change_count)
 }
