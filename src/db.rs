@@ -14,7 +14,7 @@ use self::core::{
     storage_file_sizes,
 };
 #[cfg(test)]
-use self::schema::explain_query_plan;
+use self::schema::{explain_query_plan, CURRENT_SCHEMA_VERSION, SCHEMA};
 pub(crate) use self::types::{
     CapturePolicy, CaptureSettings, CaptureSkipReason, CaptureStoreOutcome,
     ImageOptimizationReport, OcrRunReport, OcrStatusReport, PurgeReport, RecentCursorState,
@@ -25,5 +25,3 @@ pub use self::types::{
     StatsReport, StatsSnapshotLeaderboardEntry, StatsTimeBucketEntry, TimelineResults,
     TimelineSort,
 };
-#[cfg(test)]
-use self::types::{CURRENT_SCHEMA_VERSION, SCHEMA};

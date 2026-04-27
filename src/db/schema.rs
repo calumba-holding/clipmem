@@ -7,7 +7,10 @@ use crate::model::{
 };
 
 use super::core::{collect_rows, row_enum};
-use super::types::*;
+
+pub(super) const SCHEMA: &str = include_str!("schema.sql");
+pub(super) const CURRENT_SCHEMA_VERSION: i64 = 17;
+const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
 
 pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {
     let tx = conn

@@ -6,10 +6,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::{SearchHit, SnapshotKind};
 
-pub(super) const SCHEMA: &str = include_str!("schema.sql");
-pub(super) const CURRENT_SCHEMA_VERSION: i64 = 17;
-pub(super) const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
-
 pub struct Database {
     pub(crate) conn: Connection,
     pub(in crate::db) path: PathBuf,
