@@ -1,4 +1,5 @@
-use super::*;
+use crate::cli::human::HumanTheme;
+use crate::cli::output::RecallMatchConfidence;
 
 pub(in crate::cli) fn render_filter_summary(value: &serde_json::Value) -> String {
     let Some(object) = value.as_object() else {

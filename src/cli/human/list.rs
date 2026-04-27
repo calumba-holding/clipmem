@@ -1,4 +1,11 @@
-use super::*;
+use std::fmt::Write;
+
+use crate::cli::human::{
+    first_non_empty, format_bytes, format_count, format_timestamp_short, human_score,
+    render_confidence, render_filter_summary, render_score_cell, separator, truncate_cell,
+    truncate_multiline, HumanTheme, WIDTH,
+};
+use crate::cli::output::{ListEnvelope, ListRow, RecallEnvelope};
 
 pub(in crate::cli) fn render_list_human(envelope: &ListEnvelope) -> String {
     let theme = HumanTheme::detect();

@@ -1,4 +1,12 @@
-use super::*;
+use std::fmt::Write;
+
+use crate::cli::formats::{format_duration_seconds, peak_bucket};
+use crate::cli::human::{
+    format_bytes, format_count, format_percent, format_timestamp_short, header, push_kpi,
+    render_filter_summary, separator, truncate_cell, HumanTheme, BAR_WIDTH, WIDTH,
+};
+use crate::cli::output::StatsEnvelope;
+use crate::db::{StatsReport, StatsSnapshotLeaderboardEntry};
 
 pub(in crate::cli) fn render_stats_human(envelope: &StatsEnvelope) -> String {
     let theme = HumanTheme::detect();
