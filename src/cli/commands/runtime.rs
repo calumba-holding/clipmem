@@ -1,5 +1,6 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering as AtomicOrdering;
+use std::sync::{LazyLock, Mutex, MutexGuard};
 use std::thread;
 use std::time::Duration;
 
@@ -13,11 +14,13 @@ use crate::platform::{capture_snapshot, current_change_count};
 use super::types::{
     capture_skip_reason_label, CaptureOnceOutput, CaptureOnceSkippedOutput, CaptureOnceStoredOutput,
 };
-use super::OCR_WORKER_RUNNING;
 use crate::cli::errors::{db_error, platform_error};
 use crate::cli::human::render_capture_once_human;
 use crate::cli::output::{emit_json_or_text, render_capture_once_text};
 use crate::cli::schema::{CaptureOnceArgs, WatchArgs};
+
+static OCR_WORKERS: LazyLock<Mutex<HashSet<PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
 
 pub(in crate::cli) fn watch(db_path: &Path, args: &WatchArgs) -> Result<()> {
     let mut db = open_or_init_db(db_path)?;
@@ -117,20 +120,12 @@ where
 }
 
 pub(in crate::cli) fn start_ocr_worker(db_path: PathBuf) {
-    if OCR_WORKER_RUNNING.swap(true, AtomicOrdering::AcqRel) {
+    let Some(worker_registration) = claim_ocr_worker(&db_path) else {
         return;
-    }
+    };
 
     thread::spawn(move || {
-        struct ResetWorkerFlag;
-
-        impl Drop for ResetWorkerFlag {
-            fn drop(&mut self) {
-                OCR_WORKER_RUNNING.store(false, AtomicOrdering::Release);
-            }
-        }
-
-        let _reset = ResetWorkerFlag;
+        let _worker_registration = worker_registration;
         let run = || -> Result<()> {
             let mut worker_db = Database::open_or_init(&db_path)?;
             let engine = crate::ocr::default_engine();
@@ -146,6 +141,44 @@ pub(in crate::cli) fn start_ocr_worker(db_path: PathBuf) {
             eprintln!("ocr failed: {err:#}");
         }
     });
+}
+
+fn claim_ocr_worker(db_path: &Path) -> Option<OcrWorkerRegistration> {
+    let key = canonical_ocr_worker_key(db_path);
+    let mut workers = ocr_workers();
+    if !workers.insert(key.clone()) {
+        return None;
+    }
+    Some(OcrWorkerRegistration { key })
+}
+
+fn ocr_workers() -> MutexGuard<'static, HashSet<PathBuf>> {
+    match OCR_WORKERS.lock() {
+        Ok(workers) => workers,
+        Err(poisoned) => poisoned.into_inner(),
+    }
+}
+
+fn canonical_ocr_worker_key(db_path: &Path) -> PathBuf {
+    if let Ok(path) = db_path.canonicalize() {
+        return path;
+    }
+    if db_path.is_absolute() {
+        return db_path.to_path_buf();
+    }
+    std::env::current_dir()
+        .map(|cwd| cwd.join(db_path))
+        .unwrap_or_else(|_| db_path.to_path_buf())
+}
+
+struct OcrWorkerRegistration {
+    key: PathBuf,
+}
+
+impl Drop for OcrWorkerRegistration {
+    fn drop(&mut self) {
+        ocr_workers().remove(&self.key);
+    }
 }
 
 pub(in crate::cli) fn capture_once(db_path: &Path, args: &CaptureOnceArgs) -> Result<()> {
@@ -223,4 +256,72 @@ pub(in crate::cli) fn open_or_init_db(path: &Path) -> Result<Database> {
     anyhow::Context::with_context(Database::open_or_init(path), || {
         format!("failed to open database at {}", path.display())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::process;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::claim_ocr_worker;
+
+    #[test]
+    fn ocr_worker_guard_allows_distinct_database_paths_in_same_process() {
+        let first = temp_db_path("ocr-worker-first");
+        let second = temp_db_path("ocr-worker-second");
+        create_empty_file(&first);
+        create_empty_file(&second);
+
+        let first_registration =
+            claim_ocr_worker(&first).expect("first database should claim worker");
+        assert!(
+            claim_ocr_worker(&first).is_none(),
+            "same database should not claim a second worker"
+        );
+
+        let second_registration =
+            claim_ocr_worker(&second).expect("different database should claim its own worker");
+
+        drop(first_registration);
+        assert!(
+            claim_ocr_worker(&first).is_some(),
+            "dropped registrations should release their database key"
+        );
+
+        drop(second_registration);
+        cleanup_db(&first);
+        cleanup_db(&second);
+    }
+
+    fn temp_db_path(test_name: &str) -> PathBuf {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        std::env::temp_dir()
+            .join("clipmem-ocr-worker-tests")
+            .join(format!("{test_name}-{}-{timestamp}.sqlite3", process::id()))
+    }
+
+    fn create_empty_file(path: &Path) {
+        fs::create_dir_all(path.parent().expect("test path should have parent"))
+            .expect("test database parent should be created");
+        fs::File::create(path).expect("test database file should be created");
+    }
+
+    fn cleanup_db(path: &Path) {
+        for suffix in ["", "-shm", "-wal"] {
+            let candidate = if suffix.is_empty() {
+                path.to_path_buf()
+            } else {
+                PathBuf::from(format!("{}{suffix}", path.display()))
+            };
+            let _ = fs::remove_file(candidate);
+        }
+        if let Some(parent) = path.parent() {
+            let _ = fs::remove_dir(parent);
+        }
+    }
 }

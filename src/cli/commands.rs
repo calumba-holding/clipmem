@@ -1,5 +1,3 @@
-use std::sync::atomic::AtomicBool;
-
 mod agent_doctor;
 mod entry;
 mod hermes_manage;
@@ -17,5 +15,3 @@ pub(super) use self::types::{
 };
 #[cfg(test)]
 pub(super) use self::types::{CaptureOnceSkippedOutput, CaptureOnceStoredOutput};
-
-static OCR_WORKER_RUNNING: AtomicBool = AtomicBool::new(false);

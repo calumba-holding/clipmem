@@ -30,6 +30,8 @@ versioning where practical.
 
 - Added diagnostic notes to `clipmem service status` when launchctl, plist, or
   process probes fail so missing service details are easier to troubleshoot.
+- Fixed background OCR worker startup so watchers for different archive
+  databases no longer suppress each other's OCR processing.
 - Fixed file URL path normalization so `file://localhost/...` clipboard
   entries decode and search correctly even when the `localhost` authority or
   URL scheme uses uppercase characters.
