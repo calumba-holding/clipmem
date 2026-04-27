@@ -1,5 +1,6 @@
 use std::sync::atomic::AtomicBool;
 
+mod agent_doctor;
 mod entry;
 mod hermes_manage;
 mod hermes_validate;

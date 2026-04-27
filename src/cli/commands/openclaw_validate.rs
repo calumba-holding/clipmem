@@ -3,6 +3,7 @@ use std::process::Command as ProcessCommand;
 
 use anyhow::{anyhow, Context, Result};
 
+use crate::cli::commands::agent_doctor::render_agent_doctor_report;
 use crate::cli::commands::openclaw_manage::{
     find_executable, packaged_openclaw_files, resolve_openclaw_skill_dir,
     resolve_openclaw_workspace_root,
@@ -382,32 +383,11 @@ pub(in crate::cli) fn validate_openclaw_install_entries(
 }
 
 pub(in crate::cli) fn render_openclaw_doctor_report(report: &OpenClawDoctorReport) -> String {
-    let mut out = String::new();
-    let _ = std::fmt::Write::write_fmt(
-        &mut out,
-        format_args!(
-            "OpenClaw integration target: {}\n\n",
-            report.target_dir.display()
-        ),
-    );
-
-    for check in &report.checks {
-        let status = match check.status {
-            OpenClawDoctorStatus::Ok => "OK",
-            OpenClawDoctorStatus::Warn => "WARN",
-            OpenClawDoctorStatus::Fail => "FAIL",
-        };
-        let _ = std::fmt::Write::write_fmt(
-            &mut out,
-            format_args!("[{status}] {}\n{}\n", check.label, check.detail),
-        );
-        for step in &check.next_steps {
-            let _ = std::fmt::Write::write_fmt(&mut out, format_args!("  - {step}\n"));
-        }
-        out.push('\n');
-    }
-
-    out
+    render_agent_doctor_report(
+        "OpenClaw integration target",
+        &report.target_dir,
+        &report.checks,
+    )
 }
 
 #[cfg(test)]

@@ -3,6 +3,7 @@ use std::process::Command as ProcessCommand;
 
 use anyhow::{anyhow, Context, Result};
 
+use crate::cli::commands::agent_doctor::render_agent_doctor_report;
 use crate::cli::commands::hermes_manage::{packaged_hermes_files, resolve_hermes_skill_dir};
 use crate::cli::commands::openclaw_manage::find_executable;
 use crate::cli::commands::openclaw_validate::{
@@ -312,32 +313,11 @@ pub(in crate::cli) fn frontmatter_value<'a>(lines: &'a [&str], key: &str) -> Opt
 }
 
 pub(in crate::cli) fn render_hermes_doctor_report(report: &HermesDoctorReport) -> String {
-    let mut out = String::new();
-    let _ = std::fmt::Write::write_fmt(
-        &mut out,
-        format_args!(
-            "Hermes Agent integration target: {}\n\n",
-            report.target_dir.display()
-        ),
-    );
-
-    for check in &report.checks {
-        let status = match check.status {
-            OpenClawDoctorStatus::Ok => "OK",
-            OpenClawDoctorStatus::Warn => "WARN",
-            OpenClawDoctorStatus::Fail => "FAIL",
-        };
-        let _ = std::fmt::Write::write_fmt(
-            &mut out,
-            format_args!("[{status}] {}\n{}\n", check.label, check.detail),
-        );
-        for step in &check.next_steps {
-            let _ = std::fmt::Write::write_fmt(&mut out, format_args!("  - {step}\n"));
-        }
-        out.push('\n');
-    }
-
-    out
+    render_agent_doctor_report(
+        "Hermes Agent integration target",
+        &report.target_dir,
+        &report.checks,
+    )
 }
 
 #[cfg(test)]
