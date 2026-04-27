@@ -14,6 +14,9 @@ versioning where practical.
 - Replaced wide internal archive/search construction paths with named-field
   parts and filter builder methods so query mapping and CLI filter
   normalization are harder to assemble incorrectly.
+- Standardized stats archive DTOs on the same accessor-method API used by
+  search hits, timeline events, and snapshot details while preserving their
+  serialized output shape.
 - Documented the failure modes for public recent and stats database queries so
   API consumers can rely on consistent error contracts across retrieval
   methods.
@@ -26,6 +29,11 @@ versioning where practical.
 - Fixed file URL path normalization so `file://localhost/...` clipboard
   entries decode and search correctly even when the `localhost` authority or
   URL scheme uses uppercase characters.
+
+### Security
+
+- Hardened existing SQLite WAL and SHM sidecar file permissions alongside the
+  main archive database when opening an archive.
 
 ## 0.4.2 - 2026-04-26
 

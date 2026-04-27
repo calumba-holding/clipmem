@@ -67,11 +67,11 @@ pub(in crate::cli) fn peak_bucket(
         .iter()
         .max_by_key(|entry| {
             (
-                entry.capture_event_count,
-                std::cmp::Reverse(entry.bucket.as_str()),
+                entry.capture_event_count(),
+                std::cmp::Reverse(entry.bucket()),
             )
         })
-        .filter(|entry| entry.capture_event_count > 0)
+        .filter(|entry| entry.capture_event_count() > 0)
 }
 
 pub(in crate::cli) fn separator(width: usize, heavy: bool) -> String {

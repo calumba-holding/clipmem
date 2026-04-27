@@ -367,11 +367,11 @@ pub(in crate::cli) fn peak_bucket(
         .iter()
         .max_by_key(|entry| {
             (
-                entry.capture_event_count,
-                std::cmp::Reverse(entry.bucket.as_str()),
+                entry.capture_event_count(),
+                std::cmp::Reverse(entry.bucket()),
             )
         })
-        .filter(|entry| entry.capture_event_count > 0)
+        .filter(|entry| entry.capture_event_count() > 0)
 }
 
 pub(in crate::cli) fn push_snapshot_leaderboard(
@@ -395,20 +395,20 @@ pub(in crate::cli) fn push_snapshot_leaderboard_entry(
     indent: usize,
 ) {
     let prefix = " ".repeat(indent);
-    let app = snapshot.app_name.as_deref().unwrap_or("Unknown");
-    let preview = if snapshot.preview_text.trim().is_empty() {
+    let app = snapshot.app_name().unwrap_or("Unknown");
+    let preview = if snapshot.preview_text().trim().is_empty() {
         "(no preview)".to_string()
     } else {
-        truncate_for_markdown(&snapshot.preview_text.replace('\n', " "), 120)
+        truncate_for_markdown(&snapshot.preview_text().replace('\n', " "), 120)
     };
     let _ = writeln!(
         out,
         "{prefix}[{}] {} captures, {}, {} bytes, last seen {}, {}",
-        snapshot.snapshot_id,
-        snapshot.capture_count,
-        snapshot.kind,
-        snapshot.total_bytes,
-        format_utc_timestamp(&snapshot.last_observed_at),
+        snapshot.snapshot_id(),
+        snapshot.capture_count(),
+        snapshot.kind(),
+        snapshot.total_bytes(),
+        format_utc_timestamp(snapshot.last_observed_at()),
         app
     );
     let _ = writeln!(out, "{prefix}  preview: {preview}");

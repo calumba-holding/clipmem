@@ -7,7 +7,8 @@ use rusqlite::Row;
 impl Database {
     /// Open the archive database at `path`, creating parent directories and schema state as needed.
     ///
-    /// This method also hardens parent-directory and database-file permissions after opening.
+    /// This method also hardens parent-directory, database-file, and SQLite sidecar permissions
+    /// after opening.
     ///
     /// # Errors
     ///
@@ -30,6 +31,7 @@ impl Database {
         )?;
         prepare_connection(&mut conn)?;
         harden_path_permissions(path, 0o600)?;
+        harden_existing_sqlite_sidecar_permissions(path)?;
 
         Ok(Self {
             conn,
@@ -39,7 +41,8 @@ impl Database {
 
     /// Open an existing archive database without creating parent directories or schema state.
     ///
-    /// This method also hardens parent-directory and database-file permissions after opening.
+    /// This method also hardens parent-directory, database-file, and SQLite sidecar permissions
+    /// after opening.
     ///
     /// # Errors
     ///
@@ -57,6 +60,7 @@ impl Database {
             harden_path_permissions(parent, 0o700)?;
         }
         harden_path_permissions(path, 0o600)?;
+        harden_existing_sqlite_sidecar_permissions(path)?;
 
         Ok(Self {
             conn,
@@ -150,6 +154,21 @@ pub(in crate::db) fn storage_file_sizes(path: &Path) -> Result<StorageFileSizes>
 
 pub(in crate::db) fn sidecar_path(path: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(format!("{}{suffix}", path.display()))
+}
+
+pub(in crate::db) fn harden_existing_sqlite_sidecar_permissions(path: &Path) -> Result<()> {
+    for suffix in ["-wal", "-shm"] {
+        let sidecar = sidecar_path(path, suffix);
+        match std::fs::metadata(&sidecar) {
+            Ok(_) => harden_path_permissions(&sidecar, 0o600)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("read metadata for {}", sidecar.display()));
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(in crate::db) fn metadata_len(path: &Path) -> Result<u64> {

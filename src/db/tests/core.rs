@@ -39,6 +39,32 @@ fn open_existing_does_not_create_missing_database_paths() {
     assert!(!path.exists());
 }
 
+#[cfg(unix)]
+#[test]
+fn hardening_sqlite_sidecars_applies_private_file_permissions() -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let path = temp_db_path("sidecar-permissions");
+    std::fs::create_dir_all(path.parent().unwrap())?;
+
+    for suffix in ["-wal", "-shm"] {
+        let sidecar = super::super::sidecar_path(&path, suffix);
+        std::fs::write(&sidecar, b"sidecar")?;
+        std::fs::set_permissions(&sidecar, std::fs::Permissions::from_mode(0o666))?;
+    }
+
+    super::super::harden_existing_sqlite_sidecar_permissions(&path)?;
+
+    for suffix in ["-wal", "-shm"] {
+        let sidecar = super::super::sidecar_path(&path, suffix);
+        let mode = std::fs::metadata(&sidecar)?.permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+    }
+
+    cleanup_db(&path);
+    Ok(())
+}
+
 #[test]
 fn search_like_treats_percent_as_literal() -> Result<()> {
     let mut db = Database::open_in_memory()?;
@@ -64,23 +90,23 @@ fn stats_empty_result_returns_zeroes_and_empty_leaderboards() -> Result<()> {
 
     let stats = db.stats(&filters_with_app("No Such App"))?;
 
-    assert_eq!(stats.snapshot_count, 0);
-    assert_eq!(stats.capture_event_count, 0);
-    assert_eq!(stats.unique_app_count, 0);
-    assert_eq!(stats.total_bytes, 0);
-    assert_eq!(stats.average_bytes_per_snapshot, 0.0);
-    assert_eq!(stats.average_captures_per_snapshot, 0.0);
-    assert_eq!(stats.dedupe_ratio, 0.0);
-    assert_eq!(stats.first_observed_at, None);
-    assert_eq!(stats.last_observed_at, None);
-    assert_eq!(stats.archive_span_seconds, None);
-    assert!(stats.most_recopied_snapshot.is_none());
-    assert!(stats.kind_breakdown.is_empty());
-    assert!(stats.top_apps.is_empty());
-    assert_eq!(stats.busiest_hours.len(), 24);
-    assert_eq!(stats.busiest_weekdays.len(), 7);
-    assert!(stats.largest_snapshots.is_empty());
-    assert!(stats.most_captured_snapshots.is_empty());
+    assert_eq!(stats.snapshot_count(), 0);
+    assert_eq!(stats.capture_event_count(), 0);
+    assert_eq!(stats.unique_app_count(), 0);
+    assert_eq!(stats.total_bytes(), 0);
+    assert_eq!(stats.average_bytes_per_snapshot(), 0.0);
+    assert_eq!(stats.average_captures_per_snapshot(), 0.0);
+    assert_eq!(stats.dedupe_ratio(), 0.0);
+    assert_eq!(stats.first_observed_at(), None);
+    assert_eq!(stats.last_observed_at(), None);
+    assert_eq!(stats.archive_span_seconds(), None);
+    assert!(stats.most_recopied_snapshot().is_none());
+    assert!(stats.kind_breakdown().is_empty());
+    assert!(stats.top_apps().is_empty());
+    assert_eq!(stats.busiest_hours().len(), 24);
+    assert_eq!(stats.busiest_weekdays().len(), 7);
+    assert!(stats.largest_snapshots().is_empty());
+    assert!(stats.most_captured_snapshots().is_empty());
     Ok(())
 }
 
@@ -111,18 +137,15 @@ fn stats_uses_event_and_snapshot_filtering_semantics() -> Result<()> {
 
     let stats = db.stats(&filters_with_app("safari"))?;
 
-    assert_eq!(stats.capture_event_count, 2);
-    assert_eq!(stats.snapshot_count, 2);
-    assert_eq!(
-        stats.most_recopied_snapshot.as_ref().unwrap().capture_count,
-        1
-    );
-    assert_eq!(stats.top_apps[0].app, "Safari");
-    assert_eq!(stats.top_apps[0].capture_event_count, 2);
+    assert_eq!(stats.capture_event_count(), 2);
+    assert_eq!(stats.snapshot_count(), 2);
+    assert_eq!(stats.most_recopied_snapshot().unwrap().capture_count(), 1);
+    assert_eq!(stats.top_apps()[0].app(), "Safari");
+    assert_eq!(stats.top_apps()[0].capture_event_count(), 2);
 
     let text_stats = db.stats(&filters_with_kind(RetrievalKind::Text))?;
-    assert_eq!(text_stats.capture_event_count, 3);
-    assert_eq!(text_stats.snapshot_count, 2);
+    assert_eq!(text_stats.capture_event_count(), 3);
+    assert_eq!(text_stats.snapshot_count(), 2);
     Ok(())
 }
 
@@ -142,16 +165,12 @@ fn stats_app_grouping_falls_back_to_bundle_and_unknown() -> Result<()> {
     set_event_app(&db, third.event_id(), None, None)?;
 
     let stats = db.stats(&unfiltered())?;
-    let apps: Vec<_> = stats
-        .top_apps
-        .iter()
-        .map(|entry| entry.app.as_str())
-        .collect();
+    let apps: Vec<_> = stats.top_apps().iter().map(|entry| entry.app()).collect();
 
     assert!(apps.contains(&"Named App"));
     assert!(apps.contains(&"com.example.bundle"));
     assert!(apps.contains(&"Unknown"));
-    assert_eq!(stats.unique_app_count, 3);
+    assert_eq!(stats.unique_app_count(), 3);
     Ok(())
 }
 
@@ -165,19 +184,22 @@ fn stats_ordering_ties_are_deterministic() -> Result<()> {
 
     let stats = db.stats(&unfiltered())?;
 
-    assert_eq!(stats.largest_snapshots[0].snapshot_id, first.snapshot_id());
     assert_eq!(
-        stats.most_captured_snapshots[0].snapshot_id,
+        stats.largest_snapshots()[0].snapshot_id(),
         first.snapshot_id()
     );
-    assert_eq!(stats.busiest_hours[10].capture_event_count, 2);
+    assert_eq!(
+        stats.most_captured_snapshots()[0].snapshot_id(),
+        first.snapshot_id()
+    );
+    assert_eq!(stats.busiest_hours()[10].capture_event_count(), 2);
     assert_eq!(
         stats
-            .busiest_weekdays
+            .busiest_weekdays()
             .iter()
-            .find(|entry| entry.bucket == "Friday")
+            .find(|entry| entry.bucket() == "Friday")
             .unwrap()
-            .capture_event_count,
+            .capture_event_count(),
         2
     );
     Ok(())

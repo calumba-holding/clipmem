@@ -208,53 +208,218 @@ pub struct SearchResults {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct StatsReport {
-    pub snapshot_count: usize,
-    pub capture_event_count: usize,
-    pub unique_app_count: usize,
-    pub total_bytes: usize,
-    pub average_bytes_per_snapshot: f64,
-    pub average_captures_per_snapshot: f64,
-    pub dedupe_ratio: f64,
-    pub first_observed_at: Option<String>,
-    pub last_observed_at: Option<String>,
-    pub archive_span_seconds: Option<i64>,
-    pub most_recopied_snapshot: Option<StatsSnapshotLeaderboardEntry>,
-    pub kind_breakdown: Vec<StatsKindBreakdownEntry>,
-    pub top_apps: Vec<StatsAppEntry>,
-    pub busiest_hours: Vec<StatsTimeBucketEntry>,
-    pub busiest_weekdays: Vec<StatsTimeBucketEntry>,
-    pub largest_snapshots: Vec<StatsSnapshotLeaderboardEntry>,
-    pub most_captured_snapshots: Vec<StatsSnapshotLeaderboardEntry>,
+    pub(in crate::db) snapshot_count: usize,
+    pub(in crate::db) capture_event_count: usize,
+    pub(in crate::db) unique_app_count: usize,
+    pub(in crate::db) total_bytes: usize,
+    pub(in crate::db) average_bytes_per_snapshot: f64,
+    pub(in crate::db) average_captures_per_snapshot: f64,
+    pub(in crate::db) dedupe_ratio: f64,
+    pub(in crate::db) first_observed_at: Option<String>,
+    pub(in crate::db) last_observed_at: Option<String>,
+    pub(in crate::db) archive_span_seconds: Option<i64>,
+    pub(in crate::db) most_recopied_snapshot: Option<StatsSnapshotLeaderboardEntry>,
+    pub(in crate::db) kind_breakdown: Vec<StatsKindBreakdownEntry>,
+    pub(in crate::db) top_apps: Vec<StatsAppEntry>,
+    pub(in crate::db) busiest_hours: Vec<StatsTimeBucketEntry>,
+    pub(in crate::db) busiest_weekdays: Vec<StatsTimeBucketEntry>,
+    pub(in crate::db) largest_snapshots: Vec<StatsSnapshotLeaderboardEntry>,
+    pub(in crate::db) most_captured_snapshots: Vec<StatsSnapshotLeaderboardEntry>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct StatsKindBreakdownEntry {
-    pub kind: String,
-    pub snapshot_count: usize,
-    pub total_bytes: usize,
+    pub(in crate::db) kind: String,
+    pub(in crate::db) snapshot_count: usize,
+    pub(in crate::db) total_bytes: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct StatsAppEntry {
-    pub app: String,
-    pub capture_event_count: usize,
+    pub(in crate::db) app: String,
+    pub(in crate::db) capture_event_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct StatsTimeBucketEntry {
-    pub bucket: String,
-    pub capture_event_count: usize,
+    pub(in crate::db) bucket: String,
+    pub(in crate::db) capture_event_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct StatsSnapshotLeaderboardEntry {
-    pub snapshot_id: i64,
-    pub capture_count: usize,
-    pub kind: String,
-    pub preview_text: String,
-    pub app_name: Option<String>,
-    pub last_observed_at: String,
-    pub total_bytes: usize,
+    pub(in crate::db) snapshot_id: i64,
+    pub(in crate::db) capture_count: usize,
+    pub(in crate::db) kind: String,
+    pub(in crate::db) preview_text: String,
+    pub(in crate::db) app_name: Option<String>,
+    pub(in crate::db) last_observed_at: String,
+    pub(in crate::db) total_bytes: usize,
+}
+
+impl StatsReport {
+    #[must_use]
+    pub fn snapshot_count(&self) -> usize {
+        self.snapshot_count
+    }
+
+    #[must_use]
+    pub fn capture_event_count(&self) -> usize {
+        self.capture_event_count
+    }
+
+    #[must_use]
+    pub fn unique_app_count(&self) -> usize {
+        self.unique_app_count
+    }
+
+    #[must_use]
+    pub fn total_bytes(&self) -> usize {
+        self.total_bytes
+    }
+
+    #[must_use]
+    pub fn average_bytes_per_snapshot(&self) -> f64 {
+        self.average_bytes_per_snapshot
+    }
+
+    #[must_use]
+    pub fn average_captures_per_snapshot(&self) -> f64 {
+        self.average_captures_per_snapshot
+    }
+
+    #[must_use]
+    pub fn dedupe_ratio(&self) -> f64 {
+        self.dedupe_ratio
+    }
+
+    #[must_use]
+    pub fn first_observed_at(&self) -> Option<&str> {
+        self.first_observed_at.as_deref()
+    }
+
+    #[must_use]
+    pub fn last_observed_at(&self) -> Option<&str> {
+        self.last_observed_at.as_deref()
+    }
+
+    #[must_use]
+    pub fn archive_span_seconds(&self) -> Option<i64> {
+        self.archive_span_seconds
+    }
+
+    #[must_use]
+    pub fn most_recopied_snapshot(&self) -> Option<&StatsSnapshotLeaderboardEntry> {
+        self.most_recopied_snapshot.as_ref()
+    }
+
+    #[must_use]
+    pub fn kind_breakdown(&self) -> &[StatsKindBreakdownEntry] {
+        &self.kind_breakdown
+    }
+
+    #[must_use]
+    pub fn top_apps(&self) -> &[StatsAppEntry] {
+        &self.top_apps
+    }
+
+    #[must_use]
+    pub fn busiest_hours(&self) -> &[StatsTimeBucketEntry] {
+        &self.busiest_hours
+    }
+
+    #[must_use]
+    pub fn busiest_weekdays(&self) -> &[StatsTimeBucketEntry] {
+        &self.busiest_weekdays
+    }
+
+    #[must_use]
+    pub fn largest_snapshots(&self) -> &[StatsSnapshotLeaderboardEntry] {
+        &self.largest_snapshots
+    }
+
+    #[must_use]
+    pub fn most_captured_snapshots(&self) -> &[StatsSnapshotLeaderboardEntry] {
+        &self.most_captured_snapshots
+    }
+}
+
+impl StatsKindBreakdownEntry {
+    #[must_use]
+    pub fn kind(&self) -> &str {
+        &self.kind
+    }
+
+    #[must_use]
+    pub fn snapshot_count(&self) -> usize {
+        self.snapshot_count
+    }
+
+    #[must_use]
+    pub fn total_bytes(&self) -> usize {
+        self.total_bytes
+    }
+}
+
+impl StatsAppEntry {
+    #[must_use]
+    pub fn app(&self) -> &str {
+        &self.app
+    }
+
+    #[must_use]
+    pub fn capture_event_count(&self) -> usize {
+        self.capture_event_count
+    }
+}
+
+impl StatsTimeBucketEntry {
+    #[must_use]
+    pub fn bucket(&self) -> &str {
+        &self.bucket
+    }
+
+    #[must_use]
+    pub fn capture_event_count(&self) -> usize {
+        self.capture_event_count
+    }
+}
+
+impl StatsSnapshotLeaderboardEntry {
+    #[must_use]
+    pub fn snapshot_id(&self) -> i64 {
+        self.snapshot_id
+    }
+
+    #[must_use]
+    pub fn capture_count(&self) -> usize {
+        self.capture_count
+    }
+
+    #[must_use]
+    pub fn kind(&self) -> &str {
+        &self.kind
+    }
+
+    #[must_use]
+    pub fn preview_text(&self) -> &str {
+        &self.preview_text
+    }
+
+    #[must_use]
+    pub fn app_name(&self) -> Option<&str> {
+        self.app_name.as_deref()
+    }
+
+    #[must_use]
+    pub fn last_observed_at(&self) -> &str {
+        &self.last_observed_at
+    }
+
+    #[must_use]
+    pub fn total_bytes(&self) -> usize {
+        self.total_bytes
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -129,37 +129,35 @@ pub(in crate::cli) fn render_search_results_text(results: &SearchResults) -> Str
 pub(in crate::cli) fn render_stats_text(stats: &StatsReport) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "Overview");
-    let _ = writeln!(out, "  snapshots: {}", stats.snapshot_count);
-    let _ = writeln!(out, "  capture events: {}", stats.capture_event_count);
-    let _ = writeln!(out, "  unique apps: {}", stats.unique_app_count);
-    let _ = writeln!(out, "  total bytes: {}", stats.total_bytes);
+    let _ = writeln!(out, "  snapshots: {}", stats.snapshot_count());
+    let _ = writeln!(out, "  capture events: {}", stats.capture_event_count());
+    let _ = writeln!(out, "  unique apps: {}", stats.unique_app_count());
+    let _ = writeln!(out, "  total bytes: {}", stats.total_bytes());
     let _ = writeln!(
         out,
         "  average bytes per snapshot: {:.1}",
-        stats.average_bytes_per_snapshot
+        stats.average_bytes_per_snapshot()
     );
     let _ = writeln!(
         out,
         "  average captures per snapshot: {:.2}",
-        stats.average_captures_per_snapshot
+        stats.average_captures_per_snapshot()
     );
-    let _ = writeln!(out, "  dedupe ratio: {:.1}%", stats.dedupe_ratio * 100.0);
+    let _ = writeln!(out, "  dedupe ratio: {:.1}%", stats.dedupe_ratio() * 100.0);
     let _ = writeln!(
         out,
         "  observed: {} to {}",
         stats
-            .first_observed_at
-            .as_deref()
+            .first_observed_at()
             .map_or("none".to_string(), format_utc_timestamp),
         stats
-            .last_observed_at
-            .as_deref()
+            .last_observed_at()
             .map_or("none".to_string(), format_utc_timestamp)
     );
     let _ = writeln!(
         out,
         "  archive span: {}",
-        stats.archive_span_seconds.map_or_else(
+        stats.archive_span_seconds().map_or_else(
             || "0s".to_string(),
             |seconds| { format_duration_seconds(seconds.max(0) as u64) }
         )
@@ -167,58 +165,67 @@ pub(in crate::cli) fn render_stats_text(stats: &StatsReport) -> String {
     push_blank_line(&mut out);
 
     let _ = writeln!(out, "Content mix");
-    if stats.kind_breakdown.is_empty() {
+    if stats.kind_breakdown().is_empty() {
         let _ = writeln!(out, "  none");
     } else {
-        for entry in &stats.kind_breakdown {
+        for entry in stats.kind_breakdown() {
             let _ = writeln!(
                 out,
                 "  {}: {} snapshots, {} bytes",
-                entry.kind, entry.snapshot_count, entry.total_bytes
+                entry.kind(),
+                entry.snapshot_count(),
+                entry.total_bytes()
             );
         }
     }
     push_blank_line(&mut out);
 
     let _ = writeln!(out, "Top apps");
-    if stats.top_apps.is_empty() {
+    if stats.top_apps().is_empty() {
         let _ = writeln!(out, "  none");
     } else {
-        for app in &stats.top_apps {
-            let _ = writeln!(out, "  {}: {} events", app.app, app.capture_event_count);
+        for app in stats.top_apps() {
+            let _ = writeln!(out, "  {}: {} events", app.app(), app.capture_event_count());
         }
     }
     push_blank_line(&mut out);
 
     let _ = writeln!(out, "Activity patterns");
-    let busiest_hour = peak_bucket(&stats.busiest_hours).map_or_else(
+    let busiest_hour = peak_bucket(stats.busiest_hours()).map_or_else(
         || "none".to_string(),
         |entry| {
             format!(
                 "{}:00 UTC ({} events)",
-                entry.bucket, entry.capture_event_count
+                entry.bucket(),
+                entry.capture_event_count()
             )
         },
     );
-    let busiest_weekday = peak_bucket(&stats.busiest_weekdays).map_or_else(
+    let busiest_weekday = peak_bucket(stats.busiest_weekdays()).map_or_else(
         || "none".to_string(),
-        |entry| format!("{} ({} events)", entry.bucket, entry.capture_event_count),
+        |entry| {
+            format!(
+                "{} ({} events)",
+                entry.bucket(),
+                entry.capture_event_count()
+            )
+        },
     );
     let _ = writeln!(out, "  Busiest hour: {busiest_hour}");
     let _ = writeln!(out, "  Busiest weekday: {busiest_weekday}");
     push_blank_line(&mut out);
 
     let _ = writeln!(out, "Leaderboards");
-    if let Some(snapshot) = &stats.most_recopied_snapshot {
+    if let Some(snapshot) = stats.most_recopied_snapshot() {
         let _ = writeln!(out, "  Most re-copied snapshot:");
         push_snapshot_leaderboard_entry(&mut out, snapshot, 4);
     } else {
         let _ = writeln!(out, "  Most re-copied snapshot: none");
     }
     let _ = writeln!(out, "  Largest snapshots:");
-    push_snapshot_leaderboard(&mut out, &stats.largest_snapshots, 4);
+    push_snapshot_leaderboard(&mut out, stats.largest_snapshots(), 4);
     let _ = writeln!(out, "  Most captured snapshots:");
-    push_snapshot_leaderboard(&mut out, &stats.most_captured_snapshots, 4);
+    push_snapshot_leaderboard(&mut out, stats.most_captured_snapshots(), 4);
 
     out
 }
