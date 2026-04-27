@@ -1,4 +1,20 @@
-use super::*;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering as AtomicOrdering;
+use std::thread;
+use std::time::Duration;
+
+use anyhow::{anyhow, bail, Context, Result};
+
+use crate::app::{format_watch_capture_line, mark_change_handled, WatchState};
+use crate::db::{CaptureStoreOutcome, Database};
+use crate::model::ClipboardSnapshot;
+use crate::platform::{capture_snapshot, current_change_count};
+
+use super::types::{CaptureOnceOutput, CaptureOnceSkippedOutput, CaptureOnceStoredOutput};
+use super::{capture_skip_reason_label, OCR_WORKER_RUNNING};
+use crate::cli::human::render_capture_once_human;
+use crate::cli::output::{emit_json_or_text, render_capture_once_text};
+use crate::cli::{CaptureOnceArgs, WatchArgs};
 
 pub(in crate::cli) fn watch(db_path: &Path, args: &WatchArgs) -> Result<()> {
     let mut db = open_or_init_db(db_path)?;

@@ -1,4 +1,21 @@
-use super::*;
+use std::path::Path;
+
+use anyhow::{anyhow, Result};
+use serde_json::json;
+
+use crate::model::{SearchHit, TimelineEvent};
+
+use crate::cli::human::render_stats_human;
+use crate::cli::output::{
+    emit_get_output, emit_json_or_text, emit_list_output, generated_at_now, render_hits_text,
+    render_search_results_text, render_snapshot_text, render_stats_text, render_timeline_text,
+    GetEnvelope, ListEnvelope, ListRow, StatsEnvelope, OUTPUT_SCHEMA_VERSION,
+};
+use crate::cli::{
+    GetArgs, OutputFormat, RecentArgs, SearchArgs, StatsArgs, StatsOutputFormat, TimelineArgs,
+};
+
+use super::runtime::open_existing_db;
 
 mod cursor;
 mod filters;

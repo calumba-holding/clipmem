@@ -1,4 +1,33 @@
-use super::*;
+use std::collections::{HashMap, HashSet};
+
+use anyhow::{anyhow, Result};
+use serde_json::json;
+
+use crate::db::{Database, RetrievalFilters};
+use crate::model::FlattenedTextProjection;
+
+use crate::cli::RetrievalFilterArgs;
+
+#[cfg(test)]
+use super::cursor::{
+    encode_recent_cursor, encode_search_cursor, parse_recent_cursor, parse_search_cursor,
+};
+#[cfg(test)]
+use super::recall::query_search_results;
+#[cfg(test)]
+use crate::app::WatchState;
+#[cfg(test)]
+use crate::cli::commands::openclaw_manage::{packaged_openclaw_files, packaged_openclaw_skill};
+#[cfg(test)]
+use crate::cli::commands::openclaw_validate::{
+    referenced_markdown_files, validate_openclaw_skill_content,
+};
+#[cfg(test)]
+use crate::cli::commands::runtime::run_watch_iteration_with_capture;
+#[cfg(test)]
+use crate::cli::{SearchArgs, WatchArgs};
+#[cfg(test)]
+use crate::db::{SearchMode, SearchResults};
 
 pub(in crate::cli) fn normalize_retrieval_filters(
     args: &RetrievalFilterArgs,

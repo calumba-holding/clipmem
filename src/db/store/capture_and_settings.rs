@@ -1,4 +1,29 @@
-use super::*;
+use anyhow::{Context, Result};
+use rusqlite::{params, OptionalExtension, TransactionBehavior};
+
+use crate::db::core::{collect_rows, row_usize, sanitise_limit, storage_file_sizes, usize_to_i64};
+use crate::db::store::ocr::{
+    enqueue_ocr_candidates_tx, enqueue_ocr_for_snapshot_tx, rebuild_snapshot_ocr_cache,
+    rebuild_snapshot_ocr_cache_for_hash,
+};
+use crate::db::store::optimize::{
+    database_path_is_file_backed, encode_candidate_as_lossless_webp, format_compaction_error,
+    image_optimization_is_beneficial, image_optimization_would_conflict,
+    load_image_optimization_candidates, mark_image_optimization_skipped,
+    replace_image_with_optimized_webp, storage_compaction_would_help,
+};
+use crate::db::store::rebuild::{
+    delete_expired_pending_restores, insert_item, load_purge_report, load_snapshot_deletion_report,
+    normalize_bundle_id, rebuild_snapshot_projection_cache_for_snapshot,
+    set_representation_cache_deferred,
+};
+use crate::db::types::{
+    CapturePolicy, CaptureSettings, CaptureSkipReason, CaptureStoreOutcome, Database,
+    ImageOptimizationProgressEvent, ImageOptimizationReport, OcrCandidate, OcrStatusReport,
+    PurgeReport, SnapshotDeletionReport,
+};
+use crate::model::{CaptureStoreResult, ClipboardSnapshot};
+use crate::sensitive;
 
 pub(in crate::db) const WEBP_UTI: &str = "org.webmproject.webp";
 pub(in crate::db) const IMAGE_OPTIMIZATION_FORMAT: &str = "webp_lossless";
@@ -264,7 +289,7 @@ impl Database {
         let rows = stmt
             .query_map([], |row| row.get::<_, String>(0))
             .context("execute ignored bundle-id query")?;
-        super::collect_rows(rows).context("collect ignored bundle ids")
+        collect_rows(rows).context("collect ignored bundle ids")
     }
 
     pub(crate) fn add_ignored_bundle_id(&self, bundle_id: &str) -> Result<bool> {
@@ -391,7 +416,7 @@ impl Database {
         mut progress: impl FnMut(ImageOptimizationProgressEvent) -> Result<()>,
     ) -> Result<ImageOptimizationReport> {
         let initial_file_bytes = if database_path_is_file_backed(&self.path) {
-            Some(super::storage_file_sizes(&self.path)?.total_bytes())
+            Some(storage_file_sizes(&self.path)?.total_bytes())
         } else {
             None
         };
@@ -494,13 +519,13 @@ impl Database {
                     }
                 }
             } else if let Some(initial) = initial_file_bytes {
-                let final_bytes = super::storage_file_sizes(&self.path)?.total_bytes();
+                let final_bytes = storage_file_sizes(&self.path)?.total_bytes();
                 report.filesystem_saved_bytes = initial.saturating_sub(final_bytes);
                 report.filesystem_growth_bytes = final_bytes.saturating_sub(initial);
             }
         } else if !dry_run && report.compact_recommended && !auto_compact {
             if let Some(initial) = initial_file_bytes {
-                let final_bytes = super::storage_file_sizes(&self.path)?.total_bytes();
+                let final_bytes = storage_file_sizes(&self.path)?.total_bytes();
                 report.filesystem_saved_bytes = initial.saturating_sub(final_bytes);
                 report.filesystem_growth_bytes = final_bytes.saturating_sub(initial);
             }
@@ -572,7 +597,7 @@ impl Database {
             .context("requeue failed ocr results")?;
         }
 
-        let limit = usize_to_i64(super::sanitise_limit(limit))?;
+        let limit = usize_to_i64(sanitise_limit(limit))?;
         let mut stmt = tx
             .prepare(
                 r"
@@ -621,7 +646,7 @@ impl Database {
                 ))
             })
             .context("execute ocr candidate query")?;
-        let candidates = super::collect_rows(rows).context("collect ocr candidates")?;
+        let candidates = collect_rows(rows).context("collect ocr candidates")?;
         drop(stmt);
         tx.commit().context("commit ocr candidate transaction")?;
         Ok(candidates)

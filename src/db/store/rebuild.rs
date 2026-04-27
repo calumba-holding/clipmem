@@ -1,4 +1,11 @@
-use super::*;
+use anyhow::{Context, Result};
+use rusqlite::{params, OptionalExtension};
+
+use crate::db::core::{collect_rows, row_usize, usize_to_i64};
+use crate::db::store::capture_and_settings::RESTORE_SUPPRESSION_WINDOW_SECONDS;
+use crate::db::store::optimize::ImageOptimizationCandidate;
+use crate::db::types::{PurgeReport, SnapshotDeletionReport};
+use crate::model::{truncate_chars, ClipboardItem};
 
 pub(in crate::db) fn rebuild_snapshot_summary(
     tx: &rusqlite::Transaction<'_>,
@@ -24,7 +31,7 @@ pub(in crate::db) fn rebuild_snapshot_summary(
             ))
         })
         .context("execute optimized snapshot summary query")?;
-    let items = super::collect_rows(rows).context("collect optimized snapshot summary rows")?;
+    let items = collect_rows(rows).context("collect optimized snapshot summary rows")?;
     drop(stmt);
 
     let item_count = items.len();
@@ -127,8 +134,7 @@ where
     let item_rows = item_stmt
         .query_map([snapshot_id], |row| row.get::<_, i64>(0))
         .context("execute snapshot fingerprint item query")?;
-    let item_indices =
-        super::collect_rows(item_rows).context("collect snapshot fingerprint items")?;
+    let item_indices = collect_rows(item_rows).context("collect snapshot fingerprint items")?;
     drop(item_stmt);
 
     let mut hasher = Sha256::new();
@@ -150,8 +156,8 @@ where
                 Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
             })
             .context("execute snapshot fingerprint representation query")?;
-        let mut reps = super::collect_rows(rep_rows)
-            .context("collect snapshot fingerprint representations")?;
+        let mut reps =
+            collect_rows(rep_rows).context("collect snapshot fingerprint representations")?;
         drop(rep_stmt);
         reps = reps
             .into_iter()

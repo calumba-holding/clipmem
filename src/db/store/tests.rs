@@ -1,7 +1,6 @@
 use anyhow::Result;
 
-use super::Database;
-use crate::db::RetrievalFilters;
+use crate::db::{Database, RetrievalFilters};
 use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
 
 pub(in crate::db) fn fake_snapshot(

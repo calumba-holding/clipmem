@@ -1,4 +1,30 @@
-use super::*;
+use std::path::Path;
+
+use anyhow::Result;
+
+use crate::cli::human::render_service_status_human;
+use crate::cli::output::emit_json_or_text;
+use crate::cli::service as service_api;
+use crate::cli::service::{
+    render_service_action_text, render_service_status_text, render_setup_text,
+};
+use crate::cli::{
+    AgentsArgs, AgentsCommand, Command, HermesArgs, HermesCommand, OpenClawArgs, OpenClawCommand,
+    ServiceArgs, ServiceCommand, ServiceStatusArgs, SetupArgs,
+};
+
+use super::hermes_manage::{
+    hermes_doctor, hermes_install_skill, hermes_uninstall_skill, packaged_hermes_skill,
+};
+use super::mutate::{
+    doctor, export_snapshot_bytes, forget_snapshot, ocr, purge_snapshots, restore_snapshot,
+    settings, storage,
+};
+use super::openclaw_manage::{
+    openclaw_doctor, openclaw_install_skill, openclaw_uninstall_skill, packaged_openclaw_skill,
+};
+use super::retrieval::{recall, recent, search, show_snapshot, stats, timeline};
+use super::runtime::{capture_once, watch};
 
 pub(in crate::cli) fn run_command(command: Command, db_path: &Path) -> Result<()> {
     match command {
@@ -25,7 +51,7 @@ pub(in crate::cli) fn run_command(command: Command, db_path: &Path) -> Result<()
 }
 
 pub(in crate::cli) fn setup(db_path: &Path, _args: &SetupArgs) -> Result<()> {
-    let report = service::setup(db_path)?;
+    let report = service_api::setup(db_path)?;
     print!("{}", render_setup_text(&report));
     Ok(())
 }
@@ -33,18 +59,18 @@ pub(in crate::cli) fn setup(db_path: &Path, _args: &SetupArgs) -> Result<()> {
 pub(in crate::cli) fn service(db_path: &Path, args: &ServiceArgs) -> Result<()> {
     match &args.command {
         ServiceCommand::Start => {
-            let report = service::start(db_path)?;
+            let report = service_api::start(db_path)?;
             print!("{}", render_service_action_text(&report));
             Ok(())
         }
         ServiceCommand::Stop => {
-            let report = service::stop(db_path)?;
+            let report = service_api::stop(db_path)?;
             print!("{}", render_service_action_text(&report));
             Ok(())
         }
         ServiceCommand::Status(status_args) => service_status(db_path, status_args),
         ServiceCommand::Uninstall => {
-            let report = service::uninstall(db_path)?;
+            let report = service_api::uninstall(db_path)?;
             print!("{}", render_service_action_text(&report));
             Ok(())
         }
@@ -52,7 +78,7 @@ pub(in crate::cli) fn service(db_path: &Path, args: &ServiceArgs) -> Result<()> 
 }
 
 pub(in crate::cli) fn service_status(db_path: &Path, args: &ServiceStatusArgs) -> Result<()> {
-    let report = service::status_report(db_path)?;
+    let report = service_api::status_report(db_path)?;
     if args.human {
         print!("{}", render_service_status_human(&report));
     } else if args.json {

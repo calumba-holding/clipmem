@@ -1,4 +1,20 @@
-use super::*;
+use std::path::{Path, PathBuf};
+use std::process::Command as ProcessCommand;
+
+use anyhow::{anyhow, Context, Result};
+
+use crate::cli::commands::hermes_manage::{packaged_hermes_files, resolve_hermes_skill_dir};
+use crate::cli::commands::openclaw_manage::find_executable;
+use crate::cli::commands::openclaw_validate::{
+    binary_check, referenced_markdown_files, validate_packaged_openclaw_file,
+};
+use crate::cli::commands::types::{
+    HermesDoctorReport, OpenClawDoctorCheck, OpenClawDoctorStatus, HERMES_SKILL_NAME,
+};
+use crate::cli::HermesDoctorArgs;
+
+#[cfg(test)]
+use crate::cli::commands::hermes_manage::packaged_hermes_skill;
 
 pub(in crate::cli) fn build_hermes_doctor_report(
     args: &HermesDoctorArgs,

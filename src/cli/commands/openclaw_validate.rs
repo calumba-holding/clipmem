@@ -1,4 +1,16 @@
-use super::*;
+use std::path::{Path, PathBuf};
+use std::process::Command as ProcessCommand;
+
+use anyhow::{anyhow, Context, Result};
+
+use crate::cli::commands::openclaw_manage::{
+    find_executable, packaged_openclaw_files, resolve_openclaw_skill_dir,
+    resolve_openclaw_workspace_root,
+};
+use crate::cli::commands::types::{
+    OpenClawDoctorCheck, OpenClawDoctorReport, OpenClawDoctorStatus, OPENCLAW_SKILL_NAME,
+};
+use crate::cli::OpenClawDoctorArgs;
 
 pub(in crate::cli) fn build_openclaw_doctor_report(
     args: &OpenClawDoctorArgs,

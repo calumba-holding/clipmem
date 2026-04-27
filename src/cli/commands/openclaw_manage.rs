@@ -1,4 +1,18 @@
-use super::*;
+use std::path::{Path, PathBuf};
+use std::process::Command as ProcessCommand;
+
+use anyhow::{anyhow, Context, Result};
+
+use crate::cli::commands::openclaw_validate::{
+    build_openclaw_doctor_report, render_openclaw_doctor_report,
+};
+use crate::cli::commands::types::{
+    OpenClawDoctorStatus, PackagedSkillFile, OPENCLAW_CHECK_SETUP_SH, OPENCLAW_COMMANDS_REF,
+    OPENCLAW_EXAMPLES_REF, OPENCLAW_JSON_SCHEMA_REF, OPENCLAW_SETUP_CHECK_REF,
+    OPENCLAW_SHARED_ROOT, OPENCLAW_SKILL_MD, OPENCLAW_SKILL_NAME, OPENCLAW_TROUBLESHOOTING_REF,
+    OPENCLAW_WORKSPACE_ROOT,
+};
+use crate::cli::{OpenClawDoctorArgs, OpenClawInstallSkillArgs, OpenClawUninstallSkillArgs};
 
 pub(in crate::cli) fn openclaw_install_skill(args: &OpenClawInstallSkillArgs) -> Result<()> {
     let target_dir = resolve_openclaw_skill_dir(args.dest.as_deref(), args.shared)?;

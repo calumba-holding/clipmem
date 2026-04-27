@@ -1,4 +1,24 @@
-use super::*;
+use std::io::Cursor;
+use std::path::Path;
+
+use anyhow::{ensure, Context, Result};
+use image::{ExtendedColorType, ImageEncoder, ImageReader, Limits};
+use rusqlite::{params, OptionalExtension, TransactionBehavior};
+
+use crate::db::core::{
+    collect_rows, pragma_usize, row_usize, sanitise_limit, storage_file_sizes, usize_to_i64,
+};
+use crate::db::store::capture_and_settings::{
+    IMAGE_OPTIMIZATION_FORMAT, IMAGE_OPTIMIZATION_MAX_DIMENSION,
+    IMAGE_OPTIMIZATION_MIN_ABSOLUTE_SAVINGS, IMAGE_OPTIMIZATION_MIN_RELATIVE_SAVINGS_DENOMINATOR,
+    IMAGE_OPTIMIZATION_MIN_RELATIVE_SAVINGS_NUMERATOR, WEBP_UTI,
+};
+use crate::db::store::ocr::rebuild_snapshot_ocr_cache;
+use crate::db::store::rebuild::{
+    rebuild_snapshot_summary, recompute_snapshot_fingerprint, snapshot_fingerprint_with_replacement,
+};
+use crate::db::types::Database;
+use crate::model::{hash_bytes, truncate_chars};
 
 #[derive(Debug, Clone)]
 pub(in crate::db) struct ImageOptimizationCandidate {
@@ -20,7 +40,7 @@ pub(in crate::db) fn load_image_optimization_candidates(
     conn: &rusqlite::Connection,
     limit: usize,
 ) -> Result<Vec<ImageOptimizationCandidate>> {
-    let limit = usize_to_i64(super::sanitise_limit(limit))?;
+    let limit = usize_to_i64(sanitise_limit(limit))?;
     let mut stmt = conn
         .prepare(
             r"
@@ -46,7 +66,7 @@ pub(in crate::db) fn load_image_optimization_candidates(
             })
         })
         .context("execute image optimization candidate query")?;
-    super::collect_rows(rows).context("collect image optimization candidates")
+    collect_rows(rows).context("collect image optimization candidates")
 }
 
 pub(in crate::db) fn database_path_is_file_backed(path: &Path) -> bool {
@@ -54,8 +74,8 @@ pub(in crate::db) fn database_path_is_file_backed(path: &Path) -> bool {
 }
 
 pub(in crate::db) fn storage_compaction_would_help(db: &Database) -> Result<bool> {
-    let file_sizes = super::storage_file_sizes(&db.path)?;
-    let freelist_count = super::pragma_usize(&db.conn, "freelist_count")?;
+    let file_sizes = storage_file_sizes(&db.path)?;
+    let freelist_count = pragma_usize(&db.conn, "freelist_count")?;
     Ok(freelist_count > 0 || file_sizes.wal > 0 || file_sizes.shm > 0)
 }
 

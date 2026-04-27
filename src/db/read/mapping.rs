@@ -1,4 +1,10 @@
-use super::*;
+use anyhow::Result;
+use rusqlite::{Error as SqlError, ErrorCode, Row};
+
+use crate::db::core::{row_enum, row_usize};
+use crate::db::read::search::{QueryAnalysis, LIST_VALUE_SEPARATOR, MATCHED_FIELDS_SEPARATOR};
+use crate::db::types::{Page, RetrievalFilters, SearchMode, SearchResults};
+use crate::model::{SearchHit, SearchHitParts, TimelineEvent};
 
 pub(in crate::db) fn has_temporal_event_filters(filters: &RetrievalFilters) -> bool {
     filters.since().is_some() || filters.until().is_some() || filters.hours().is_some()
@@ -579,8 +585,11 @@ pub(in crate::db) fn literal_fts_match_query(analysis: &QueryAnalysis) -> Option
 
 #[cfg(test)]
 mod profile_tests {
-    use super::*;
     use std::time::{Duration, Instant};
+
+    use super::{
+        hex_value, split_aggregated_file_paths, split_aggregated_values, LIST_VALUE_SEPARATOR,
+    };
 
     #[test]
     #[ignore = "profiling harness for aggregated file path row mapping"]

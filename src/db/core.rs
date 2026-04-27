@@ -1,8 +1,12 @@
-use super::*;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Duration;
 
-use rusqlite::Row;
+use anyhow::{bail, Context, Result};
+use rusqlite::{Connection, OpenFlags, Row};
+
+use super::schema::{legacy_prerelease_schema_detected, prepare_schema};
+use super::types::{Database, StorageCheckpointReport, StorageCompactReport, StorageFileSizes};
 
 impl Database {
     /// Open the archive database at `path`, creating parent directories and schema state as needed.

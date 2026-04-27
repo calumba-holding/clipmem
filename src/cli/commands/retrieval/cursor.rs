@@ -1,4 +1,13 @@
-use super::*;
+use anyhow::{anyhow, Result};
+use serde::{Deserialize, Serialize};
+
+use crate::db::{
+    RecentCursorState, RetrievalFilters, SearchCursorState, SearchMode, TimelineCursorState,
+    TimelineSort,
+};
+use crate::model::{SearchHit, TimelineEvent};
+
+use crate::cli::commands::types::{RecentCursorToken, SearchCursorToken, TimelineCursorToken};
 
 pub(in crate::cli) fn parse_search_cursor(
     encoded: &str,
@@ -84,7 +93,7 @@ pub(in crate::cli) fn encode_search_cursor(
     requested_mode: SearchMode,
     filters: &RetrievalFilters,
     mode_used: SearchMode,
-    hit: &crate::model::SearchHit,
+    hit: &SearchHit,
 ) -> Result<String> {
     encode_cursor(&SearchCursorToken {
         command: "search".to_string(),
@@ -100,7 +109,7 @@ pub(in crate::cli) fn encode_search_cursor(
 
 pub(in crate::cli) fn encode_recent_cursor(
     filters: &RetrievalFilters,
-    hit: &crate::model::SearchHit,
+    hit: &SearchHit,
 ) -> Result<String> {
     encode_cursor(&RecentCursorToken {
         command: "recent".to_string(),

@@ -1,4 +1,35 @@
-use super::*;
+use std::fs::{File, OpenOptions};
+use std::path::Path;
+
+use anyhow::{anyhow, Context, Result};
+
+use crate::db::{
+    CapturePolicy, CaptureSettings, ImageOptimizationReport, OcrRunReport, OcrStatusReport,
+    PurgeReport, SnapshotDeletionReport, StorageCompactReport,
+};
+use crate::platform::restore_items;
+
+use crate::cli::commands::retrieval::normalize_retrieval_filters;
+use crate::cli::commands::runtime::{open_existing_db, open_or_init_db};
+use crate::cli::commands::types::{
+    ExportOutput, RestoreOutput, SettingsIgnoreListOutput, SettingsView,
+};
+use crate::cli::format_duration_compact;
+use crate::cli::human::{
+    render_doctor_human, render_export_human, render_forget_human, render_image_optimization_human,
+    render_ocr_run_human, render_ocr_status_human, render_purge_human, render_restore_human,
+    render_settings_ignore_list_human, render_settings_view_human, render_storage_compact_human,
+};
+use crate::cli::output::{
+    emit_json_or_text, print_json_line, render_doctor_text, UnsupportedFormatError,
+};
+use crate::cli::{
+    DoctorArgs, ExportArgs, ForgetArgs, OcrArgs, OcrCommand, OcrRunArgs, OcrStatusArgs,
+    OutputFormat, ProgressFormat, PurgeArgs, RestoreArgs, SettingsApiKeyFilterArgs, SettingsArgs,
+    SettingsCommand, SettingsIgnoreArgs, SettingsIgnoreCommand, SettingsIgnoreListArgs,
+    SettingsOcrArgs, SettingsPauseArgs, SettingsRetentionArgs, SettingsShowArgs, StorageArgs,
+    StorageCommand, StorageCompactArgs, StorageOptimizeImagesArgs,
+};
 
 pub(in crate::cli) fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -> Result<()> {
     let format = require_text_or_json(args.output.resolved()?, "export")?;

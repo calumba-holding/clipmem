@@ -1,4 +1,6 @@
-use super::*;
+use anyhow::{Context, Result};
+
+use crate::db::core::collect_rows;
 
 pub(in crate::db) fn enqueue_ocr_candidates_tx(
     tx: &rusqlite::Transaction<'_>,
@@ -42,7 +44,7 @@ pub(in crate::db) fn rebuild_snapshot_ocr_cache_for_hash(
     let rows = stmt
         .query_map([raw_sha256], |row| row.get::<_, i64>(0))
         .context("execute affected ocr snapshot query")?;
-    let snapshot_ids = super::collect_rows(rows).context("collect affected ocr snapshots")?;
+    let snapshot_ids = collect_rows(rows).context("collect affected ocr snapshots")?;
     drop(stmt);
     for snapshot_id in snapshot_ids {
         rebuild_snapshot_ocr_cache(tx, snapshot_id)?;

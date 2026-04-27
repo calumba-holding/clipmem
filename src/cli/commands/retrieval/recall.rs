@@ -1,4 +1,24 @@
-use super::*;
+use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::path::Path;
+
+use anyhow::{anyhow, Result};
+use serde_json::json;
+
+use crate::db::{Database, RetrievalFilters, SearchCursorState, SearchMode, SearchResults};
+use crate::model::SearchHit;
+
+use crate::cli::commands::runtime::open_existing_db;
+use crate::cli::commands::types::{RecallCandidate, RecallCandidateSource, RecallComputation};
+use crate::cli::output::{
+    emit_recall_output, generated_at_now, RecallEnvelope, RecallMatchConfidence, RecallOutputRow,
+    OUTPUT_SCHEMA_VERSION,
+};
+use crate::cli::{RecallArgs, SearchArgs};
+
+use super::filters::{
+    load_snapshot_projections, merge_applied_filters, normalize_retrieval_filters,
+};
 
 pub(in crate::cli) fn recall(db_path: &Path, args: &RecallArgs) -> Result<()> {
     let format = args.output.resolved()?;

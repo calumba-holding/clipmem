@@ -1,4 +1,10 @@
-use super::*;
+use crate::model::SearchHit;
+
+use super::types::{
+    CapturePolicy, CaptureSettings, CaptureSkipReason, OcrCandidate, OcrRunReport, OcrStatusReport,
+    Page, PurgeReport, RecentCursorState, RetrievalFilters, RetrievalKind, SearchCursorState,
+    SearchMode, SearchResults, SnapshotDeletionReport, TimelineCursorState, TimelineSort,
+};
 
 impl SearchResults {
     #[must_use]

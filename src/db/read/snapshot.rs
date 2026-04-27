@@ -1,4 +1,12 @@
-use super::*;
+use anyhow::{Context, Result};
+use rusqlite::{params, OptionalExtension};
+
+use crate::db::core::{collect_rows, row_enum, row_usize, sanitise_limit, usize_to_i64};
+use crate::db::types::Database;
+use crate::model::{
+    CaptureEvent, ClipboardItem, ClipboardRepresentation, DoctorReport, FlattenedTextProjection,
+    SnapshotDetails,
+};
 
 impl Database {
     /// Load one snapshot with its recent events and stored item representations.
@@ -349,11 +357,17 @@ impl Database {
 
 #[cfg(test)]
 mod profile_tests {
-    use super::*;
-    use crate::model::{
-        build_item, build_representation, build_snapshot, CaptureContext, ClipboardSnapshot,
-    };
     use std::time::{Duration, Instant};
+
+    use anyhow::{Context, Result};
+    use rusqlite::params;
+
+    use crate::db::core::{collect_rows, row_enum, row_usize, usize_to_i64};
+    use crate::db::types::Database;
+    use crate::model::{
+        build_item, build_representation, build_snapshot, CaptureContext, ClipboardItem,
+        ClipboardRepresentation, ClipboardSnapshot,
+    };
 
     #[test]
     #[ignore = "profiling harness for snapshot detail item hydration"]

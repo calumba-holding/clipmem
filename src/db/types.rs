@@ -1,4 +1,10 @@
-use super::*;
+use std::path::PathBuf;
+
+use clap::ValueEnum;
+use rusqlite::Connection;
+use serde::{Deserialize, Serialize};
+
+use crate::model::SearchHit;
 
 pub(super) const SCHEMA: &str = include_str!("schema.sql");
 pub(super) const CURRENT_SCHEMA_VERSION: i64 = 17;
