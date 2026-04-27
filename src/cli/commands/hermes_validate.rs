@@ -9,7 +9,7 @@ use crate::cli::commands::agent_support::{
     binary_check, find_executable, referenced_markdown_files, validate_packaged_skill_file,
 };
 use crate::cli::commands::types::{
-    HermesDoctorReport, OpenClawDoctorCheck, OpenClawDoctorStatus, HERMES_SKILL_NAME,
+    AgentDoctorCheck, AgentDoctorStatus, HermesDoctorReport, HERMES_SKILL_NAME,
 };
 use crate::cli::schema::HermesDoctorArgs;
 
@@ -23,7 +23,7 @@ pub(in crate::cli) fn hermes_doctor(args: &HermesDoctorArgs) -> Result<()> {
     if report
         .checks
         .iter()
-        .any(|check| matches!(check.status, OpenClawDoctorStatus::Fail))
+        .any(|check| matches!(check.status, AgentDoctorStatus::Fail))
     {
         Err(anyhow!("Hermes Agent integration checks failed"))
     } else {
@@ -52,15 +52,15 @@ pub(in crate::cli) fn build_hermes_doctor_report(
     checks.push(hermes_binary_check(hermes_path.as_ref()));
 
     if target_dir.exists() {
-        checks.push(OpenClawDoctorCheck {
-            status: OpenClawDoctorStatus::Ok,
+        checks.push(AgentDoctorCheck {
+            status: AgentDoctorStatus::Ok,
             label: "Installed skill directory".to_string(),
             detail: format!("Found {}", target_dir.display()),
             next_steps: Vec::new(),
         });
     } else {
-        checks.push(OpenClawDoctorCheck {
-            status: OpenClawDoctorStatus::Fail,
+        checks.push(AgentDoctorCheck {
+            status: AgentDoctorStatus::Fail,
             label: "Installed skill directory".to_string(),
             detail: format!("Missing {}", target_dir.display()),
             next_steps: vec![
@@ -72,8 +72,8 @@ pub(in crate::cli) fn build_hermes_doctor_report(
     let skill_path = target_dir.join("SKILL.md");
     if skill_path.is_file() {
         match validate_hermes_skill_dir(&target_dir) {
-            Ok(()) => checks.push(OpenClawDoctorCheck {
-                status: OpenClawDoctorStatus::Ok,
+            Ok(()) => checks.push(AgentDoctorCheck {
+                status: AgentDoctorStatus::Ok,
                 label: "SKILL.md metadata".to_string(),
                 detail: format!(
                     "Validated {} and referenced package files under {}",
@@ -82,8 +82,8 @@ pub(in crate::cli) fn build_hermes_doctor_report(
                 ),
                 next_steps: Vec::new(),
             }),
-            Err(error) => checks.push(OpenClawDoctorCheck {
-                status: OpenClawDoctorStatus::Fail,
+            Err(error) => checks.push(AgentDoctorCheck {
+                status: AgentDoctorStatus::Fail,
                 label: "SKILL.md metadata".to_string(),
                 detail: error.to_string(),
                 next_steps: vec![
@@ -93,8 +93,8 @@ pub(in crate::cli) fn build_hermes_doctor_report(
             }),
         }
     } else {
-        checks.push(OpenClawDoctorCheck {
-            status: OpenClawDoctorStatus::Fail,
+        checks.push(AgentDoctorCheck {
+            status: AgentDoctorStatus::Fail,
             label: "SKILL.md file".to_string(),
             detail: format!("Missing {}", skill_path.display()),
             next_steps: vec![
@@ -109,16 +109,16 @@ pub(in crate::cli) fn build_hermes_doctor_report(
     Ok(HermesDoctorReport { target_dir, checks })
 }
 
-pub(in crate::cli) fn hermes_binary_check(path: Option<&PathBuf>) -> OpenClawDoctorCheck {
+pub(in crate::cli) fn hermes_binary_check(path: Option<&PathBuf>) -> AgentDoctorCheck {
     match path {
-        Some(path) => OpenClawDoctorCheck {
-            status: OpenClawDoctorStatus::Ok,
+        Some(path) => AgentDoctorCheck {
+            status: AgentDoctorStatus::Ok,
             label: "Host hermes on PATH".to_string(),
             detail: format!("Found {}", path.display()),
             next_steps: Vec::new(),
         },
-        None => OpenClawDoctorCheck {
-            status: OpenClawDoctorStatus::Warn,
+        None => AgentDoctorCheck {
+            status: AgentDoctorStatus::Warn,
             label: "Host hermes on PATH".to_string(),
             detail: "hermes is not available; skipping live Hermes skill discovery checks."
                 .to_string(),
@@ -131,10 +131,10 @@ pub(in crate::cli) fn hermes_binary_check(path: Option<&PathBuf>) -> OpenClawDoc
 
 pub(in crate::cli) fn hermes_skill_discovery_check(
     hermes_path: Option<&PathBuf>,
-) -> OpenClawDoctorCheck {
+) -> AgentDoctorCheck {
     let Some(hermes_path) = hermes_path else {
-        return OpenClawDoctorCheck {
-            status: OpenClawDoctorStatus::Warn,
+        return AgentDoctorCheck {
+            status: AgentDoctorStatus::Warn,
             label: "Hermes skill discovery".to_string(),
             detail: "Skipped live discovery because `hermes` is not available.".to_string(),
             next_steps: vec![
@@ -151,15 +151,15 @@ pub(in crate::cli) fn hermes_skill_discovery_check(
         Ok(output) if output.status.success() => {
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
             if stdout.contains(HERMES_SKILL_NAME) {
-                OpenClawDoctorCheck {
-                    status: OpenClawDoctorStatus::Ok,
+                AgentDoctorCheck {
+                    status: AgentDoctorStatus::Ok,
                     label: "Hermes skill discovery".to_string(),
                     detail: format!("`hermes skills list` includes {HERMES_SKILL_NAME}."),
                     next_steps: Vec::new(),
                 }
             } else {
-                OpenClawDoctorCheck {
-                    status: OpenClawDoctorStatus::Warn,
+                AgentDoctorCheck {
+                    status: AgentDoctorStatus::Warn,
                     label: "Hermes skill discovery".to_string(),
                     detail: format!(
                         "`hermes skills list` did not show {HERMES_SKILL_NAME}."
@@ -171,8 +171,8 @@ pub(in crate::cli) fn hermes_skill_discovery_check(
                 }
             }
         }
-        Ok(output) => OpenClawDoctorCheck {
-            status: OpenClawDoctorStatus::Warn,
+        Ok(output) => AgentDoctorCheck {
+            status: AgentDoctorStatus::Warn,
             label: "Hermes skill discovery".to_string(),
             detail: format!(
                 "Could not list Hermes skills (`hermes skills list` exited with {}).",
@@ -183,8 +183,8 @@ pub(in crate::cli) fn hermes_skill_discovery_check(
                     .to_string(),
             ],
         },
-        Err(error) => OpenClawDoctorCheck {
-            status: OpenClawDoctorStatus::Warn,
+        Err(error) => AgentDoctorCheck {
+            status: AgentDoctorStatus::Warn,
             label: "Hermes skill discovery".to_string(),
             detail: format!("Could not list Hermes skills: {error}"),
             next_steps: vec![

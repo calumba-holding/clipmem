@@ -11,7 +11,7 @@ use crate::cli::commands::agent_support::{
     binary_check, find_executable, referenced_markdown_files, validate_packaged_skill_file,
 };
 use crate::cli::commands::types::{
-    OpenClawDoctorCheck, OpenClawDoctorReport, OpenClawDoctorStatus, OPENCLAW_SKILL_NAME,
+    AgentDoctorCheck, AgentDoctorStatus, OpenClawDoctorReport, OPENCLAW_SKILL_NAME,
 };
 use crate::cli::schema::OpenClawDoctorArgs;
 
@@ -22,7 +22,7 @@ pub(in crate::cli) fn openclaw_doctor(args: &OpenClawDoctorArgs) -> Result<()> {
     if report
         .checks
         .iter()
-        .any(|check| matches!(check.status, OpenClawDoctorStatus::Fail))
+        .any(|check| matches!(check.status, AgentDoctorStatus::Fail))
     {
         Err(anyhow!("OpenClaw integration checks failed"))
     } else {
@@ -55,23 +55,23 @@ pub(in crate::cli) fn build_openclaw_doctor_report(
     ));
 
     let workspace_root = resolve_openclaw_workspace_root()?;
-    checks.push(OpenClawDoctorCheck {
-        status: OpenClawDoctorStatus::Ok,
+    checks.push(AgentDoctorCheck {
+        status: AgentDoctorStatus::Ok,
         label: "OpenClaw workspace root".to_string(),
         detail: format!("Resolved workspace root: {}", workspace_root.display()),
         next_steps: Vec::new(),
     });
 
     if target_dir.exists() {
-        checks.push(OpenClawDoctorCheck {
-            status: OpenClawDoctorStatus::Ok,
+        checks.push(AgentDoctorCheck {
+            status: AgentDoctorStatus::Ok,
             label: "Installed skill directory".to_string(),
             detail: format!("Found {}", target_dir.display()),
             next_steps: Vec::new(),
         });
     } else {
-        checks.push(OpenClawDoctorCheck {
-            status: OpenClawDoctorStatus::Fail,
+        checks.push(AgentDoctorCheck {
+            status: AgentDoctorStatus::Fail,
             label: "Installed skill directory".to_string(),
             detail: format!("Missing {}", target_dir.display()),
             next_steps: vec![
@@ -85,8 +85,8 @@ pub(in crate::cli) fn build_openclaw_doctor_report(
     let skill_path = target_dir.join("SKILL.md");
     if skill_path.is_file() {
         match validate_openclaw_skill_dir(&target_dir) {
-            Ok(()) => checks.push(OpenClawDoctorCheck {
-                status: OpenClawDoctorStatus::Ok,
+            Ok(()) => checks.push(AgentDoctorCheck {
+                status: AgentDoctorStatus::Ok,
                 label: "SKILL.md metadata".to_string(),
                 detail: format!(
                     "Validated {} and referenced package files under {}",
@@ -95,8 +95,8 @@ pub(in crate::cli) fn build_openclaw_doctor_report(
                 ),
                 next_steps: Vec::new(),
             }),
-            Err(error) => checks.push(OpenClawDoctorCheck {
-                status: OpenClawDoctorStatus::Fail,
+            Err(error) => checks.push(AgentDoctorCheck {
+                status: AgentDoctorStatus::Fail,
                 label: "SKILL.md metadata".to_string(),
                 detail: error.to_string(),
                 next_steps: vec![
@@ -106,8 +106,8 @@ pub(in crate::cli) fn build_openclaw_doctor_report(
             }),
         }
     } else {
-        checks.push(OpenClawDoctorCheck {
-            status: OpenClawDoctorStatus::Fail,
+        checks.push(AgentDoctorCheck {
+            status: AgentDoctorStatus::Fail,
             label: "SKILL.md file".to_string(),
             detail: format!("Missing {}", skill_path.display()),
             next_steps: vec![
@@ -122,12 +122,10 @@ pub(in crate::cli) fn build_openclaw_doctor_report(
     Ok(OpenClawDoctorReport { target_dir, checks })
 }
 
-pub(in crate::cli) fn openclaw_sandbox_check(
-    openclaw_path: Option<&PathBuf>,
-) -> OpenClawDoctorCheck {
+pub(in crate::cli) fn openclaw_sandbox_check(openclaw_path: Option<&PathBuf>) -> AgentDoctorCheck {
     let Some(openclaw_path) = openclaw_path else {
-        return OpenClawDoctorCheck {
-            status: OpenClawDoctorStatus::Warn,
+        return AgentDoctorCheck {
+            status: AgentDoctorStatus::Warn,
             label: "Sandbox visibility".to_string(),
             detail: "Skipped sandbox checks because `openclaw` is not available.".to_string(),
             next_steps: vec![
@@ -145,15 +143,15 @@ pub(in crate::cli) fn openclaw_sandbox_check(
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
             let lower = stdout.to_ascii_lowercase();
             if lower.contains("disabled") || lower.contains("off") {
-                OpenClawDoctorCheck {
-                    status: OpenClawDoctorStatus::Ok,
+                AgentDoctorCheck {
+                    status: AgentDoctorStatus::Ok,
                     label: "Sandbox visibility".to_string(),
                     detail: "OpenClaw sandboxing appears disabled; host PATH should be sufficient.".to_string(),
                     next_steps: Vec::new(),
                 }
             } else {
-                OpenClawDoctorCheck {
-                    status: OpenClawDoctorStatus::Warn,
+                AgentDoctorCheck {
+                    status: AgentDoctorStatus::Warn,
                     label: "Sandbox visibility".to_string(),
                     detail: "OpenClaw sandboxing appears active; `clipmem` may need to be available inside sandbox containers as well as on the host.".to_string(),
                     next_steps: vec![
@@ -164,8 +162,8 @@ pub(in crate::cli) fn openclaw_sandbox_check(
                 }
             }
         }
-        Ok(output) => OpenClawDoctorCheck {
-            status: OpenClawDoctorStatus::Warn,
+        Ok(output) => AgentDoctorCheck {
+            status: AgentDoctorStatus::Warn,
             label: "Sandbox visibility".to_string(),
             detail: format!(
                 "Could not inspect sandbox state (`openclaw sandbox explain` exited with {}).",
@@ -175,8 +173,8 @@ pub(in crate::cli) fn openclaw_sandbox_check(
                 "Run `openclaw sandbox explain` manually and verify whether `clipmem` is present in the sandbox environment.".to_string(),
             ],
         },
-        Err(error) => OpenClawDoctorCheck {
-            status: OpenClawDoctorStatus::Warn,
+        Err(error) => AgentDoctorCheck {
+            status: AgentDoctorStatus::Warn,
             label: "Sandbox visibility".to_string(),
             detail: format!("Could not inspect sandbox state: {error}"),
             next_steps: vec![

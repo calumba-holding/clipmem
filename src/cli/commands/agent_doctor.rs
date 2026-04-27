@@ -1,11 +1,11 @@
 use std::path::Path;
 
-use crate::cli::commands::types::{OpenClawDoctorCheck, OpenClawDoctorStatus};
+use crate::cli::commands::types::{AgentDoctorCheck, AgentDoctorStatus};
 
 pub(in crate::cli) fn render_agent_doctor_report(
     target_label: &str,
     target_dir: &Path,
-    checks: &[OpenClawDoctorCheck],
+    checks: &[AgentDoctorCheck],
 ) -> String {
     let mut out = String::new();
     let _ = std::fmt::Write::write_fmt(
@@ -28,31 +28,31 @@ pub(in crate::cli) fn render_agent_doctor_report(
     out
 }
 
-fn doctor_status_label(status: OpenClawDoctorStatus) -> &'static str {
+fn doctor_status_label(status: AgentDoctorStatus) -> &'static str {
     match status {
-        OpenClawDoctorStatus::Ok => "OK",
-        OpenClawDoctorStatus::Warn => "WARN",
-        OpenClawDoctorStatus::Fail => "FAIL",
+        AgentDoctorStatus::Ok => "OK",
+        AgentDoctorStatus::Warn => "WARN",
+        AgentDoctorStatus::Fail => "FAIL",
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::render_agent_doctor_report;
-    use crate::cli::commands::types::{OpenClawDoctorCheck, OpenClawDoctorStatus};
+    use crate::cli::commands::types::{AgentDoctorCheck, AgentDoctorStatus};
 
     #[test]
     fn render_agent_doctor_report_lists_statuses_details_and_next_steps() {
         let checks = vec![
-            OpenClawDoctorCheck {
+            AgentDoctorCheck {
                 label: "Binary available".to_string(),
-                status: OpenClawDoctorStatus::Ok,
+                status: AgentDoctorStatus::Ok,
                 detail: "clipmem is on PATH".to_string(),
                 next_steps: Vec::new(),
             },
-            OpenClawDoctorCheck {
+            AgentDoctorCheck {
                 label: "Skill installed".to_string(),
-                status: OpenClawDoctorStatus::Fail,
+                status: AgentDoctorStatus::Fail,
                 detail: "SKILL.md missing".to_string(),
                 next_steps: vec!["Run clipmem agents openclaw install-skill".to_string()],
             },

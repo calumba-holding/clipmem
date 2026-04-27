@@ -190,19 +190,19 @@ pub(in crate::cli) const HERMES_CHECK_SETUP_SH: &str = include_str!(concat!(
 #[derive(Debug, Clone)]
 pub(in crate::cli) struct OpenClawDoctorReport {
     pub(in crate::cli) target_dir: PathBuf,
-    pub(in crate::cli) checks: Vec<OpenClawDoctorCheck>,
+    pub(in crate::cli) checks: Vec<AgentDoctorCheck>,
 }
 
 #[derive(Debug, Clone)]
-pub(in crate::cli) struct OpenClawDoctorCheck {
-    pub(in crate::cli) status: OpenClawDoctorStatus,
+pub(in crate::cli) struct AgentDoctorCheck {
+    pub(in crate::cli) status: AgentDoctorStatus,
     pub(in crate::cli) label: String,
     pub(in crate::cli) detail: String,
     pub(in crate::cli) next_steps: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(in crate::cli) enum OpenClawDoctorStatus {
+pub(in crate::cli) enum AgentDoctorStatus {
     Ok,
     Warn,
     Fail,
@@ -211,5 +211,5 @@ pub(in crate::cli) enum OpenClawDoctorStatus {
 #[derive(Debug, Clone)]
 pub(in crate::cli) struct HermesDoctorReport {
     pub(in crate::cli) target_dir: PathBuf,
-    pub(in crate::cli) checks: Vec<OpenClawDoctorCheck>,
+    pub(in crate::cli) checks: Vec<AgentDoctorCheck>,
 }

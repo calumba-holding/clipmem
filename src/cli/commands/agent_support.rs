@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 
-use crate::cli::commands::types::{OpenClawDoctorCheck, OpenClawDoctorStatus, PackagedSkillFile};
+use crate::cli::commands::types::{AgentDoctorCheck, AgentDoctorStatus, PackagedSkillFile};
 
 pub(in crate::cli) fn install_packaged_skill(
     target_dir: &Path,
@@ -64,16 +64,16 @@ pub(in crate::cli) fn binary_check(
     label: &str,
     path: Option<&PathBuf>,
     next_steps: &[&str],
-) -> OpenClawDoctorCheck {
+) -> AgentDoctorCheck {
     match path {
-        Some(path) => OpenClawDoctorCheck {
-            status: OpenClawDoctorStatus::Ok,
+        Some(path) => AgentDoctorCheck {
+            status: AgentDoctorStatus::Ok,
             label: label.to_string(),
             detail: format!("Found {}", path.display()),
             next_steps: Vec::new(),
         },
-        None => OpenClawDoctorCheck {
-            status: OpenClawDoctorStatus::Fail,
+        None => AgentDoctorCheck {
+            status: AgentDoctorStatus::Fail,
             label: label.to_string(),
             detail: format!("{label} is missing"),
             next_steps: next_steps.iter().map(|s| s.to_string()).collect(),
