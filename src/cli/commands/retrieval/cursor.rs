@@ -393,10 +393,10 @@ mod tests {
     }
 
     fn assert_error_contains(error: anyhow::Error, expected: &str) {
+        let message = error.to_string();
         assert!(
-            error.to_string().contains(expected),
-            "expected `{}` to contain `{expected}`",
-            error
+            message.contains(expected),
+            "expected `{message}` to contain `{expected}`"
         );
     }
 }
