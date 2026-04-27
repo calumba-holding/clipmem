@@ -80,18 +80,6 @@ impl ProgressFormat {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct DurationValue {
-    pub(in crate::cli) raw: String,
-    pub(in crate::cli) seconds: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum RetentionValue {
-    Forever,
-    Duration(DurationValue),
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(super) enum ToggleState {
     On,
@@ -220,33 +208,6 @@ impl StatsOutputArgs {
     }
 }
 
-impl DurationValue {
-    #[must_use]
-    pub(super) fn new(raw: String, seconds: u64) -> Self {
-        Self { raw, seconds }
-    }
-
-    #[must_use]
-    pub(super) fn raw(&self) -> &str {
-        &self.raw
-    }
-
-    #[must_use]
-    pub(super) fn seconds(&self) -> u64 {
-        self.seconds
-    }
-}
-
-impl RetentionValue {
-    #[must_use]
-    pub(super) fn retention_seconds(&self) -> Option<u64> {
-        match self {
-            Self::Forever => None,
-            Self::Duration(duration) => Some(duration.seconds()),
-        }
-    }
-}
-
 impl ToggleState {
     #[must_use]
     pub(super) fn is_on(self) -> bool {
@@ -304,9 +265,8 @@ pub(in crate::cli) fn peak_bucket(
 #[cfg(test)]
 mod tests {
     use super::{
-        format_duration_compact, format_duration_seconds, DurationValue, OutputArgs, OutputFormat,
-        RecallOutputArgs, RecallOutputFormat, RetentionValue, StatsOutputArgs, StatsOutputFormat,
-        ToggleState,
+        format_duration_compact, format_duration_seconds, OutputArgs, OutputFormat,
+        RecallOutputArgs, RecallOutputFormat, StatsOutputArgs, StatsOutputFormat, ToggleState,
     };
 
     #[test]
@@ -464,16 +424,6 @@ mod tests {
         assert_eq!(format_duration_seconds(7_380), "2h 3m");
         assert_eq!(format_duration_seconds(185), "3m 5s");
         assert_eq!(format_duration_seconds(42), "42s");
-    }
-
-    #[test]
-    fn retention_value_returns_none_for_forever_and_seconds_for_duration() {
-        assert_eq!(RetentionValue::Forever.retention_seconds(), None);
-        assert_eq!(
-            RetentionValue::Duration(DurationValue::new("2h".to_string(), 7_200))
-                .retention_seconds(),
-            Some(7_200)
-        );
     }
 
     #[test]

@@ -5,7 +5,8 @@ use clap::Parser;
 use crate::db::{SearchMode, TimelineSort};
 
 use super::errors::classify_command_error;
-use super::formats::{OutputFormat, ProgressFormat, RecallOutputFormat, RetentionValue};
+use super::formats::{OutputFormat, ProgressFormat, RecallOutputFormat};
+use super::parsing::RetentionValue;
 use super::schema::{
     AgentsCommand, Cli, Command, HermesCommand, OcrCommand, OpenClawCommand, SettingsCommand,
     SettingsIgnoreCommand, StorageCommand,

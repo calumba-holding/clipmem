@@ -1,7 +1,44 @@
 use anyhow::Result;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-use super::formats::{DurationValue, RetentionValue};
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct DurationValue {
+    pub(in crate::cli) raw: String,
+    pub(in crate::cli) seconds: u64,
+}
+
+impl DurationValue {
+    #[must_use]
+    pub(super) fn new(raw: String, seconds: u64) -> Self {
+        Self { raw, seconds }
+    }
+
+    #[must_use]
+    pub(super) fn raw(&self) -> &str {
+        &self.raw
+    }
+
+    #[must_use]
+    pub(super) fn seconds(&self) -> u64 {
+        self.seconds
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum RetentionValue {
+    Forever,
+    Duration(DurationValue),
+}
+
+impl RetentionValue {
+    #[must_use]
+    pub(super) fn retention_seconds(&self) -> Option<u64> {
+        match self {
+            Self::Forever => None,
+            Self::Duration(duration) => Some(duration.seconds()),
+        }
+    }
+}
 
 pub(super) fn parse_normalized_score(value: &str) -> Result<f64, LimitParseError> {
     let parsed = value
@@ -103,5 +140,20 @@ pub(super) fn parse_retention_value(value: &str) -> Result<RetentionValue, Limit
         Ok(RetentionValue::Forever)
     } else {
         parse_duration_value(value).map(RetentionValue::Duration)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DurationValue, RetentionValue};
+
+    #[test]
+    fn retention_value_returns_none_for_forever_and_seconds_for_duration() {
+        assert_eq!(RetentionValue::Forever.retention_seconds(), None);
+        assert_eq!(
+            RetentionValue::Duration(DurationValue::new("2h".to_string(), 7_200))
+                .retention_seconds(),
+            Some(7_200)
+        );
     }
 }
