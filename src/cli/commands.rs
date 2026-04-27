@@ -5,6 +5,7 @@ pub(in crate::cli) mod entry;
 mod mutation_support;
 mod ocr;
 mod retrieval;
+mod retrieval_support;
 mod runtime;
 mod settings;
 mod storage;

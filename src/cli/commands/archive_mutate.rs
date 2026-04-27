@@ -16,7 +16,7 @@ use crate::cli::output::{emit_json_or_text, ExportOutput, RestoreOutput};
 use crate::cli::schema::{ExportArgs, ForgetArgs, PurgeArgs, RestoreArgs};
 
 use super::mutation_support::require_text_or_json;
-use super::retrieval::normalize_retrieval_filters;
+use super::retrieval_support::normalize_retrieval_filters;
 use super::runtime::open_existing_db;
 
 pub(in crate::cli) fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -> Result<()> {

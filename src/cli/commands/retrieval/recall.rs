@@ -5,19 +5,19 @@ use std::path::Path;
 use anyhow::{anyhow, Result};
 use serde_json::json;
 
-use crate::db::{Database, RetrievalFilters, SearchCursorState, SearchMode, SearchResults};
+use crate::db::{Database, RetrievalFilters, SearchMode, SearchResults};
 use crate::model::SearchHit;
 
 use crate::cli::output::{
     emit_recall_output, generated_at_now, RecallEnvelope, RecallMatchConfidence, RecallOutputRow,
     OUTPUT_SCHEMA_VERSION,
 };
-use crate::cli::schema::{RecallArgs, SearchArgs};
+use crate::cli::schema::RecallArgs;
 
-use super::super::runtime::open_existing_db;
-use super::filters::{
+use super::super::retrieval_support::{
     load_snapshot_projections, merge_applied_filters, normalize_retrieval_filters,
 };
+use super::super::runtime::open_existing_db;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::cli) enum RecallCandidateSource {
@@ -117,19 +117,6 @@ fn build_recall_envelope(
         why_selected: recall.why_selected.clone(),
         quoted_text,
     })
-}
-
-pub(in crate::cli) fn query_search_results(
-    db: &Database,
-    args: &SearchArgs,
-    filters: &RetrievalFilters,
-    cursor: Option<&SearchCursorState>,
-) -> Result<SearchResults> {
-    match args.search_mode() {
-        SearchMode::Auto => db.search_auto_page(&args.query, args.limit, filters, cursor),
-        SearchMode::Fts => db.search_fts_page(&args.query, args.limit, filters, cursor),
-        SearchMode::Literal => db.search_literal_page(&args.query, args.limit, filters, cursor),
-    }
 }
 
 pub(in crate::cli) fn compute_recall(

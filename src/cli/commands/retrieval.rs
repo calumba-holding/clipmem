@@ -12,15 +12,17 @@ use crate::cli::output::{
 };
 use crate::cli::schema::{GetArgs, RecentArgs, SearchArgs, StatsArgs, TimelineArgs};
 
+use super::retrieval_support::{
+    load_snapshot_projections, merge_applied_filters, normalize_retrieval_filters,
+    query_search_results,
+};
 use super::runtime::open_existing_db;
 
 mod cursor;
-mod filters;
 mod recall;
 
 pub(in crate::cli) use self::cursor::*;
-pub(in crate::cli) use self::filters::*;
-pub(in crate::cli) use self::recall::{query_search_results, recall};
+pub(in crate::cli) use self::recall::recall;
 
 pub(in crate::cli) fn search(db_path: &Path, args: &SearchArgs) -> Result<()> {
     let format = args.output.resolved()?;

@@ -3,25 +3,21 @@ use std::collections::{HashMap, HashSet};
 use anyhow::{anyhow, Result};
 use serde_json::json;
 
-use crate::db::{Database, RetrievalFilters};
+use crate::db::{Database, RetrievalFilters, SearchCursorState, SearchMode, SearchResults};
 use crate::model::FlattenedTextProjection;
 
-use crate::cli::schema::RetrievalFilterArgs;
+use crate::cli::schema::{RetrievalFilterArgs, SearchArgs};
 
 #[cfg(test)]
-use super::super::runtime::run_watch_iteration_with_capture;
-#[cfg(test)]
-use super::cursor::{
+use super::retrieval::{
     encode_recent_cursor, encode_search_cursor, parse_recent_cursor, parse_search_cursor,
 };
 #[cfg(test)]
-use super::recall::query_search_results;
+use super::runtime::run_watch_iteration_with_capture;
 #[cfg(test)]
 use crate::app::WatchState;
 #[cfg(test)]
-use crate::cli::schema::{SearchArgs, WatchArgs};
-#[cfg(test)]
-use crate::db::{SearchMode, SearchResults};
+use crate::cli::schema::WatchArgs;
 
 pub(in crate::cli) fn normalize_retrieval_filters(
     args: &RetrievalFilterArgs,
@@ -66,6 +62,19 @@ pub(in crate::cli) fn merge_applied_filters(
         }
     }
     value
+}
+
+pub(in crate::cli) fn query_search_results(
+    db: &Database,
+    args: &SearchArgs,
+    filters: &RetrievalFilters,
+    cursor: Option<&SearchCursorState>,
+) -> Result<SearchResults> {
+    match args.search_mode() {
+        SearchMode::Auto => db.search_auto_page(&args.query, args.limit, filters, cursor),
+        SearchMode::Fts => db.search_fts_page(&args.query, args.limit, filters, cursor),
+        SearchMode::Literal => db.search_literal_page(&args.query, args.limit, filters, cursor),
+    }
 }
 
 #[cfg(test)]
