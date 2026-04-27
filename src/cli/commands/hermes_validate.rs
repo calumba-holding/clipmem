@@ -4,17 +4,32 @@ use std::process::Command as ProcessCommand;
 use anyhow::{anyhow, Context, Result};
 
 use crate::cli::commands::agent_doctor::render_agent_doctor_report;
+use crate::cli::commands::agent_package::{packaged_hermes_files, resolve_hermes_skill_dir};
 use crate::cli::commands::agent_support::{
     binary_check, find_executable, referenced_markdown_files, validate_packaged_skill_file,
 };
-use crate::cli::commands::hermes_manage::{packaged_hermes_files, resolve_hermes_skill_dir};
 use crate::cli::commands::types::{
     HermesDoctorReport, OpenClawDoctorCheck, OpenClawDoctorStatus, HERMES_SKILL_NAME,
 };
 use crate::cli::schema::HermesDoctorArgs;
 
 #[cfg(test)]
-use crate::cli::commands::hermes_manage::packaged_hermes_skill;
+use crate::cli::commands::agent_package::packaged_hermes_skill;
+
+pub(in crate::cli) fn hermes_doctor(args: &HermesDoctorArgs) -> Result<()> {
+    let report = build_hermes_doctor_report(args)?;
+    print!("{}", render_hermes_doctor_report(&report));
+
+    if report
+        .checks
+        .iter()
+        .any(|check| matches!(check.status, OpenClawDoctorStatus::Fail))
+    {
+        Err(anyhow!("Hermes Agent integration checks failed"))
+    } else {
+        Ok(())
+    }
+}
 
 pub(in crate::cli) fn build_hermes_doctor_report(
     args: &HermesDoctorArgs,

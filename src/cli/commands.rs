@@ -1,4 +1,5 @@
 mod agent_doctor;
+mod agent_package;
 mod agent_support;
 mod entry;
 mod hermes_manage;

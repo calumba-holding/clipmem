@@ -13,16 +13,15 @@ use crate::cli::service::{
     render_service_action_text, render_service_status_text, render_setup_text,
 };
 
-use super::hermes_manage::{
-    hermes_doctor, hermes_install_skill, hermes_uninstall_skill, packaged_hermes_skill,
-};
+use super::agent_package::{packaged_hermes_skill, packaged_openclaw_skill};
+use super::hermes_manage::{hermes_install_skill, hermes_uninstall_skill};
+use super::hermes_validate::hermes_doctor;
 use super::mutate::{
     doctor, export_snapshot_bytes, forget_snapshot, ocr, purge_snapshots, restore_snapshot,
     settings, storage,
 };
-use super::openclaw_manage::{
-    openclaw_doctor, openclaw_install_skill, openclaw_uninstall_skill, packaged_openclaw_skill,
-};
+use super::openclaw_manage::{openclaw_install_skill, openclaw_uninstall_skill};
+use super::openclaw_validate::openclaw_doctor;
 use super::retrieval::{recall, recent, search, show_snapshot, stats, timeline};
 use super::runtime::{capture_once, watch};
 

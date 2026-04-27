@@ -4,16 +4,31 @@ use std::process::Command as ProcessCommand;
 use anyhow::{anyhow, Context, Result};
 
 use crate::cli::commands::agent_doctor::render_agent_doctor_report;
+use crate::cli::commands::agent_package::{
+    packaged_openclaw_files, resolve_openclaw_skill_dir, resolve_openclaw_workspace_root,
+};
 use crate::cli::commands::agent_support::{
     binary_check, find_executable, referenced_markdown_files, validate_packaged_skill_file,
-};
-use crate::cli::commands::openclaw_manage::{
-    packaged_openclaw_files, resolve_openclaw_skill_dir, resolve_openclaw_workspace_root,
 };
 use crate::cli::commands::types::{
     OpenClawDoctorCheck, OpenClawDoctorReport, OpenClawDoctorStatus, OPENCLAW_SKILL_NAME,
 };
 use crate::cli::schema::OpenClawDoctorArgs;
+
+pub(in crate::cli) fn openclaw_doctor(args: &OpenClawDoctorArgs) -> Result<()> {
+    let report = build_openclaw_doctor_report(args)?;
+    print!("{}", render_openclaw_doctor_report(&report));
+
+    if report
+        .checks
+        .iter()
+        .any(|check| matches!(check.status, OpenClawDoctorStatus::Fail))
+    {
+        Err(anyhow!("OpenClaw integration checks failed"))
+    } else {
+        Ok(())
+    }
+}
 
 pub(in crate::cli) fn build_openclaw_doctor_report(
     args: &OpenClawDoctorArgs,

@@ -17,9 +17,9 @@ use super::recall::query_search_results;
 #[cfg(test)]
 use crate::app::WatchState;
 #[cfg(test)]
-use crate::cli::commands::agent_support::referenced_markdown_files;
+use crate::cli::commands::agent_package::{packaged_openclaw_files, packaged_openclaw_skill};
 #[cfg(test)]
-use crate::cli::commands::openclaw_manage::{packaged_openclaw_files, packaged_openclaw_skill};
+use crate::cli::commands::agent_support::referenced_markdown_files;
 #[cfg(test)]
 use crate::cli::commands::openclaw_validate::validate_openclaw_skill_content;
 #[cfg(test)]
