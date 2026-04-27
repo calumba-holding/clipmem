@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use crate::cli::commands::CaptureOnceOutput;
+use crate::cli::commands::{CaptureOnceOutput, SettingsIgnoreListOutput, SettingsView};
 use crate::cli::formats::{format_duration_seconds, peak_bucket};
 use crate::cli::output::model::{
     GetEnvelope, ListEnvelope, ListRow, SnapshotListRow, StatsEnvelope, TimelineListRow,
@@ -9,6 +9,7 @@ use crate::cli::output::support::{
     format_utc_timestamp, push_blank_line, push_snapshot_leaderboard,
     push_snapshot_leaderboard_entry,
 };
+use crate::db::{ImageOptimizationReport, StorageCompactReport};
 use crate::model::{DoctorReport, SnapshotDetails};
 
 pub(in crate::cli) fn render_capture_once_text(output: &CaptureOnceOutput) -> String {
@@ -379,5 +380,97 @@ pub(in crate::cli) fn render_doctor_text(report: &DoctorReport) -> String {
         }
     }
 
+    out
+}
+
+pub(in crate::cli) fn render_storage_compact_text(report: &StorageCompactReport) -> String {
+    let action = if report.dry_run {
+        "storage compact dry-run"
+    } else {
+        "storage compacted"
+    };
+    format!(
+        "{} db={} before={} after={} reclaimed={} estimated_reclaimable={} page_count={} freelist_count={} checkpoint_busy={} checkpoint_log={} checkpointed={}\n",
+        action,
+        report.db_path,
+        report.total_before_bytes,
+        report.total_after_bytes,
+        report.reclaimed_bytes,
+        report.estimated_reclaimable_bytes,
+        report.page_count,
+        report.freelist_count,
+        report.checkpoint.busy,
+        report.checkpoint.log,
+        report.checkpoint.checkpointed
+    )
+}
+
+pub(in crate::cli) fn render_image_optimization_text(report: &ImageOptimizationReport) -> String {
+    let action = if report.dry_run {
+        "image optimization dry-run"
+    } else if report.compact_error.is_some() {
+        "image optimization complete; database compaction failed"
+    } else {
+        "image optimization complete"
+    };
+    let recommendation = if report.compact_recommended {
+        " Run `clipmem storage compact` to return freed pages to the filesystem."
+    } else {
+        ""
+    };
+    let compact_error = report
+        .compact_error
+        .as_ref()
+        .map(|error| format!(" compact_error={error}"))
+        .unwrap_or_default();
+    format!(
+        "{} format={} scanned={} compressed={} skipped={} conflicts={} original_bytes={} optimized_bytes={} logical_saved_bytes={} compact_run={} filesystem_saved_bytes={} filesystem_growth_bytes={}{}{}\n",
+        action,
+        report.format,
+        report.scanned_rows,
+        report.compressed_rows,
+        report.skipped_rows,
+        report.conflict_count,
+        report.original_bytes,
+        report.optimized_bytes,
+        report.logical_saved_bytes,
+        report.compact_run,
+        report.filesystem_saved_bytes,
+        report.filesystem_growth_bytes,
+        compact_error,
+        recommendation
+    )
+}
+
+pub(in crate::cli) fn render_settings_view_text(view: &SettingsView) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("paused: {}\n", view.paused));
+    out.push_str(&format!(
+        "api key filter: {}\n",
+        view.api_key_filter_enabled
+    ));
+    out.push_str(&format!("ocr: {}\n", view.ocr_enabled));
+    out.push_str(&format!("retention: {}\n", view.retention));
+    out.push_str(&format!(
+        "ignored bundle ids: {}\n",
+        view.ignored_bundle_ids.len()
+    ));
+    for bundle_id in &view.ignored_bundle_ids {
+        out.push_str(&format!("  - {bundle_id}\n"));
+    }
+    out
+}
+
+pub(in crate::cli) fn render_settings_ignore_list_text(
+    output: &SettingsIgnoreListOutput,
+) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "ignored bundle ids: {}\n",
+        output.ignored_bundle_ids.len()
+    ));
+    for bundle_id in &output.ignored_bundle_ids {
+        out.push_str(&format!("  - {bundle_id}\n"));
+    }
     out
 }

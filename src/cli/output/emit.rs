@@ -2,9 +2,12 @@ use anyhow::{anyhow, Result};
 use serde::Serialize;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
+use crate::cli::commands::{SettingsIgnoreListOutput, SettingsView};
 use crate::cli::formats::{OutputFormat, RecallOutputFormat, StatsOutputFormat};
 use crate::cli::human::{
-    render_get_human, render_list_human, render_recall_human, render_stats_human,
+    render_get_human, render_image_optimization_human, render_list_human, render_recall_human,
+    render_settings_ignore_list_human, render_settings_view_human, render_stats_human,
+    render_storage_compact_human,
 };
 use crate::cli::output::json::{print_json, print_json_line, print_jsonl_list};
 use crate::cli::output::markdown::{
@@ -13,8 +16,13 @@ use crate::cli::output::markdown::{
 use crate::cli::output::model::{
     GetEnvelope, ListEnvelope, RecallEnvelope, StatsEnvelope, UnsupportedFormatError,
 };
-use crate::cli::output::text::{render_get_text, render_list_text, render_stats_text};
+use crate::cli::output::text::{
+    render_get_text, render_image_optimization_text, render_list_text,
+    render_settings_ignore_list_text, render_settings_view_text, render_stats_text,
+    render_storage_compact_text,
+};
 use crate::cli::output::toon::{render_list_toon, render_recall_toon};
+use crate::db::{ImageOptimizationReport, StorageCompactReport};
 
 pub(in crate::cli) fn generated_at_now() -> Result<String> {
     OffsetDateTime::now_utc()
@@ -124,5 +132,77 @@ pub(in crate::cli) fn emit_recall_output(
             print!("{}", render_recall_human(envelope));
             Ok(())
         }
+    }
+}
+
+pub(in crate::cli) fn emit_storage_compact_output(
+    format: OutputFormat,
+    report: &StorageCompactReport,
+) -> Result<()> {
+    match format {
+        OutputFormat::Json => print_json(report),
+        OutputFormat::Human => {
+            print!("{}", render_storage_compact_human(report));
+            Ok(())
+        }
+        OutputFormat::Text => {
+            print!("{}", render_storage_compact_text(report));
+            Ok(())
+        }
+        _ => unreachable!("unsupported storage compact format should be rejected earlier"),
+    }
+}
+
+pub(in crate::cli) fn emit_image_optimization_output(
+    format: OutputFormat,
+    report: &ImageOptimizationReport,
+) -> Result<()> {
+    match format {
+        OutputFormat::Json => print_json(report),
+        OutputFormat::Human => {
+            print!("{}", render_image_optimization_human(report));
+            Ok(())
+        }
+        OutputFormat::Text => {
+            print!("{}", render_image_optimization_text(report));
+            Ok(())
+        }
+        _ => unreachable!("unsupported storage optimize-images format should be rejected earlier"),
+    }
+}
+
+pub(in crate::cli) fn emit_settings_view_output(
+    format: OutputFormat,
+    view: &SettingsView,
+) -> Result<()> {
+    match format {
+        OutputFormat::Json => print_json(view),
+        OutputFormat::Human => {
+            print!("{}", render_settings_view_human(view));
+            Ok(())
+        }
+        OutputFormat::Text => {
+            print!("{}", render_settings_view_text(view));
+            Ok(())
+        }
+        _ => unreachable!("unsupported settings show format should be rejected earlier"),
+    }
+}
+
+pub(in crate::cli) fn emit_settings_ignore_list_output(
+    format: OutputFormat,
+    output: &SettingsIgnoreListOutput,
+) -> Result<()> {
+    match format {
+        OutputFormat::Json => print_json(output),
+        OutputFormat::Human => {
+            print!("{}", render_settings_ignore_list_human(output));
+            Ok(())
+        }
+        OutputFormat::Text => {
+            print!("{}", render_settings_ignore_list_text(output));
+            Ok(())
+        }
+        _ => unreachable!("unsupported settings ignore list format should be rejected earlier"),
     }
 }

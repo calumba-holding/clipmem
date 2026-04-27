@@ -1,7 +1,10 @@
 use serde_json::{json, Value};
 use std::fmt::Write;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use crate::cli::commands::{SettingsIgnoreListOutput, SettingsView};
+use crate::db::{Database, ImageOptimizationReport};
 use crate::model::{
     build_item, build_representation, build_snapshot, CaptureContext, CaptureEvent,
     CaptureStoreResult, DoctorReport, SnapshotDetails, SnapshotKind,
@@ -16,7 +19,9 @@ use super::model::{
     OUTPUT_SCHEMA_VERSION,
 };
 use super::text::{
-    render_capture_once_text, render_doctor_text, render_get_text, render_list_text,
+    render_capture_once_text, render_doctor_text, render_get_text, render_image_optimization_text,
+    render_list_text, render_settings_ignore_list_text, render_settings_view_text,
+    render_storage_compact_text,
 };
 use super::toon::{render_list_toon, render_recall_toon};
 
@@ -171,6 +176,103 @@ pub(in crate::cli) fn render_doctor_text_lists_compile_options() {
     assert!(text.contains("database: /tmp/clipmem.sqlite3"));
     assert!(text.contains("compile options:"));
     assert!(text.contains("ENABLE_FTS5"));
+}
+
+#[test]
+pub(in crate::cli) fn render_storage_compact_text_distinguishes_dry_run_from_completed_compaction()
+{
+    let path = temp_storage_path("compact.sqlite3");
+    let mut db = Database::open_or_init(&path).unwrap();
+    let dry_run = db.compact_storage(true).unwrap();
+    let completed = db.compact_storage(false).unwrap();
+
+    let dry_run_text = render_storage_compact_text(&dry_run);
+    let completed_text = render_storage_compact_text(&completed);
+
+    assert!(dry_run_text.starts_with(&format!("storage compact dry-run db={}", path.display())));
+    assert!(completed_text.starts_with(&format!("storage compacted db={}", path.display())));
+    assert!(completed_text.contains("before="));
+    assert!(completed_text.contains("after="));
+    assert!(completed_text.contains("checkpoint_busy="));
+
+    cleanup_storage_path(&path);
+}
+
+#[test]
+pub(in crate::cli) fn render_image_optimization_text_reports_compact_error_and_recommendation() {
+    let report = ImageOptimizationReport {
+        dry_run: false,
+        format: "webp",
+        scanned_rows: 5,
+        compressed_rows: 3,
+        skipped_rows: 2,
+        conflict_count: 1,
+        original_bytes: 10_000,
+        optimized_bytes: 4_000,
+        logical_saved_bytes: 6_000,
+        compact_run: false,
+        compact: None,
+        compact_error: Some("database is locked".to_string()),
+        filesystem_saved_bytes: 0,
+        filesystem_growth_bytes: 128,
+        compact_recommended: true,
+    };
+
+    let rendered = render_image_optimization_text(&report);
+
+    assert!(rendered.starts_with("image optimization complete; database compaction failed"));
+    assert!(rendered.contains("format=webp scanned=5 compressed=3 skipped=2 conflicts=1"));
+    assert!(rendered.contains("compact_error=database is locked"));
+    assert!(rendered.contains("Run `clipmem storage compact`"));
+}
+
+#[test]
+pub(in crate::cli) fn render_settings_view_text_lists_policy_and_ignored_bundle_ids() {
+    let view = SettingsView {
+        paused: true,
+        api_key_filter_enabled: false,
+        ocr_enabled: true,
+        retention_seconds: Some(3_600),
+        retention: "1h".to_string(),
+        ignored_bundle_ids: vec![
+            "com.apple.Terminal".to_string(),
+            "com.example.SecretApp".to_string(),
+        ],
+    };
+
+    let rendered = render_settings_view_text(&view);
+
+    assert_eq!(
+        rendered,
+        concat!(
+            "paused: true\n",
+            "api key filter: false\n",
+            "ocr: true\n",
+            "retention: 1h\n",
+            "ignored bundle ids: 2\n",
+            "  - com.apple.Terminal\n",
+            "  - com.example.SecretApp\n",
+        )
+    );
+}
+
+#[test]
+pub(in crate::cli) fn render_settings_ignore_list_text_handles_empty_and_populated_lists() {
+    let empty = SettingsIgnoreListOutput {
+        ignored_bundle_ids: Vec::new(),
+    };
+    assert_eq!(
+        render_settings_ignore_list_text(&empty),
+        "ignored bundle ids: 0\n"
+    );
+
+    let populated = SettingsIgnoreListOutput {
+        ignored_bundle_ids: vec!["com.apple.Terminal".to_string()],
+    };
+    assert_eq!(
+        render_settings_ignore_list_text(&populated),
+        "ignored bundle ids: 1\n  - com.apple.Terminal\n"
+    );
 }
 
 #[test]
@@ -635,5 +737,31 @@ fn encode_toon_string_for_profile(text: &str) -> String {
         format!("\"{escaped}\"")
     } else {
         text.to_string()
+    }
+}
+
+fn temp_storage_path(name: &str) -> PathBuf {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock should be after unix epoch")
+        .as_nanos();
+
+    let dir = std::env::temp_dir()
+        .join("clipmem-storage-tests")
+        .join(format!("{}-{timestamp}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir.join(name)
+}
+
+fn cleanup_storage_path(path: &std::path::Path) {
+    if let Ok(metadata) = std::fs::symlink_metadata(path) {
+        if metadata.is_dir() && !metadata.file_type().is_symlink() {
+            let _ = std::fs::remove_dir_all(path);
+        } else {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::remove_dir_all(parent);
     }
 }
