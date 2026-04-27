@@ -9,27 +9,6 @@ use crate::model::{
 
 pub(in crate::cli) const OUTPUT_SCHEMA_VERSION: u32 = 2;
 
-#[derive(Debug)]
-pub(in crate::cli) struct UnsupportedFormatError {
-    pub(in crate::cli) message: String,
-}
-
-impl UnsupportedFormatError {
-    pub(in crate::cli) fn new(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-        }
-    }
-}
-
-impl std::fmt::Display for UnsupportedFormatError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for UnsupportedFormatError {}
-
 #[derive(Debug, Clone, Serialize)]
 pub(in crate::cli) struct ListEnvelope {
     pub(in crate::cli) schema_version: u32,

@@ -1,7 +1,7 @@
 use anyhow::Result;
 
+use crate::cli::errors::UnsupportedFormatError;
 use crate::cli::formats::OutputFormat;
-use crate::cli::output::UnsupportedFormatError;
 
 pub(in crate::cli) fn require_text_or_json(
     format: OutputFormat,

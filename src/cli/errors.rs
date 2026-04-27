@@ -1,7 +1,6 @@
 use clap::error::ErrorKind;
 
 use super::exit::{CliError, CliExitCode};
-use super::output::UnsupportedFormatError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct CliValueError {
@@ -25,6 +24,27 @@ impl std::fmt::Display for CliValueError {
 }
 
 impl std::error::Error for CliValueError {}
+
+#[derive(Debug)]
+pub(in crate::cli) struct UnsupportedFormatError {
+    message: String,
+}
+
+impl UnsupportedFormatError {
+    pub(in crate::cli) fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for UnsupportedFormatError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for UnsupportedFormatError {}
 
 #[derive(Debug)]
 pub(in crate::cli) struct CliCommandError {
@@ -206,12 +226,10 @@ mod tests {
     use anyhow::anyhow;
     use clap::error::ErrorKind;
 
-    use crate::cli::output::UnsupportedFormatError;
-
     use super::{
         classify_clap_exit_code, classify_command_error, db_error, invalid_args_error, is_db_error,
         is_not_found_error, is_platform_error, sanitize_error_message, CliCommandError,
-        CliExitCode,
+        CliExitCode, UnsupportedFormatError,
     };
 
     #[test]

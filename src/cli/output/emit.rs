@@ -3,6 +3,7 @@ use serde::Serialize;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use crate::cli::commands::{SettingsIgnoreListOutput, SettingsView};
+use crate::cli::errors::UnsupportedFormatError;
 use crate::cli::formats::{OutputFormat, RecallOutputFormat, StatsOutputFormat};
 use crate::cli::human::{
     render_get_human, render_image_optimization_human, render_list_human, render_recall_human,
@@ -13,9 +14,7 @@ use crate::cli::output::json::{print_json, print_json_line, print_jsonl_list};
 use crate::cli::output::markdown::{
     render_get_markdown, render_list_markdown, render_recall_markdown,
 };
-use crate::cli::output::model::{
-    GetEnvelope, ListEnvelope, RecallEnvelope, StatsEnvelope, UnsupportedFormatError,
-};
+use crate::cli::output::model::{GetEnvelope, ListEnvelope, RecallEnvelope, StatsEnvelope};
 use crate::cli::output::text::{
     render_get_text, render_image_optimization_text, render_list_text,
     render_settings_ignore_list_text, render_settings_view_text, render_stats_text,
