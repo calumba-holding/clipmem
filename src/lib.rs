@@ -1,3 +1,8 @@
+//! Clipboard capture, storage, and retrieval primitives for the `clipmem` CLI.
+//!
+//! The public API exposes narrow `capture` and `archive` facades for embedding
+//! the same model types and command entry points used by the binary.
+
 pub(crate) mod app;
 pub mod archive;
 pub mod capture;
