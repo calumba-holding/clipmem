@@ -297,10 +297,17 @@ enum MarkdownLinkHitTesting {
         layoutManager.ensureLayout(for: textContainer)
 
         let usedRect = layoutManager.usedRect(for: textContainer)
+        guard usedRect.contains(point) else { return nil }
+
         let pointInText = NSPoint(x: point.x - usedRect.minX, y: point.y - usedRect.minY)
         guard pointInText.x >= 0, pointInText.y >= 0 else { return nil }
 
         let glyphIndex = layoutManager.glyphIndex(for: pointInText, in: textContainer)
+        let glyphRect = layoutManager
+            .boundingRect(forGlyphRange: NSRange(location: glyphIndex, length: 1), in: textContainer)
+            .offsetBy(dx: -usedRect.minX, dy: -usedRect.minY)
+        guard glyphRect.contains(pointInText) else { return nil }
+
         let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
         guard characterIndex < attributedString.string.utf16.count else { return nil }
         return links.first { NSLocationInRange(characterIndex, $0.range) }

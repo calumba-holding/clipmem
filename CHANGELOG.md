@@ -50,6 +50,9 @@ versioning where practical.
 
 ### Fixed
 
+- Fixed rendered Markdown link hit-testing in the macOS menu bar app so
+  Command-clicking trailing empty row space no longer activates the nearest
+  link.
 - Fixed a macOS menu bar crash when Command-clicking rendered Markdown links
   from the recent-items popover.
 - Fixed literal-mode exact phrase searches so quoted punctuation-heavy queries

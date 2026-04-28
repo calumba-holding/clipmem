@@ -191,6 +191,25 @@ struct MarkdownLinkActionTests {
         #expect(target == nil)
     }
 
+    @Test func hitTestingIgnoresTrailingEmptySpaceAfterLinkedText() {
+        let target = MarkdownLinkHitTesting.actionableTarget(
+            at: NSPoint(x: 160, y: 6),
+            in: NSSize(width: 220, height: 30),
+            attributedString: NSAttributedString(string: "link"),
+            links: [
+                MarkdownRenderedLink(
+                    range: NSRange(location: 0, length: 4),
+                    target: "https://example.com",
+                    badge: .url
+                )
+            ],
+            lineLimit: 1,
+            lineBreakMode: .byTruncatingTail
+        )
+
+        #expect(target == nil)
+    }
+
     @Test func hitTestingIgnoresUnsupportedTargetsInsideLinkRange() {
         let target = actionableTarget(target: "mailto:test@example.com", point: NSPoint(x: 6, y: 6))
 
