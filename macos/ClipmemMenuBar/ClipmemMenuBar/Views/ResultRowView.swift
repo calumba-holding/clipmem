@@ -7,7 +7,11 @@ struct ResultRowView: View {
     @State private var resolvedLinkBadge: ResolvedLinkBadge?
 
     var body: some View {
-        let renderedText = MarkdownTextRenderer.renderedText(item.displayText, style: .compactRow)
+        let renderedText = MarkdownTextRenderer.renderedText(
+            item.displayText,
+            style: .compactRow,
+            linkColor: selected ? .white : .accentColor
+        )
         let badgeResolutionID = metadataBadgeResolutionID(renderedText: renderedText)
         let fallbackLinkBadge = metadataLinkBadge(renderedText: renderedText, resolveFilePathDirectories: false)
         let currentResolvedLinkBadge = resolvedLinkBadge?.id == badgeResolutionID ? resolvedLinkBadge?.badge : nil

@@ -70,6 +70,18 @@ struct MarkdownTextRendererTests {
         #expect(link.badge == .url)
     }
 
+    @Test func rendersLinksWithCustomForegroundColor() throws {
+        let result = MarkdownTextRenderer.renderedText(
+            "[Clipmem](https://example.com)",
+            style: .compactRow,
+            linkColor: .white
+        )
+
+        let run = try #require(Self.run(containing: "Clipmem", in: result.attributed))
+        #expect(run.foregroundColor == .white)
+        #expect(run.underlineStyle != nil)
+    }
+
     @Test func rendersFileLinksWithFileMetadata() throws {
         let result = MarkdownTextRenderer.renderedText("[local](file:///tmp/example.txt)", style: .detail)
 

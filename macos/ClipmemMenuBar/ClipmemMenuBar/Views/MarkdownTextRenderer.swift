@@ -21,11 +21,19 @@ struct MarkdownRenderedLink: Equatable, Sendable {
 }
 
 enum MarkdownTextRenderer {
-    static func render(_ source: String, style: MarkdownDisplayStyle) -> AttributedString {
-        renderedText(source, style: style).attributed
+    static func render(
+        _ source: String,
+        style: MarkdownDisplayStyle,
+        linkColor: Color = .accentColor
+    ) -> AttributedString {
+        renderedText(source, style: style, linkColor: linkColor).attributed
     }
 
-    static func renderedText(_ source: String, style: MarkdownDisplayStyle) -> MarkdownRenderedText {
+    static func renderedText(
+        _ source: String,
+        style: MarkdownDisplayStyle,
+        linkColor: Color = .accentColor
+    ) -> MarkdownRenderedText {
         let lines = source.split(separator: "\n", omittingEmptySubsequences: false)
         guard lines.isEmpty == false else {
             return MarkdownRenderedText(attributed: AttributedString(source), links: [])
@@ -44,11 +52,11 @@ enum MarkdownTextRenderer {
             let text = String(line)
             let lineResult: InlineRenderResult
             if let heading = heading(in: text) {
-                var renderedLine = renderInline(heading.text, style: style)
+                var renderedLine = renderInline(heading.text, style: style, linkColor: linkColor)
                 renderedLine.attributed.font = headingFont(level: heading.level, style: style)
                 lineResult = renderedLine
             } else {
-                lineResult = renderInline(text, style: style)
+                lineResult = renderInline(text, style: style, linkColor: linkColor)
             }
 
             rendered += lineResult.attributed
@@ -65,7 +73,11 @@ enum MarkdownTextRenderer {
         return MarkdownRenderedText(attributed: rendered, links: links)
     }
 
-    private static func renderInline(_ source: String, style: MarkdownDisplayStyle) -> InlineRenderResult {
+    private static func renderInline(
+        _ source: String,
+        style: MarkdownDisplayStyle,
+        linkColor: Color
+    ) -> InlineRenderResult {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         guard var rendered = try? AttributedString(markdown: source, options: options) else {
             return InlineRenderResult(attributed: AttributedString(source), links: [])
@@ -73,7 +85,7 @@ enum MarkdownTextRenderer {
 
         let links = linkRuns(in: rendered)
         styleInlinePresentation(in: &rendered, style: style)
-        styleLinks(in: &rendered)
+        styleLinks(in: &rendered, color: linkColor)
         return InlineRenderResult(attributed: rendered, links: links)
     }
 
@@ -105,12 +117,12 @@ enum MarkdownTextRenderer {
         }
     }
 
-    private static func styleLinks(in attributedString: inout AttributedString) {
+    private static func styleLinks(in attributedString: inout AttributedString, color: Color) {
         for run in attributedString.runs {
             guard run.link != nil else { continue }
             attributedString[run.range].link = nil
-            attributedString[run.range].foregroundColor = .accentColor
-            attributedString[run.range].underlineStyle = Text.LineStyle(pattern: .solid, color: .accentColor)
+            attributedString[run.range].foregroundColor = color
+            attributedString[run.range].underlineStyle = Text.LineStyle(pattern: .solid, color: color)
         }
     }
 

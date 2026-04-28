@@ -60,6 +60,8 @@ versioning where practical.
   badge can show `directory` instead of always falling back to `file`.
 - Fixed rendered Markdown link event handling so Command-clicks from another
   Clipmem window are ignored by row-local link monitors.
+- Fixed rendered Markdown link contrast in selected macOS menu bar rows so
+  links stay readable on highlighted backgrounds.
 - Fixed rendered Markdown link cursor tracking so one row being removed no
   longer disables Command-hover link feedback for other visible rows.
 - Fixed rendered Markdown link hit-testing in the macOS menu bar app so
