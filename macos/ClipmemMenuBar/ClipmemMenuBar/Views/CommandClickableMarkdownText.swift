@@ -107,30 +107,7 @@ private struct LinkCommandClickMonitor: NSViewRepresentable {
             self.onOpen = onOpen
         }
 
-        func handle(_ event: NSEvent, in view: NSView) -> NSEvent? {
-            if event.type != .leftMouseDown {
-                return event
-            }
-            guard event.window === view.window else { return event }
-            let point = view.convert(event.locationInWindow, from: nil)
-
-            guard
-                event.modifierFlags.contains(.command),
-                let target = actionableTarget(at: point, in: view.bounds)
-            else {
-                return event
-            }
-
-            onOpen?(target)
-            return nil
-        }
-
-        func isActionableCommandHover(_ event: NSEvent, in view: NSView) -> Bool {
-            guard event.modifierFlags.contains(.command) else { return false }
-            return actionableTarget(at: point(for: event, in: view), in: view.bounds) != nil
-        }
-
-        private func actionableTarget(at point: NSPoint, in bounds: NSRect) -> LinkTargetResolution? {
+        func actionableTarget(at point: NSPoint, in bounds: NSRect) -> LinkTargetResolution? {
             guard bounds.contains(point) else { return nil }
             return MarkdownLinkHitTesting.actionableTarget(
                 at: point,
@@ -142,44 +119,25 @@ private struct LinkCommandClickMonitor: NSViewRepresentable {
             )
         }
 
-        private func point(for event: NSEvent, in view: NSView) -> NSPoint {
-            if event.window === view.window {
-                return view.convert(event.locationInWindow, from: nil)
-            }
-            guard let window = view.window else { return .zero }
-            return view.convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        func open(_ target: LinkTargetResolution) {
+            onOpen?(target)
         }
     }
 }
 
 private final class LinkCommandClickMonitorView: NSView {
     weak var coordinator: LinkCommandClickMonitor.Coordinator?
-    private var monitor: Any?
-    private var trackingArea: NSTrackingArea?
-    private var isShowingPointingHand = false
-    private weak var mouseMovedEventsWindow: NSWindow?
-    private static var mouseMovedEventReservations: [ObjectIdentifier: MouseMovedEventReservation] = [:]
-
-    private final class MouseMovedEventReservation {
-        weak var window: NSWindow?
-        let previousAcceptsMouseMovedEvents: Bool
-        var count = 1
-
-        init(window: NSWindow, previousAcceptsMouseMovedEvents: Bool) {
-            self.window = window
-            self.previousAcceptsMouseMovedEvents = previousAcceptsMouseMovedEvents
-        }
-    }
+    private weak var registeredWindow: NSWindow?
+    private static var windowMonitors: [ObjectIdentifier: WindowLinkEventMonitor] = [:]
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        updateTrackingArea()
-        installMonitor()
+        registerWithCurrentWindow()
     }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        updateTrackingArea()
+        registerWithCurrentWindow()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -188,109 +146,180 @@ private final class LinkCommandClickMonitorView: NSView {
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         super.viewWillMove(toWindow: newWindow)
-        guard newWindow == nil else { return }
-        removeMonitor()
-        restoreCursorIfNeeded()
-        restoreMouseMovedEventsPreference()
+        guard newWindow !== window else { return }
+        unregisterFromCurrentWindow()
     }
 
-    override func mouseMoved(with event: NSEvent) {
-        updateCursor(for: event)
-        super.mouseMoved(with: event)
+    func actionableTarget(at point: NSPoint) -> LinkTargetResolution? {
+        coordinator?.actionableTarget(at: point, in: bounds)
     }
 
-    override func mouseExited(with event: NSEvent) {
-        restoreCursorIfNeeded()
-        super.mouseExited(with: event)
+    func open(_ target: LinkTargetResolution) {
+        coordinator?.open(target)
     }
 
-    private func installMonitor() {
-        removeMonitor()
-        guard window != nil else { return }
-        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .mouseMoved, .flagsChanged]) { [weak self] event in
-            guard let self else { return event }
-            updateCursor(for: event)
-            return coordinator?.handle(event, in: self) ?? event
-        }
-    }
-
-    private func removeMonitor() {
-        if let monitor {
-            NSEvent.removeMonitor(monitor)
-            self.monitor = nil
-        }
-    }
-
-    private func updateTrackingArea() {
-        if let trackingArea {
-            removeTrackingArea(trackingArea)
-            self.trackingArea = nil
-        }
-        guard window != nil else { return }
-
-        let area = NSTrackingArea(
-            rect: .zero,
-            options: [.activeInKeyWindow, .inVisibleRect, .mouseMoved, .mouseEnteredAndExited],
-            owner: self
-        )
-        addTrackingArea(area)
-        trackingArea = area
+    private func registerWithCurrentWindow() {
         guard let window else { return }
-        if mouseMovedEventsWindow !== window {
-            restoreMouseMovedEventsPreference()
-            reserveMouseMovedEvents(for: window)
-        }
-        window.acceptsMouseMovedEvents = true
+        guard registeredWindow !== window else { return }
+        unregisterFromCurrentWindow()
+
+        let monitor = Self.monitor(for: window)
+        monitor.register(self)
+        registeredWindow = window
     }
 
-    private func reserveMouseMovedEvents(for window: NSWindow) {
+    private func unregisterFromCurrentWindow() {
+        guard let window = registeredWindow else { return }
         let identifier = ObjectIdentifier(window)
-        if let reservation = Self.mouseMovedEventReservations[identifier] {
-            reservation.count += 1
-        } else {
-            Self.mouseMovedEventReservations[identifier] = MouseMovedEventReservation(
-                window: window,
-                previousAcceptsMouseMovedEvents: window.acceptsMouseMovedEvents
-            )
+        Self.windowMonitors[identifier]?.unregister(self)
+        if Self.windowMonitors[identifier]?.isEmpty == true {
+            Self.windowMonitors[identifier] = nil
         }
-        window.acceptsMouseMovedEvents = true
-        mouseMovedEventsWindow = window
+        registeredWindow = nil
     }
 
-    private func releaseMouseMovedEvents(for window: NSWindow) {
+    private static func monitor(for window: NSWindow) -> WindowLinkEventMonitor {
         let identifier = ObjectIdentifier(window)
-        guard let reservation = Self.mouseMovedEventReservations[identifier] else { return }
-
-        reservation.count -= 1
-        guard reservation.count <= 0 else { return }
-
-        Self.mouseMovedEventReservations[identifier] = nil
-        if reservation.window === window {
-            window.acceptsMouseMovedEvents = reservation.previousAcceptsMouseMovedEvents
+        if let monitor = windowMonitors[identifier] {
+            return monitor
         }
+        let monitor = WindowLinkEventMonitor(window: window)
+        windowMonitors[identifier] = monitor
+        return monitor
     }
 
-    private func updateCursor(for event: NSEvent) {
-        guard coordinator?.isActionableCommandHover(event, in: self) == true else {
+    private final class WindowLinkEventMonitor {
+        private weak var window: NSWindow?
+        private var monitor: Any?
+        private var views: [WeakMonitorView] = []
+        private let previousAcceptsMouseMovedEvents: Bool
+        private var isShowingPointingHand = false
+
+        var isEmpty: Bool {
+            cleanupViews()
+            return views.isEmpty
+        }
+
+        init(window: NSWindow) {
+            self.window = window
+            previousAcceptsMouseMovedEvents = window.acceptsMouseMovedEvents
+            window.acceptsMouseMovedEvents = true
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .mouseMoved, .flagsChanged]) {
+                [weak self] event in
+                self?.handle(event) ?? event
+            }
+        }
+
+        deinit {
+            removeMonitor()
             restoreCursorIfNeeded()
-            return
+            if let window {
+                window.acceptsMouseMovedEvents = previousAcceptsMouseMovedEvents
+            }
         }
 
-        guard isShowingPointingHand == false else { return }
-        NSCursor.pointingHand.set()
-        isShowingPointingHand = true
+        func register(_ view: LinkCommandClickMonitorView) {
+            cleanupViews()
+            guard views.contains(where: { $0.view === view }) == false else { return }
+            views.append(WeakMonitorView(view))
+        }
+
+        func unregister(_ view: LinkCommandClickMonitorView) {
+            views.removeAll { $0.view == nil || $0.view === view }
+            restoreCursorIfNeeded()
+        }
+
+        private func handle(_ event: NSEvent) -> NSEvent? {
+            switch event.type {
+            case .leftMouseDown:
+                return handleClick(event)
+            case .mouseMoved, .flagsChanged:
+                updateCursor(for: event)
+                return event
+            default:
+                return event
+            }
+        }
+
+        private func handleClick(_ event: NSEvent) -> NSEvent? {
+            guard event.modifierFlags.contains(.command), event.window === window else {
+                return event
+            }
+            guard let hit = hit(at: event.locationInWindow) else { return event }
+
+            hit.view.open(hit.target)
+            return nil
+        }
+
+        private func updateCursor(for event: NSEvent) {
+            guard
+                let window,
+                event.modifierFlags.contains(.command),
+                event.window === window
+            else {
+                restoreCursorIfNeeded()
+                return
+            }
+
+            let windowPoint = event.type == .flagsChanged
+                ? window.mouseLocationOutsideOfEventStream
+                : event.locationInWindow
+            guard hit(at: windowPoint) != nil else {
+                restoreCursorIfNeeded()
+                return
+            }
+
+            guard isShowingPointingHand == false else { return }
+            NSCursor.pointingHand.set()
+            isShowingPointingHand = true
+        }
+
+        private func restoreCursorIfNeeded() {
+            guard isShowingPointingHand else { return }
+            NSCursor.arrow.set()
+            isShowingPointingHand = false
+        }
+
+        private func hit(
+            at windowPoint: NSPoint
+        ) -> (view: LinkCommandClickMonitorView, target: LinkTargetResolution)? {
+            cleanupViews()
+
+            for weakView in views.reversed() {
+                guard
+                    let view = weakView.view,
+                    view.window === window,
+                    view.isHidden == false
+                else {
+                    continue
+                }
+
+                let point = view.convert(windowPoint, from: nil)
+                guard let target = view.actionableTarget(at: point) else { continue }
+                return (view, target)
+            }
+
+            return nil
+        }
+
+        private func cleanupViews() {
+            views.removeAll { $0.view == nil }
+        }
+
+        private func removeMonitor() {
+            if let monitor {
+                NSEvent.removeMonitor(monitor)
+                self.monitor = nil
+            }
+        }
     }
 
-    private func restoreCursorIfNeeded() {
-        guard isShowingPointingHand else { return }
-        NSCursor.arrow.set()
-        isShowingPointingHand = false
-    }
+    private final class WeakMonitorView {
+        weak var view: LinkCommandClickMonitorView?
 
-    private func restoreMouseMovedEventsPreference() {
-        guard let window = mouseMovedEventsWindow else { return }
-        releaseMouseMovedEvents(for: window)
-        mouseMovedEventsWindow = nil
+        init(_ view: LinkCommandClickMonitorView) {
+            self.view = view
+        }
     }
 }
 
