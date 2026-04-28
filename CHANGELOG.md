@@ -9,6 +9,8 @@ versioning where practical.
 
 ## Unreleased
 
+## 0.4.3 - 2026-04-28
+
 ### Added
 
 - Added basic Markdown rendering to the macOS menu bar app so recent rows and
