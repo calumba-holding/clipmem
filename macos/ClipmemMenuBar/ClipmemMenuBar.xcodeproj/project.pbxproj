@@ -45,6 +45,8 @@
 		B00000000000000000000036 /* HistoryModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000038 /* HistoryModelTests.swift */; };
 		B00000000000000000000037 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000039 /* DesignSystem.swift */; };
 		B00000000000000000000038 /* ScrollElasticityDisabler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000040 /* ScrollElasticityDisabler.swift */; };
+		B00000000000000000000039 /* MarkdownTextRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000041 /* MarkdownTextRenderer.swift */; };
+		B00000000000000000000040 /* MarkdownTextRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000042 /* MarkdownTextRendererTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -98,6 +100,8 @@
 		A00000000000000000000038 /* HistoryModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipmemMenuBarTests/HistoryModelTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000039 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/DesignSystem.swift; sourceTree = "<group>"; };
 		A00000000000000000000040 /* ScrollElasticityDisabler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/ScrollElasticityDisabler.swift; sourceTree = "<group>"; };
+		A00000000000000000000041 /* MarkdownTextRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/MarkdownTextRenderer.swift; sourceTree = "<group>"; };
+		A00000000000000000000042 /* MarkdownTextRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipmemMenuBarTests/MarkdownTextRendererTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -139,6 +143,7 @@
 				A00000000000000000000035 /* ConfirmationAlertPresenter.swift */,
 				A00000000000000000000039 /* DesignSystem.swift */,
 				A00000000000000000000040 /* ScrollElasticityDisabler.swift */,
+				A00000000000000000000041 /* MarkdownTextRenderer.swift */,
 				A00000000000000000000015 /* SharedViews.swift */,
 				A00000000000000000000016 /* ResultRowView.swift */,
 				A00000000000000000000017 /* ItemActionButtons.swift */,
@@ -163,6 +168,7 @@
 				A00000000000000000000030 /* CommandRunnerTests.swift */,
 				A00000000000000000000034 /* UpdateCheckerTests.swift */,
 				A00000000000000000000038 /* HistoryModelTests.swift */,
+				A00000000000000000000042 /* MarkdownTextRendererTests.swift */,
 			);
 			path = .;
 			sourceTree = "<group>";
@@ -281,6 +287,7 @@
 				B00000000000000000000035,
 				B00000000000000000000037,
 				B00000000000000000000038,
+				B00000000000000000000039,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -295,6 +302,7 @@
 				B00000000000000000000028,
 				B00000000000000000000032,
 				B00000000000000000000036,
+				B00000000000000000000040,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

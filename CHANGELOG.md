@@ -9,6 +9,12 @@ versioning where practical.
 
 ## Unreleased
 
+### Added
+
+- Added basic Markdown rendering to the macOS menu bar app so recent rows and
+  History detail text visually show bold, italics, headings, and non-clickable
+  styled links while preserving the original clipboard content.
+
 ### Changed
 
 - Replaced wide internal archive/search construction paths with named-field

@@ -94,9 +94,9 @@ struct SnapshotDetailView: View {
                 }
             }
             if let text = bestText(from: detail) {
-                Text(text)
+                Text(MarkdownTextRenderer.render(text, style: .detail))
                     .textSelection(.enabled)
-                    .font(DesignType.mono)
+                    .font(DesignType.bodyPrimary)
                     .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)

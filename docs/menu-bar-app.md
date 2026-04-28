@@ -46,6 +46,10 @@ The app uses explicit SwiftUI scenes:
   filtering, privacy controls, storage maintenance (compress images,
   compact database, purge old history), and diagnostics.
 
+Text snippets that use basic Markdown render bold, italics, headings, and
+styled links in recent rows and History detail. Link styling is visual only;
+links do not open from the rendered text.
+
 ## Binary discovery order
 
 The app looks for the `clipmem` binary in this order:

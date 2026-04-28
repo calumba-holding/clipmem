@@ -10,7 +10,7 @@ struct ResultRowView: View {
             iconView
                 .padding(.top, Spacing.xxs)
             VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text(item.displayText)
+                Text(MarkdownTextRenderer.render(item.displayText, style: .compactRow))
                     .lineLimit(2)
                     .truncationMode(.tail)
                     .font(DesignType.rowTitle)
