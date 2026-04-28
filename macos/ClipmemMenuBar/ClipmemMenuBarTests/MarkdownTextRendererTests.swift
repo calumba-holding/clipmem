@@ -39,22 +39,61 @@ struct MarkdownTextRendererTests {
         #expect(run.font != nil)
     }
 
-    @Test func rendersLinksAsNonClickableStyledText() throws {
-        let rendered = MarkdownTextRenderer.render("[Clipmem](https://example.com)", style: .detail)
+    @Test func rendersLinksAsStyledTextWithActionableMetadata() throws {
+        let result = MarkdownTextRenderer.renderedText("[Clipmem](https://example.com)", style: .detail)
+        let rendered = result.attributed
 
         #expect(String(rendered.characters) == "Clipmem")
         let run = try #require(Self.run(containing: "Clipmem", in: rendered))
         #expect(run.link == nil)
         #expect(run.underlineStyle != nil)
         #expect(run.foregroundColor != nil)
+
+        let link = try #require(result.links.first)
+        #expect(result.links.count == 1)
+        #expect(link.range.location == 0)
+        #expect(link.range.length == "Clipmem".utf16.count)
+        #expect(link.target == "https://example.com")
+        #expect(link.badge == .url)
+    }
+
+    @Test func rendersFileLinksWithFileMetadata() throws {
+        let result = MarkdownTextRenderer.renderedText("[local](file:///tmp/example.txt)", style: .detail)
+
+        #expect(result.visibleText == "local")
+        let link = try #require(result.links.first)
+        #expect(result.links.count == 1)
+        #expect(link.range.location == 0)
+        #expect(link.range.length == "local".utf16.count)
+        #expect(link.target == "file:///tmp/example.txt")
+        #expect(link.badge == .file)
+    }
+
+    @Test func rendersAbsolutePathLinksWithFileMetadata() throws {
+        let result = MarkdownTextRenderer.renderedText("[local](/tmp/example.txt)", style: .detail)
+
+        #expect(result.visibleText == "local")
+        let link = try #require(result.links.first)
+        #expect(link.target == "/tmp/example.txt")
+        #expect(link.badge == .file)
+    }
+
+    @Test func keepsRelativeLinksVisuallyStyledButNonActionable() throws {
+        let result = MarkdownTextRenderer.renderedText("[relative](docs/file.md)", style: .detail)
+
+        #expect(result.visibleText == "relative")
+        let link = try #require(result.links.first)
+        #expect(link.target == "docs/file.md")
+        #expect(link.badge == nil)
     }
 
     @Test func preservesPlainText() {
         let source = "plain text with # not-a-heading and brackets [ok]"
 
-        let rendered = MarkdownTextRenderer.render(source, style: .detail)
+        let result = MarkdownTextRenderer.renderedText(source, style: .detail)
 
-        #expect(String(rendered.characters) == source)
+        #expect(result.visibleText == source)
+        #expect(result.links.isEmpty)
     }
 
     @Test func keepsEmptyAndWhitespaceOnlyTextReadable() {
@@ -63,9 +102,10 @@ struct MarkdownTextRendererTests {
     }
 
     @Test func malformedMarkdownFallsBackToReadableText() {
-        let rendered = MarkdownTextRenderer.render("bad [link](", style: .detail)
+        let result = MarkdownTextRenderer.renderedText("bad [link](", style: .detail)
 
-        #expect(String(rendered.characters) == "bad [link](")
+        #expect(result.visibleText == "bad [link](")
+        #expect(result.links.isEmpty)
     }
 
     private static func run(containing needle: String, in rendered: AttributedString) -> AttributedString.Runs.Run? {

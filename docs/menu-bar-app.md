@@ -47,8 +47,11 @@ The app uses explicit SwiftUI scenes:
   compact database, purge old history), and diagnostics.
 
 Text snippets that use basic Markdown render bold, italics, headings, and
-styled links in recent rows and History detail. Link styling is visual only;
-links do not open from the rendered text.
+styled links in recent rows and History detail. Command-click a rendered link
+to open `http` and `https` targets in the default browser or reveal `file`
+targets in Finder. Link-bearing rows can show more specific badges such as
+`url`, `file`, or `directory`; these badges are presentation-only and do not
+change the stored clipboard kind.
 
 ## Binary discovery order
 

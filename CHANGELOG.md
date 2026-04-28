@@ -14,6 +14,9 @@ versioning where practical.
 - Added basic Markdown rendering to the macOS menu bar app so recent rows and
   History detail text visually show bold, italics, headings, and non-clickable
   styled links while preserving the original clipboard content.
+- Added Command-click activation for rendered Markdown links in the macOS menu
+  bar app, including browser opening for web links, Finder reveal for file
+  links, and link-aware row badges such as `url`, `file`, and `directory`.
 
 ### Changed
 
@@ -41,6 +44,8 @@ versioning where practical.
 
 ### Fixed
 
+- Fixed a macOS menu bar crash when Command-clicking rendered Markdown links
+  from the recent-items popover.
 - Fixed literal-mode exact phrase searches so quoted punctuation-heavy queries
   such as `"config_test"` search for the unquoted phrase and still treat `%`
   and `_` as literal characters.

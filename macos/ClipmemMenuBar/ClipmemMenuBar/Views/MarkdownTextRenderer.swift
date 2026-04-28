@@ -5,39 +5,91 @@ enum MarkdownDisplayStyle {
     case detail
 }
 
+struct MarkdownRenderedText {
+    var attributed: AttributedString
+    var links: [MarkdownRenderedLink]
+
+    var visibleText: String {
+        String(attributed.characters)
+    }
+}
+
+struct MarkdownRenderedLink: Equatable {
+    var range: NSRange
+    var target: String
+    var badge: LinkPresentationBadge?
+}
+
 enum MarkdownTextRenderer {
     static func render(_ source: String, style: MarkdownDisplayStyle) -> AttributedString {
+        renderedText(source, style: style).attributed
+    }
+
+    static func renderedText(_ source: String, style: MarkdownDisplayStyle) -> MarkdownRenderedText {
         let lines = source.split(separator: "\n", omittingEmptySubsequences: false)
-        guard lines.isEmpty == false else { return AttributedString(source) }
+        guard lines.isEmpty == false else {
+            return MarkdownRenderedText(attributed: AttributedString(source), links: [])
+        }
 
         var rendered = AttributedString()
+        var links: [MarkdownRenderedLink] = []
+        var utf16Offset = 0
+
         for (index, line) in lines.enumerated() {
             if index > 0 {
                 rendered += AttributedString("\n")
+                utf16Offset += 1
             }
 
             let text = String(line)
+            let lineResult: InlineRenderResult
             if let heading = heading(in: text) {
                 var renderedLine = renderInline(heading.text, style: style)
-                renderedLine.font = headingFont(level: heading.level, style: style)
-                rendered += renderedLine
+                renderedLine.attributed.font = headingFont(level: heading.level, style: style)
+                lineResult = renderedLine
             } else {
-                rendered += renderInline(text, style: style)
+                lineResult = renderInline(text, style: style)
             }
+
+            rendered += lineResult.attributed
+            links += lineResult.links.map { link in
+                MarkdownRenderedLink(
+                    range: NSRange(location: link.range.location + utf16Offset, length: link.range.length),
+                    target: link.target,
+                    badge: link.badge
+                )
+            }
+            utf16Offset += lineResult.visibleUTF16Length
         }
 
-        return rendered
+        return MarkdownRenderedText(attributed: rendered, links: links)
     }
 
-    private static func renderInline(_ source: String, style: MarkdownDisplayStyle) -> AttributedString {
+    private static func renderInline(_ source: String, style: MarkdownDisplayStyle) -> InlineRenderResult {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         guard var rendered = try? AttributedString(markdown: source, options: options) else {
-            return AttributedString(source)
+            return InlineRenderResult(attributed: AttributedString(source), links: [])
         }
 
+        let links = linkRuns(in: rendered)
         styleInlinePresentation(in: &rendered, style: style)
         styleLinks(in: &rendered)
-        return rendered
+        return InlineRenderResult(attributed: rendered, links: links)
+    }
+
+    private static func linkRuns(in attributedString: AttributedString) -> [MarkdownRenderedLink] {
+        attributedString.runs.compactMap { run in
+            guard let link = run.link else { return nil }
+            let lowerBound = String(attributedString.characters[attributedString.startIndex..<run.range.lowerBound])
+            let linkedText = String(attributedString.characters[run.range])
+            let range = NSRange(location: lowerBound.utf16.count, length: linkedText.utf16.count)
+            let target = link.absoluteString
+            return MarkdownRenderedLink(
+                range: range,
+                target: target,
+                badge: LinkTargetResolver.classify(target).badge
+            )
+        }
     }
 
     private static func styleInlinePresentation(in attributedString: inout AttributedString, style: MarkdownDisplayStyle) {
@@ -119,6 +171,15 @@ enum MarkdownTextRenderer {
             return .body.weight(.bold)
         case .detail:
             return DesignType.bodyPrimary.weight(.bold)
+        }
+    }
+
+    private struct InlineRenderResult {
+        var attributed: AttributedString
+        var links: [MarkdownRenderedLink]
+
+        var visibleUTF16Length: Int {
+            String(attributed.characters).utf16.count
         }
     }
 }

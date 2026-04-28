@@ -189,9 +189,9 @@ struct MenuBarPanelView: View {
                 animatedHighlight: false
             )
             .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .contentShape(Rectangle())
         .contextMenu {
             Button("Copy Plain Text") {
                 if let text = item.copyablePlainText {

@@ -94,10 +94,13 @@ struct SnapshotDetailView: View {
                 }
             }
             if let text = bestText(from: detail) {
-                Text(MarkdownTextRenderer.render(text, style: .detail))
-                    .textSelection(.enabled)
+                CommandClickableMarkdownText(
+                    rendered: MarkdownTextRenderer.renderedText(text, style: .detail),
+                    lineLimit: nil,
+                    truncationMode: .tail,
+                    selectionEnabled: true
+                )
                     .font(DesignType.bodyPrimary)
-                    .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(Spacing.md)

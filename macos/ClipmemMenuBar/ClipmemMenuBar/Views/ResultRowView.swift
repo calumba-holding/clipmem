@@ -6,17 +6,21 @@ struct ResultRowView: View {
     var animatedHighlight = true
 
     var body: some View {
+        let renderedText = MarkdownTextRenderer.renderedText(item.displayText, style: .compactRow)
+
         HStack(alignment: .top, spacing: Spacing.md) {
             iconView
                 .padding(.top, Spacing.xxs)
             VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text(MarkdownTextRenderer.render(item.displayText, style: .compactRow))
-                    .lineLimit(2)
-                    .truncationMode(.tail)
+                CommandClickableMarkdownText(
+                    rendered: renderedText,
+                    lineLimit: 2,
+                    truncationMode: .tail
+                )
                     .font(DesignType.rowTitle)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .help(item.displayText)
-                metadataView
+                metadataView(renderedText: renderedText)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Spacer()
@@ -44,9 +48,9 @@ struct ResultRowView: View {
 
     // MARK: - Metadata
 
-    private var metadataView: some View {
+    private func metadataView(renderedText: MarkdownRenderedText) -> some View {
         HStack(spacing: Spacing.xs) {
-            Text(item.kind.displayTitle)
+            Text(kindDisplayTitle(renderedText: renderedText))
                 .font(DesignType.badge)
                 .padding(.horizontal, Spacing.xs)
                 .padding(.vertical, Spacing.xxs)
@@ -71,6 +75,14 @@ struct ResultRowView: View {
                     .truncationMode(.tail)
             }
         }
+    }
+
+    private func kindDisplayTitle(renderedText: MarkdownRenderedText) -> String {
+        LinkTargetResolver.presentationBadge(
+            urls: item.urls,
+            filePaths: item.filePaths,
+            markdownLinks: renderedText.links
+        )?.rawValue ?? item.kind.displayTitle
     }
 
     // MARK: - Score
