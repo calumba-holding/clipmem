@@ -9,8 +9,25 @@ versioning where practical.
 
 ## Unreleased
 
+## 0.4.3 - 2026-04-28
+
+### Added
+
+- Added basic Markdown rendering to the macOS menu bar app so recent rows and
+  History detail text visually show bold, italics, headings, and non-clickable
+  styled links while preserving the original clipboard content.
+- Added Command-click activation for rendered Markdown links in the macOS menu
+  bar app, including browser opening for web links, Finder reveal for file
+  links, and link-aware row badges such as `url`, `file`, and `directory`.
+- Added pointing-hand cursor feedback when hovering rendered Markdown links
+  while holding Command in the macOS menu bar app.
+- Added distinct colours to recent/history row metadata badges and matching
+  row icons for plain text, URLs, files, directories, and mixed links.
+
 ### Changed
 
+- Changed the macOS menu bar Markdown renderer to skip Command-click link
+  monitoring for rows and detail views without Markdown links.
 - Replaced wide internal archive/search construction paths with named-field
   parts and filter builder methods so query mapping and CLI filter
   normalization are harder to assemble incorrectly.
@@ -35,6 +52,29 @@ versioning where practical.
 
 ### Fixed
 
+- Fixed macOS menu bar row rendering so metadata badge fallback computation no
+  longer performs synchronous directory probes while rows are being drawn.
+- Fixed macOS menu bar row badge updates so reused rows show the current
+  content type after recent/search/history content changes.
+- Fixed Markdown directory links in the macOS menu bar app so the resolved row
+  badge can show `directory` instead of always falling back to `file`.
+- Fixed rendered Markdown link event handling so Command-clicks from another
+  Clipmem window are ignored by row-local link monitors.
+- Fixed rendered Markdown link contrast in selected macOS menu bar rows so
+  links stay readable on highlighted backgrounds.
+- Fixed rendered Markdown link cursor tracking so one row being removed no
+  longer disables Command-hover link feedback for other visible rows.
+- Fixed rendered Markdown link event handling so link-bearing rows share a
+  single window-level monitor instead of installing one monitor per row.
+- Fixed rendered Markdown link cursor restoration so leaving a Command-hovered
+  link restores the previous cursor instead of forcing the arrow cursor.
+- Fixed rendered Markdown link hit-testing in the macOS menu bar app so
+  Command-clicking trailing empty row space no longer activates the nearest
+  link.
+- Fixed Markdown heading rendering so code-like lines indented by four or more
+  spaces preserve their leading `#` text instead of being treated as headings.
+- Fixed a macOS menu bar crash when Command-clicking rendered Markdown links
+  from the recent-items popover.
 - Fixed literal-mode exact phrase searches so quoted punctuation-heavy queries
   such as `"config_test"` search for the unquoted phrase and still treat `%`
   and `_` as literal characters.

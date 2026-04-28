@@ -4,57 +4,82 @@ struct ResultRowView: View {
     let item: ClipmemItem
     let selected: Bool
     var animatedHighlight = true
+    @State private var resolvedLinkBadge: ResolvedLinkBadge?
 
     var body: some View {
+        let renderedText = MarkdownTextRenderer.renderedText(
+            item.displayText,
+            style: .compactRow,
+            linkColor: selected ? .white : .accentColor
+        )
+        let badgeResolutionID = metadataBadgeResolutionID(renderedText: renderedText)
+        let fallbackLinkBadge = metadataLinkBadge(renderedText: renderedText, resolveFilePathDirectories: false)
+        let currentResolvedLinkBadge = resolvedLinkBadge?.id == badgeResolutionID ? resolvedLinkBadge?.badge : nil
+        let badgePresentation = MetadataBadgePresentation.make(
+            kind: item.kind,
+            linkBadge: currentResolvedLinkBadge ?? fallbackLinkBadge
+        )
+
         HStack(alignment: .top, spacing: Spacing.md) {
-            iconView
+            iconView(presentation: badgePresentation)
                 .padding(.top, Spacing.xxs)
             VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text(item.displayText)
-                    .lineLimit(2)
-                    .truncationMode(.tail)
+                CommandClickableMarkdownText(
+                    rendered: renderedText,
+                    lineLimit: 2,
+                    truncationMode: .tail
+                )
                     .font(DesignType.rowTitle)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .help(item.displayText)
-                metadataView
+                metadataView(presentation: badgePresentation)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Spacer()
             scoreView
         }
         .rowHighlightStyle(selected: selected, animated: animatedHighlight)
+        .task(id: badgeResolutionID) {
+            let markdownLinks = renderedText.links
+            let urls = item.urls
+            let filePaths = item.filePaths
+            let badge = await Task.detached {
+                LinkTargetResolver.presentationBadge(
+                    urls: urls,
+                    filePaths: filePaths,
+                    markdownLinks: markdownLinks,
+                    resolveFilePathDirectories: true
+                )
+            }.value
+            resolvedLinkBadge = ResolvedLinkBadge(id: badgeResolutionID, badge: badge)
+        }
     }
 
     // MARK: - Icon
 
-    private var iconView: some View {
-        Image(systemName: symbol)
+    private func iconView(presentation: MetadataBadgePresentation) -> some View {
+        Image(systemName: presentation.symbol)
             .font(.system(size: DesignIcon.small))
-            .foregroundStyle(selected ? .white : kindTint)
+            .foregroundStyle(selected ? .white : metadataTint(for: presentation))
             .frame(width: 26, height: 26)
             .background(
-                (selected ? Color.white.opacity(0.2) : kindTint.opacity(0.12))
+                (selected ? Color.white.opacity(0.2) : metadataTint(for: presentation).opacity(0.12))
             )
             .clipShape(Circle())
     }
 
-    private var kindTint: Color {
-        DesignColor.kindTint(for: item.kind)
+    private func metadataTint(for presentation: MetadataBadgePresentation) -> Color {
+        DesignColor.metadataBadgeTint(for: presentation.tintRole)
     }
 
     // MARK: - Metadata
 
-    private var metadataView: some View {
+    private func metadataView(presentation: MetadataBadgePresentation) -> some View {
         HStack(spacing: Spacing.xs) {
-            Text(item.kind.displayTitle)
-                .font(DesignType.badge)
-                .padding(.horizontal, Spacing.xs)
-                .padding(.vertical, Spacing.xxs)
-                .background(
-                    selected ? Color.white.opacity(0.2) : Color(.quaternaryLabelColor),
-                    in: Capsule()
-                )
-                .foregroundStyle(selected ? .white : .secondary)
+            MetadataBadge(
+                presentation: presentation,
+                selected: selected
+            )
             if let relative = DisplayFormatters.relativeTimestamp(item.observedAt) {
                 Text(relative)
                     .font(DesignType.rowMeta)
@@ -73,6 +98,25 @@ struct ResultRowView: View {
         }
     }
 
+    private func metadataLinkBadge(
+        renderedText: MarkdownRenderedText,
+        resolveFilePathDirectories: Bool
+    ) -> LinkPresentationBadge? {
+        LinkTargetResolver.presentationBadge(
+            urls: item.urls,
+            filePaths: item.filePaths,
+            markdownLinks: renderedText.links,
+            resolveFilePathDirectories: resolveFilePathDirectories
+        )
+    }
+
+    private func metadataBadgeResolutionID(renderedText: MarkdownRenderedText) -> String {
+        let urlKey = item.urls?.joined(separator: "\u{1F}") ?? ""
+        let filePathKey = item.filePaths?.joined(separator: "\u{1F}") ?? ""
+        let markdownLinkKey = renderedText.links.map(\.target).joined(separator: "\u{1F}")
+        return [item.id, item.displayText, urlKey, filePathKey, markdownLinkKey].joined(separator: "\u{1E}")
+    }
+
     // MARK: - Score
 
     @ViewBuilder
@@ -85,17 +129,42 @@ struct ResultRowView: View {
     }
 
     // MARK: - Symbol
+}
 
-    private var symbol: String {
-        switch item.kind {
-        case .image: "photo"
-        case .pdf: "doc.richtext"
-        case .url: "link"
-        case .fileUrl: "doc"
-        case .html: "chevron.left.forwardslash.chevron.right"
-        case .rtf: "textformat"
-        case .binary: "shippingbox"
-        default: "text.alignleft"
+private struct ResolvedLinkBadge {
+    let id: String
+    let badge: LinkPresentationBadge?
+}
+
+private struct MetadataBadge: View {
+    let presentation: MetadataBadgePresentation
+    let selected: Bool
+
+    var body: some View {
+        Text(presentation.title)
+            .font(DesignType.badge)
+            .lineLimit(1)
+            .padding(.horizontal, Spacing.xs)
+            .padding(.vertical, Spacing.xxs)
+            .background(background, in: Capsule())
+            .foregroundStyle(foreground)
+    }
+
+    private var tint: Color {
+        DesignColor.metadataBadgeTint(for: presentation.tintRole)
+    }
+
+    private var foreground: Color {
+        selected ? .white : tint
+    }
+
+    private var background: Color {
+        if selected {
+            return Color.white.opacity(0.2)
         }
+        if presentation.tintRole == .neutral {
+            return Color(.quaternaryLabelColor)
+        }
+        return tint.opacity(0.12)
     }
 }

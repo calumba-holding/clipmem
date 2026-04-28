@@ -57,10 +57,88 @@ enum DesignColor {
         }
     }
 
+    static func metadataBadgeTint(for role: MetadataBadgePresentation.TintRole) -> Color {
+        switch role {
+        case .neutral: .secondary
+        case .url: .blue
+        case .file: .yellow
+        case .directory: .green
+        case .links: .indigo
+        case .image: .purple
+        case .pdf: .red
+        case .html: .teal
+        case .rtf: .indigo
+        case .binary: .brown
+        case .mixed: .orange
+        }
+    }
+
     static func scoreTint(for score: Double) -> Color {
         if score >= 0.8 { return .green }
         if score >= 0.4 { return .orange }
         return .secondary
+    }
+}
+
+struct MetadataBadgePresentation: Equatable {
+    enum TintRole: Equatable {
+        case neutral
+        case url
+        case file
+        case directory
+        case links
+        case image
+        case pdf
+        case html
+        case rtf
+        case binary
+        case mixed
+    }
+
+    let title: String
+    let symbol: String
+    let tintRole: TintRole
+
+    static func make(kind: SnapshotKind, linkBadge: LinkPresentationBadge?) -> MetadataBadgePresentation {
+        if let linkBadge {
+            return make(linkBadge: linkBadge)
+        }
+
+        switch kind {
+        case .plainText:
+            return .init(title: kind.displayTitle, symbol: "text.alignleft", tintRole: .neutral)
+        case .url:
+            return .init(title: kind.displayTitle, symbol: "link", tintRole: .url)
+        case .fileUrl:
+            return .init(title: kind.displayTitle, symbol: "doc", tintRole: .file)
+        case .image:
+            return .init(title: kind.displayTitle, symbol: "photo", tintRole: .image)
+        case .pdf:
+            return .init(title: kind.displayTitle, symbol: "doc.richtext", tintRole: .pdf)
+        case .html:
+            return .init(title: kind.displayTitle, symbol: "chevron.left.forwardslash.chevron.right", tintRole: .html)
+        case .rtf:
+            return .init(title: kind.displayTitle, symbol: "textformat", tintRole: .rtf)
+        case .binary:
+            return .init(title: kind.displayTitle, symbol: "shippingbox", tintRole: .binary)
+        case .mixed:
+            return .init(title: kind.displayTitle, symbol: "square.stack.3d.up", tintRole: .mixed)
+        default:
+            return .init(title: kind.displayTitle, symbol: "text.alignleft", tintRole: .neutral)
+        }
+    }
+
+    private static func make(linkBadge: LinkPresentationBadge) -> MetadataBadgePresentation {
+        switch linkBadge {
+        case .url:
+            return .init(title: linkBadge.rawValue, symbol: "link", tintRole: .url)
+        case .file:
+            return .init(title: linkBadge.rawValue, symbol: "doc", tintRole: .file)
+        case .directory:
+            return .init(title: linkBadge.rawValue, symbol: "folder", tintRole: .directory)
+        case .links:
+            return .init(title: linkBadge.rawValue, symbol: "link.badge.plus", tintRole: .links)
+        }
     }
 }
 
