@@ -39,6 +39,19 @@ struct MarkdownTextRendererTests {
         #expect(run.font != nil)
     }
 
+    @Test func rendersIndentedMarkdownHeadingsThroughThreeSpaces() {
+        let rendered = MarkdownTextRenderer.render("   # Release Notes", style: .detail)
+
+        #expect(String(rendered.characters) == "Release Notes")
+    }
+
+    @Test func preservesHeavilyIndentedHeadingLikeText() {
+        let source = "    # comment"
+        let rendered = MarkdownTextRenderer.render(source, style: .detail)
+
+        #expect(String(rendered.characters) == source)
+    }
+
     @Test func rendersLinksAsStyledTextWithActionableMetadata() throws {
         let result = MarkdownTextRenderer.renderedText("[Clipmem](https://example.com)", style: .detail)
         let rendered = result.attributed

@@ -4,10 +4,15 @@ struct ResultRowView: View {
     let item: ClipmemItem
     let selected: Bool
     var animatedHighlight = true
+    @State private var resolvedLinkBadge: LinkPresentationBadge?
 
     var body: some View {
         let renderedText = MarkdownTextRenderer.renderedText(item.displayText, style: .compactRow)
-        let badgePresentation = metadataBadgePresentation(renderedText: renderedText)
+        let fallbackLinkBadge = metadataLinkBadge(renderedText: renderedText, resolveFilePathDirectories: false)
+        let badgePresentation = MetadataBadgePresentation.make(
+            kind: item.kind,
+            linkBadge: resolvedLinkBadge ?? fallbackLinkBadge
+        )
 
         HStack(alignment: .top, spacing: Spacing.md) {
             iconView(presentation: badgePresentation)
@@ -28,6 +33,19 @@ struct ResultRowView: View {
             scoreView
         }
         .rowHighlightStyle(selected: selected, animated: animatedHighlight)
+        .task(id: item.id) {
+            let markdownLinks = renderedText.links
+            let urls = item.urls
+            let filePaths = item.filePaths
+            resolvedLinkBadge = await Task.detached {
+                LinkTargetResolver.presentationBadge(
+                    urls: urls,
+                    filePaths: filePaths,
+                    markdownLinks: markdownLinks,
+                    resolveFilePathDirectories: true
+                )
+            }.value
+        }
     }
 
     // MARK: - Icon
@@ -73,13 +91,16 @@ struct ResultRowView: View {
         }
     }
 
-    private func metadataBadgePresentation(renderedText: MarkdownRenderedText) -> MetadataBadgePresentation {
-        let linkBadge = LinkTargetResolver.presentationBadge(
+    private func metadataLinkBadge(
+        renderedText: MarkdownRenderedText,
+        resolveFilePathDirectories: Bool
+    ) -> LinkPresentationBadge? {
+        LinkTargetResolver.presentationBadge(
             urls: item.urls,
             filePaths: item.filePaths,
-            markdownLinks: renderedText.links
+            markdownLinks: renderedText.links,
+            resolveFilePathDirectories: resolveFilePathDirectories
         )
-        return MetadataBadgePresentation.make(kind: item.kind, linkBadge: linkBadge)
     }
 
     // MARK: - Score

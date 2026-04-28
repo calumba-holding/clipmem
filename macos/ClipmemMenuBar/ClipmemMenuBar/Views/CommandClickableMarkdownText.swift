@@ -99,11 +99,11 @@ private struct LinkCommandClickMonitor: NSViewRepresentable {
         }
 
         func handle(_ event: NSEvent, in view: NSView) -> NSEvent? {
-            let point = point(for: event, in: view)
-
             if event.type != .leftMouseDown {
                 return event
             }
+            guard event.window === view.window else { return event }
+            let point = view.convert(event.locationInWindow, from: nil)
 
             guard
                 event.modifierFlags.contains(.command),

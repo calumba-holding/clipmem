@@ -14,7 +14,7 @@ struct MarkdownRenderedText {
     }
 }
 
-struct MarkdownRenderedLink: Equatable {
+struct MarkdownRenderedLink: Equatable, Sendable {
     var range: NSRange
     var target: String
     var badge: LinkPresentationBadge?
@@ -87,7 +87,7 @@ enum MarkdownTextRenderer {
             return MarkdownRenderedLink(
                 range: range,
                 target: target,
-                badge: LinkTargetResolver.classify(target).badge
+                badge: LinkTargetResolver.presentationBadge(for: target)
             )
         }
     }
@@ -115,7 +115,10 @@ enum MarkdownTextRenderer {
     }
 
     private static func heading(in line: String) -> (level: Int, text: String)? {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        let leadingSpaces = line.prefix { $0 == " " }.count
+        guard leadingSpaces <= 3 else { return nil }
+
+        let trimmed = String(line.dropFirst(leadingSpaces))
         guard trimmed.first == "#" else { return nil }
 
         var level = 0

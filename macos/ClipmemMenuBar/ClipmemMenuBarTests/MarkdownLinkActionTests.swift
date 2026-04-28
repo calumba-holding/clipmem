@@ -114,6 +114,17 @@ struct MarkdownLinkActionTests {
         #expect(badge == .directory)
     }
 
+    @Test func canSkipDirectoryResolutionForRenderPathBadges() {
+        let badge = LinkTargetResolver.presentationBadge(
+            urls: nil,
+            filePaths: [FileManager.default.temporaryDirectory.path],
+            markdownLinks: [],
+            resolveFilePathDirectories: false
+        )
+
+        #expect(badge == .file)
+    }
+
     @Test func derivesMixedBadgeForMultipleTargetTypes() {
         let badge = LinkTargetResolver.presentationBadge(
             urls: ["https://example.com"],

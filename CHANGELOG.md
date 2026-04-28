@@ -50,9 +50,15 @@ versioning where practical.
 
 ### Fixed
 
+- Fixed macOS menu bar row rendering so metadata badge fallback computation no
+  longer performs synchronous directory probes while rows are being drawn.
+- Fixed rendered Markdown link event handling so Command-clicks from another
+  Clipmem window are ignored by row-local link monitors.
 - Fixed rendered Markdown link hit-testing in the macOS menu bar app so
   Command-clicking trailing empty row space no longer activates the nearest
   link.
+- Fixed Markdown heading rendering so code-like lines indented by four or more
+  spaces preserve their leading `#` text instead of being treated as headings.
 - Fixed a macOS menu bar crash when Command-clicking rendered Markdown links
   from the recent-items popover.
 - Fixed literal-mode exact phrase searches so quoted punctuation-heavy queries

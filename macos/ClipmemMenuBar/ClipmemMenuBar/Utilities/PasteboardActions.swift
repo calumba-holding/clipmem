@@ -46,22 +46,44 @@ enum LinkTargetResolver {
         return fileResolution(for: URL(fileURLWithPath: target), fileManager: fileManager)
     }
 
+    static func presentationBadge(for rawTarget: String) -> LinkPresentationBadge? {
+        let target = rawTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard target.isEmpty == false else { return nil }
+
+        if let url = URL(string: target), let scheme = url.scheme?.lowercased() {
+            switch scheme {
+            case "http", "https":
+                return .url
+            case "file":
+                return .file
+            default:
+                return nil
+            }
+        }
+
+        return target.hasPrefix("/") ? .file : nil
+    }
+
     static func presentationBadge(
         urls: [String]?,
         filePaths: [String]?,
         markdownLinks: [MarkdownRenderedLink],
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        resolveFilePathDirectories: Bool = true
     ) -> LinkPresentationBadge? {
         var badges: Set<LinkPresentationBadge> = []
 
         for url in urls ?? [] {
-            if let badge = classify(url, fileManager: fileManager).badge {
+            if let badge = presentationBadge(for: url) {
                 badges.insert(badge)
             }
         }
 
         for path in filePaths ?? [] {
-            if let badge = classify(path, fileManager: fileManager).badge {
+            let badge = resolveFilePathDirectories
+                ? classify(path, fileManager: fileManager).badge
+                : presentationBadge(for: path)
+            if let badge {
                 badges.insert(badge)
             }
         }
