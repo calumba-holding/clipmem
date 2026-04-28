@@ -124,6 +124,46 @@ struct MarkdownLinkActionTests {
         #expect(badge == .links)
     }
 
+    @Test func presentsPlainTextRowsWithNeutralTextIcon() {
+        let presentation = MetadataBadgePresentation.make(kind: .plainText, linkBadge: nil)
+
+        #expect(presentation.title == "plain_text")
+        #expect(presentation.symbol == "text.alignleft")
+        #expect(presentation.tintRole == .neutral)
+    }
+
+    @Test func presentsWebLinkRowsWithURLIcon() {
+        let presentation = MetadataBadgePresentation.make(kind: .plainText, linkBadge: .url)
+
+        #expect(presentation.title == "url")
+        #expect(presentation.symbol == "link")
+        #expect(presentation.tintRole == .url)
+    }
+
+    @Test func presentsFileRowsWithDocumentIcon() {
+        let presentation = MetadataBadgePresentation.make(kind: .plainText, linkBadge: .file)
+
+        #expect(presentation.title == "file")
+        #expect(presentation.symbol == "doc")
+        #expect(presentation.tintRole == .file)
+    }
+
+    @Test func presentsDirectoryRowsWithFolderIcon() {
+        let presentation = MetadataBadgePresentation.make(kind: .plainText, linkBadge: .directory)
+
+        #expect(presentation.title == "directory")
+        #expect(presentation.symbol == "folder")
+        #expect(presentation.tintRole == .directory)
+    }
+
+    @Test func presentsMixedLinkRowsWithMixedLinkIcon() {
+        let presentation = MetadataBadgePresentation.make(kind: .plainText, linkBadge: .links)
+
+        #expect(presentation.title == "links")
+        #expect(presentation.symbol == "link.badge.plus")
+        #expect(presentation.tintRole == .links)
+    }
+
     @Test func hitTestingFindsActionableWebTargetsInsideLinkRange() throws {
         let target = try #require(actionableTarget(target: "https://example.com", point: NSPoint(x: 6, y: 6)))
 

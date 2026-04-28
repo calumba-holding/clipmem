@@ -7,9 +7,10 @@ struct ResultRowView: View {
 
     var body: some View {
         let renderedText = MarkdownTextRenderer.renderedText(item.displayText, style: .compactRow)
+        let badgePresentation = metadataBadgePresentation(renderedText: renderedText)
 
         HStack(alignment: .top, spacing: Spacing.md) {
-            iconView
+            iconView(presentation: badgePresentation)
                 .padding(.top, Spacing.xxs)
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 CommandClickableMarkdownText(
@@ -20,7 +21,7 @@ struct ResultRowView: View {
                     .font(DesignType.rowTitle)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .help(item.displayText)
-                metadataView(renderedText: renderedText)
+                metadataView(presentation: badgePresentation)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Spacer()
@@ -31,34 +32,29 @@ struct ResultRowView: View {
 
     // MARK: - Icon
 
-    private var iconView: some View {
-        Image(systemName: symbol)
+    private func iconView(presentation: MetadataBadgePresentation) -> some View {
+        Image(systemName: presentation.symbol)
             .font(.system(size: DesignIcon.small))
-            .foregroundStyle(selected ? .white : kindTint)
+            .foregroundStyle(selected ? .white : metadataTint(for: presentation))
             .frame(width: 26, height: 26)
             .background(
-                (selected ? Color.white.opacity(0.2) : kindTint.opacity(0.12))
+                (selected ? Color.white.opacity(0.2) : metadataTint(for: presentation).opacity(0.12))
             )
             .clipShape(Circle())
     }
 
-    private var kindTint: Color {
-        DesignColor.kindTint(for: item.kind)
+    private func metadataTint(for presentation: MetadataBadgePresentation) -> Color {
+        DesignColor.metadataBadgeTint(for: presentation.tintRole)
     }
 
     // MARK: - Metadata
 
-    private func metadataView(renderedText: MarkdownRenderedText) -> some View {
+    private func metadataView(presentation: MetadataBadgePresentation) -> some View {
         HStack(spacing: Spacing.xs) {
-            Text(kindDisplayTitle(renderedText: renderedText))
-                .font(DesignType.badge)
-                .padding(.horizontal, Spacing.xs)
-                .padding(.vertical, Spacing.xxs)
-                .background(
-                    selected ? Color.white.opacity(0.2) : Color(.quaternaryLabelColor),
-                    in: Capsule()
-                )
-                .foregroundStyle(selected ? .white : .secondary)
+            MetadataBadge(
+                presentation: presentation,
+                selected: selected
+            )
             if let relative = DisplayFormatters.relativeTimestamp(item.observedAt) {
                 Text(relative)
                     .font(DesignType.rowMeta)
@@ -77,12 +73,13 @@ struct ResultRowView: View {
         }
     }
 
-    private func kindDisplayTitle(renderedText: MarkdownRenderedText) -> String {
-        LinkTargetResolver.presentationBadge(
+    private func metadataBadgePresentation(renderedText: MarkdownRenderedText) -> MetadataBadgePresentation {
+        let linkBadge = LinkTargetResolver.presentationBadge(
             urls: item.urls,
             filePaths: item.filePaths,
             markdownLinks: renderedText.links
-        )?.rawValue ?? item.kind.displayTitle
+        )
+        return MetadataBadgePresentation.make(kind: item.kind, linkBadge: linkBadge)
     }
 
     // MARK: - Score
@@ -97,17 +94,37 @@ struct ResultRowView: View {
     }
 
     // MARK: - Symbol
+}
 
-    private var symbol: String {
-        switch item.kind {
-        case .image: "photo"
-        case .pdf: "doc.richtext"
-        case .url: "link"
-        case .fileUrl: "doc"
-        case .html: "chevron.left.forwardslash.chevron.right"
-        case .rtf: "textformat"
-        case .binary: "shippingbox"
-        default: "text.alignleft"
+private struct MetadataBadge: View {
+    let presentation: MetadataBadgePresentation
+    let selected: Bool
+
+    var body: some View {
+        Text(presentation.title)
+            .font(DesignType.badge)
+            .lineLimit(1)
+            .padding(.horizontal, Spacing.xs)
+            .padding(.vertical, Spacing.xxs)
+            .background(background, in: Capsule())
+            .foregroundStyle(foreground)
+    }
+
+    private var tint: Color {
+        DesignColor.metadataBadgeTint(for: presentation.tintRole)
+    }
+
+    private var foreground: Color {
+        selected ? .white : tint
+    }
+
+    private var background: Color {
+        if selected {
+            return Color.white.opacity(0.2)
         }
+        if presentation.tintRole == .neutral {
+            return Color(.quaternaryLabelColor)
+        }
+        return tint.opacity(0.12)
     }
 }

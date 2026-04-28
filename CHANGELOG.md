@@ -19,6 +19,8 @@ versioning where practical.
   links, and link-aware row badges such as `url`, `file`, and `directory`.
 - Added pointing-hand cursor feedback when hovering rendered Markdown links
   while holding Command in the macOS menu bar app.
+- Added distinct colours to recent/history row metadata badges and matching
+  row icons for plain text, URLs, files, directories, and mixed links.
 
 ### Changed
 
