@@ -4,14 +4,16 @@ struct ResultRowView: View {
     let item: ClipmemItem
     let selected: Bool
     var animatedHighlight = true
-    @State private var resolvedLinkBadge: LinkPresentationBadge?
+    @State private var resolvedLinkBadge: ResolvedLinkBadge?
 
     var body: some View {
         let renderedText = MarkdownTextRenderer.renderedText(item.displayText, style: .compactRow)
+        let badgeResolutionID = metadataBadgeResolutionID(renderedText: renderedText)
         let fallbackLinkBadge = metadataLinkBadge(renderedText: renderedText, resolveFilePathDirectories: false)
+        let currentResolvedLinkBadge = resolvedLinkBadge?.id == badgeResolutionID ? resolvedLinkBadge?.badge : nil
         let badgePresentation = MetadataBadgePresentation.make(
             kind: item.kind,
-            linkBadge: resolvedLinkBadge ?? fallbackLinkBadge
+            linkBadge: currentResolvedLinkBadge ?? fallbackLinkBadge
         )
 
         HStack(alignment: .top, spacing: Spacing.md) {
@@ -33,11 +35,11 @@ struct ResultRowView: View {
             scoreView
         }
         .rowHighlightStyle(selected: selected, animated: animatedHighlight)
-        .task(id: item.id) {
+        .task(id: badgeResolutionID) {
             let markdownLinks = renderedText.links
             let urls = item.urls
             let filePaths = item.filePaths
-            resolvedLinkBadge = await Task.detached {
+            let badge = await Task.detached {
                 LinkTargetResolver.presentationBadge(
                     urls: urls,
                     filePaths: filePaths,
@@ -45,6 +47,7 @@ struct ResultRowView: View {
                     resolveFilePathDirectories: true
                 )
             }.value
+            resolvedLinkBadge = ResolvedLinkBadge(id: badgeResolutionID, badge: badge)
         }
     }
 
@@ -103,6 +106,13 @@ struct ResultRowView: View {
         )
     }
 
+    private func metadataBadgeResolutionID(renderedText: MarkdownRenderedText) -> String {
+        let urlKey = item.urls?.joined(separator: "\u{1F}") ?? ""
+        let filePathKey = item.filePaths?.joined(separator: "\u{1F}") ?? ""
+        let markdownLinkKey = renderedText.links.map(\.target).joined(separator: "\u{1F}")
+        return [item.id, item.displayText, urlKey, filePathKey, markdownLinkKey].joined(separator: "\u{1E}")
+    }
+
     // MARK: - Score
 
     @ViewBuilder
@@ -115,6 +125,11 @@ struct ResultRowView: View {
     }
 
     // MARK: - Symbol
+}
+
+private struct ResolvedLinkBadge {
+    let id: String
+    let badge: LinkPresentationBadge?
 }
 
 private struct MetadataBadge: View {

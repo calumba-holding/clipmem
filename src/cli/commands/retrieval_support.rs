@@ -101,9 +101,11 @@ mod tests {
             .expect("system clock should be after unix epoch")
             .as_nanos();
 
-        let dir = std::env::temp_dir().join("clipmem-main-tests");
+        let dir = std::env::temp_dir()
+            .join("clipmem-main-tests")
+            .join(format!("{test_name}-{}-{timestamp}", process::id()));
         fs::create_dir_all(&dir).expect("temporary test directory should be created");
-        dir.join(format!("{test_name}-{}-{timestamp}.sqlite3", process::id()))
+        dir.join("database.sqlite3")
     }
 
     fn cleanup_db(path: &std::path::Path) {

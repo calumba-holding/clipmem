@@ -20,9 +20,11 @@ pub(crate) fn temp_db_path(test_name: &str) -> PathBuf {
         .expect("system clock should be after unix epoch")
         .as_nanos();
 
-    std::env::temp_dir()
+    let dir = std::env::temp_dir()
         .join("clipmem-cli-tests")
-        .join(format!("{test_name}-{}-{timestamp}.sqlite3", process::id()))
+        .join(format!("{test_name}-{}-{timestamp}", process::id()));
+    fs::create_dir_all(&dir).expect("temporary test directory should be created");
+    dir.join("database.sqlite3")
 }
 
 pub(crate) fn temp_artifact_path(test_name: &str, suffix: &str) -> PathBuf {
@@ -31,9 +33,11 @@ pub(crate) fn temp_artifact_path(test_name: &str, suffix: &str) -> PathBuf {
         .expect("system clock should be after unix epoch")
         .as_nanos();
 
-    std::env::temp_dir()
+    let dir = std::env::temp_dir()
         .join("clipmem-cli-tests")
-        .join(format!("{test_name}-{}-{timestamp}{suffix}", process::id()))
+        .join(format!("{test_name}-{}-{timestamp}", process::id()));
+    fs::create_dir_all(&dir).expect("temporary test directory should be created");
+    dir.join(format!("artifact{suffix}"))
 }
 
 pub(crate) fn cleanup_db(path: &Path) {

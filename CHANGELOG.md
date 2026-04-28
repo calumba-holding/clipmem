@@ -52,6 +52,10 @@ versioning where practical.
 
 - Fixed macOS menu bar row rendering so metadata badge fallback computation no
   longer performs synchronous directory probes while rows are being drawn.
+- Fixed macOS menu bar row badge updates so reused rows show the current
+  content type after recent/search/history content changes.
+- Fixed Markdown directory links in the macOS menu bar app so the resolved row
+  badge can show `directory` instead of always falling back to `file`.
 - Fixed rendered Markdown link event handling so Command-clicks from another
   Clipmem window are ignored by row-local link monitors.
 - Fixed rendered Markdown link cursor tracking so one row being removed no

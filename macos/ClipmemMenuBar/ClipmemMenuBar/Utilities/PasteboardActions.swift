@@ -89,7 +89,10 @@ enum LinkTargetResolver {
         }
 
         for link in markdownLinks {
-            if let badge = link.badge {
+            let badge = resolveFilePathDirectories
+                ? classify(link.target, fileManager: fileManager).badge
+                : link.badge
+            if let badge {
                 badges.insert(badge)
             }
         }

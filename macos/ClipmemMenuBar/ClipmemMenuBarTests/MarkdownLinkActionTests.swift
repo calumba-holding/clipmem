@@ -125,6 +125,42 @@ struct MarkdownLinkActionTests {
         #expect(badge == .file)
     }
 
+    @Test func resolvesMarkdownDirectoryLinksOnAsyncBadgePath() {
+        let directoryPath = FileManager.default.temporaryDirectory.path
+        let badge = LinkTargetResolver.presentationBadge(
+            urls: nil,
+            filePaths: nil,
+            markdownLinks: [
+                MarkdownRenderedLink(
+                    range: NSRange(location: 0, length: 6),
+                    target: directoryPath,
+                    badge: .file
+                )
+            ],
+            resolveFilePathDirectories: true
+        )
+
+        #expect(badge == .directory)
+    }
+
+    @Test func keepsMarkdownDirectoryLinksCheapOnRenderPath() {
+        let directoryPath = FileManager.default.temporaryDirectory.path
+        let badge = LinkTargetResolver.presentationBadge(
+            urls: nil,
+            filePaths: nil,
+            markdownLinks: [
+                MarkdownRenderedLink(
+                    range: NSRange(location: 0, length: 6),
+                    target: directoryPath,
+                    badge: .file
+                )
+            ],
+            resolveFilePathDirectories: false
+        )
+
+        #expect(badge == .file)
+    }
+
     @Test func derivesMixedBadgeForMultipleTargetTypes() {
         let badge = LinkTargetResolver.presentationBadge(
             urls: ["https://example.com"],
