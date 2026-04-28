@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 @testable import ClipmemMenuBar
@@ -121,5 +122,55 @@ struct MarkdownLinkActionTests {
         )
 
         #expect(badge == .links)
+    }
+
+    @Test func hitTestingFindsActionableWebTargetsInsideLinkRange() throws {
+        let target = try #require(actionableTarget(target: "https://example.com", point: NSPoint(x: 6, y: 6)))
+
+        guard case .web(let url) = target else {
+            Issue.record("Expected web target")
+            return
+        }
+        #expect(url.absoluteString == "https://example.com")
+    }
+
+    @Test func hitTestingFindsActionableFileTargetsInsideLinkRange() throws {
+        let target = try #require(actionableTarget(target: "/tmp/example.txt", point: NSPoint(x: 6, y: 6)))
+
+        guard case .file(let url, let isDirectory) = target else {
+            Issue.record("Expected file target")
+            return
+        }
+        #expect(url.path == "/tmp/example.txt")
+        #expect(isDirectory == false)
+    }
+
+    @Test func hitTestingIgnoresPointsOutsideLinkRange() {
+        let target = actionableTarget(target: "https://example.com", point: NSPoint(x: 160, y: 6))
+
+        #expect(target == nil)
+    }
+
+    @Test func hitTestingIgnoresUnsupportedTargetsInsideLinkRange() {
+        let target = actionableTarget(target: "mailto:test@example.com", point: NSPoint(x: 6, y: 6))
+
+        #expect(target == nil)
+    }
+
+    private func actionableTarget(target: String, point: NSPoint) -> LinkTargetResolution? {
+        MarkdownLinkHitTesting.actionableTarget(
+            at: point,
+            in: NSSize(width: 220, height: 30),
+            attributedString: NSAttributedString(string: "link target"),
+            links: [
+                MarkdownRenderedLink(
+                    range: NSRange(location: 0, length: 4),
+                    target: target,
+                    badge: LinkTargetResolver.classify(target).badge
+                )
+            ],
+            lineLimit: 1,
+            lineBreakMode: .byTruncatingTail
+        )
     }
 }

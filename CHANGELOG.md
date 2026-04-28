@@ -17,6 +17,8 @@ versioning where practical.
 - Added Command-click activation for rendered Markdown links in the macOS menu
   bar app, including browser opening for web links, Finder reveal for file
   links, and link-aware row badges such as `url`, `file`, and `directory`.
+- Added pointing-hand cursor feedback when hovering rendered Markdown links
+  while holding Command in the macOS menu bar app.
 
 ### Changed
 

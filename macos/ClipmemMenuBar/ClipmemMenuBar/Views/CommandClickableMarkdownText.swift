@@ -99,43 +99,46 @@ private struct LinkCommandClickMonitor: NSViewRepresentable {
         }
 
         func handle(_ event: NSEvent, in view: NSView) -> NSEvent? {
-            guard event.type == .leftMouseDown, event.modifierFlags.contains(.command) else {
+            let point = point(for: event, in: view)
+
+            if event.type != .leftMouseDown {
                 return event
             }
 
-            let point = view.convert(event.locationInWindow, from: nil)
-            guard view.bounds.contains(point), let link = link(at: point, in: view.bounds.size) else {
+            guard
+                event.modifierFlags.contains(.command),
+                let target = actionableTarget(at: point, in: view.bounds)
+            else {
                 return event
             }
 
-            let target = LinkTargetResolver.classify(link.target)
-            guard target != .unsupported else { return event }
             onOpen?(target)
             return nil
         }
 
-        private func link(at point: NSPoint, in size: NSSize) -> MarkdownRenderedLink? {
-            guard size.width > 0, size.height > 0 else { return nil }
+        func isActionableCommandHover(_ event: NSEvent, in view: NSView) -> Bool {
+            guard event.modifierFlags.contains(.command) else { return false }
+            return actionableTarget(at: point(for: event, in: view), in: view.bounds) != nil
+        }
 
-            let textStorage = NSTextStorage(attributedString: attributedString)
-            let layoutManager = NSLayoutManager()
-            let textContainer = NSTextContainer(size: NSSize(width: size.width, height: CGFloat.greatestFiniteMagnitude))
+        private func actionableTarget(at point: NSPoint, in bounds: NSRect) -> LinkTargetResolution? {
+            guard bounds.contains(point) else { return nil }
+            return MarkdownLinkHitTesting.actionableTarget(
+                at: point,
+                in: bounds.size,
+                attributedString: attributedString,
+                links: links,
+                lineLimit: lineLimit,
+                lineBreakMode: lineBreakMode
+            )
+        }
 
-            textContainer.lineFragmentPadding = 0
-            textContainer.maximumNumberOfLines = lineLimit ?? 0
-            textContainer.lineBreakMode = lineBreakMode
-            textStorage.addLayoutManager(layoutManager)
-            layoutManager.addTextContainer(textContainer)
-            layoutManager.ensureLayout(for: textContainer)
-
-            let usedRect = layoutManager.usedRect(for: textContainer)
-            let pointInText = NSPoint(x: point.x - usedRect.minX, y: point.y - usedRect.minY)
-            guard pointInText.x >= 0, pointInText.y >= 0 else { return nil }
-
-            let glyphIndex = layoutManager.glyphIndex(for: pointInText, in: textContainer)
-            let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
-            guard characterIndex < attributedString.string.utf16.count else { return nil }
-            return links.first { NSLocationInRange(characterIndex, $0.range) }
+        private func point(for event: NSEvent, in view: NSView) -> NSPoint {
+            if event.window === view.window {
+                return view.convert(event.locationInWindow, from: nil)
+            }
+            guard let window = view.window else { return .zero }
+            return view.convert(window.mouseLocationOutsideOfEventStream, from: nil)
         }
     }
 }
@@ -143,10 +146,20 @@ private struct LinkCommandClickMonitor: NSViewRepresentable {
 private final class LinkCommandClickMonitorView: NSView {
     weak var coordinator: LinkCommandClickMonitor.Coordinator?
     private var monitor: Any?
+    private var trackingArea: NSTrackingArea?
+    private var isShowingPointingHand = false
+    private weak var mouseMovedEventsWindow: NSWindow?
+    private var previousAcceptsMouseMovedEvents: Bool?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        updateTrackingArea()
         installMonitor()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        updateTrackingArea()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -155,22 +168,142 @@ private final class LinkCommandClickMonitorView: NSView {
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         super.viewWillMove(toWindow: newWindow)
-        guard newWindow == nil, let monitor else { return }
-        NSEvent.removeMonitor(monitor)
-        self.monitor = nil
+        guard newWindow == nil else { return }
+        removeMonitor()
+        restoreCursorIfNeeded()
+        restoreMouseMovedEventsPreference()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        updateCursor(for: event)
+        super.mouseMoved(with: event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        restoreCursorIfNeeded()
+        super.mouseExited(with: event)
     }
 
     private func installMonitor() {
+        removeMonitor()
+        guard window != nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .mouseMoved, .flagsChanged]) { [weak self] event in
+            guard let self else { return event }
+            updateCursor(for: event)
+            return coordinator?.handle(event, in: self) ?? event
+        }
+    }
+
+    private func removeMonitor() {
         if let monitor {
             NSEvent.removeMonitor(monitor)
             self.monitor = nil
         }
+    }
 
-        guard window != nil else { return }
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-            guard let self else { return event }
-            return coordinator?.handle(event, in: self) ?? event
+    private func updateTrackingArea() {
+        if let trackingArea {
+            removeTrackingArea(trackingArea)
+            self.trackingArea = nil
         }
+        guard window != nil else { return }
+
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.activeInKeyWindow, .inVisibleRect, .mouseMoved, .mouseEnteredAndExited],
+            owner: self
+        )
+        addTrackingArea(area)
+        trackingArea = area
+        guard let window else { return }
+        if mouseMovedEventsWindow !== window {
+            restoreMouseMovedEventsPreference()
+            mouseMovedEventsWindow = window
+            previousAcceptsMouseMovedEvents = window.acceptsMouseMovedEvents
+        }
+        window.acceptsMouseMovedEvents = true
+    }
+
+    private func updateCursor(for event: NSEvent) {
+        guard coordinator?.isActionableCommandHover(event, in: self) == true else {
+            restoreCursorIfNeeded()
+            return
+        }
+
+        guard isShowingPointingHand == false else { return }
+        NSCursor.pointingHand.set()
+        isShowingPointingHand = true
+    }
+
+    private func restoreCursorIfNeeded() {
+        guard isShowingPointingHand else { return }
+        NSCursor.arrow.set()
+        isShowingPointingHand = false
+    }
+
+    private func restoreMouseMovedEventsPreference() {
+        guard let window = mouseMovedEventsWindow, let previousAcceptsMouseMovedEvents else {
+            return
+        }
+        window.acceptsMouseMovedEvents = previousAcceptsMouseMovedEvents
+        mouseMovedEventsWindow = nil
+        self.previousAcceptsMouseMovedEvents = nil
+    }
+}
+
+enum MarkdownLinkHitTesting {
+    static func actionableTarget(
+        at point: NSPoint,
+        in size: NSSize,
+        attributedString: NSAttributedString,
+        links: [MarkdownRenderedLink],
+        lineLimit: Int?,
+        lineBreakMode: NSLineBreakMode
+    ) -> LinkTargetResolution? {
+        guard let link = link(
+            at: point,
+            in: size,
+            attributedString: attributedString,
+            links: links,
+            lineLimit: lineLimit,
+            lineBreakMode: lineBreakMode
+        ) else {
+            return nil
+        }
+
+        let target = LinkTargetResolver.classify(link.target)
+        return target == .unsupported ? nil : target
+    }
+
+    static func link(
+        at point: NSPoint,
+        in size: NSSize,
+        attributedString: NSAttributedString,
+        links: [MarkdownRenderedLink],
+        lineLimit: Int?,
+        lineBreakMode: NSLineBreakMode
+    ) -> MarkdownRenderedLink? {
+        guard size.width > 0, size.height > 0 else { return nil }
+
+        let textStorage = NSTextStorage(attributedString: attributedString)
+        let layoutManager = NSLayoutManager()
+        let textContainer = NSTextContainer(size: NSSize(width: size.width, height: CGFloat.greatestFiniteMagnitude))
+
+        textContainer.lineFragmentPadding = 0
+        textContainer.maximumNumberOfLines = lineLimit ?? 0
+        textContainer.lineBreakMode = lineBreakMode
+        textStorage.addLayoutManager(layoutManager)
+        layoutManager.addTextContainer(textContainer)
+        layoutManager.ensureLayout(for: textContainer)
+
+        let usedRect = layoutManager.usedRect(for: textContainer)
+        let pointInText = NSPoint(x: point.x - usedRect.minX, y: point.y - usedRect.minY)
+        guard pointInText.x >= 0, pointInText.y >= 0 else { return nil }
+
+        let glyphIndex = layoutManager.glyphIndex(for: pointInText, in: textContainer)
+        let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        guard characterIndex < attributedString.string.utf16.count else { return nil }
+        return links.first { NSLocationInRange(characterIndex, $0.range) }
     }
 }
 
