@@ -9,16 +9,25 @@ struct CommandClickableMarkdownText: View {
 
     @ViewBuilder
     var body: some View {
-        let text = Text(rendered.attributed)
+        let baseText = Text(rendered.attributed)
             .lineLimit(lineLimit)
             .truncationMode(truncationMode)
-            .linkCommandClickMonitor(
+
+        if rendered.links.isEmpty {
+            selectableText(baseText)
+        } else {
+            let monitoredText = baseText.linkCommandClickMonitor(
                 attributedString: rendered.attributed,
                 links: rendered.links,
                 lineLimit: lineLimit,
                 truncationMode: truncationMode
             )
+            selectableText(monitoredText)
+        }
+    }
 
+    @ViewBuilder
+    private func selectableText<Content: View>(_ text: Content) -> some View {
         if selectionEnabled {
             text.textSelection(.enabled)
         } else {

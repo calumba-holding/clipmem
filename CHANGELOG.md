@@ -26,6 +26,8 @@ versioning where practical.
 
 ### Changed
 
+- Changed the macOS menu bar Markdown renderer to skip Command-click link
+  monitoring for rows and detail views without Markdown links.
 - Replaced wide internal archive/search construction paths with named-field
   parts and filter builder methods so query mapping and CLI filter
   normalization are harder to assemble incorrectly.
