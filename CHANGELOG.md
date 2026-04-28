@@ -54,6 +54,8 @@ versioning where practical.
   longer performs synchronous directory probes while rows are being drawn.
 - Fixed rendered Markdown link event handling so Command-clicks from another
   Clipmem window are ignored by row-local link monitors.
+- Fixed rendered Markdown link cursor tracking so one row being removed no
+  longer disables Command-hover link feedback for other visible rows.
 - Fixed rendered Markdown link hit-testing in the macOS menu bar app so
   Command-clicking trailing empty row space no longer activates the nearest
   link.

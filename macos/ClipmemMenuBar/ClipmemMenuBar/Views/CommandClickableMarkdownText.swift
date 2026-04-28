@@ -149,7 +149,18 @@ private final class LinkCommandClickMonitorView: NSView {
     private var trackingArea: NSTrackingArea?
     private var isShowingPointingHand = false
     private weak var mouseMovedEventsWindow: NSWindow?
-    private var previousAcceptsMouseMovedEvents: Bool?
+    private static var mouseMovedEventReservations: [ObjectIdentifier: MouseMovedEventReservation] = [:]
+
+    private final class MouseMovedEventReservation {
+        weak var window: NSWindow?
+        let previousAcceptsMouseMovedEvents: Bool
+        var count = 1
+
+        init(window: NSWindow, previousAcceptsMouseMovedEvents: Bool) {
+            self.window = window
+            self.previousAcceptsMouseMovedEvents = previousAcceptsMouseMovedEvents
+        }
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -218,10 +229,36 @@ private final class LinkCommandClickMonitorView: NSView {
         guard let window else { return }
         if mouseMovedEventsWindow !== window {
             restoreMouseMovedEventsPreference()
-            mouseMovedEventsWindow = window
-            previousAcceptsMouseMovedEvents = window.acceptsMouseMovedEvents
+            reserveMouseMovedEvents(for: window)
         }
         window.acceptsMouseMovedEvents = true
+    }
+
+    private func reserveMouseMovedEvents(for window: NSWindow) {
+        let identifier = ObjectIdentifier(window)
+        if let reservation = Self.mouseMovedEventReservations[identifier] {
+            reservation.count += 1
+        } else {
+            Self.mouseMovedEventReservations[identifier] = MouseMovedEventReservation(
+                window: window,
+                previousAcceptsMouseMovedEvents: window.acceptsMouseMovedEvents
+            )
+        }
+        window.acceptsMouseMovedEvents = true
+        mouseMovedEventsWindow = window
+    }
+
+    private func releaseMouseMovedEvents(for window: NSWindow) {
+        let identifier = ObjectIdentifier(window)
+        guard let reservation = Self.mouseMovedEventReservations[identifier] else { return }
+
+        reservation.count -= 1
+        guard reservation.count <= 0 else { return }
+
+        Self.mouseMovedEventReservations[identifier] = nil
+        if reservation.window === window {
+            window.acceptsMouseMovedEvents = reservation.previousAcceptsMouseMovedEvents
+        }
     }
 
     private func updateCursor(for event: NSEvent) {
@@ -242,12 +279,9 @@ private final class LinkCommandClickMonitorView: NSView {
     }
 
     private func restoreMouseMovedEventsPreference() {
-        guard let window = mouseMovedEventsWindow, let previousAcceptsMouseMovedEvents else {
-            return
-        }
-        window.acceptsMouseMovedEvents = previousAcceptsMouseMovedEvents
+        guard let window = mouseMovedEventsWindow else { return }
+        releaseMouseMovedEvents(for: window)
         mouseMovedEventsWindow = nil
-        self.previousAcceptsMouseMovedEvents = nil
     }
 }
 
