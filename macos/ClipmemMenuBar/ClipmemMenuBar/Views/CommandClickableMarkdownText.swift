@@ -1,4 +1,4 @@
-import AppKit
+@preconcurrency import AppKit
 import SwiftUI
 
 struct CommandClickableMarkdownText: View {
@@ -173,6 +173,7 @@ private final class LinkCommandClickMonitorView: NSView {
         let identifier = ObjectIdentifier(window)
         Self.windowMonitors[identifier]?.unregister(self)
         if Self.windowMonitors[identifier]?.isEmpty == true {
+            Self.windowMonitors[identifier]?.close()
             Self.windowMonitors[identifier] = nil
         }
         registeredWindow = nil
@@ -188,6 +189,7 @@ private final class LinkCommandClickMonitorView: NSView {
         return monitor
     }
 
+    @MainActor
     private final class WindowLinkEventMonitor {
         private weak var window: NSWindow?
         private var monitor: Any?
@@ -206,11 +208,15 @@ private final class LinkCommandClickMonitorView: NSView {
             window.acceptsMouseMovedEvents = true
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .mouseMoved, .flagsChanged]) {
                 [weak self] event in
-                self?.handle(event) ?? event
+                nonisolated(unsafe) let event = event
+                let shouldConsume = MainActor.assumeIsolated {
+                    self?.shouldConsume(event) ?? false
+                }
+                return shouldConsume ? nil : event
             }
         }
 
-        deinit {
+        func close() {
             removeMonitor()
             restoreCursorIfNeeded()
             if let window {
@@ -229,26 +235,26 @@ private final class LinkCommandClickMonitorView: NSView {
             restoreCursorIfNeeded()
         }
 
-        private func handle(_ event: NSEvent) -> NSEvent? {
+        private func shouldConsume(_ event: NSEvent) -> Bool {
             switch event.type {
             case .leftMouseDown:
                 return handleClick(event)
             case .mouseMoved, .flagsChanged:
                 updateCursor(for: event)
-                return event
+                return false
             default:
-                return event
+                return false
             }
         }
 
-        private func handleClick(_ event: NSEvent) -> NSEvent? {
+        private func handleClick(_ event: NSEvent) -> Bool {
             guard event.modifierFlags.contains(.command), event.window === window else {
-                return event
+                return false
             }
-            guard let hit = hit(at: event.locationInWindow) else { return event }
+            guard let hit = hit(at: event.locationInWindow) else { return false }
 
             hit.view.open(hit.target)
-            return nil
+            return true
         }
 
         private func updateCursor(for event: NSEvent) {
@@ -270,13 +276,13 @@ private final class LinkCommandClickMonitorView: NSView {
             }
 
             guard isShowingPointingHand == false else { return }
-            NSCursor.pointingHand.set()
+            NSCursor.pointingHand.push()
             isShowingPointingHand = true
         }
 
         private func restoreCursorIfNeeded() {
             guard isShowingPointingHand else { return }
-            NSCursor.arrow.set()
+            NSCursor.pop()
             isShowingPointingHand = false
         }
 

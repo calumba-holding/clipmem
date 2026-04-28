@@ -66,6 +66,8 @@ versioning where practical.
   longer disables Command-hover link feedback for other visible rows.
 - Fixed rendered Markdown link event handling so link-bearing rows share a
   single window-level monitor instead of installing one monitor per row.
+- Fixed rendered Markdown link cursor restoration so leaving a Command-hovered
+  link restores the previous cursor instead of forcing the arrow cursor.
 - Fixed rendered Markdown link hit-testing in the macOS menu bar app so
   Command-clicking trailing empty row space no longer activates the nearest
   link.
