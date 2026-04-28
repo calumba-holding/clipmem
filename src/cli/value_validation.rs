@@ -43,6 +43,17 @@ pub(super) fn validate_byte_window(
     Ok(())
 }
 
+pub(super) fn validate_positive_hours(hours: Option<u32>) -> Result<(), CliValueError> {
+    if matches!(hours, Some(0)) {
+        return Err(value_error(
+            ErrorKind::InvalidValue,
+            "`--hours` must be greater than zero",
+        ));
+    }
+
+    Ok(())
+}
+
 pub(super) fn normalize_nonempty_filter_value(
     value: Option<&str>,
     flag: &str,

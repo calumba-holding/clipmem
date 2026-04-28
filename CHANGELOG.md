@@ -11,6 +11,8 @@ versioning where practical.
 
 ### Fixed
 
+- Fixed shared retrieval filters so `--hours 0` is rejected instead of
+  applying an effectively empty "since now" result window.
 - Updated the crates.io trusted publishing action to its Node.js 24 release so
   release workflows no longer emit the GitHub Actions Node.js 20 deprecation
   warning.

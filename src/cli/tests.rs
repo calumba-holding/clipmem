@@ -423,6 +423,16 @@ fn shared_filters_reject_inverted_byte_window() {
 }
 
 #[test]
+fn shared_filters_reject_zero_hours() {
+    let error = super::run_from(["clipmem", "recent", "--hours", "0"])
+        .expect_err("zero-hour filter should fail");
+
+    assert!(error
+        .to_string()
+        .contains("`--hours` must be greater than zero"));
+}
+
+#[test]
 fn shared_filters_reject_empty_app_and_bundle_id_values() {
     let app_error = super::run_from(["clipmem", "recent", "--app", "   "])
         .expect_err("empty app filter should fail");

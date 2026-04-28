@@ -20,7 +20,8 @@ use super::parsing::{
     parse_timeline_sort, DurationValue, RetentionValue,
 };
 use super::value_validation::{
-    normalize_nonempty_filter_value, validate_byte_window, validate_time_window,
+    normalize_nonempty_filter_value, validate_byte_window, validate_positive_hours,
+    validate_time_window,
 };
 
 #[derive(Debug, Parser)]
@@ -234,6 +235,7 @@ impl RetrievalFilterArgs {
         &self,
     ) -> std::result::Result<RetrievalFilters, super::errors::CliValueError> {
         validate_time_window(self.since.as_deref(), self.until.as_deref())?;
+        validate_positive_hours(self.hours)?;
         validate_byte_window(self.min_bytes, self.max_bytes)?;
 
         let app = normalize_nonempty_filter_value(self.app.as_deref(), "--app")?;
