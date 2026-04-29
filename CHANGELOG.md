@@ -9,6 +9,11 @@ versioning where practical.
 
 ## Unreleased
 
+### Changed
+
+- Refreshed the README menu bar popover screenshot to show Markdown rendering,
+  link badges, and updated row icons.
+
 ### Fixed
 
 - Fixed menu bar Markdown rendering for multiline text so headings and body text
