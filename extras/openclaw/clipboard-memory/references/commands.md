@@ -18,10 +18,29 @@ Pick the narrowest command that answers the question. Always pass `--format json
 8. `clipmem forget <snapshot_id>` — hard-delete one snapshot and its capture history.
 9. `clipmem purge --older-than <duration> [--dry-run]` — prune by `last_observed_at`.
 10. `clipmem storage compact [--dry-run] --format json` — reclaim SQLite/WAL disk space without changing content.
-11. `clipmem storage optimize-images [--dry-run] [--no-compact] [--limit N] [--format json|--progress jsonl]` — convert eligible stored images to lossless WebP and compact by default.
-12. `clipmem settings show --format json` — inspect persistent capture policy.
-13. `clipmem ocr status --format json` — inspect local OCR queue and result counts.
-14. `clipmem ocr run [--limit N] [--snapshot ID]` — backfill OCR for image snapshots.
+11. `clipmem storage image-candidates --format json` — inspect image rows eligible for optimization without rewriting bytes.
+12. `clipmem storage optimize-images [--dry-run] [--no-compact] [--limit N] [--format json|--progress jsonl]` — convert eligible stored images to lossless WebP and compact by default.
+13. `clipmem service providers --format json` — inspect service provider availability without starting or stopping capture.
+14. `clipmem service revision --format json` — read archive revision counters without probing service providers.
+15. `clipmem settings show --format json` — inspect persistent capture policy.
+16. `clipmem app settings show --format json` — inspect menu bar app preferences.
+17. `clipmem app settings set KEY VALUE --format json` / `clear KEY --format json` — change app-local preferences and bump app preference revision.
+18. `clipmem app launch-at-login show|set|clear --format json` — inspect or change the app-owned launch-at-login preference bridge.
+19. `clipmem app update-check show|run|clear --format json` — inspect, run, or clear app update-check state.
+20. `clipmem app quit --format json` — request the menu bar app to quit.
+21. `clipmem agents context --format json` — one-call agent context: generated_at, service health, settings, app state, recent activity metadata, revision, stats, privacy guidance, and capability summary.
+22. `clipmem ocr status --format json` — inspect local OCR queue and result counts.
+23. `clipmem ocr candidates --format json` — inspect pending OCR candidates without running OCR.
+24. `clipmem ocr get <raw-sha256> --format json` / `clear <raw-sha256> --format json` — inspect or clear one OCR result.
+25. `clipmem ocr run [--limit N] [--snapshot ID]` — backfill OCR for image snapshots.
+
+Primitive commands are the direct read/list/get/set/delete/start/stop surfaces
+above. Convenience workflows are still supported but should be classified
+honestly: `recall` ranks likely answers, `setup` composes initialization plus
+service startup, `ocr run` processes a bounded OCR batch, and
+`storage optimize-images` scans and rewrites eligible image rows. Use
+candidate, dry-run, or detail commands before broad workflow mutations when the
+user has not explicitly asked to proceed.
 
 ---
 
@@ -39,19 +58,33 @@ Pick the narrowest command that answers the question. Always pass `--format json
 | `forget <SNAPSHOT_ID>` | text | — | Hard-delete one snapshot and its capture history |
 | `purge` | text | — | Delete old snapshots by `last_observed_at` |
 | `storage compact` | text (`json` supported) | — | Reclaim SQLite/WAL disk space |
+| `storage image-candidates` | text (`json` supported) | — | List image rows eligible for optimization without mutation |
 | `storage optimize-images` | text (`json` supported, progress JSONL available) | — | Convert eligible images to lossless WebP |
 | `settings show` | `text` | **no** | Show persistent pause / retention / ignore-list policy |
 | `settings pause` | text | — | Persistently pause or resume capture |
 | `settings api-key-filter` | text | — | Enable or disable API key filtering |
 | `settings ocr` | text | — | Enable or disable local OCR for new image captures |
 | `settings retention` | text | — | Set retention to a duration or `forever` |
+| `settings reset` | text (`json` supported) | — | Reset capture policy and ignored apps to defaults |
 | `settings ignore add/remove/list` | text (`list` also supports `json`) | **no** | Manage ignored bundle identifiers |
+| `app settings show` | text (`json` supported) | — | Show menu bar app preferences |
+| `app settings set` | text (`json` supported) | — | Set one menu bar app preference |
+| `app settings clear` | text (`json` supported) | — | Clear one menu bar app preference |
+| `app launch-at-login show/set/clear` | text (`json` supported) | — | Manage the app-owned launch-at-login preference bridge |
+| `app update-check show/run/clear` | text (`json` supported) | — | Show, run, or clear app update-check state |
+| `app quit` | text (`json` supported) | — | Request the menu bar app to quit |
+| `agents context` | text (`json` supported) | — | Agent context bundle: generated_at, health, settings, app state, recent activity, revision, stats, privacy, capabilities |
 | `ocr status` | text (`json` supported) | — | Local OCR queue and result counts |
+| `ocr candidates` | text (`json` supported) | — | Pending OCR candidate hashes without processing |
+| `ocr get` | text (`json` supported) | — | One OCR result by raw representation hash |
+| `ocr clear` | text (`json` supported) | — | Delete one OCR result and rebuild affected OCR cache |
 | `ocr run` | text (`json` supported) | — | Backfill OCR for stored image snapshots |
 | `capture-once` | — | — | Single clipboard capture (setup / ad-hoc) |
 | `watch` | — | — | Background daemon; usually a LaunchAgent |
 | `setup` | — | — | Seed one capture and start background capture |
 | `service status` | text (or `--json`) | — | Background provider state + capture freshness |
+| `service providers` | text (`json` supported) | — | Service provider availability without mutation |
+| `service revision` | text (`json` supported) | — | Archive revision counters without provider probes |
 | `service start` / `stop` / `uninstall` | — | — | Manage the background watcher service |
 | `doctor` | text (or `--json`) | — | SQLite / FTS5 diagnostics |
 | `agents openclaw doctor` | text | — | Integration health: PATH, workspace, sandbox |
@@ -63,7 +96,7 @@ Pick the narrowest command that answers the question. Always pass `--format json
 | `agents hermes print-skill` | — | — | Print embedded Hermes `SKILL.md` to stdout |
 | `agents hermes uninstall-skill` | — | — | Remove installed Hermes skill directory |
 
-`--json` is a compatibility alias for `--format json` on `search`, `recent`, `timeline`, `get`, `storage compact`, `storage optimize-images`, `ocr status`, `ocr run`, `capture-once`, and `doctor`.
+`--json` is a compatibility alias for `--format json` on `search`, `recent`, `timeline`, `get`, `agents context`, `storage compact`, `storage optimize-images`, `ocr status`, `ocr run`, `capture-once`, and `doctor`.
 
 ---
 
@@ -187,7 +220,7 @@ clipmem export <snapshot_id> --item <index> --uti <uti> --out <path> [--force]
 
 `restore` is macOS-only and writes the full stored item/UTI/raw-byte set back onto the general pasteboard. This is a whole-snapshot restore, not a text-only approximation.
 
-`export` writes raw bytes to `--out`. There is no `--format` flag. By default it creates a new file and refuses to replace an existing destination; pass `--force` only to replace an existing regular file. Symlink destinations are rejected. Required arguments: `--item` (0-based), `--uti` (e.g. `public.png`, `public.utf8-plain-text`, `com.adobe.pdf`), `--out`. Inspect `items[].representations[].uti` and `size_bytes` in a prior `get --format json` to choose the right combination.
+`export` writes raw bytes to `--out` and supports `--format json` for structured confirmation. By default it creates a new file and refuses to replace an existing destination; pass `--force` only to replace an existing regular file. Symlink destinations are rejected. Required arguments: `--item` (0-based), `--uti` (e.g. `public.png`, `public.utf8-plain-text`, `com.adobe.pdf`), `--out`. Inspect `items[].representations[].uti` and `size_bytes` in a prior `get --format json` to choose the right combination.
 
 ---
 
@@ -197,16 +230,36 @@ clipmem export <snapshot_id> --item <index> --uti <uti> --out <path> [--force]
 clipmem forget <snapshot_id>
 clipmem purge --older-than 30d [--dry-run]
 clipmem storage compact [--dry-run] [--format json]
+clipmem storage image-candidates [--limit N] [--format json]
 clipmem storage optimize-images [--dry-run] [--no-compact] [--limit N] [--format json|--progress jsonl]
 clipmem settings show [--format json]
 clipmem settings pause on|off
 clipmem settings api-key-filter on|off
 clipmem settings ocr on|off
 clipmem settings retention <duration|forever>
+clipmem settings reset [--format json]
 clipmem settings ignore add <bundle_id>
 clipmem settings ignore remove <bundle_id>
 clipmem settings ignore list [--format json]
+clipmem app settings show [--format json]
+clipmem app settings set binary-path-override <path> [--format json]
+clipmem app settings set database-path-override <path> [--format json]
+clipmem app settings set default-recent-hours <hours> [--format json]
+clipmem app settings set default-query-mode recall|search|recent|timeline|diagnostics [--format json]
+clipmem app settings set hotkey-enabled true|false [--format json]
+clipmem app settings clear <key> [--format json]
+clipmem app launch-at-login show [--format json]
+clipmem app launch-at-login set on|off [--format json]
+clipmem app launch-at-login clear [--format json]
+clipmem app update-check show [--format json]
+clipmem app update-check run [--format json]
+clipmem app update-check clear [--format json]
+clipmem app quit [--format json]
+clipmem service revision [--format json]
 clipmem ocr status [--format json]
+clipmem ocr candidates [--limit N] [--snapshot ID] [--format json]
+clipmem ocr get <raw-sha256> [--format json]
+clipmem ocr clear <raw-sha256> [--format json]
 clipmem ocr run [--limit N] [--snapshot ID] [--retry-failed] [--format json]
 ```
 
@@ -214,9 +267,17 @@ clipmem ocr run [--limit N] [--snapshot ID] [--retry-failed] [--format json]
 
 `purge` computes age from `snapshot_stats.last_observed_at`, not `snapshots.created_at`. Duration grammar is a single integer plus one unit: `Nd`, `Nh`, or `Nm`.
 
-`storage compact` checkpoints WAL state and vacuums SQLite pages back to the filesystem. It never changes clipboard content. `storage optimize-images` rewrites eligible image representations to lossless WebP only when doing so saves meaningful space, then compacts SQLite storage by default; already compressed or skipped rows are not retried by normal runs. Use `--progress jsonl` for streamed `started`, `scanning`, `compacting`, and `complete` progress events. Use `--no-compact` only when batching optimization runs and compacting once at the end.
+`storage compact` checkpoints WAL state and vacuums SQLite pages back to the filesystem. It never changes clipboard content. `storage image-candidates` lists the same eligible image rows that `storage optimize-images` would scan, without rewriting bytes or marking rows. `storage optimize-images` rewrites eligible image representations to lossless WebP only when doing so saves meaningful space, then compacts SQLite storage by default; already compressed or skipped rows are not retried by normal runs. Use `--progress jsonl` for streamed `started`, `scanning`, `compacting`, and `complete` progress events. Use `--no-compact` only when batching optimization runs and compacting once at the end.
+
+`ocr candidates` lists pending OCR hashes and affected snapshot counts without invoking Apple Vision. Use it before `ocr run` when an agent needs to inspect queue work.
 
 `settings` is the persistent capture-policy entrypoint. Ignore matching is exact, case-insensitive bundle-id matching only. OCR is opt-in, runs locally through Apple Vision on macOS, and stores text/status separately from raw image bytes.
+
+`app settings`, `app launch-at-login`, and `app update-check` are menu bar app state bridges. They read and write app-local preferences without changing archive capture policy. Mutating commands bump `app_preferences_revision` so an open app can observe external agent changes. Launch-at-login writes the desired app-owned preference; the menu bar app applies it through `SMAppService`. `app update-check run` performs the live latest-stable-release lookup and updates the same cache the app reads. `app quit` requests the menu bar app to terminate through the app bundle identifier.
+
+`clipmem agents context --format json` is safe as a first call in agent sessions. It includes `generated_at`, service health, capture policy, archive revision, bounded recent activity, menu bar app state, capability discovery, and privacy guidance. It excludes raw clipboard content and representation bytes, but includes operational metadata such as app names, timestamps, counts, paths, and app preference state.
+
+`clipmem service revision --format json` is the lightweight polling path for change detection. It reads the same archive revision counters surfaced in service status and agent context without checking Homebrew, LaunchAgent, or other service providers.
 
 ---
 
@@ -251,4 +312,4 @@ Scripts can rely on these to distinguish "no such snapshot" (retriable with a di
 - stderr contains diagnostics only.
 - No interactive prompts anywhere in the CLI.
 - List commands use bounded `--limit` defaults and opaque cursor pagination.
-- `--format json` output is stable within `schema_version: 2`.
+- Retrieval JSON envelopes (`search`, `recent`, `timeline`, `get`, `recall`, and mutation confirmations that include `schema_version`) are stable within `schema_version: 2`. Management and inspection commands such as `agents context`, `app`, `service`, `ocr`, and `storage image-candidates` have command-specific JSON shapes; parse their documented keys directly and do not require `schema_version: 2` unless the command emits it.

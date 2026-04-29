@@ -1,8 +1,10 @@
 mod agents;
+mod app;
 mod archive_mutate;
 mod doctor;
 pub(in crate::cli) mod entry;
 mod mutation_support;
+pub(in crate::cli) mod notify;
 mod ocr;
 mod retrieval;
 mod retrieval_support;

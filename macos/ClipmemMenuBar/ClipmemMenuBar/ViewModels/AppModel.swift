@@ -1,4 +1,5 @@
 import AppKit
+import CoreFoundation
 import Foundation
 import Observation
 import SwiftUI
@@ -26,9 +27,12 @@ final class AppModel {
     var lastError: UserError?
     var actionMessage: String?
     var hotkeyMessage: String?
+    var hotkeyEnabled = UserDefaults.standard.clipmemHotkeyEnabled
     var launchAtLoginEnabled = UserDefaults.standard.clipmemLaunchAtLoginEnabled
     var launchAtLoginStatus = LoginItemController.status()
     var launchAtLoginError: UserError?
+    var defaultRecentHours = UserDefaults.standard.clipmemDefaultHours
+    var defaultQueryMode = UserDefaults.standard.clipmemDefaultMode
     var isRefreshing = false
     var isRunningAction = false
     var imageOptimizationProgress: ImageOptimizationProgressState?
@@ -42,8 +46,16 @@ final class AppModel {
     @ObservationIgnored private var historyOpenRequestID = 0
     @ObservationIgnored private var settingsOpenRequestID = 0
     @ObservationIgnored private var pasteboardMonitor: PasteboardChangeMonitor?
+    @ObservationIgnored private var appRefreshNotificationMonitor: AppRefreshNotificationMonitor?
+    @ObservationIgnored private var revisionMonitorTask: Task<Void, Never>?
+    @ObservationIgnored private var observedRevision: ArchiveRevision?
+    @ObservationIgnored private var revisionRefreshInFlight = false
+    @ObservationIgnored private var configurationGeneration = 0
     @ObservationIgnored private var recentRefreshCoordinator: RecentPreviewRefreshCoordinator?
     @ObservationIgnored private var recentPreviewRefreshedAt: Date?
+    @ObservationIgnored private var openQuickRecallAction: (@MainActor () -> Void)?
+    @ObservationIgnored private var lastResolvedBinaryPath = UserDefaults.standard.string(forKey: PreferenceKey.binaryPathOverride)
+    @ObservationIgnored private var lastResolvedDatabasePath = UserDefaults.standard.string(forKey: PreferenceKey.databasePathOverride)
 
     init(loadRecentPreview: (@MainActor () async throws -> [ClipmemItem])? = nil) {
         self.loadRecentPreview = loadRecentPreview ?? {
@@ -68,7 +80,14 @@ final class AppModel {
         await installSelfIgnoreIfNeeded()
         await refreshAll()
         startPasteboardMonitorIfNeeded()
+        startAppRefreshNotificationMonitorIfNeeded()
+        startRevisionMonitorIfNeeded()
         await checkForUpdatesIfNeeded()
+    }
+
+    deinit {
+        revisionMonitorTask?.cancel()
+        appRefreshNotificationMonitor?.stop()
     }
 
     func refreshAll() async {
@@ -83,7 +102,9 @@ final class AppModel {
 
     func refreshStatus() async {
         do {
-            serviceStatus = try await client.serviceStatus()
+            let status = try await client.serviceStatus()
+            serviceStatus = status
+            observedRevision = status.revision ?? observedRevision
         } catch {
             serviceStatus = nil
             lastError = UserError(error)
@@ -370,6 +391,49 @@ final class AppModel {
         showActionMessage("Upgrade command copied")
     }
 
+    func copyAgentContextCommand() {
+        PasteboardActions.copyPlainText(agentCommand("agents context --format json"))
+        showActionMessage("Agent context command copied")
+    }
+
+    func copyAgentSkillInstallCommand() {
+        PasteboardActions.copyPlainText(agentCommand("agents openclaw install-skill"))
+        showActionMessage("Agent skill install command copied")
+    }
+
+    func copyAgentOpenClawDoctorCommand() {
+        PasteboardActions.copyPlainText(agentCommand("agents openclaw doctor"))
+        showActionMessage("OpenClaw doctor command copied")
+    }
+
+    func copyAgentHermesDoctorCommand() {
+        PasteboardActions.copyPlainText(agentCommand("agents hermes doctor"))
+        showActionMessage("Hermes doctor command copied")
+    }
+
+    func copyAgentPrintSkillCommand() {
+        PasteboardActions.copyPlainText(agentCommand("agents openclaw print-skill"))
+        showActionMessage("Print skill command copied")
+    }
+
+    func copyAgentCapabilityMapCommand() {
+        PasteboardActions.copyPlainText("\(agentCommand("agents context --format json")) | jq '.capabilities'")
+        showActionMessage("Capability map command copied")
+    }
+
+    private func agentCommand(_ arguments: String) -> String {
+        let databasePath = UserDefaults.standard.string(forKey: PreferenceKey.databasePathOverride)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard databasePath.isEmpty == false else {
+            return "clipmem \(arguments)"
+        }
+        return "clipmem --db \(shellQuoted(databasePath)) \(arguments)"
+    }
+
+    private func shellQuoted(_ value: String) -> String {
+        "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
+    }
+
     func openUpdateRelease() {
         guard let releaseURL = updateStatus.releaseURL else { return }
         NSWorkspace.shared.open(releaseURL)
@@ -399,6 +463,8 @@ final class AppModel {
     }
 
     func configureHotkey(enabled: Bool, openQuickRecall: @escaping @MainActor () -> Void) {
+        openQuickRecallAction = openQuickRecall
+        hotkeyEnabled = enabled
         if enabled {
             hotkeyMessage = hotKeyManager.registerDefault(action: openQuickRecall)
         } else {
@@ -490,6 +556,95 @@ final class AppModel {
         monitor.start()
     }
 
+    private func startRevisionMonitorIfNeeded() {
+        guard revisionMonitorTask == nil else { return }
+        revisionMonitorTask = Task { [weak self] in
+            while Task.isCancelled == false {
+                try? await Task.sleep(for: .seconds(2))
+                guard Task.isCancelled == false else { return }
+                await self?.pollArchiveRevision()
+            }
+        }
+    }
+
+    private func startAppRefreshNotificationMonitorIfNeeded() {
+        guard appRefreshNotificationMonitor == nil else { return }
+        let monitor = AppRefreshNotificationMonitor { [weak self] in
+            Task { await self?.handleAppRefreshNotification() }
+        }
+        appRefreshNotificationMonitor = monitor
+        monitor.start()
+    }
+
+    private func handleAppRefreshNotification() async {
+        await refreshAppPreferences()
+        await pollArchiveRevision()
+    }
+
+    private func pollArchiveRevision() async {
+        guard revisionRefreshInFlight == false else { return }
+        revisionRefreshInFlight = true
+        defer { revisionRefreshInFlight = false }
+
+        let defaults = UserDefaults.standard
+        defaults.synchronize()
+        if lastResolvedBinaryPath != defaults.string(forKey: PreferenceKey.binaryPathOverride)
+            || lastResolvedDatabasePath != defaults.string(forKey: PreferenceKey.databasePathOverride) {
+            await refreshAppPreferences()
+            return
+        }
+
+        let generation = configurationGeneration
+        do {
+            let next = try await client.serviceRevision()
+            guard generation == configurationGeneration else { return }
+            guard let previous = observedRevision else {
+                observedRevision = next
+                return
+            }
+            guard next.revision > previous.revision else {
+                observedRevision = next
+                return
+            }
+
+            await refreshForRevisionChange(from: previous, to: next)
+            observedRevision = next
+            lastError = nil
+        } catch {
+            if case ClipmemClientError.setupNeeded = error {
+                observedRevision = nil
+                return
+            }
+            lastError = UserError(error)
+        }
+    }
+
+    private func refreshForRevisionChange(from previous: ArchiveRevision, to next: ArchiveRevision) async {
+        let archiveChanged = next.archiveContentRevision != previous.archiveContentRevision
+        let ocrChanged = next.ocrRevision != previous.ocrRevision
+        let settingsChanged = next.settingsRevision != previous.settingsRevision
+        let storageChanged = next.storageRevision != previous.storageRevision
+        let serviceChanged = next.serviceRevision != previous.serviceRevision
+        let appPreferencesChanged = next.appPreferencesRevision != previous.appPreferencesRevision
+
+        if serviceChanged {
+            await refreshStatus()
+        }
+        if settingsChanged {
+            await refreshSettings()
+        }
+        if appPreferencesChanged {
+            await refreshAppPreferences()
+        }
+        if archiveChanged || ocrChanged {
+            _ = await refreshRecentPreview()
+            clipboardHistoryRevision += 1
+        }
+        if storageChanged, doctorReport != nil {
+            await refreshDoctor()
+        }
+    }
+
     private func recentCoordinator() -> RecentPreviewRefreshCoordinator {
         if let recentRefreshCoordinator {
             return recentRefreshCoordinator
@@ -504,6 +659,117 @@ final class AppModel {
         }
         recentRefreshCoordinator = coordinator
         return coordinator
+    }
+
+    private func refreshAppPreferences() async {
+        let defaults = UserDefaults.standard
+        defaults.synchronize()
+
+        let previousBinaryPath = lastResolvedBinaryPath
+        let previousDatabasePath = lastResolvedDatabasePath
+        let previousHotkeyEnabled = hotkeyEnabled
+        let previousLaunchAtLoginEnabled = launchAtLoginEnabled
+        let previousUpdateStatus = updateStatus
+        let previousDefaultRecentHours = defaultRecentHours
+        let previousDefaultQueryMode = defaultQueryMode
+        let nextBinaryPath = defaults.string(forKey: PreferenceKey.binaryPathOverride)
+        let nextDatabasePath = defaults.string(forKey: PreferenceKey.databasePathOverride)
+        lastResolvedBinaryPath = nextBinaryPath
+        lastResolvedDatabasePath = nextDatabasePath
+        defaultRecentHours = defaults.clipmemDefaultHours
+        defaultQueryMode = defaults.clipmemDefaultMode
+
+        let nextHotkeyEnabled = defaults.clipmemHotkeyEnabled
+        hotkeyEnabled = nextHotkeyEnabled
+        if let openQuickRecallAction {
+            configureHotkey(enabled: nextHotkeyEnabled, openQuickRecall: openQuickRecallAction)
+        }
+
+        applyLaunchAtLoginPreference()
+        updateStatus = UpdateStatus.load()
+
+        if previousBinaryPath != nextBinaryPath || previousDatabasePath != nextDatabasePath {
+            configurationGeneration += 1
+            observedRevision = nil
+            await refreshAll()
+        } else if previousHotkeyEnabled != nextHotkeyEnabled || previousLaunchAtLoginEnabled != launchAtLoginEnabled || previousUpdateStatus != updateStatus {
+            clipboardHistoryRevision += 1
+        } else if previousDefaultRecentHours != defaultRecentHours || previousDefaultQueryMode != defaultQueryMode {
+            clipboardHistoryRevision += 1
+        }
+    }
+
+    private func applyLaunchAtLoginPreference() {
+        let desired = UserDefaults.standard.clipmemLaunchAtLoginEnabled
+        let status = LoginItemController.status()
+        let isApplied = status == .enabled
+        guard desired != isApplied else {
+            launchAtLoginEnabled = desired
+            launchAtLoginStatus = status
+            launchAtLoginError = nil
+            return
+        }
+        do {
+            try LoginItemController.setEnabled(desired)
+            launchAtLoginEnabled = desired
+            launchAtLoginStatus = LoginItemController.status()
+            launchAtLoginError = nil
+        } catch {
+            launchAtLoginStatus = LoginItemController.status()
+            launchAtLoginEnabled = launchAtLoginStatus == .enabled
+            launchAtLoginError = UserError(
+                message: "Could not apply launch at login preference.",
+                recovery: error.localizedDescription
+            )
+        }
+    }
+}
+
+final class AppRefreshNotificationMonitor: @unchecked Sendable {
+    private static let notificationRawName = "io.openclaw.clipmem.revision.changed"
+    private static let notificationName = CFNotificationName(notificationRawName as CFString)
+
+    private let onRefresh: @MainActor @Sendable () -> Void
+    private var isStarted = false
+
+    init(onRefresh: @escaping @MainActor @Sendable () -> Void) {
+        self.onRefresh = onRefresh
+    }
+
+    deinit {
+        stop()
+    }
+
+    func start() {
+        guard isStarted == false else { return }
+        isStarted = true
+        let center = CFNotificationCenterGetDarwinNotifyCenter()
+        CFNotificationCenterAddObserver(
+            center,
+            Unmanaged.passUnretained(self).toOpaque(),
+            { _, observer, _, _, _ in
+                guard let observer else { return }
+                let monitor = Unmanaged<AppRefreshNotificationMonitor>.fromOpaque(observer).takeUnretainedValue()
+                Task { @MainActor in
+                    monitor.onRefresh()
+                }
+            },
+            AppRefreshNotificationMonitor.notificationName.rawValue,
+            nil,
+            .deliverImmediately
+        )
+    }
+
+    func stop() {
+        guard isStarted else { return }
+        let center = CFNotificationCenterGetDarwinNotifyCenter()
+        CFNotificationCenterRemoveObserver(
+            center,
+            Unmanaged.passUnretained(self).toOpaque(),
+            AppRefreshNotificationMonitor.notificationName,
+            nil
+        )
+        isStarted = false
     }
 }
 

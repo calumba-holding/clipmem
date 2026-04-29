@@ -2,6 +2,10 @@ pub(super) const ROOT_AFTER_HELP: &str = "\
 Examples:
   clipmem setup
   clipmem service status
+  clipmem service providers --format json
+  clipmem service revision --format json
+  clipmem app settings show --format json
+  clipmem app update-check run --format json
   clipmem recall \"what was that shell command?\"
   clipmem recent --hours 24
   clipmem stats
@@ -12,7 +16,46 @@ Agent-first flow:
   1. Use `clipmem recall` for the best answer plus alternatives.
   2. Use `clipmem timeline` for chronological event history.
   3. Use `clipmem search` for direct lexical matching.
-  4. Use `clipmem get` for nested snapshot detail.";
+  4. Use `clipmem get` for nested snapshot detail.
+  5. Use `clipmem app settings show|set|clear --format json` for app preferences.
+  6. Run `clipmem agents context --format json` before multi-step work.
+  7. See docs/action-parity.md for the full capability map.";
+
+pub(super) const APP_AFTER_HELP: &str = "\
+Examples:
+  clipmem app settings show --format json
+  clipmem app settings set default-recent-hours 12 --format json
+  clipmem app settings clear binary-path-override --format json
+  clipmem app update-check run --format json
+  clipmem app quit --format json
+
+Notes:
+  - App commands manage menu bar app preferences, not capture policy.
+  - Preference mutations bump `app_preferences_revision` for open app refresh.";
+
+pub(super) const APP_SETTINGS_AFTER_HELP: &str = "\
+Examples:
+  clipmem app settings show --format json
+  clipmem app settings set binary-path-override /usr/local/bin/clipmem --format json
+  clipmem app settings set database-path-override /tmp/clipmem.sqlite3 --format json
+  clipmem app settings set default-recent-hours 12 --format json
+  clipmem app settings set default-query-mode recall --format json
+  clipmem app settings set hotkey-enabled false --format json
+  clipmem app settings clear binary-path-override --format json
+
+Keys:
+  binary-path-override, database-path-override, default-recent-hours,
+  default-query-mode, hotkey-enabled";
+
+pub(super) const AGENTS_CONTEXT_AFTER_HELP: &str = "\
+Examples:
+  clipmem agents context --format json
+  clipmem agents context --human
+
+Notes:
+  - JSON output includes `generated_at`, `clipmem_version`, database path, service health, capture settings, menu bar app state, recent activity metadata, privacy guidance, and grouped capabilities.
+  - Context is metadata-first. It excludes raw clipboard content but includes operational metadata such as app names, timestamps, counts, paths, and app preference state.
+  - Use retrieval commands such as `recall`, `search`, `recent`, `timeline`, `get`, or `export` when clipboard content is needed.";
 
 pub(super) const WATCH_AFTER_HELP: &str = "\
 Examples:
@@ -150,6 +193,7 @@ Notes:
 pub(super) const STORAGE_AFTER_HELP: &str = "\
 Examples:
   clipmem storage compact --format json
+  clipmem storage image-candidates --format json
   clipmem storage compact --dry-run --format json
   clipmem storage optimize-images --format json
   clipmem storage optimize-images --dry-run --format json
@@ -171,12 +215,16 @@ Examples:
   clipmem settings ocr on
   clipmem settings retention 30d
   clipmem settings retention forever
+  clipmem settings reset --format json
   clipmem settings ignore add com.apple.Passwords
   clipmem settings ignore list --format json";
 
 pub(super) const OCR_AFTER_HELP: &str = "\
 Examples:
   clipmem ocr status
+  clipmem ocr candidates --format json
+  clipmem ocr get <raw-sha256> --format json
+  clipmem ocr clear <raw-sha256> --format json
   clipmem ocr run
   clipmem ocr run --limit 50
   clipmem ocr run --snapshot 42 --retry-failed --format json
@@ -210,12 +258,14 @@ Examples:
   clipmem service start
   clipmem service status
   clipmem service status --json
+  clipmem service revision --format json
   clipmem service stop
   clipmem service uninstall
 
 Notes:
   - Homebrew installs prefer `brew services`; Cargo and manual installs use a direct LaunchAgent.
-  - `status` is informational and reports freshness, provider state, and any setup conflicts.";
+  - `status` is informational and reports freshness, provider state, and any setup conflicts.
+  - `revision` prints the archive revision ledger without probing service providers.";
 
 pub(super) const SERVICE_STATUS_AFTER_HELP: &str = "\
 Examples:
@@ -227,6 +277,17 @@ Notes:
   - Text output is intended for humans.
   - Human output is polished for interactive terminals.
   - `--json` is the stable machine-readable form used by packaged skill health checks.";
+
+pub(super) const SERVICE_REVISION_AFTER_HELP: &str = "\
+Examples:
+  clipmem service revision
+  clipmem service revision --format json
+  clipmem service revision --json
+
+Notes:
+  - Reports the durable archive revision counters from the active database.
+  - Does not probe Homebrew, LaunchAgent, or other service providers.
+  - Use this for lightweight polling when only change detection is needed.";
 
 pub(super) const OPENCLAW_INSTALL_AFTER_HELP: &str = "\
 Examples:

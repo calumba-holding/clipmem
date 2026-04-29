@@ -4,7 +4,7 @@ description: Recall what the user copied on this Mac via the local clipmem archi
 license: MIT
 compatibility: macOS with a local `clipmem` binary on PATH. Works in any agent runtime with filesystem and shell access. The `clipmem` watcher daemon (LaunchAgent `io.openclaw.clipmem.watch`) should be running for continuous capture; a stale watcher is the most common cause of empty results.
 metadata:
-  version: "1.3.3"
+  version: "1.3.4"
   variant: "portable"
 ---
 
@@ -47,17 +47,44 @@ Always pick the narrowest command that answers the question, and always pass `--
 3. **`clipmem search`** — direct lexical / FTS matching. Use when you need precise substring hits or the user gave you an exact phrase.
 4. **`clipmem get <snapshot_id>`** — nested item/representation detail for a single snapshot already in hand.
 5. **`clipmem export <snapshot_id> --item <n> --uti <uti> --out <path> [--force]`** — raw bytes. Use when the stored content is binary/image/PDF and `best_text` is empty or partial. Prefer a fresh output path; use `--force` only to replace an existing regular file.
+6. **`clipmem ocr candidates`, `clipmem ocr get`, `clipmem ocr clear`, and `clipmem storage image-candidates`** — inspect queued OCR or image optimization work before running batch workflows, or clear one stale OCR result.
+7. **`clipmem settings reset --format json`** — reset capture policy and ignored apps when the user explicitly asks to restore defaults.
+8. **`clipmem service providers --format json`** — inspect service provider state without starting or stopping capture.
+9. **`clipmem service revision --format json`** — inspect archive revision counters without probing service providers.
+10. **`clipmem app settings`, `clipmem app launch-at-login`, `clipmem app update-check run`, or `clipmem app quit` with `--format json`** — inspect or change menu bar app preferences and app-owned state when the user asks about app defaults, update checks, or quitting the app.
+11. **`clipmem agents context --format json`** — compact health, settings, app state, recent activity, revision, stats, privacy, and capability context before multi-step work.
+
+## Primitive command taxonomy
+
+Primitive commands expose one bounded read or mutation that can be composed
+directly. Convenience workflows such as `recall`, `setup`, `purge`, `ocr run`, and
+`storage optimize-images` remain useful, but verify uncertain results with
+`search`, `recent`, `timeline`, or `get`, and preview broad mutations with
+candidate or dry-run commands when available.
 
 The full flag reference, JSON envelope, and kind values live in [references/commands.md](references/commands.md), [references/json-schema.md](references/json-schema.md), and [references/examples.md](references/examples.md).
 
+## Critical behaviour rules
+
+- Before answering from a stale, empty, or ambiguous archive, run `clipmem agents context --format json` and use `generated_at`, health, settings, app state, recent activity, revision, stats, privacy, and capability fields to decide whether to broaden search or diagnose setup.
+- Always use `--format json` when you will parse the response. `--format toon` is for token-efficient enumeration only. `--format jsonl` is for streaming many rows into a pipeline. Never parse `md` or `text`.
+- Treat `recall` as a convenience ranking helper, not an authority. For uncertain cases, compose primitive commands in this order: `search`, `recent`, `timeline`, `get`, then OS follow-through such as `pbcopy`, `open`, or `open -R`.
+- Never claim "nothing found" until you have broadened the search once and checked `truncated` / `next_cursor`.
+- When `best_match_confidence` is `"low"` or there are several plausible hits, present the top candidates instead of pretending certainty.
+- For exact-text requests, quote `best_text` verbatim. Do not paraphrase commands, SQL, code, URLs, or file paths unless the user asked for a summary.
+
+## Capability map
+
+The repo-side agent-native action parity contract lives in `docs/action-parity.md`. Use it when you need the maintained map from user-visible outcomes to agent-accessible commands, entity CRUD expectations, and derived-cache boundaries.
+
 ## Output format rule
 
-- `--format json` — single structured object. Use whenever you will parse the response. Stable within `schema_version: 2`.
+- `--format json` — structured output. Retrieval envelopes are stable within `schema_version: 2`; management and inspection commands use command-specific JSON shapes, so parse documented keys directly.
 - `--format toon` — flat, token-efficient list. Prefer for high-cardinality enumeration (`timeline`, `search`, `recent`, `recall`) when you only need the top fields. Note: `get` does **not** support `toon`.
 - `--format jsonl` — newline-delimited records. Use when streaming many rows into a pipeline.
 - `--format md` / `--format text` — human-readable previews only; never parse these.
 
-`--json` is an alias for `--format json` on `search`, `recent`, `timeline`, `get`, `capture-once`, and `doctor`.
+`--json` is an alias for `--format json` on `search`, `recent`, `timeline`, `get`, `service revision`, `capture-once`, and `doctor`.
 
 ## Which command for which intent
 

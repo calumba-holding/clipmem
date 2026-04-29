@@ -9,13 +9,99 @@ versioning where practical.
 
 ## Unreleased
 
+### Added
+
+- Added an agent-native action parity contract that maps user-visible clipboard
+  outcomes to CLI and skill surfaces, and linked it from the CLI help, packaged
+  skills, and architecture docs.
+- Added a durable archive revision ledger that records archive, settings, OCR,
+  storage, and service changes so external CLI and agent mutations can be
+  observed by app and integration clients.
+- Added revision-aware menu bar refresh handling so the macOS app detects
+  external archive, settings, OCR, storage, and service changes made by agents
+  or other CLI clients.
+- Added `clipmem agents context`, a compact JSON/text context bundle for agents
+  that reports service health, capture policy, archive revision, stats, and the
+  maintained capability map.
+- Added `clipmem app settings` commands for reading, setting, and clearing menu
+  bar app preferences such as binary/database overrides, default recent hours,
+  default query mode, and hotkey enablement.
+- Added `clipmem app launch-at-login` and `clipmem app update-check` commands
+  for agent-readable menu bar app state, including the app-owned launch
+  preference bridge and cached update-check state.
+- Added primitive `clipmem ocr candidates` and `clipmem storage image-candidates`
+  inspection commands so agents can list queued OCR work and image optimization
+  candidates without running batch workflows.
+- Added `clipmem service providers --format json` for read-only service provider
+  discovery without starting, stopping, or reinstalling capture.
+- Added `clipmem service revision --format json` for lightweight archive
+  revision polling without probing service providers.
+- Added `clipmem settings reset` plus `clipmem ocr get` and `clipmem ocr clear`
+  so capture settings and per-hash OCR results have explicit agent-accessible
+  reset/read/delete operations.
+- Strengthened packaged agent skill policy around context preflights, primitive
+  command composition, low-confidence handling, exact-text quoting, and OS
+  follow-through actions.
+- Added menu bar Diagnostics discovery actions for copying agent context and
+  skill install commands, and documented the agent context path in getting
+  started and menu bar app docs.
+- Added `clipmem app update-check run` and `clipmem app quit` so agents can
+  run the menu bar app's live update check and request app quit through CLI
+  parity commands.
+- Expanded `clipmem agents context` with generation time, safe menu bar app
+  state, bounded recent activity metadata, privacy guidance, and a fuller
+  capability map.
+- Added best-effort macOS app refresh notifications after CLI mutations so an
+  open menu bar app can react faster while still using archive revisions as
+  the durable source of truth.
+- Added richer menu bar Diagnostics agent discovery actions for OpenClaw and
+  Hermes doctor commands, packaged skill inspection, and the maintained
+  capability map.
+
 ### Changed
 
 - Refreshed the README menu bar popover screenshot to show Markdown rendering,
   link badges, and updated row icons.
+- Updated the ClawHub `clipboard-memory` skill package to 1.3.4 for the
+  agent-native command and JSON contract updates.
+- Updated CI file-length limits for the larger agent-native command and
+  menu bar refresh implementation files.
 
 ### Fixed
 
+- Fixed `clipmem agents context --format json` on non-macOS test and
+  integration environments so it still returns database, settings, revision,
+  and capability metadata when macOS service probes are unavailable.
+- Fixed app preference reads on non-macOS hosts so read-only app state commands
+  report defaults instead of failing on a missing `defaults` command.
+- Fixed `ocr clear` so it targets existing archives instead of creating a
+  missing database path while clearing OCR state.
+- Fixed the `clipmem agents context` capability map so it advertises only the
+  output formats that the context command accepts.
+- Fixed service revision recording so service start/stop/setup/uninstall does
+  not create missing archive databases or fail completed service actions while
+  recording best-effort app refresh metadata.
+- Fixed `service revision` text output to preserve its existing field layout
+  while keeping newer revision counters available in JSON output.
+- Fixed best-effort macOS app refresh notifications so detached `notifyutil`
+  calls are reaped after signaling the menu bar app.
+- Fixed open menu bar app preference rehydration after external `clipmem app`
+  mutations so database/binary overrides, launch-at-login, hotkey state, and
+  cached update-check state refresh without restarting the app.
+- Fixed external agent and CLI mutations so open History and Quick Recall
+  windows refresh search, recall, recent, timeline, OCR, storage, and app
+  default-mode/default-hours state from the durable revision ledger.
+- Fixed `clipmem app` preference mutations to update both the invocation
+  database and the configured app database override, so an already-open app can
+  observe changes even when it uses a different archive path.
+- Fixed `clipmem app update-check run --format json` to store integer
+  timestamps so macOS defaults writes remain compatible with the app reader.
+- Fixed read-only OCR inspection commands so `ocr candidates` and `ocr get` fail
+  on missing archives instead of creating an empty database.
+- Fixed `storage image-candidates` to inspect optimization metadata without
+  loading stored image blobs.
+- Fixed app refresh notifications so CLI mutations do not block on
+  `notifyutil`.
 - Fixed menu bar Markdown rendering for multiline text so headings and body text
   keep their line breaks in recent rows and History instead of being flattened
   into one line before rendering.

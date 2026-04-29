@@ -6,7 +6,7 @@ struct HistoryWindowView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var history: HistoryModel
-    @SceneStorage("history.mode") private var storedMode = QueryMode.recent.rawValue
+    @SceneStorage("history.mode") private var storedMode = ""
     @SceneStorage("history.query") private var storedQuery = ""
     @SceneStorage("history.inspector") private var inspectorPresented = false
     @SceneStorage("history.selected") private var storedSelectedID = 0
@@ -256,8 +256,8 @@ struct HistoryWindowView: View {
                     EmptyStateView(
                         title: displayMode == .recent || displayMode == .timeline ? "No recent history" : "No results",
                         detail: displayMode == .recent || displayMode == .timeline
-                            ? "Start copying to build your clipboard history."
-                            : "Try adjusting your filters or search query.",
+                            ? "Start copying to build your clipboard history, or run clipmem agents context --format json to check capture health."
+                            : "Try adjusting your filters or use the agent context command in Diagnostics to check archive freshness.",
                         symbol: displayMode == .recent || displayMode == .timeline ? "clock" : "magnifyingglass"
                     )
                 }
@@ -326,7 +326,8 @@ struct HistoryWindowView: View {
     }
 
     private func restoreSceneState() {
-        let queryMode = (QueryMode(rawValue: storedMode) ?? .recent).historyCompatibleMode
+        let restoredMode = storedMode.isEmpty ? UserDefaults.standard.clipmemDefaultMode.rawValue : storedMode
+        let queryMode = (QueryMode(rawValue: restoredMode) ?? .recent).historyCompatibleMode
         let (dm, ss) = DisplayMode.from(queryMode: queryMode)
         displayMode = dm
         searchStyle = ss

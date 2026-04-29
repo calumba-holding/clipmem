@@ -13,6 +13,10 @@ struct CommandConstructionTests {
         #expect(command.arguments.contains("--cursor"))
     }
 
+    @Test func serviceRevisionRequestsJSON() {
+        #expect(ClipmemCommand.serviceRevision().arguments == ["service", "revision", "--format", "json"])
+    }
+
     @Test func actionCommandsRequestJSON() {
         #expect(ClipmemCommand.restore(snapshotID: 42).arguments == ["restore", "42", "--format", "json"])
         #expect(ClipmemCommand.forget(snapshotID: 42).arguments == ["forget", "42", "--format", "json"])
@@ -27,6 +31,17 @@ struct CommandConstructionTests {
         #expect(ClipmemCommand.storageOptimizeImages(dryRun: true, limit: nil).arguments.contains("--dry-run"))
         #expect(ClipmemCommand.storageOptimizeImagesProgress(dryRun: false, limit: 50).arguments == ["storage", "optimize-images", "--progress", "jsonl", "--limit", "50"])
         #expect(ClipmemCommand.storageOptimizeImagesProgress(dryRun: true, limit: nil).arguments.contains("--dry-run"))
+        #expect(ClipmemCommand.appSettingsShow().arguments == ["app", "settings", "show", "--format", "json"])
+        #expect(ClipmemCommand.appSettingsSet("default-query-mode", value: "timeline").arguments == ["app", "settings", "set", "default-query-mode", "timeline", "--format", "json"])
+        #expect(ClipmemCommand.appSettingsClear("binary-path-override").arguments == ["app", "settings", "clear", "binary-path-override", "--format", "json"])
+        #expect(ClipmemCommand.appLaunchAtLoginShow().arguments == ["app", "launch-at-login", "show", "--format", "json"])
+        #expect(ClipmemCommand.appLaunchAtLoginSet(true).arguments == ["app", "launch-at-login", "set", "on", "--format", "json"])
+        #expect(ClipmemCommand.appLaunchAtLoginSet(false).arguments == ["app", "launch-at-login", "set", "off", "--format", "json"])
+        #expect(ClipmemCommand.appLaunchAtLoginClear().arguments == ["app", "launch-at-login", "clear", "--format", "json"])
+        #expect(ClipmemCommand.appUpdateCheckShow().arguments == ["app", "update-check", "show", "--format", "json"])
+        #expect(ClipmemCommand.appUpdateCheckRun().arguments == ["app", "update-check", "run", "--format", "json"])
+        #expect(ClipmemCommand.appUpdateCheckClear().arguments == ["app", "update-check", "clear", "--format", "json"])
+        #expect(ClipmemCommand.appQuit().arguments == ["app", "quit", "--format", "json"])
     }
 
     @Test func filtersAppendExpectedFlags() {

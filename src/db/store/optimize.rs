@@ -14,9 +14,13 @@ use super::ocr::rebuild_snapshot_ocr_cache;
 use super::rebuild::{
     rebuild_snapshot_summary, recompute_snapshot_fingerprint, snapshot_fingerprint_with_replacement,
 };
+use super::revision::bump_revision_tx;
 use crate::db::core::{clamp_result_limit, pragma_usize, storage_file_sizes};
 use crate::db::sqlite_helpers::{collect_rows, row_usize, usize_to_i64};
-use crate::db::types::{Database, ImageOptimizationProgressEvent, ImageOptimizationReport};
+use crate::db::types::{
+    ArchiveChangeKind, Database, ImageOptimizationCandidateSummary, ImageOptimizationProgressEvent,
+    ImageOptimizationReport,
+};
 use crate::model::{hash_bytes, truncate_chars};
 
 #[derive(Debug, Clone)]
@@ -88,6 +92,13 @@ impl Database {
             report: Box::new(report.clone()),
         })?;
         Ok(report)
+    }
+
+    pub(crate) fn image_optimization_candidate_summaries(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ImageOptimizationCandidateSummary>> {
+        load_image_optimization_candidate_summaries(&self.conn, limit)
     }
 
     fn process_image_optimization_candidates(
@@ -300,6 +311,38 @@ pub(in crate::db) fn load_image_optimization_candidates(
     collect_rows(rows).context("collect image optimization candidates")
 }
 
+fn load_image_optimization_candidate_summaries(
+    conn: &rusqlite::Connection,
+    limit: usize,
+) -> Result<Vec<ImageOptimizationCandidateSummary>> {
+    let limit = usize_to_i64(clamp_result_limit(limit))?;
+    let mut stmt = conn
+        .prepare(
+            r"
+                SELECT snapshot_id, item_index, uti, byte_len, raw_sha256
+                FROM item_representations
+                WHERE kind = 'image'
+                  AND image_compression_status = 'uncompressed'
+                  AND length(blob_value) > 0
+                ORDER BY byte_len DESC, snapshot_id ASC, item_index ASC, uti ASC
+                LIMIT ?1
+            ",
+        )
+        .context("prepare image optimization candidate summary query")?;
+    let rows = stmt
+        .query_map([limit], |row| {
+            Ok(ImageOptimizationCandidateSummary::new(
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row_usize(row, 3)?,
+                row.get(4)?,
+            ))
+        })
+        .context("execute image optimization candidate summary query")?;
+    collect_rows(rows).context("collect image optimization candidate summaries")
+}
+
 pub(in crate::db) fn database_path_is_file_backed(path: &Path) -> bool {
     path != Path::new(":memory:")
 }
@@ -503,6 +546,13 @@ pub(in crate::db) fn replace_image_with_optimized_webp(
     )
     .context("update optimized snapshot fingerprint")?;
     rebuild_snapshot_ocr_cache(&tx, candidate.snapshot_id)?;
+    bump_revision_tx(
+        &tx,
+        &[
+            ArchiveChangeKind::ArchiveContent,
+            ArchiveChangeKind::Storage,
+        ],
+    )?;
 
     tx.commit()
         .context("commit image optimization transaction")?;

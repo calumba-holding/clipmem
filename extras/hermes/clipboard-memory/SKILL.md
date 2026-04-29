@@ -1,7 +1,7 @@
 ---
 name: clipboard-memory
 description: Recall what the user copied on this Mac via the local clipmem archive: exact text, commands, SQL, URLs, file paths, HTML, images, and PDFs. Trigger on requests like "what was that command I copied?", "paste back that SQL", "the URL I copied from Safari", "show me what I copied from Xcode today", "find the snippet/path/link from before I restarted", and indirect paraphrases about clipboard history or recovering copied content. Prefer this over web, repo, or filesystem search only when the target was likely copied.
-version: "1.3.1"
+version: "1.3.4"
 license: MIT
 platforms: [macos]
 metadata:
@@ -62,18 +62,27 @@ say "clipboard", "copy", or "paste".
    - snapshot id already known -> `get`
    - binary / image / PDF recovery -> `get` then `export`
 4. Add only the filters the user actually implied: `--hours`, `--app`,
-   `--kind`, `--has-url`, `--has-file`, `--prefer-recent`.
+   `--kind`, `--has-url`, `--has-file-url`, `--prefer-recent`.
 5. If the first pass is weak, empty, or low-confidence, broaden once before
    giving up: widen `--hours`, drop source filters, inspect `alternatives`,
    then switch between `recall`, `search`, `recent`, and `timeline`.
 6. Return the recovered content plus provenance such as `observed_at`,
    `app_name`, and `snapshot_id` when useful.
 
+## Capability map
+
+The repo-side agent-native action parity contract lives in
+`docs/action-parity.md`. Use it when you need the maintained map from
+user-visible outcomes to agent-accessible commands, entity CRUD expectations,
+and derived-cache boundaries.
+
 ## Critical behavior rules
 
+- Before answering from a stale, empty, or ambiguous archive, run `clipmem agents context --format json` and use `generated_at`, health, settings, app state, recent activity, revision, stats, privacy, and capability fields to decide whether to broaden search or diagnose setup.
 - Always use `--format json` when you will parse the response. `--format toon`
   is for token-efficient enumeration only. `--format jsonl` is for streaming
   many rows into a pipeline. Never parse `md` or `text`.
+- Treat `recall` as a convenience ranking helper, not an authority. For uncertain cases, compose primitive commands in this order: `search`, `recent`, `timeline`, `get`, then OS follow-through such as `pbcopy`, `open`, or `open -R`.
 - Never claim "nothing found" until you have broadened the search once and
   checked `truncated` / `next_cursor`.
 - When `best_match_confidence` is `"low"` or there are several plausible hits,
@@ -119,6 +128,32 @@ Always pick the narrowest command that answers the question.
    single snapshot already in hand.
 6. **`clipmem export SNAPSHOT_ID --item N --uti UTI --out PATH`** - raw bytes
    for binary, image, or PDF payloads.
+7. **`clipmem ocr candidates`, `clipmem ocr get`, `clipmem ocr clear`, and
+   `clipmem storage image-candidates`** - inspect queued OCR or image
+   optimization work before running batch workflows, or clear one stale OCR
+   result.
+8. **`clipmem settings reset --format json`** - reset capture policy and ignored
+   apps when the user explicitly asks to restore defaults.
+9. **`clipmem service providers --format json`** - inspect service provider
+   state without starting or stopping capture.
+10. **`clipmem service revision --format json`** - inspect archive revision
+   counters without probing service providers.
+11. **`clipmem app settings`, `clipmem app launch-at-login`,
+   `clipmem app update-check run`, or `clipmem app quit` with
+   `--format json`** - inspect or change menu bar app preferences and app-owned
+   state when the user asks about app defaults, update checks, or quitting the
+   app.
+12. **`clipmem agents context --format json`** - compact health, settings, app
+   state, recent activity, revision, stats, privacy, and capability context
+   before multi-step work.
+
+## Primitive command taxonomy
+
+Primitive commands expose one bounded read or mutation that can be composed
+directly. Convenience workflows such as `recall`, `setup`, `purge`, `ocr run`, and
+`storage optimize-images` remain useful, but verify uncertain results with
+`search`, `recent`, `timeline`, or `get`, and preview broad mutations with
+candidate or dry-run commands when available.
 
 The full flag reference, JSON envelope, and kind values live in
 [references/commands.md](references/commands.md),
@@ -130,7 +165,7 @@ The full flag reference, JSON envelope, and kind values live in
 - **Command, SQL, or code snippet** - start with
   `clipmem recall "..." --format json --limit 5`; if punctuation matters,
   follow with `clipmem search "..." --mode literal --format json`.
-- **URL, path, or filename fragment** - add `--has-url` or `--has-file`; scope
+- **URL, path, or filename fragment** - add `--has-url` or `--has-file-url`; scope
   by `--app safari` or another app only if the user implied it.
 - **"Everything I copied today / from Xcode"** - use
   `clipmem timeline --hours 24 --app xcode --format json` (or `--hours 48` for
@@ -145,8 +180,9 @@ The full flag reference, JSON envelope, and kind values live in
 
 ## Output format rule
 
-- `--format json` - single structured object. Use whenever you will parse the
-  response. Stable within `schema_version: 2`.
+- `--format json` — structured output. Retrieval envelopes are stable within
+  `schema_version: 2`; management and inspection commands use
+  command-specific JSON shapes, so parse documented keys directly.
 - `--format toon` - flat, token-efficient list. Prefer for high-cardinality
   enumeration (`timeline`, `search`, `recent`, `recall`) when you only need the
   top fields. Note: `get` does **not** support `toon`.
@@ -156,7 +192,7 @@ The full flag reference, JSON envelope, and kind values live in
   these.
 
 `--json` is an alias for `--format json` on `search`, `recent`, `timeline`,
-`get`, `capture-once`, and `doctor`.
+`get`, `service revision`, `capture-once`, and `doctor`.
 
 ## Reading the response
 
