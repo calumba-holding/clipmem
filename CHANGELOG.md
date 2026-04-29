@@ -9,6 +9,8 @@ versioning where practical.
 
 ## Unreleased
 
+## 0.5.0 - 2026-04-29
+
 ### Added
 
 - Added an agent-native action parity contract that maps user-visible clipboard
