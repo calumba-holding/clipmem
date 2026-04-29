@@ -9,6 +9,9 @@ pub(in crate::cli) fn notify_app_refresh() {
         }
         let Ok(mut child) = std::process::Command::new("/usr/bin/notifyutil")
             .args(["-p", APP_REFRESH_NOTIFICATION])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .spawn()
         else {
             return;

@@ -767,3 +767,37 @@ fn export_json_reports_written_representation() -> Result<()> {
     cleanup_db(&path);
     Ok(())
 }
+
+#[test]
+fn export_accepts_bare_relative_output_path() -> Result<()> {
+    let path = temp_db_path("export-relative-out");
+    let ids = seed_database(&path, &[text_snapshot(1, "git status")])?;
+    let cwd = temp_test_dir("export-relative-cwd");
+    fs::create_dir_all(&cwd)?;
+
+    let output = run_cli_in_dir(
+        &[
+            "--db",
+            path.to_str().expect("db path should be UTF-8"),
+            "export",
+            &ids[0].to_string(),
+            "--item",
+            "0",
+            "--uti",
+            "public.utf8-plain-text",
+            "--out",
+            "relative-export.txt",
+        ],
+        &cwd,
+    );
+
+    assert!(output.status.success(), "{}", stderr_text(&output));
+    assert_eq!(
+        fs::read_to_string(cwd.join("relative-export.txt"))?,
+        "git status"
+    );
+
+    let _ = fs::remove_dir_all(&cwd);
+    cleanup_db(&path);
+    Ok(())
+}

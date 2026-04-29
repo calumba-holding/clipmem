@@ -274,6 +274,14 @@ pub(crate) fn run_cli(args: &[&str]) -> process::Output {
         .expect("clipmem binary should execute")
 }
 
+pub(crate) fn run_cli_in_dir(args: &[&str], cwd: &Path) -> process::Output {
+    Command::new(env!("CARGO_BIN_EXE_clipmem"))
+        .current_dir(cwd)
+        .args(args)
+        .output()
+        .expect("clipmem binary should execute in requested directory")
+}
+
 pub(crate) fn run_cli_with_env(args: &[&str], envs: &[(&str, &str)]) -> process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_clipmem"));
     command.args(args);

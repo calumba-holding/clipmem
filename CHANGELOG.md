@@ -9,6 +9,14 @@ versioning where practical.
 
 ## Unreleased
 
+### Fixed
+
+- Fixed `clipmem export --out <filename>` so bare relative output paths write
+  into the current directory instead of failing while preparing parent
+  directories.
+- Fixed best-effort app refresh notifications so JSON mutation commands do not
+  append `notifyutil` output after their JSON response on macOS.
+
 ## 0.5.0 - 2026-04-29
 
 ### Added

@@ -44,7 +44,11 @@ pub(in crate::cli) fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -
             ))
         })?;
 
-    if let Some(parent) = args.out.parent() {
+    if let Some(parent) = args
+        .out
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
         anyhow::Context::with_context(std::fs::create_dir_all(parent), || {
             format!("failed to create {}", parent.display())
         })?;
