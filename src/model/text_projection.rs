@@ -94,9 +94,8 @@ impl FlattenedTextProjection {
                 let Some(normalized_text) = normalize_nonempty_text(text_value) else {
                     continue;
                 };
-                let projected_text =
-                    projected_fragment_text(representation.kind(), &normalized_text);
-                let Some(fragment_text) = normalize_nonempty_text(&projected_text) else {
+                let projected_text = projected_fragment_text(representation.kind(), text_value);
+                let Some(fragment_text) = normalize_nonempty_display_text(&projected_text) else {
                     continue;
                 };
 
@@ -111,7 +110,7 @@ impl FlattenedTextProjection {
                     );
                 }
 
-                let fragment_key = fragment_text.to_lowercase();
+                let fragment_key = normalize_whitespace(&fragment_text).to_lowercase();
                 if fragment_keys.insert(fragment_key) {
                     fragments.push(TextFragment {
                         text: fragment_text.clone(),
@@ -249,6 +248,37 @@ fn normalize_nonempty_text(text: &str) -> Option<String> {
     let normalized = normalize_whitespace(text);
     let trimmed = normalized.trim();
     (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+fn normalize_nonempty_display_text(text: &str) -> Option<String> {
+    let normalized_breaks = text.replace("\r\n", "\n").replace('\r', "\n");
+    let trimmed = normalized_breaks.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    Some(
+        trimmed
+            .split('\n')
+            .map(normalize_line_whitespace)
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+}
+
+fn normalize_line_whitespace(line: &str) -> String {
+    let mut parts = line.split_whitespace();
+    let Some(first) = parts.next() else {
+        return String::new();
+    };
+
+    let mut out = String::with_capacity(line.len());
+    out.push_str(first);
+    for part in parts {
+        out.push(' ');
+        out.push_str(part);
+    }
+    out
 }
 
 fn push_distinct(values: &mut Vec<String>, seen: &mut HashSet<String>, candidate: String) {
@@ -429,5 +459,24 @@ mod tests {
             ClipboardKind::PlainText
         );
         assert_eq!(projection.text_fragments()[0].representation_index(), 0);
+    }
+
+    #[test]
+    fn projection_preserves_plain_text_line_breaks_for_display_text() {
+        let markdown = "# Release notes\n**Markdown rendering** is now live.";
+        let item = build_item(
+            0,
+            vec![build_representation(
+                "public.utf8-plain-text".to_string(),
+                Some(markdown.to_string()),
+                markdown.as_bytes().to_vec(),
+            )],
+        );
+
+        let projection = FlattenedTextProjection::from_items(&[item]);
+
+        assert_eq!(projection.best_text(), markdown);
+        assert_eq!(projection.text_summary(), markdown);
+        assert_eq!(projection.text_fragments()[0].text(), markdown);
     }
 }

@@ -11,6 +11,9 @@ versioning where practical.
 
 ### Fixed
 
+- Fixed menu bar Markdown rendering for multiline text so headings and body text
+  keep their line breaks in recent rows and History instead of being flattened
+  into one line before rendering.
 - Fixed shared retrieval filters so `--hours 0` is rejected instead of
   applying an effectively empty "since now" result window.
 - Updated the crates.io trusted publishing action to its Node.js 24 release so
