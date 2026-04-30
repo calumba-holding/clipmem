@@ -9,6 +9,12 @@ versioning where practical.
 
 ## Unreleased
 
+### Fixed
+
+- Fixed `clipmem capture` so restored clipboard content observed during the
+  restore suppression window is reported as a structured skipped capture instead
+  of a database write error.
+
 ## 0.5.1 - 2026-04-30
 
 ### Fixed

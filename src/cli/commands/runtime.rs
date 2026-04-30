@@ -201,10 +201,30 @@ impl Drop for OcrWorkerRegistration {
 
 pub(in crate::cli) fn capture_once(db_path: &Path, args: &CaptureOnceArgs) -> Result<()> {
     let mut db = open_or_init_db(db_path)?;
-    let snapshot = capture_snapshot()
-        .map_err(|error| platform_error(format!("capture-once clipboard read failed: {error}")))?;
+    let payload = capture_once_payload(&mut db, || {
+        capture_snapshot().map_err(|error| {
+            platform_error(format!("capture-once clipboard read failed: {error}")).into()
+        })
+    })?;
+    if args.human {
+        print!("{}", render_capture_once_human(&payload));
+    } else {
+        emit_json_or_text(args.json, &payload, render_capture_once_text)?;
+    }
+
+    Ok(())
+}
+
+fn capture_once_payload<CaptureFn>(
+    db: &mut Database,
+    capture_snapshot_fn: CaptureFn,
+) -> Result<CaptureOnceOutput>
+where
+    CaptureFn: FnOnce() -> Result<ClipboardSnapshot>,
+{
+    let snapshot = capture_snapshot_fn()?;
     let payload = match anyhow::Context::context(
-        db.store_capture_if_allowed(&snapshot),
+        db.store_watched_capture_if_allowed(&snapshot),
         "capture-once database write failed",
     )? {
         CaptureStoreOutcome::Stored(store) => {
@@ -224,13 +244,8 @@ pub(in crate::cli) fn capture_once(db_path: &Path, args: &CaptureOnceArgs) -> Re
             })
         }
     };
-    if args.human {
-        print!("{}", render_capture_once_human(&payload));
-    } else {
-        emit_json_or_text(args.json, &payload, render_capture_once_text)?;
-    }
 
-    Ok(())
+    Ok(payload)
 }
 
 pub(in crate::cli) fn open_existing_db(path: &Path) -> Result<Database> {
@@ -284,7 +299,10 @@ mod tests {
     use std::process;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::claim_ocr_worker;
+    use crate::db::Database;
+    use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
+
+    use super::{capture_once_payload, claim_ocr_worker};
 
     #[test]
     fn ocr_worker_guard_allows_distinct_database_paths_in_same_process() {
@@ -312,6 +330,30 @@ mod tests {
         drop(second_registration);
         cleanup_db(&first);
         cleanup_db(&second);
+    }
+
+    #[test]
+    fn capture_once_reports_restored_snapshot_as_skip() -> anyhow::Result<()> {
+        let mut db = Database::open_in_memory()?;
+        let stored = db.store_capture(&fake_snapshot(1, "restored text"))?;
+        let snapshot = db
+            .find_snapshot(stored.snapshot_id(), 1)?
+            .expect("stored snapshot should exist");
+        db.register_pending_restore(snapshot.sha256())?;
+
+        let payload = capture_once_payload(&mut db, || Ok(fake_snapshot(2, "restored text")))?;
+
+        match payload {
+            crate::cli::output::CaptureOnceOutput::Skipped(skipped) => {
+                assert_eq!(skipped.reason.as_str(), "restored_snapshot");
+            }
+            other => panic!("expected restored snapshot skip, got {other:?}"),
+        }
+        let event_count: i64 =
+            db.conn
+                .query_row("SELECT COUNT(*) FROM capture_events", [], |row| row.get(0))?;
+        assert_eq!(event_count, 1);
+        Ok(())
     }
 
     fn temp_db_path(test_name: &str) -> PathBuf {
@@ -342,5 +384,21 @@ mod tests {
         if let Some(parent) = path.parent() {
             let _ = fs::remove_dir(parent);
         }
+    }
+
+    fn fake_snapshot(change_count: i64, text: &str) -> crate::model::ClipboardSnapshot {
+        build_snapshot(
+            CaptureContext::new(change_count)
+                .with_frontmost_app_name("Terminal")
+                .with_frontmost_app_bundle_id("com.apple.Terminal"),
+            vec![build_item(
+                0,
+                vec![build_representation(
+                    "public.utf8-plain-text".to_string(),
+                    None,
+                    text.as_bytes().to_vec(),
+                )],
+            )],
+        )
     }
 }
