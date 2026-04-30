@@ -9,6 +9,8 @@ versioning where practical.
 
 ## Unreleased
 
+## 0.5.1 - 2026-04-30
+
 ### Fixed
 
 - Fixed `clipmem export --out <filename>` so bare relative output paths write
