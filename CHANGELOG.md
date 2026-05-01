@@ -14,6 +14,8 @@ versioning where practical.
 - Fixed `clipmem capture` so restored clipboard content observed during the
   restore suppression window is reported as a structured skipped capture instead
   of a database write error.
+- Fixed duration argument validation so impossible purge and retention windows
+  are rejected before database work begins.
 
 ## 0.5.1 - 2026-04-30
 

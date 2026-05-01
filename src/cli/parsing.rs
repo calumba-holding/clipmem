@@ -157,10 +157,10 @@ pub(super) fn parse_duration_value(value: &str) -> Result<DurationValue, LimitPa
         ));
     }
 
-    let seconds = match unit.to_ascii_lowercase().as_str() {
-        "d" => amount.saturating_mul(24 * 60 * 60),
-        "h" => amount.saturating_mul(60 * 60),
-        "m" => amount.saturating_mul(60),
+    let seconds_per_unit = match unit.to_ascii_lowercase().as_str() {
+        "d" => 24 * 60 * 60,
+        "h" => 60 * 60,
+        "m" => 60,
         _ => {
             return Err(LimitParseError(format!(
                 "invalid duration unit '{unit}'; expected d, h, or m"
@@ -168,11 +168,10 @@ pub(super) fn parse_duration_value(value: &str) -> Result<DurationValue, LimitPa
         }
     };
 
-    if seconds == u64::MAX {
-        return Err(LimitParseError(format!(
-            "duration '{value}' exceeds supported range"
-        )));
-    }
+    let seconds = amount
+        .checked_mul(seconds_per_unit)
+        .filter(|seconds| *seconds <= i64::MAX as u64)
+        .ok_or_else(|| LimitParseError(format!("duration '{value}' exceeds supported range")))?;
 
     Ok(DurationValue::new(trimmed.to_string(), seconds))
 }

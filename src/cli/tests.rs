@@ -944,6 +944,10 @@ fn duration_parser_accepts_single_unit_values_and_rejects_invalid_ones() {
     let zero = super::run_from(["clipmem", "purge", "--older-than", "0d"])
         .expect_err("zero durations should fail");
     assert!(zero.to_string().contains("greater than zero"));
+
+    let out_of_range = super::run_from(["clipmem", "purge", "--older-than", "106751991167301d"])
+        .expect_err("durations above the SQLite range should fail during argument parsing");
+    assert!(out_of_range.to_string().contains("exceeds supported range"));
 }
 
 #[test]
