@@ -16,6 +16,8 @@ versioning where practical.
   of a database write error.
 - Fixed duration argument validation so impossible purge and retention windows
   are rejected before database work begins.
+- Fixed retrieval byte filter validation so impossible `--min-bytes` and
+  `--max-bytes` values are rejected before database work begins.
 
 ## 0.5.1 - 2026-04-30
 

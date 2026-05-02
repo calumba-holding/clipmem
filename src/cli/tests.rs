@@ -549,6 +549,20 @@ fn shared_filters_reject_inverted_byte_window() {
 }
 
 #[test]
+fn shared_filters_reject_byte_values_above_sqlite_range() {
+    let error = Cli::try_parse_from([
+        "clipmem",
+        "search",
+        "git",
+        "--min-bytes",
+        "9223372036854775808",
+    ])
+    .expect_err("byte filters above the SQLite range should fail during argument parsing");
+
+    assert!(error.to_string().contains("exceeds supported range"));
+}
+
+#[test]
 fn shared_filters_reject_zero_hours() {
     let error = super::run_from(["clipmem", "recent", "--hours", "0"])
         .expect_err("zero-hour filter should fail");

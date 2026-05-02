@@ -92,9 +92,17 @@ pub(super) fn parse_rfc3339_timestamp(value: &str) -> Result<String, LimitParseE
 }
 
 pub(super) fn parse_nonnegative_bytes(value: &str) -> Result<usize, LimitParseError> {
-    value
+    let parsed = value
         .parse::<usize>()
-        .map_err(|_| LimitParseError(format!("invalid integer value '{value}'")))
+        .map_err(|_| LimitParseError(format!("invalid integer value '{value}'")))?;
+
+    if parsed <= i64::MAX as usize {
+        Ok(parsed)
+    } else {
+        Err(LimitParseError(format!(
+            "byte value '{value}' exceeds supported range"
+        )))
+    }
 }
 
 pub(super) fn parse_search_mode(value: &str) -> Result<SearchMode, LimitParseError> {
