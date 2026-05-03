@@ -202,9 +202,8 @@ impl Drop for OcrWorkerRegistration {
 pub(in crate::cli) fn capture_once(db_path: &Path, args: &CaptureOnceArgs) -> Result<()> {
     let mut db = open_or_init_db(db_path)?;
     let payload = capture_once_payload(&mut db, || {
-        capture_snapshot().map_err(|error| {
-            platform_error(format!("capture-once clipboard read failed: {error}")).into()
-        })
+        capture_snapshot()
+            .map_err(|error| platform_error(format!("capture-once clipboard read failed: {error}")))
     })?;
     if args.human {
         print!("{}", render_capture_once_human(&payload));

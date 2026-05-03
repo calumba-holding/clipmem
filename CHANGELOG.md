@@ -18,6 +18,8 @@ versioning where practical.
   are rejected before database work begins.
 - Fixed retrieval byte filter validation so impossible `--min-bytes` and
   `--max-bytes` values are rejected before database work begins.
+- Fixed current-toolchain Clippy validation for `clipmem capture-once` error
+  handling.
 
 ## 0.5.1 - 2026-04-30
 
