@@ -583,9 +583,21 @@ Show the current capture policy.
 
 Persistently pause (`on`) or resume (`off`) capture.
 
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--format` | `text\|json\|human` | `text` | Output format |
+| `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
+
 ### `clipmem settings api-key-filter <on|off>`
 
 Enable (`on`) or disable (`off`) API key filtering.
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--format` | `text\|json\|human` | `text` | Output format |
+| `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
 
 ### `clipmem settings ocr <on|off>`
 
@@ -593,10 +605,22 @@ Enable (`on`) or disable (`off`) automatic local OCR for new image
 captures. OCR is off by default. Turning it on doesn't rewrite stored
 image bytes or compress images.
 
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--format` | `text\|json\|human` | `text` | Output format |
+| `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
+
 ### `clipmem settings retention <duration|forever>`
 
 Set retention to a duration (`30d`, `12h`, `15m`) or `forever` to
 disable automatic pruning.
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--format` | `text\|json\|human` | `text` | Output format |
+| `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
 
 ### `clipmem settings reset`
 
@@ -612,9 +636,21 @@ Reset capture policy and ignored apps to defaults.
 
 Add a bundle ID to the ignore list.
 
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--format` | `text\|json\|human` | `text` | Output format |
+| `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
+
 ### `clipmem settings ignore remove <BUNDLE_ID>`
 
 Remove a bundle ID from the ignore list.
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--format` | `text\|json\|human` | `text` | Output format |
+| `--json` | flag | — | Alias for `--format json` |
+| `--human` | flag | — | Alias for `--format human` |
 
 ### `clipmem settings ignore list`
 

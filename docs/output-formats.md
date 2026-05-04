@@ -202,6 +202,10 @@ Action commands return structured output when you request JSON:
   final event wraps the same report fields as `--format json`
 - `export --format json` — destination path, byte count, UTI, item
   index, snapshot ID, and representation hash
+- `settings pause|api-key-filter|ocr|retention --format json` — the
+  updated capture policy
+- `settings ignore add|remove --format json` — the updated ignored
+  bundle ID list
 
 ## Script-friendly guarantees
 

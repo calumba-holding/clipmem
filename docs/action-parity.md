@@ -51,11 +51,11 @@ documented app-owned command bridge.
 | Compact storage | `clipmem storage compact --format json` | Covered |
 | Optimize stored images | `clipmem storage optimize-images --format json` or `--progress jsonl` | Covered |
 | Read capture policy | `clipmem settings show --format json` | Covered |
-| Pause or resume capture | `clipmem settings pause on|off` | Covered |
-| Toggle API-key filtering | `clipmem settings api-key-filter on|off` | Covered |
-| Toggle OCR | `clipmem settings ocr on|off` | Covered |
-| Change retention | `clipmem settings retention <duration|forever>` | Covered |
-| Manage ignored bundle IDs | `clipmem settings ignore add|remove|list` | Covered |
+| Pause or resume capture | `clipmem settings pause on|off --format json` | Covered |
+| Toggle API-key filtering | `clipmem settings api-key-filter on|off --format json` | Covered |
+| Toggle OCR | `clipmem settings ocr on|off --format json` | Covered |
+| Change retention | `clipmem settings retention <duration|forever> --format json` | Covered |
+| Manage ignored bundle IDs | `clipmem settings ignore add|remove|list --format json` | Covered |
 | Inspect OCR queue | `clipmem ocr status --format json` | Covered |
 | Inspect OCR candidates and results | `clipmem ocr candidates|get --format json` | Covered |
 | Clear one OCR result | `clipmem ocr clear <raw-sha256> --format json` | Covered |

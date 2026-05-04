@@ -131,6 +131,56 @@ fn settings_commands_persist_policy_and_support_json_views() -> Result<()> {
 }
 
 #[test]
+fn settings_mutations_support_json_output() -> Result<()> {
+    let path = temp_db_path("settings-mutation-json");
+
+    let pause_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "settings",
+        "pause",
+        "on",
+        "--format",
+        "json",
+    ]);
+    let pause_payload: Value =
+        serde_json::from_slice(&pause_output.stdout).expect("settings pause JSON should parse");
+
+    assert!(
+        pause_output.status.success(),
+        "{}",
+        stderr_text(&pause_output)
+    );
+    assert_eq!(pause_payload["paused"].as_bool(), Some(true));
+
+    let ignore_output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "settings",
+        "ignore",
+        "add",
+        "Com.Example.Agent",
+        "--format",
+        "json",
+    ]);
+    let ignore_payload: Value =
+        serde_json::from_slice(&ignore_output.stdout).expect("ignore add JSON should parse");
+
+    assert!(
+        ignore_output.status.success(),
+        "{}",
+        stderr_text(&ignore_output)
+    );
+    assert_eq!(
+        ignore_payload["ignored_bundle_ids"][0].as_str(),
+        Some("com.example.agent")
+    );
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
 fn forget_command_hard_deletes_snapshot() -> Result<()> {
     let path = temp_db_path("forget-snapshot");
     let ids = seed_database(&path, &[text_snapshot(1, "temporary clipboard text")])?;

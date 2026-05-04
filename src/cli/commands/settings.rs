@@ -5,13 +5,12 @@ use anyhow::Result;
 use crate::db::{CapturePolicy, CaptureSettings};
 
 use crate::cli::display::format_duration_compact;
-use crate::cli::formats::OutputFormat;
 use crate::cli::output::{SettingsIgnoreListOutput, SettingsView};
 use crate::cli::presentation::{emit_settings_ignore_list_output, emit_settings_view_output};
 use crate::cli::schema::{
     SettingsApiKeyFilterArgs, SettingsArgs, SettingsCommand, SettingsIgnoreArgs,
-    SettingsIgnoreCommand, SettingsIgnoreListArgs, SettingsOcrArgs, SettingsPauseArgs,
-    SettingsResetArgs, SettingsRetentionArgs, SettingsShowArgs,
+    SettingsIgnoreBundleArgs, SettingsIgnoreCommand, SettingsIgnoreListArgs, SettingsOcrArgs,
+    SettingsPauseArgs, SettingsResetArgs, SettingsRetentionArgs, SettingsShowArgs,
 };
 
 use super::mutation_support::require_text_or_json;
@@ -38,35 +37,39 @@ fn settings_show(db_path: &Path, args: &SettingsShowArgs) -> Result<()> {
 }
 
 fn settings_pause(db_path: &Path, args: &SettingsPauseArgs) -> Result<()> {
+    let format = require_text_or_json(args.output.resolved()?, "settings pause")?;
     let mut db = open_or_init_db(db_path)?;
     let settings = db.set_paused(args.state.is_on())?;
     notify_app_refresh();
     let view = settings_view(CapturePolicy::new(settings, db.list_ignored_bundle_ids()?));
-    emit_settings_view_output(OutputFormat::Text, &view)
+    emit_settings_view_output(format, &view)
 }
 
 fn settings_api_key_filter(db_path: &Path, args: &SettingsApiKeyFilterArgs) -> Result<()> {
+    let format = require_text_or_json(args.output.resolved()?, "settings api-key-filter")?;
     let mut db = open_or_init_db(db_path)?;
     let settings = db.set_api_key_filter_enabled(args.state.is_on())?;
     notify_app_refresh();
     let view = settings_view(CapturePolicy::new(settings, db.list_ignored_bundle_ids()?));
-    emit_settings_view_output(OutputFormat::Text, &view)
+    emit_settings_view_output(format, &view)
 }
 
 fn settings_ocr(db_path: &Path, args: &SettingsOcrArgs) -> Result<()> {
+    let format = require_text_or_json(args.output.resolved()?, "settings ocr")?;
     let mut db = open_or_init_db(db_path)?;
     let settings = db.set_ocr_enabled(args.state.is_on())?;
     notify_app_refresh();
     let view = settings_view(CapturePolicy::new(settings, db.list_ignored_bundle_ids()?));
-    emit_settings_view_output(OutputFormat::Text, &view)
+    emit_settings_view_output(format, &view)
 }
 
 fn settings_retention(db_path: &Path, args: &SettingsRetentionArgs) -> Result<()> {
+    let format = require_text_or_json(args.output.resolved()?, "settings retention")?;
     let mut db = open_or_init_db(db_path)?;
     let settings = db.set_retention_seconds(args.value.retention_seconds())?;
     notify_app_refresh();
     let view = settings_view(CapturePolicy::new(settings, db.list_ignored_bundle_ids()?));
-    emit_settings_view_output(OutputFormat::Text, &view)
+    emit_settings_view_output(format, &view)
 }
 
 fn settings_reset(db_path: &Path, args: &SettingsResetArgs) -> Result<()> {
@@ -79,30 +82,32 @@ fn settings_reset(db_path: &Path, args: &SettingsResetArgs) -> Result<()> {
 
 fn settings_ignore(db_path: &Path, args: &SettingsIgnoreArgs) -> Result<()> {
     match &args.command {
-        SettingsIgnoreCommand::Add(args) => settings_ignore_add(db_path, &args.bundle_id),
-        SettingsIgnoreCommand::Remove(args) => settings_ignore_remove(db_path, &args.bundle_id),
+        SettingsIgnoreCommand::Add(args) => settings_ignore_add(db_path, args),
+        SettingsIgnoreCommand::Remove(args) => settings_ignore_remove(db_path, args),
         SettingsIgnoreCommand::List(args) => settings_ignore_list(db_path, args),
     }
 }
 
-fn settings_ignore_add(db_path: &Path, bundle_id: &str) -> Result<()> {
+fn settings_ignore_add(db_path: &Path, args: &SettingsIgnoreBundleArgs) -> Result<()> {
+    let format = require_text_or_json(args.output.resolved()?, "settings ignore add")?;
     let mut db = open_or_init_db(db_path)?;
-    db.add_ignored_bundle_id(bundle_id)?;
+    db.add_ignored_bundle_id(&args.bundle_id)?;
     notify_app_refresh();
     let output = SettingsIgnoreListOutput {
         ignored_bundle_ids: db.list_ignored_bundle_ids()?,
     };
-    emit_settings_ignore_list_output(OutputFormat::Text, &output)
+    emit_settings_ignore_list_output(format, &output)
 }
 
-fn settings_ignore_remove(db_path: &Path, bundle_id: &str) -> Result<()> {
+fn settings_ignore_remove(db_path: &Path, args: &SettingsIgnoreBundleArgs) -> Result<()> {
+    let format = require_text_or_json(args.output.resolved()?, "settings ignore remove")?;
     let mut db = open_or_init_db(db_path)?;
-    db.remove_ignored_bundle_id(bundle_id)?;
+    db.remove_ignored_bundle_id(&args.bundle_id)?;
     notify_app_refresh();
     let output = SettingsIgnoreListOutput {
         ignored_bundle_ids: db.list_ignored_bundle_ids()?,
     };
-    emit_settings_ignore_list_output(OutputFormat::Text, &output)
+    emit_settings_ignore_list_output(format, &output)
 }
 
 fn settings_ignore_list(db_path: &Path, args: &SettingsIgnoreListArgs) -> Result<()> {

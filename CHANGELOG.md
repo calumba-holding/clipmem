@@ -11,6 +11,9 @@ versioning where practical.
 
 ### Fixed
 
+- Fixed settings mutation commands so `settings pause`, `settings api-key-filter`,
+  `settings ocr`, `settings retention`, and `settings ignore add/remove` accept
+  `--format json`/`--human` like the related settings inspection commands.
 - Fixed `clipmem capture` so restored clipboard content observed during the
   restore suppression window is reported as a structured skipped capture instead
   of a database write error.

@@ -61,12 +61,12 @@ user has not explicitly asked to proceed.
 | `storage image-candidates` | text (`json` supported) | — | List image rows eligible for optimization without mutation |
 | `storage optimize-images` | text (`json` supported, progress JSONL available) | — | Convert eligible images to lossless WebP |
 | `settings show` | `text` | **no** | Show persistent pause / retention / ignore-list policy |
-| `settings pause` | text | — | Persistently pause or resume capture |
-| `settings api-key-filter` | text | — | Enable or disable API key filtering |
-| `settings ocr` | text | — | Enable or disable local OCR for new image captures |
-| `settings retention` | text | — | Set retention to a duration or `forever` |
+| `settings pause` | text | — | Persistently pause or resume capture; supports `json` and `human` |
+| `settings api-key-filter` | text | — | Enable or disable API key filtering; supports `json` and `human` |
+| `settings ocr` | text | — | Enable or disable local OCR for new image captures; supports `json` and `human` |
+| `settings retention` | text | — | Set retention to a duration or `forever`; supports `json` and `human` |
 | `settings reset` | text (`json` supported) | — | Reset capture policy and ignored apps to defaults |
-| `settings ignore add/remove/list` | text (`list` also supports `json`) | **no** | Manage ignored bundle identifiers |
+| `settings ignore add/remove/list` | text | **no** | Manage ignored bundle identifiers; supports `json` and `human` |
 | `app settings show` | text (`json` supported) | — | Show menu bar app preferences |
 | `app settings set` | text (`json` supported) | — | Set one menu bar app preference |
 | `app settings clear` | text (`json` supported) | — | Clear one menu bar app preference |
@@ -233,13 +233,13 @@ clipmem storage compact [--dry-run] [--format json]
 clipmem storage image-candidates [--limit N] [--format json]
 clipmem storage optimize-images [--dry-run] [--no-compact] [--limit N] [--format json|--progress jsonl]
 clipmem settings show [--format json]
-clipmem settings pause on|off
-clipmem settings api-key-filter on|off
-clipmem settings ocr on|off
-clipmem settings retention <duration|forever>
+clipmem settings pause on|off [--format json]
+clipmem settings api-key-filter on|off [--format json]
+clipmem settings ocr on|off [--format json]
+clipmem settings retention <duration|forever> [--format json]
 clipmem settings reset [--format json]
-clipmem settings ignore add <bundle_id>
-clipmem settings ignore remove <bundle_id>
+clipmem settings ignore add <bundle_id> [--format json]
+clipmem settings ignore remove <bundle_id> [--format json]
 clipmem settings ignore list [--format json]
 clipmem app settings show [--format json]
 clipmem app settings set binary-path-override <path> [--format json]

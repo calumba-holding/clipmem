@@ -829,18 +829,27 @@ pub(super) struct SettingsShowArgs {
 pub(super) struct SettingsPauseArgs {
     /// `on` pauses capture, `off` resumes it.
     pub(super) state: ToggleState,
+
+    #[command(flatten)]
+    pub(super) output: OutputArgs,
 }
 
 #[derive(Debug, Args)]
 pub(super) struct SettingsApiKeyFilterArgs {
     /// `on` skips clipboard snapshots that look like API keys, `off` stores them normally.
     pub(super) state: ToggleState,
+
+    #[command(flatten)]
+    pub(super) output: OutputArgs,
 }
 
 #[derive(Debug, Args)]
 pub(super) struct SettingsOcrArgs {
     /// `on` enables automatic OCR for image captures, `off` disables it.
     pub(super) state: ToggleState,
+
+    #[command(flatten)]
+    pub(super) output: OutputArgs,
 }
 
 #[derive(Debug, Args)]
@@ -848,6 +857,9 @@ pub(super) struct SettingsRetentionArgs {
     /// Retain snapshots for this duration, or `forever` to disable automatic pruning.
     #[arg(value_parser = parse_retention_value)]
     pub(super) value: RetentionValue,
+
+    #[command(flatten)]
+    pub(super) output: OutputArgs,
 }
 
 #[derive(Debug, Args)]
@@ -876,6 +888,9 @@ pub(super) enum SettingsIgnoreCommand {
 pub(super) struct SettingsIgnoreBundleArgs {
     /// Bundle identifier to add or remove.
     pub(super) bundle_id: String,
+
+    #[command(flatten)]
+    pub(super) output: OutputArgs,
 }
 
 #[derive(Debug, Args)]

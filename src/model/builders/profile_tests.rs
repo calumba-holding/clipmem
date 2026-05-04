@@ -212,16 +212,15 @@ fn rtf_to_text_lossy_vec_chars_for_profile(rtf: &str) -> String {
                         out.push(chars[index]);
                         index += 1;
                     }
-                    '\'' => {
-                        if index + 2 < chars.len() {
-                            let hex = format!("{}{}", chars[index + 1], chars[index + 2]);
-                            if let Ok(byte) = u8::from_str_radix(&hex, 16) {
-                                out.push(byte as char);
-                            }
-                            index += 3;
-                        } else {
-                            index += 1;
+                    '\'' if index + 2 < chars.len() => {
+                        let hex = format!("{}{}", chars[index + 1], chars[index + 2]);
+                        if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                            out.push(byte as char);
                         }
+                        index += 3;
+                    }
+                    '\'' => {
+                        index += 1;
                     }
                     c if c.is_ascii_alphabetic() => {
                         let start = index;
