@@ -25,6 +25,8 @@ versioning where practical.
   `--max-bytes` values are rejected before database work begins.
 - Fixed current-toolchain Clippy validation for `clipmem capture-once` error
   handling.
+- Fixed `clipmem recall --json` so the primary agent recall command accepts the
+  same JSON compatibility alias as other structured CLI commands.
 
 ## 0.5.1 - 2026-04-30
 

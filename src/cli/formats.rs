@@ -119,6 +119,10 @@ pub(super) struct RecallOutputArgs {
     #[arg(long, value_enum)]
     pub(in crate::cli) format: Option<RecallOutputFormat>,
 
+    /// Compatibility alias for `--format json`.
+    #[arg(long, default_value_t = false)]
+    pub(in crate::cli) json: bool,
+
     /// Compatibility alias for `--format human`.
     #[arg(long, default_value_t = false)]
     pub(in crate::cli) human: bool,
@@ -126,10 +130,12 @@ pub(super) struct RecallOutputArgs {
 
 impl RecallOutputArgs {
     pub(super) fn resolved(&self) -> Result<RecallOutputFormat, CliValueError> {
-        resolve_human_alias(
+        resolve_json_human_aliases(
             self.format,
+            self.json,
             self.human,
             RecallOutputFormat::Md,
+            RecallOutputFormat::Json,
             RecallOutputFormat::Human,
             RecallOutputFormat::as_str,
         )
@@ -185,23 +191,6 @@ where
             ErrorKind::ArgumentConflict,
             "`--human` cannot be combined with `--json`",
         )),
-    }
-}
-
-fn resolve_human_alias<F>(
-    format: Option<F>,
-    human: bool,
-    default_format: F,
-    human_format: F,
-    format_label: fn(F) -> &'static str,
-) -> Result<F, CliValueError>
-where
-    F: Copy + PartialEq,
-{
-    if human {
-        resolve_alias_format(format, "--human", human_format, format_label)
-    } else {
-        Ok(format.unwrap_or(default_format))
     }
 }
 
@@ -311,6 +300,7 @@ mod tests {
         assert_eq!(
             RecallOutputArgs {
                 format: None,
+                json: false,
                 human: false,
             }
             .resolved()
@@ -320,15 +310,27 @@ mod tests {
         assert_eq!(
             RecallOutputArgs {
                 format: Some(RecallOutputFormat::Human),
+                json: false,
                 human: true,
             }
             .resolved()
             .unwrap(),
             RecallOutputFormat::Human
         );
+        assert_eq!(
+            RecallOutputArgs {
+                format: Some(RecallOutputFormat::Json),
+                json: true,
+                human: false,
+            }
+            .resolved()
+            .unwrap(),
+            RecallOutputFormat::Json
+        );
 
         let conflict = RecallOutputArgs {
             format: Some(RecallOutputFormat::Json),
+            json: false,
             human: true,
         }
         .resolved()

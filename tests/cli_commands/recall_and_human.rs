@@ -337,6 +337,38 @@ fn recall_json_prefers_a_strong_query_match() -> Result<()> {
 }
 
 #[test]
+fn recall_json_alias_prefers_a_strong_query_match() -> Result<()> {
+    let path = temp_db_path("recall-json-alias");
+    let ids = seed_database(
+        &path,
+        &[
+            text_snapshot(1, "git status"),
+            text_snapshot(2, "cargo test"),
+        ],
+    )?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "recall",
+        "git status",
+        "--json",
+    ]);
+    let payload: Value =
+        serde_json::from_slice(&output.stdout).expect("recall JSON alias output should parse");
+
+    assert!(output.status.success());
+    assert_eq!(payload["command"].as_str(), Some("recall"));
+    assert_eq!(
+        payload["best_candidate"]["snapshot_id"].as_i64(),
+        Some(ids[0])
+    );
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
 fn recall_json_falls_back_to_recent_when_search_is_weak() -> Result<()> {
     let path = temp_db_path("recall-weak-search");
     let ids = seed_database(
