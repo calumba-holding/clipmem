@@ -11,6 +11,8 @@ versioning where practical.
 
 ### Fixed
 
+- Updated the packaged `clipboard-memory` skill to 1.3.5 for the refreshed
+  command reference and settings JSON output documentation.
 - Fixed settings mutation commands so `settings pause`, `settings api-key-filter`,
   `settings ocr`, `settings retention`, and `settings ignore add/remove` accept
   `--format json`/`--human` like the related settings inspection commands.
