@@ -546,6 +546,37 @@ fn export_command_writes_raw_representation_bytes() -> Result<()> {
 }
 
 #[test]
+fn export_command_rejects_item_index_outside_sqlite_range() -> Result<()> {
+    let path = temp_db_path("export-item-range");
+    let output_path = temp_artifact_path("export-item-range", ".bin");
+    let snapshot = text_snapshot(1, "too large item index");
+    let ids = seed_database(&path, &[snapshot])?;
+
+    let output = run_cli(&[
+        "--db",
+        path.to_str().expect("db path should be UTF-8"),
+        "export",
+        &ids[0].to_string(),
+        "--item",
+        "9223372036854775808",
+        "--uti",
+        "public.utf8-plain-text",
+        "--out",
+        output_path.to_str().expect("output path should be UTF-8"),
+    ]);
+    let stderr = stderr_text(&output);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr.contains("item index"));
+    assert!(stderr.contains("exceeds supported range"));
+    assert!(!output_path.exists());
+
+    cleanup_temp_artifact(&output_path);
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
 fn export_command_creates_parent_directories_for_nested_output() -> Result<()> {
     let path = temp_db_path("export-nested");
     let artifact_root = temp_artifact_path("export-nested", "");

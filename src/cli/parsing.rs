@@ -105,6 +105,20 @@ pub(super) fn parse_nonnegative_bytes(value: &str) -> Result<usize, LimitParseEr
     }
 }
 
+pub(super) fn parse_item_index(value: &str) -> Result<usize, LimitParseError> {
+    let parsed = value
+        .parse::<usize>()
+        .map_err(|_| LimitParseError(format!("invalid item index '{value}'")))?;
+
+    if parsed <= i64::MAX as usize {
+        Ok(parsed)
+    } else {
+        Err(LimitParseError(format!(
+            "item index '{value}' exceeds supported range"
+        )))
+    }
+}
+
 pub(super) fn parse_search_mode(value: &str) -> Result<SearchMode, LimitParseError> {
     match value.trim().to_ascii_lowercase().as_str() {
         "auto" => Ok(SearchMode::Auto),

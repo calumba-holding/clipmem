@@ -17,9 +17,9 @@ use super::help::{
     TIMELINE_AFTER_HELP, WATCH_AFTER_HELP,
 };
 use super::parsing::{
-    parse_bounded_limit, parse_duration_value, parse_nonnegative_bytes, parse_normalized_score,
-    parse_retention_value, parse_retrieval_kind, parse_rfc3339_timestamp, parse_search_mode,
-    parse_timeline_sort, DurationValue, RetentionValue,
+    parse_bounded_limit, parse_duration_value, parse_item_index, parse_nonnegative_bytes,
+    parse_normalized_score, parse_retention_value, parse_retrieval_kind, parse_rfc3339_timestamp,
+    parse_search_mode, parse_timeline_sort, DurationValue, RetentionValue,
 };
 use super::value_validation::{
     normalize_nonempty_filter_value, validate_byte_window, validate_positive_hours,
@@ -601,7 +601,7 @@ pub(super) struct ExportArgs {
     pub(super) snapshot_id: i64,
 
     /// Item index inside the stored snapshot.
-    #[arg(long)]
+    #[arg(long, value_parser = parse_item_index)]
     pub(super) item: usize,
 
     /// Representation UTI to export.

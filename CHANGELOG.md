@@ -27,6 +27,8 @@ versioning where practical.
   handling.
 - Fixed `clipmem recall --json` so the primary agent recall command accepts the
   same JSON compatibility alias as other structured CLI commands.
+- Fixed `clipmem export --item` so item indexes outside SQLite's supported
+  integer range are rejected during CLI parsing.
 
 ## 0.5.1 - 2026-04-30
 
