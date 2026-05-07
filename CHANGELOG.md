@@ -29,6 +29,8 @@ versioning where practical.
   same JSON compatibility alias as other structured CLI commands.
 - Fixed `clipmem export --item` so item indexes outside SQLite's supported
   integer range are rejected during CLI parsing.
+- Fixed settings mutation output validation so invalid `--json`/`--human` and
+  `--format` combinations are rejected during CLI validation.
 
 ## 0.5.1 - 2026-04-30
 

@@ -432,6 +432,21 @@ fn json_alias_rejects_non_json_format() {
 }
 
 #[test]
+fn settings_mutation_output_alias_conflicts_fail_during_validation() {
+    let cli = Cli::parse_from([
+        "clipmem", "settings", "pause", "on", "--json", "--format", "md",
+    ]);
+
+    let error = super::validate::validate_cli(&cli)
+        .expect_err("settings mutation output conflicts should fail before execution");
+
+    assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+    assert!(error
+        .to_string()
+        .contains("`--json` is only compatible with `--format json`"));
+}
+
+#[test]
 fn timeline_command_rejects_inverted_time_range() {
     let error = super::run_from([
         "clipmem",

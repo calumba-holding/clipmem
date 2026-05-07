@@ -137,14 +137,28 @@ pub(super) fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
             SettingsCommand::Show(args) => {
                 validate_value(args.output.resolved())?;
             }
-            SettingsCommand::Pause(_) | SettingsCommand::ApiKeyFilter(_) => {}
-            SettingsCommand::Ocr(_) => {}
-            SettingsCommand::Retention(_) => {}
+            SettingsCommand::Pause(args) => {
+                validate_value(args.output.resolved())?;
+            }
+            SettingsCommand::ApiKeyFilter(args) => {
+                validate_value(args.output.resolved())?;
+            }
+            SettingsCommand::Ocr(args) => {
+                validate_value(args.output.resolved())?;
+            }
+            SettingsCommand::Retention(args) => {
+                validate_value(args.output.resolved())?;
+            }
             SettingsCommand::Reset(args) => {
                 validate_value(args.output.resolved())?;
             }
             SettingsCommand::Ignore(args) => match &args.command {
-                SettingsIgnoreCommand::Add(_) | SettingsIgnoreCommand::Remove(_) => {}
+                SettingsIgnoreCommand::Add(args) => {
+                    validate_value(args.output.resolved())?;
+                }
+                SettingsIgnoreCommand::Remove(args) => {
+                    validate_value(args.output.resolved())?;
+                }
                 SettingsIgnoreCommand::List(args) => {
                     validate_value(args.output.resolved())?;
                 }
