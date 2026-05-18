@@ -11,6 +11,28 @@ versioning where practical.
 
 ### Fixed
 
+- Fixed `clipmem export --uti` so empty representation type values are rejected
+  during CLI parsing before opening the archive database.
+- Fixed `clipmem recall --prefer-app` so empty preferred-app values are rejected
+  during CLI parsing before opening the archive database.
+- Fixed the macOS History detail pane so image snapshots show an inline
+  preview, copy restores the saved clipboard formats, and app-initiated copies
+  preserve History browsing context.
+- Fixed `settings ignore add/remove` so empty bundle ids are rejected during CLI
+  parsing before opening or creating the archive database.
+- Fixed OCR hash commands so malformed `ocr get` and `ocr clear` hashes are
+  rejected during CLI parsing before opening the archive database.
+- Fixed `clipmem app settings set` so invalid preference values are rejected
+  before reading the app settings override store.
+- Fixed retrieval pagination commands so invalid cursor tokens are rejected
+  before attempting to open the archive database.
+- Fixed `clipmem get --format toon` so it reports the unsupported output format
+  before attempting to open the archive database.
+- Fixed `clipmem agents context --format toon/jsonl` so it reports the
+  unsupported output format before inspecting the archive database.
+- Fixed unsupported output format errors for `clipmem app launch-at-login`,
+  `clipmem app update-check`, and `clipmem app quit` so they name the command
+  that rejected the format instead of reporting `app settings`.
 - Updated the packaged `clipboard-memory` skill to 1.3.5 for the refreshed
   command reference and settings JSON output documentation.
 - Fixed settings mutation commands so `settings pause`, `settings api-key-filter`,

@@ -119,6 +119,43 @@ pub(super) fn parse_item_index(value: &str) -> Result<usize, LimitParseError> {
     }
 }
 
+pub(super) fn parse_sha256_hash(value: &str) -> Result<String, LimitParseError> {
+    if value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        Ok(value.to_ascii_lowercase())
+    } else {
+        Err(LimitParseError(format!(
+            "invalid SHA-256 hash '{value}'; expected 64 hexadecimal characters"
+        )))
+    }
+}
+
+pub(super) fn parse_bundle_id(value: &str) -> Result<String, LimitParseError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        Err(LimitParseError("bundle id cannot be empty".to_string()))
+    } else {
+        Ok(trimmed.to_string())
+    }
+}
+
+pub(super) fn parse_preferred_app(value: &str) -> Result<String, LimitParseError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        Err(LimitParseError("preferred app cannot be empty".to_string()))
+    } else {
+        Ok(trimmed.to_string())
+    }
+}
+
+pub(super) fn parse_representation_uti(value: &str) -> Result<String, LimitParseError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        Err(LimitParseError("UTI cannot be empty".to_string()))
+    } else {
+        Ok(trimmed.to_string())
+    }
+}
+
 pub(super) fn parse_search_mode(value: &str) -> Result<SearchMode, LimitParseError> {
     match value.trim().to_ascii_lowercase().as_str() {
         "auto" => Ok(SearchMode::Auto),
@@ -211,7 +248,8 @@ mod tests {
     use crate::db::{RetrievalKind, SearchMode, TimelineSort};
 
     use super::{
-        parse_retrieval_kind, parse_search_mode, parse_timeline_sort, DurationValue, RetentionValue,
+        parse_bundle_id, parse_representation_uti, parse_retrieval_kind, parse_search_mode,
+        parse_sha256_hash, parse_timeline_sort, DurationValue, RetentionValue,
     };
 
     #[test]
@@ -232,5 +270,32 @@ mod tests {
         assert!(parse_search_mode("regex").is_err());
         assert!(parse_timeline_sort("newest").is_err());
         assert!(parse_retrieval_kind("folder").is_err());
+    }
+
+    #[test]
+    fn sha256_hash_parser_accepts_hex_and_normalizes_case() {
+        let uppercase = "A".repeat(64);
+        assert_eq!(parse_sha256_hash(&uppercase).unwrap(), "a".repeat(64));
+
+        assert!(parse_sha256_hash("abc123").is_err());
+        assert!(parse_sha256_hash(&"g".repeat(64)).is_err());
+    }
+
+    #[test]
+    fn bundle_id_parser_trims_and_rejects_empty_values() {
+        assert_eq!(
+            parse_bundle_id(" Com.Apple.Terminal ").unwrap(),
+            "Com.Apple.Terminal"
+        );
+        assert!(parse_bundle_id("   ").is_err());
+    }
+
+    #[test]
+    fn representation_uti_parser_trims_and_rejects_empty_values() {
+        assert_eq!(
+            parse_representation_uti(" public.utf8-plain-text ").unwrap(),
+            "public.utf8-plain-text"
+        );
+        assert!(parse_representation_uti("   ").is_err());
     }
 }
