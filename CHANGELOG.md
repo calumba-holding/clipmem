@@ -20,6 +20,8 @@ versioning where practical.
   during CLI parsing before opening the archive database.
 - Fixed `clipmem ocr candidates --snapshot` so deduplicated image candidates
   report their total snapshot count instead of the filtered snapshot count.
+- Fixed `clipmem agents context --json --human` so conflicting output aliases
+  are rejected with the same clap-formatted error used by other commands.
 - Fixed `clipmem recall --prefer-app` so empty preferred-app values are rejected
   during CLI parsing before opening the archive database.
 - Fixed the macOS History detail pane so image snapshots show an inline

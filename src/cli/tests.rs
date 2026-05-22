@@ -135,6 +135,19 @@ fn agents_context_parses_json_output() {
 }
 
 #[test]
+fn agents_context_output_alias_conflicts_fail_during_validation() {
+    let cli = Cli::parse_from(["clipmem", "agents", "context", "--json", "--human"]);
+
+    let error = super::validate::validate_cli(&cli)
+        .expect_err("agents context output conflicts should fail before execution");
+
+    assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+    assert!(error
+        .to_string()
+        .contains("`--human` cannot be combined with `--json`"));
+}
+
+#[test]
 fn app_settings_commands_parse_key_and_output() {
     let cli = Cli::parse_from([
         "clipmem",

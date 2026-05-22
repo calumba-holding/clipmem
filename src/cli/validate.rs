@@ -2,9 +2,9 @@ use clap::error::ErrorKind;
 
 use super::errors::{clap_error, clap_error_from_value, CliValueError};
 use super::schema::{
-    AppCommand, AppLaunchAtLoginCommand, AppSettingsCommand, AppUpdateCheckCommand, Cli, Command,
-    OcrCommand, ServiceCommand, SettingsCommand, SettingsIgnoreCommand, StorageCommand,
-    StorageOptimizeImagesArgs,
+    AgentsCommand, AppCommand, AppLaunchAtLoginCommand, AppSettingsCommand, AppUpdateCheckCommand,
+    Cli, Command, OcrCommand, ServiceCommand, SettingsCommand, SettingsIgnoreCommand,
+    StorageCommand, StorageOptimizeImagesArgs,
 };
 
 fn validate_value<T>(
@@ -15,7 +15,12 @@ fn validate_value<T>(
 
 pub(super) fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
     match &cli.command {
-        Command::Agents(_args) => {}
+        Command::Agents(args) => match &args.command {
+            AgentsCommand::Context(args) => {
+                validate_value(args.output.resolved())?;
+            }
+            AgentsCommand::Openclaw(_) | AgentsCommand::Hermes(_) => {}
+        },
         Command::Setup(_) => {}
         Command::Service(args) => match &args.command {
             ServiceCommand::Providers(args) => {
