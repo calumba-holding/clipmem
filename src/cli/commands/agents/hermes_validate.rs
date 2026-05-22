@@ -227,7 +227,7 @@ pub(in crate::cli) fn validate_hermes_skill_content(content: &str) -> Result<()>
 
     let platforms = frontmatter_value(&frontmatter_lines, "platforms")
         .ok_or_else(|| anyhow!("skill frontmatter must include `platforms`"))?;
-    if !platforms.contains("macos") {
+    if !inline_yaml_list_contains(platforms, "macos") {
         return Err(anyhow!(
             "skill frontmatter `platforms` must include `macos`"
         ));
@@ -264,7 +264,7 @@ pub(in crate::cli) fn validate_hermes_skill_content(content: &str) -> Result<()>
         "cli",
         "retrieval",
     ] {
-        if !tags.contains(tag) {
+        if !inline_yaml_list_contains(tags, tag) {
             return Err(anyhow!("metadata.hermes.tags must include `{tag}`"));
         }
     }
@@ -275,6 +275,16 @@ pub(in crate::cli) fn validate_hermes_skill_content(content: &str) -> Result<()>
     )?;
 
     Ok(())
+}
+
+fn inline_yaml_list_contains(value: &str, expected: &str) -> bool {
+    value
+        .trim()
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .split(',')
+        .map(|item| item.trim().trim_matches(['"', '\'']))
+        .any(|item| item == expected)
 }
 
 pub(in crate::cli) fn render_hermes_doctor_report(report: &HermesDoctorReport) -> String {
@@ -290,7 +300,10 @@ mod tests {
     use std::path::PathBuf;
 
     use super::super::support::referenced_markdown_files;
-    use super::{packaged_hermes_files, packaged_hermes_skill, validate_hermes_skill_content};
+    use super::{
+        inline_yaml_list_contains, packaged_hermes_files, packaged_hermes_skill,
+        validate_hermes_skill_content,
+    };
 
     #[test]
     fn packaged_hermes_skill_includes_required_metadata() {
@@ -390,6 +403,12 @@ mod tests {
             .to_string()
             .contains("platforms"));
 
+        let wrong_platforms = valid.replacen("platforms: [macos]", "platforms: [macos-intel]", 1);
+        assert!(validate_hermes_skill_content(&wrong_platforms)
+            .unwrap_err()
+            .to_string()
+            .contains("platforms"));
+
         let missing_metadata = valid.replacen("  hermes:", "  runtime:", 1);
         assert!(validate_hermes_skill_content(&missing_metadata)
             .unwrap_err()
@@ -401,5 +420,28 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("references/commands.md"));
+    }
+
+    #[test]
+    fn hermes_skill_validation_requires_exact_inline_list_items() {
+        assert!(inline_yaml_list_contains(
+            "[clipboard, 'memory', \"macos\"]",
+            "memory"
+        ));
+        assert!(!inline_yaml_list_contains(
+            "[clipboard-memory]",
+            "clipboard"
+        ));
+
+        let valid = packaged_hermes_skill();
+        let wrong_tags = valid.replacen(
+            "tags: [clipboard, memory, macos, local-first, cli, retrieval]",
+            "tags: [clipboard-memory, macos, local-first, cli, retrieval]",
+            1,
+        );
+        assert!(validate_hermes_skill_content(&wrong_tags)
+            .unwrap_err()
+            .to_string()
+            .contains("metadata.hermes.tags must include `clipboard`"));
     }
 }

@@ -32,6 +32,8 @@ versioning where practical.
   find snapshots after their image representations are rewritten.
 - Fixed watched capture restore suppression so database-trigger suppression is
   treated as a skipped restored snapshot instead of a noisy capture error.
+- Fixed Hermes skill metadata validation so `platforms` and `tags` require
+  exact YAML list items instead of accepting substring matches.
 - Fixed `clipmem recall --prefer-app` so empty preferred-app values are rejected
   during CLI parsing before opening the archive database.
 - Fixed the macOS History detail pane so image snapshots show an inline

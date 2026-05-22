@@ -82,6 +82,16 @@ fn get_frontmatter_value<'a>(frontmatter: &'a str, key: &str) -> Option<&'a str>
     None
 }
 
+fn inline_yaml_list_contains(value: &str, expected: &str) -> bool {
+    value
+        .trim()
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .split(',')
+        .map(|item| item.trim().trim_matches(['"', '\'']))
+        .any(|item| item == expected)
+}
+
 fn read_file(path: &Path) -> String {
     fs::read_to_string(path).unwrap_or_else(|e| panic!("failed to read {}: {}", path.display(), e))
 }
@@ -168,7 +178,7 @@ fn hermes_skill_preserves_hermes_metadata() {
     let platforms =
         get_frontmatter_value(&frontmatter, "platforms").expect("hermes needs platforms");
     assert!(
-        platforms.contains("macos"),
+        inline_yaml_list_contains(platforms, "macos"),
         "hermes platforms missing macos"
     );
     assert!(
@@ -179,6 +189,7 @@ fn hermes_skill_preserves_hermes_metadata() {
         frontmatter.contains("category: productivity"),
         "hermes metadata missing productivity category"
     );
+    let tags = get_frontmatter_value(&frontmatter, "    tags").expect("hermes needs tags");
     for tag in [
         "clipboard",
         "memory",
@@ -188,7 +199,7 @@ fn hermes_skill_preserves_hermes_metadata() {
         "retrieval",
     ] {
         assert!(
-            frontmatter.contains(tag),
+            inline_yaml_list_contains(tags, tag),
             "hermes metadata missing tag '{tag}'"
         );
     }
