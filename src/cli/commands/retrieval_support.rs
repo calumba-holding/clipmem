@@ -343,6 +343,74 @@ mod tests {
     }
 
     #[test]
+    fn watch_iteration_uses_captured_change_count_for_duplicate_guard() {
+        let path = temp_db_path("watch-captured-count-guard");
+        let mut db = Database::open_or_init(&path).expect("test database should open");
+        let args = WatchArgs {
+            interval_ms: 350,
+            quiet: true,
+            skip_initial: false,
+        };
+        let mut state = WatchState::new();
+        let capture_calls = Cell::new(0);
+
+        let first = run_watch_iteration_with_capture(
+            &mut db,
+            &args,
+            &mut state,
+            || Ok(7),
+            || {
+                capture_calls.set(capture_calls.get() + 1);
+                Ok(build_snapshot(
+                    CaptureContext::new(9)
+                        .with_frontmost_app_name("Terminal")
+                        .with_frontmost_app_bundle_id("com.apple.Terminal"),
+                    vec![build_item(
+                        0,
+                        vec![build_representation(
+                            "public.utf8-plain-text".to_string(),
+                            None,
+                            b"raced clipboard".to_vec(),
+                        )],
+                    )],
+                ))
+            },
+        );
+        assert!(first.is_ok());
+
+        let second = run_watch_iteration_with_capture(
+            &mut db,
+            &args,
+            &mut state,
+            || Ok(8),
+            || {
+                capture_calls.set(capture_calls.get() + 1);
+                Ok(build_snapshot(
+                    CaptureContext::new(9)
+                        .with_frontmost_app_name("Terminal")
+                        .with_frontmost_app_bundle_id("com.apple.Terminal"),
+                    vec![build_item(
+                        0,
+                        vec![build_representation(
+                            "public.utf8-plain-text".to_string(),
+                            None,
+                            b"raced clipboard".to_vec(),
+                        )],
+                    )],
+                ))
+            },
+        );
+        assert!(second.is_ok());
+
+        let hits = db.recent(10, &unfiltered()).unwrap();
+        assert_eq!(capture_calls.get(), 2);
+        assert_eq!(hits.hits().len(), 1);
+        assert_eq!(hits.hits()[0].capture_count(), 1);
+
+        cleanup_db(&path);
+    }
+
+    #[test]
     fn watch_iteration_skips_restored_snapshots_and_marks_them_handled() {
         let path = temp_db_path("watch-restore-suppression");
         let mut db = Database::open_or_init(&path).expect("test database should open");

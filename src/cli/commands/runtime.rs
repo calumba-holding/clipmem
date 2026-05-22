@@ -76,6 +76,10 @@ where
 
     let snapshot = capture_snapshot_fn()
         .map_err(|error| platform_error(format!("capture failed: {error}")))?;
+    if !crate::app::should_capture_change(snapshot.change_count(), state) {
+        return Ok(());
+    }
+
     let settings = db
         .capture_settings()
         .context("load capture settings failed")?;

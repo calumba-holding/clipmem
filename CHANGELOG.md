@@ -42,6 +42,8 @@ versioning where practical.
   stored text are rebuilt from their raw clipboard bytes instead of placeholders.
 - Fixed `clipmem get --format md` so OCR text and OCR status appear in markdown
   snapshot detail output.
+- Fixed the macOS watch loop so stale pre-capture change counts cannot duplicate
+  or advance handling for a snapshot whose captured change count was already seen.
 - Fixed `clipmem recall --prefer-app` so empty preferred-app values are rejected
   during CLI parsing before opening the archive database.
 - Fixed the macOS History detail pane so image snapshots show an inline
