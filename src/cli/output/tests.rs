@@ -422,8 +422,8 @@ pub(in crate::cli) fn get_markdown_renders_summary_items_and_events() {
             "2026-04-16 11:00:00".to_string(),
             Some("Terminal".to_string()),
             Some("com.apple.Terminal".to_string()),
-            None,
-            None,
+            Some("OCR invoice total | 42".to_string()),
+            Some("ready".to_string()),
             vec![CaptureEvent::new(
                 21,
                 "2026-04-16 11:00:00".to_string(),
@@ -445,6 +445,8 @@ pub(in crate::cli) fn get_markdown_renders_summary_items_and_events() {
     assert!(markdown.contains("## Items"));
     assert!(markdown.contains("## Recent Events"));
     assert!(markdown.contains("Snapshot: 7"));
+    assert!(markdown.contains("- OCR: OCR invoice total \\| 42"));
+    assert!(markdown.contains("- OCR status: ready"));
 }
 
 #[test]

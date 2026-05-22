@@ -141,6 +141,16 @@ pub(in crate::cli) fn render_get_markdown(envelope: &GetEnvelope) -> String {
             escape_markdown_cell(&truncate_for_markdown(snapshot.preview_text(), 160))
         );
     }
+    if let Some(ocr_text) = snapshot.ocr_text() {
+        let _ = writeln!(
+            out,
+            "- OCR: {}",
+            escape_markdown_cell(&truncate_for_markdown(ocr_text, 240))
+        );
+    }
+    if let Some(ocr_status) = snapshot.ocr_status() {
+        let _ = writeln!(out, "- OCR status: {}", escape_markdown_cell(ocr_status));
+    }
 
     let _ = writeln!(out);
     let _ = writeln!(out, "## Items");

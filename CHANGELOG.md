@@ -40,6 +40,8 @@ versioning where practical.
   OCR text matches instead of returning only file-path hits.
 - Fixed schema migrations so UTF-16-only text snapshots with NUL-corrupted
   stored text are rebuilt from their raw clipboard bytes instead of placeholders.
+- Fixed `clipmem get --format md` so OCR text and OCR status appear in markdown
+  snapshot detail output.
 - Fixed `clipmem recall --prefer-app` so empty preferred-app values are rejected
   during CLI parsing before opening the archive database.
 - Fixed the macOS History detail pane so image snapshots show an inline
