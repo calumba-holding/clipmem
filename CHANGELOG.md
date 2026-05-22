@@ -30,6 +30,8 @@ versioning where practical.
   bar app when auto-compaction changes storage without compressing new rows.
 - Fixed image optimization so literal searches by app name or bundle ID still
   find snapshots after their image representations are rewritten.
+- Fixed watched capture restore suppression so database-trigger suppression is
+  treated as a skipped restored snapshot instead of a noisy capture error.
 - Fixed `clipmem recall --prefer-app` so empty preferred-app values are rejected
   during CLI parsing before opening the archive database.
 - Fixed the macOS History detail pane so image snapshots show an inline

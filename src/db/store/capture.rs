@@ -11,6 +11,17 @@ use crate::db::types::{ArchiveChangeKind, CaptureSkipReason, CaptureStoreOutcome
 use crate::model::{CaptureStoreResult, ClipboardSnapshot};
 use crate::sensitive;
 
+#[derive(Debug)]
+struct RestoreSuppressedCapture;
+
+impl std::fmt::Display for RestoreSuppressedCapture {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("capture event suppressed by pending restore marker")
+    }
+}
+
+impl std::error::Error for RestoreSuppressedCapture {}
+
 impl Database {
     /// Store a captured clipboard snapshot and append a capture event for the observation.
     ///
@@ -87,7 +98,7 @@ impl Database {
         if inserted_event_rows == 0 {
             tx.commit()
                 .context("commit suppressed capture transaction")?;
-            anyhow::bail!("capture event suppressed by pending restore marker");
+            return Err(RestoreSuppressedCapture.into());
         }
         let event_id = tx.last_insert_rowid();
 
@@ -128,7 +139,13 @@ impl Database {
             ));
         }
 
-        self.store_capture_if_allowed(snapshot)
+        match self.store_capture_if_allowed(snapshot) {
+            Ok(outcome) => Ok(outcome),
+            Err(error) if restore_suppressed_capture(&error) => Ok(CaptureStoreOutcome::Skipped(
+                CaptureSkipReason::RestoredSnapshot,
+            )),
+            Err(error) => Err(error),
+        }
     }
 
     pub(crate) fn register_pending_restore(&self, snapshot_sha256: &str) -> Result<()> {
@@ -176,6 +193,10 @@ impl Database {
     }
 }
 
+fn restore_suppressed_capture(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<RestoreSuppressedCapture>().is_some()
+}
+
 fn delete_expired_pending_restores(conn: &rusqlite::Connection) -> Result<()> {
     let expiry_window = format!("-{RESTORE_SUPPRESSION_WINDOW_SECONDS} seconds");
     conn.execute(
@@ -185,4 +206,20 @@ fn delete_expired_pending_restores(conn: &rusqlite::Connection) -> Result<()> {
     )
     .context("delete expired pending restores")?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{restore_suppressed_capture, RestoreSuppressedCapture};
+
+    #[test]
+    fn restore_suppression_is_typed_for_watched_capture_mapping() {
+        let error: anyhow::Error = RestoreSuppressedCapture.into();
+
+        assert!(restore_suppressed_capture(&error));
+        assert_eq!(
+            error.to_string(),
+            "capture event suppressed by pending restore marker"
+        );
+    }
 }
