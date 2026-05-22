@@ -26,6 +26,8 @@ versioning where practical.
   launch preference is preserved even if the configured marker was missing.
 - Fixed non-macOS `clipmem agents context` retention display to use compact
   durations such as `30m` instead of raw seconds.
+- Fixed `clipmem storage optimize-images` so non-progress runs notify the menu
+  bar app when auto-compaction changes storage without compressing new rows.
 - Fixed `clipmem recall --prefer-app` so empty preferred-app values are rejected
   during CLI parsing before opening the archive database.
 - Fixed the macOS History detail pane so image snapshots show an inline

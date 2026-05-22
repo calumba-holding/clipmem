@@ -11,7 +11,7 @@ use crate::cli::schema::{
     StorageArgs, StorageCommand, StorageCompactArgs, StorageImageCandidatesArgs,
     StorageOptimizeImagesArgs,
 };
-use crate::db::ImageOptimizationCandidateSummary;
+use crate::db::{ImageOptimizationCandidateSummary, ImageOptimizationReport};
 
 use super::mutation_support::require_text_or_json;
 use super::notify::notify_app_refresh;
@@ -52,10 +52,14 @@ fn storage_optimize_images(db_path: &Path, args: &StorageOptimizeImagesArgs) -> 
     let mut db = open_existing_db(db_path)?;
     let report = db.optimize_images(args.dry_run, args.limit, !args.no_compact)?;
     emit_image_optimization_output(format, &report)?;
-    if !report.dry_run && report.compressed_rows > 0 {
+    if should_notify_after_image_optimization(&report) {
         notify_app_refresh();
     }
     Ok(())
+}
+
+fn should_notify_after_image_optimization(report: &ImageOptimizationReport) -> bool {
+    !report.dry_run && (report.compressed_rows > 0 || report.compact_run)
 }
 
 fn storage_image_candidates(db_path: &Path, args: &StorageImageCandidatesArgs) -> Result<()> {
@@ -71,6 +75,48 @@ fn storage_image_candidates(db_path: &Path, args: &StorageImageCandidatesArgs) -
             Ok(())
         }
         _ => unreachable!("unsupported storage image-candidates format should be rejected earlier"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_notify_after_image_optimization;
+    use crate::db::ImageOptimizationReport;
+
+    fn report(dry_run: bool, compressed_rows: usize, compact_run: bool) -> ImageOptimizationReport {
+        ImageOptimizationReport {
+            dry_run,
+            format: "webp_lossless",
+            scanned_rows: 0,
+            compressed_rows,
+            skipped_rows: 0,
+            conflict_count: 0,
+            original_bytes: 0,
+            optimized_bytes: 0,
+            logical_saved_bytes: 0,
+            compact_run,
+            compact: None,
+            compact_error: None,
+            filesystem_saved_bytes: 0,
+            filesystem_growth_bytes: 0,
+            compact_recommended: false,
+        }
+    }
+
+    #[test]
+    fn image_optimization_notify_predicate_includes_compaction_only_mutation() {
+        assert!(should_notify_after_image_optimization(&report(
+            false, 0, true
+        )));
+        assert!(should_notify_after_image_optimization(&report(
+            false, 1, false
+        )));
+        assert!(!should_notify_after_image_optimization(&report(
+            true, 1, true
+        )));
+        assert!(!should_notify_after_image_optimization(&report(
+            false, 0, false
+        )));
     }
 }
 
