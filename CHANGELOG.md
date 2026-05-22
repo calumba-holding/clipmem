@@ -24,6 +24,8 @@ versioning where practical.
   are rejected with the same clap-formatted error used by other commands.
 - Fixed menu bar launch-at-login initialization so an explicit CLI-written
   launch preference is preserved even if the configured marker was missing.
+- Fixed non-macOS `clipmem agents context` retention display to use compact
+  durations such as `30m` instead of raw seconds.
 - Fixed `clipmem recall --prefer-app` so empty preferred-app values are rejected
   during CLI parsing before opening the archive database.
 - Fixed the macOS History detail pane so image snapshots show an inline

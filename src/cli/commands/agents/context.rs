@@ -3,6 +3,8 @@ use std::path::Path;
 use anyhow::Result;
 use serde::Serialize;
 
+#[cfg(any(test, not(target_os = "macos")))]
+use crate::cli::display::format_duration_compact;
 use crate::cli::formats::OutputFormat;
 use crate::cli::output::print_json;
 use crate::cli::presentation::generated_at_now;
@@ -440,14 +442,15 @@ fn load_agent_context_status(db_path: &Path) -> Result<AgentContextStatus> {
         paused: Some(paused),
         api_key_filter_enabled: Some(settings.api_key_filter_enabled()),
         retention_seconds: settings.retention_seconds(),
-        retention: Some(
-            settings
-                .retention_seconds()
-                .map_or_else(|| "forever".to_string(), |seconds| format!("{seconds}s")),
-        ),
+        retention: Some(render_agent_retention(settings.retention_seconds())),
         ignored_bundle_id_count: Some(policy.ignored_bundle_id_count()),
         health,
     })
+}
+
+#[cfg(any(test, not(target_os = "macos")))]
+fn render_agent_retention(retention_seconds: Option<u64>) -> String {
+    retention_seconds.map_or_else(|| "forever".to_string(), format_duration_compact)
 }
 
 fn nonempty_option(value: Option<String>) -> Option<String> {
@@ -459,6 +462,18 @@ fn nonempty_option(value: Option<String>) -> Option<String> {
             Some(value)
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_agent_retention;
+
+    #[test]
+    fn agent_retention_uses_compact_duration_format() {
+        assert_eq!(render_agent_retention(Some(1_800)), "30m");
+        assert_eq!(render_agent_retention(Some(7_200)), "2h");
+        assert_eq!(render_agent_retention(None), "forever");
+    }
 }
 
 fn build_recent_activity(db: &Database) -> Result<AgentRecentActivitySummary> {
