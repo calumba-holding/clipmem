@@ -590,6 +590,77 @@ fn migration_repairs_embedded_nul_snapshot_text_projection() -> Result<()> {
 }
 
 #[test]
+fn migration_repairs_utf16_only_embedded_nul_snapshot_text_projection() -> Result<()> {
+    let path = temp_db_path("embedded-nul-utf16-only-projection-migration");
+    let parent = path.parent().expect("temporary path should have a parent");
+    std::fs::create_dir_all(parent)?;
+
+    let marker = "clipmem utf16-only repaired projection";
+    let bad_utf16_text = marker.chars().flat_map(|ch| [ch, '\0']).collect::<String>();
+    let utf16_bytes = marker
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>();
+
+    let conn = rusqlite::Connection::open(&path)?;
+    configure_connection(&conn)?;
+    conn.execute_batch(SCHEMA)?;
+    conn.execute(
+        "INSERT INTO snapshots (
+            id, sha256, snapshot_kind, preview_text, search_text, item_count, total_bytes, created_at
+        ) VALUES (1, 'bad-utf16-only-projection', 'plain_text', ?1, ?1, 1, 128, '2026-04-16 10:00:00')",
+        [&bad_utf16_text],
+    )?;
+    conn.execute(
+        "INSERT INTO snapshot_items (
+            snapshot_id, item_index, primary_kind, primary_uti, preview_text, search_text, total_bytes
+        ) VALUES (1, 0, 'plain_text', 'public.utf16-plain-text', ?1, ?1, 128)",
+        [&bad_utf16_text],
+    )?;
+    conn.execute(
+        "INSERT INTO item_representations (
+            snapshot_id, item_index, uti, kind, byte_len, raw_sha256, text_value, blob_value
+        ) VALUES (1, 0, 'public.utf16-plain-text', 'plain_text', ?1, 'utf16-only-sha', ?2, ?3)",
+        params![utf16_bytes.len() as i64, bad_utf16_text, utf16_bytes],
+    )?;
+    conn.execute(
+        "INSERT INTO capture_events (
+            id, snapshot_id, observed_at, change_count, frontmost_app_bundle_id, frontmost_app_name
+        ) VALUES (1, 1, '2026-04-16 10:00:00', 1, 'com.example.test', 'Test App')",
+        [],
+    )?;
+    conn.pragma_update(None, "user_version", 9)?;
+    drop(conn);
+
+    let db = Database::open_existing(&path)?;
+    let version: i64 = db
+        .conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let (preview_text, search_text): (String, String) = db.conn.query_row(
+        "SELECT preview_text, search_text FROM snapshots WHERE id = 1",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    let item_projection: (String, String, String) = db.conn.query_row(
+        "SELECT primary_uti, preview_text, search_text FROM snapshot_items WHERE snapshot_id = 1 AND item_index = 0",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )?;
+    let results = db.search_auto(marker, 10, &unfiltered())?;
+
+    assert_eq!(version, CURRENT_SCHEMA_VERSION);
+    assert_eq!(preview_text, marker);
+    assert_eq!(search_text, marker);
+    assert_eq!(item_projection.0, "public.utf16-plain-text");
+    assert_eq!(item_projection.1, marker);
+    assert_eq!(item_projection.2, marker);
+    assert_eq!(results.hits().len(), 1);
+
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
 fn schema_version_11_adds_image_compression_metadata() -> Result<()> {
     let path = temp_db_path("image-compression-metadata-migration");
     let parent = path.parent().expect("temporary path should have a parent");

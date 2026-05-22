@@ -38,6 +38,8 @@ versioning where practical.
   once no remaining clipboard representation references their image hash.
 - Fixed literal file-path searches so optimized path matches are merged with
   OCR text matches instead of returning only file-path hits.
+- Fixed schema migrations so UTF-16-only text snapshots with NUL-corrupted
+  stored text are rebuilt from their raw clipboard bytes instead of placeholders.
 - Fixed `clipmem recall --prefer-app` so empty preferred-app values are rejected
   during CLI parsing before opening the archive database.
 - Fixed the macOS History detail pane so image snapshots show an inline

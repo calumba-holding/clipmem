@@ -2,8 +2,9 @@ use anyhow::{bail, Context, Result};
 use rusqlite::Connection;
 
 use crate::model::{
-    dedupe_text_fragments, html_to_text_lossy, is_searchable_text_fragment, normalize_whitespace,
-    rtf_to_text_lossy, truncate_chars, ClipboardKind,
+    decode_text_bytes_lossy, decode_text_bytes_strict, dedupe_text_fragments, html_to_text_lossy,
+    is_searchable_text_fragment, normalize_whitespace, rtf_to_text_lossy, truncate_chars,
+    ClipboardKind,
 };
 
 use super::sqlite_helpers::{collect_rows, row_enum};
@@ -454,6 +455,7 @@ pub(in crate::db) struct StoredProjectionRepresentation {
     kind: ClipboardKind,
     byte_len: i64,
     text_value: Option<String>,
+    blob_value: Vec<u8>,
 }
 
 pub(in crate::db) fn rebuild_snapshot_text_from_representations(conn: &Connection) -> Result<()> {
@@ -530,7 +532,7 @@ pub(in crate::db) fn load_stored_projection_items(
     let mut stmt = conn
         .prepare(
             r"
-            SELECT item_index, uti, kind, byte_len, text_value
+            SELECT item_index, uti, kind, byte_len, text_value, blob_value
             FROM item_representations
             WHERE snapshot_id = ?1
             ORDER BY item_index ASC, uti ASC
@@ -546,6 +548,7 @@ pub(in crate::db) fn load_stored_projection_items(
                     kind: row_enum(row, 2)?,
                     byte_len: row.get(3)?,
                     text_value: row.get(4)?,
+                    blob_value: row.get(5)?,
                 },
             ))
         })
@@ -575,10 +578,7 @@ pub(in crate::db) fn rebuilt_primary_representation(
     representations.iter().min_by_key(|representation| {
         (
             representation.kind.priority(),
-            !representation
-                .text_value
-                .as_deref()
-                .is_some_and(is_searchable_text_fragment),
+            rebuilt_text_for_representation(representation).is_none(),
             representation.uti.as_str(),
         )
     })
@@ -614,18 +614,40 @@ pub(in crate::db) fn rebuilt_search_fragment_for_representation(
         return None;
     }
 
-    let text = representation.text_value.as_deref()?;
-    if !is_searchable_text_fragment(text) {
-        return None;
-    }
+    let text = rebuilt_text_for_representation(representation)?;
 
     let projected = match representation.kind {
-        ClipboardKind::Html => html_to_text_lossy(text),
-        ClipboardKind::Rtf => rtf_to_text_lossy(text),
-        _ => text.to_string(),
+        ClipboardKind::Html => html_to_text_lossy(&text),
+        ClipboardKind::Rtf => rtf_to_text_lossy(&text),
+        _ => text,
     };
     let normalized = normalize_whitespace(&projected);
     is_searchable_text_fragment(&normalized).then_some(normalized)
+}
+
+fn rebuilt_text_for_representation(
+    representation: &StoredProjectionRepresentation,
+) -> Option<String> {
+    representation
+        .text_value
+        .as_deref()
+        .filter(|text| is_searchable_text_fragment(text))
+        .map(ToOwned::to_owned)
+        .or_else(|| {
+            let decoded_raw_text = decode_text_bytes_strict(&representation.blob_value);
+            decoded_raw_text
+                .as_deref()
+                .filter(|text| is_searchable_text_fragment(text))
+                .map(ToOwned::to_owned)
+                .or_else(|| {
+                    if representation.kind.is_textual() {
+                        decode_text_bytes_lossy(&representation.blob_value)
+                            .filter(|text| is_searchable_text_fragment(text))
+                    } else {
+                        decoded_raw_text
+                    }
+                })
+        })
 }
 
 pub(in crate::db) fn rebuilt_item_preview_text(
