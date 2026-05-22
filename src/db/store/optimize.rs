@@ -12,7 +12,8 @@ use super::config::{
 };
 use super::ocr::rebuild_snapshot_ocr_cache;
 use super::rebuild::{
-    rebuild_snapshot_summary, recompute_snapshot_fingerprint, snapshot_fingerprint_with_replacement,
+    rebuild_snapshot_literal_cache_for_snapshot, rebuild_snapshot_summary,
+    recompute_snapshot_fingerprint, snapshot_fingerprint_with_replacement,
 };
 use super::revision::bump_revision_tx;
 use crate::db::core::{clamp_result_limit, pragma_usize, storage_file_sizes};
@@ -545,6 +546,7 @@ pub(in crate::db) fn replace_image_with_optimized_webp(
         params![candidate.snapshot_id, fingerprint],
     )
     .context("update optimized snapshot fingerprint")?;
+    rebuild_snapshot_literal_cache_for_snapshot(&tx, candidate.snapshot_id)?;
     rebuild_snapshot_ocr_cache(&tx, candidate.snapshot_id)?;
     bump_revision_tx(
         &tx,

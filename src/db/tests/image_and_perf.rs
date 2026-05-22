@@ -107,6 +107,51 @@ fn lossless_webp_optimization_rewrites_image_once_and_preserves_pixels() -> Resu
 }
 
 #[test]
+fn image_optimization_preserves_literal_search_by_app_identity() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let original = lossless_test_tiff()?;
+    let text_rep = build_representation(
+        "public.utf8-plain-text".to_string(),
+        None,
+        b"unique image optimization text".to_vec(),
+    );
+    let image_rep = build_representation("public.tiff".to_string(), None, original);
+    let snapshot = build_snapshot(
+        CaptureContext::new(1)
+            .with_frontmost_app_name("Safari")
+            .with_frontmost_app_bundle_id("com.apple.Safari"),
+        vec![build_item(0, vec![text_rep, image_rep])],
+    );
+
+    db.store_capture(&snapshot)?;
+    assert_eq!(
+        db.search_literal("Safari", 10, &unfiltered())?.hits().len(),
+        1
+    );
+    assert_eq!(
+        db.search_literal("com.apple.Safari", 10, &unfiltered())?
+            .hits()
+            .len(),
+        1
+    );
+
+    let report = db.optimize_images(false, 25, true)?;
+
+    assert_eq!(report.compressed_rows, 1);
+    assert_eq!(
+        db.search_literal("Safari", 10, &unfiltered())?.hits().len(),
+        1
+    );
+    assert_eq!(
+        db.search_literal("com.apple.Safari", 10, &unfiltered())?
+            .hits()
+            .len(),
+        1
+    );
+    Ok(())
+}
+
+#[test]
 fn file_backed_image_optimization_compacts_without_adding_rows() -> Result<()> {
     let path = temp_db_path("image-optimization-compacts");
     let original = lossless_test_tiff()?;

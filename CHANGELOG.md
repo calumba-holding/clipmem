@@ -28,6 +28,8 @@ versioning where practical.
   durations such as `30m` instead of raw seconds.
 - Fixed `clipmem storage optimize-images` so non-progress runs notify the menu
   bar app when auto-compaction changes storage without compressing new rows.
+- Fixed image optimization so literal searches by app name or bundle ID still
+  find snapshots after their image representations are rewritten.
 - Fixed `clipmem recall --prefer-app` so empty preferred-app values are rejected
   during CLI parsing before opening the archive database.
 - Fixed the macOS History detail pane so image snapshots show an inline

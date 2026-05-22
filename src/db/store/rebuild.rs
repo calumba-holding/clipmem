@@ -75,6 +75,38 @@ pub(in crate::db) fn rebuild_snapshot_summary(
     Ok(())
 }
 
+pub(in crate::db) fn rebuild_snapshot_literal_cache_for_snapshot(
+    tx: &rusqlite::Transaction<'_>,
+    snapshot_id: i64,
+) -> Result<()> {
+    tx.execute(
+        r"
+            INSERT INTO snapshot_literal_cache (snapshot_id, haystack)
+            SELECT
+                s.id,
+                lower(
+                    COALESCE(NULLIF(s.preview_text, ''), s.search_text, '') || char(31) ||
+                    COALESCE(s.preview_text, '') || char(31) ||
+                    COALESCE(s.search_text, '') || char(31) ||
+                    COALESCE(sp.urls, '') || char(31) ||
+                    COALESCE(sp.file_urls, '') || char(31) ||
+                    COALESCE(ss.last_frontmost_app_name, '') || char(31) ||
+                    COALESCE(ss.last_frontmost_app_bundle_id, '')
+                )
+            FROM snapshots s
+            LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
+            LEFT JOIN snapshot_stats ss ON ss.snapshot_id = s.id
+            WHERE s.id = ?1
+            ON CONFLICT(snapshot_id) DO UPDATE SET
+                haystack = excluded.haystack
+            WHERE snapshot_literal_cache.haystack IS NOT excluded.haystack
+        ",
+        [snapshot_id],
+    )
+    .context("rebuild snapshot literal cache")?;
+    Ok(())
+}
+
 pub(in crate::db) fn snapshot_kind_from_item_rows(
     items: &[(String, String, String, usize)],
 ) -> Result<SnapshotKind> {
