@@ -53,6 +53,35 @@ extension UserDefaults {
     }
 }
 
+enum LaunchAtLoginDefaultAction: Equatable {
+    case enableLoginItem
+    case refreshFromDefaults
+}
+
+enum LaunchAtLoginDefaultConfigurator {
+    static func configureIfNeeded(
+        defaults: UserDefaults = .standard,
+        defaultEnabled: Bool = LoginItemController.bundleDefaultEnabled
+    ) -> LaunchAtLoginDefaultAction {
+        guard defaults.bool(forKey: PreferenceKey.didConfigureLaunchAtLogin) == false else {
+            return .refreshFromDefaults
+        }
+
+        if defaults.object(forKey: PreferenceKey.launchAtLoginEnabled) != nil {
+            defaults.set(true, forKey: PreferenceKey.didConfigureLaunchAtLogin)
+            return .refreshFromDefaults
+        }
+
+        if defaultEnabled {
+            return .enableLoginItem
+        }
+
+        defaults.set(false, forKey: PreferenceKey.launchAtLoginEnabled)
+        defaults.set(true, forKey: PreferenceKey.didConfigureLaunchAtLogin)
+        return .refreshFromDefaults
+    }
+}
+
 enum WindowActivation {
     @MainActor
     static func openWindow(_ openWindow: OpenWindowAction, id: WindowID) {

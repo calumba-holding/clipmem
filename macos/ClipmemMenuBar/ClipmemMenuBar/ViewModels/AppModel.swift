@@ -552,15 +552,12 @@ final class AppModel {
 
     private func configureDefaultLaunchAtLoginIfNeeded() {
         let defaults = UserDefaults.standard
-        if defaults.bool(forKey: PreferenceKey.didConfigureLaunchAtLogin) == false {
-            let defaultEnabled = LoginItemController.bundleDefaultEnabled
-            if defaultEnabled {
-                setLaunchAtLoginEnabled(true)
-                return
-            }
-            defaults.set(defaultEnabled, forKey: PreferenceKey.launchAtLoginEnabled)
-            defaults.set(true, forKey: PreferenceKey.didConfigureLaunchAtLogin)
-            launchAtLoginEnabled = defaultEnabled
+        switch LaunchAtLoginDefaultConfigurator.configureIfNeeded(defaults: defaults) {
+        case .enableLoginItem:
+            setLaunchAtLoginEnabled(true)
+            return
+        case .refreshFromDefaults:
+            break
         }
         launchAtLoginEnabled = defaults.clipmemLaunchAtLoginEnabled
         launchAtLoginStatus = LoginItemController.status()

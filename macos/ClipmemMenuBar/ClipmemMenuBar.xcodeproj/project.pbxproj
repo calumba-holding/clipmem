@@ -49,6 +49,7 @@
 		B00000000000000000000040 /* MarkdownTextRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000042 /* MarkdownTextRendererTests.swift */; };
 		B00000000000000000000041 /* CommandClickableMarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000043 /* CommandClickableMarkdownText.swift */; };
 		B00000000000000000000042 /* MarkdownLinkActionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000044 /* MarkdownLinkActionTests.swift */; };
+		B00000000000000000000043 /* LaunchAtLoginDefaultTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000045 /* LaunchAtLoginDefaultTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -106,6 +107,7 @@
 		A00000000000000000000042 /* MarkdownTextRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipmemMenuBarTests/MarkdownTextRendererTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000043 /* CommandClickableMarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/CommandClickableMarkdownText.swift; sourceTree = "<group>"; };
 		A00000000000000000000044 /* MarkdownLinkActionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipmemMenuBarTests/MarkdownLinkActionTests.swift; sourceTree = "<group>"; };
+		A00000000000000000000045 /* LaunchAtLoginDefaultTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipmemMenuBarTests/LaunchAtLoginDefaultTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -173,6 +175,7 @@
 				A00000000000000000000030 /* CommandRunnerTests.swift */,
 				A00000000000000000000034 /* UpdateCheckerTests.swift */,
 				A00000000000000000000038 /* HistoryModelTests.swift */,
+				A00000000000000000000045 /* LaunchAtLoginDefaultTests.swift */,
 				A00000000000000000000042 /* MarkdownTextRendererTests.swift */,
 				A00000000000000000000044 /* MarkdownLinkActionTests.swift */,
 			);
@@ -309,6 +312,7 @@
 				B00000000000000000000028,
 				B00000000000000000000032,
 				B00000000000000000000036,
+				B00000000000000000000043,
 				B00000000000000000000040,
 				B00000000000000000000042,
 			);
