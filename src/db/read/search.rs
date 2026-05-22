@@ -308,7 +308,8 @@ impl Database {
             let results =
                 self.search_file_path_literal_page(path_fragment, limit, filters, cursor)?;
             if cursor.is_some() || !results.hits().is_empty() {
-                return Ok(results);
+                return self
+                    .merge_literal_hits_with_ocr(results, &analysis, limit, filters, cursor);
             }
         }
         let literal_search_lower = analysis.literal_search_lower();
@@ -367,7 +368,18 @@ impl Database {
             .context("execute literal search query")?;
 
         let native_hits = collect_search_results(rows, limit, SearchMode::Literal, "literal")?;
-        let ocr_hits = self.search_ocr_literal_hits(&analysis, limit, filters, cursor)?;
+        self.merge_literal_hits_with_ocr(native_hits, &analysis, limit, filters, cursor)
+    }
+
+    fn merge_literal_hits_with_ocr(
+        &self,
+        native_hits: SearchResults,
+        analysis: &QueryAnalysis,
+        limit: usize,
+        filters: &RetrievalFilters,
+        cursor: Option<&SearchCursorState>,
+    ) -> Result<SearchResults> {
+        let ocr_hits = self.search_ocr_literal_hits(analysis, limit, filters, cursor)?;
         Ok(merge_scored_search_results(
             SearchMode::Literal,
             native_hits,
@@ -439,7 +451,7 @@ impl Database {
         let prefix_like = format!("{literal_search_like}%");
         let include_matching_events = requires_matching_events(filters);
         let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
-        let literal_match = literal_fts_match_query(analysis);
+        let literal_match = ocr_literal_fts_match_query(analysis);
         let sql = ocr_literal_query(
             include_matching_events,
             use_snapshot_event_cache,
@@ -569,5 +581,13 @@ impl Database {
             SearchMode::Literal,
             "unfiltered file-path literal",
         )
+    }
+}
+
+fn ocr_literal_fts_match_query(analysis: &QueryAnalysis) -> Option<String> {
+    if analysis.path_fragment.is_some() {
+        None
+    } else {
+        literal_fts_match_query(analysis)
     }
 }

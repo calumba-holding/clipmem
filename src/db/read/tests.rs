@@ -47,6 +47,21 @@ pub(in crate::db) fn fake_file_snapshot(
     )
 }
 
+pub(in crate::db) fn fake_image_snapshot(
+    change_count: i64,
+    bytes: Vec<u8>,
+) -> crate::model::ClipboardSnapshot {
+    build_snapshot(
+        CaptureContext::new(change_count)
+            .with_frontmost_app_name("Preview")
+            .with_frontmost_app_bundle_id("com.apple.Preview"),
+        vec![build_item(
+            0,
+            vec![build_representation("public.png".to_string(), None, bytes)],
+        )],
+    )
+}
+
 pub(in crate::db) fn unfiltered() -> RetrievalFilters {
     RetrievalFilters::default()
 }
@@ -173,6 +188,39 @@ pub(in crate::db) fn file_path_search_matches_paths_with_spaces() -> Result<()> 
         results.hits()[0].file_paths(),
         &["/Users/test/work/foo bar.txt".to_string()]
     );
+    Ok(())
+}
+
+#[test]
+pub(in crate::db) fn file_path_literal_fast_path_includes_ocr_results() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+
+    let file_stored = db.store_capture(&fake_file_snapshot(
+        1,
+        "file:///Users/test/work/cargo%20build.txt",
+    ))?;
+    let image_stored = db.store_capture(&fake_image_snapshot(2, b"image-bytes".to_vec()))?;
+    db.enqueue_ocr_for_snapshot(image_stored.snapshot_id())?;
+    let candidates = db.next_ocr_candidates(25, None, false)?;
+    assert_eq!(candidates.len(), 1);
+    db.store_ocr_text(
+        candidates[0].raw_sha256(),
+        "fake",
+        "fast",
+        "Screenshot of /Users/test/work/cargo build.txt",
+    )?;
+
+    let results = db.search_auto("/Users/test/work/cargo build.txt", 10, &unfiltered())?;
+
+    assert_eq!(results.mode_used(), SearchMode::Literal);
+    let snapshot_ids: Vec<i64> = results.hits().iter().map(|hit| hit.snapshot_id()).collect();
+    assert!(snapshot_ids.contains(&file_stored.snapshot_id()));
+    assert!(snapshot_ids.contains(&image_stored.snapshot_id()));
+    assert_eq!(results.hits().len(), 2);
+    assert!(results.hits().iter().any(|hit| {
+        hit.snapshot_id() == image_stored.snapshot_id()
+            && hit.matched_fields() == &["ocr_text".to_string()]
+    }));
     Ok(())
 }
 

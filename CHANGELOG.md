@@ -36,6 +36,8 @@ versioning where practical.
   exact YAML list items instead of accepting substring matches.
 - Fixed snapshot deletion and retention purges so OCR result rows are removed
   once no remaining clipboard representation references their image hash.
+- Fixed literal file-path searches so optimized path matches are merged with
+  OCR text matches instead of returning only file-path hits.
 - Fixed `clipmem recall --prefer-app` so empty preferred-app values are rejected
   during CLI parsing before opening the archive database.
 - Fixed the macOS History detail pane so image snapshots show an inline
