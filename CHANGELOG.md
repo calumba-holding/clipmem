@@ -34,6 +34,8 @@ versioning where practical.
   treated as a skipped restored snapshot instead of a noisy capture error.
 - Fixed Hermes skill metadata validation so `platforms` and `tags` require
   exact YAML list items instead of accepting substring matches.
+- Fixed snapshot deletion and retention purges so OCR result rows are removed
+  once no remaining clipboard representation references their image hash.
 - Fixed `clipmem recall --prefer-app` so empty preferred-app values are rejected
   during CLI parsing before opening the archive database.
 - Fixed the macOS History detail pane so image snapshots show an inline

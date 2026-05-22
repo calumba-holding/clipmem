@@ -622,3 +622,43 @@ fn forget_snapshot_cascades_and_removes_search_visibility() -> Result<()> {
     assert_eq!(event_count, 0);
     Ok(())
 }
+
+#[test]
+fn forget_snapshot_deletes_orphaned_ocr_results() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let image_bytes = b"same-image-bytes".to_vec();
+    let first = db.store_capture(&image_snapshot(
+        1,
+        vec![("public.png", image_bytes.clone())],
+    ))?;
+    let second = db.store_capture(&image_snapshot(
+        2,
+        vec![
+            ("public.png", image_bytes),
+            ("public.utf8-plain-text", b"second distinct item".to_vec()),
+        ],
+    ))?;
+
+    assert_eq!(db.enqueue_ocr_for_snapshot(first.snapshot_id())?, 1);
+    let candidates = db.next_ocr_candidates(25, None, false)?;
+    assert_eq!(candidates.len(), 1);
+    db.store_ocr_text(
+        candidates[0].raw_sha256(),
+        "fake",
+        "fast",
+        "Shared image text",
+    )?;
+
+    db.forget_snapshot(first.snapshot_id())?;
+    assert_eq!(ocr_result_count(&db)?, 1);
+
+    db.forget_snapshot(second.snapshot_id())?;
+    assert_eq!(ocr_result_count(&db)?, 0);
+    Ok(())
+}
+
+fn ocr_result_count(db: &Database) -> Result<i64> {
+    Ok(db
+        .conn
+        .query_row("SELECT COUNT(*) FROM ocr_results", [], |row| row.get(0))?)
+}

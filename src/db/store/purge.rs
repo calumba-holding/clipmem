@@ -23,6 +23,7 @@ impl Database {
 
         tx.execute("DELETE FROM snapshots WHERE id = ?1", [snapshot_id])
             .context("delete snapshot")?;
+        delete_unreferenced_ocr_results(&tx)?;
         bump_revision_tx(&tx, &[ArchiveChangeKind::ArchiveContent])?;
         tx.commit().context("commit forget transaction")?;
         Ok(report)
@@ -54,6 +55,7 @@ impl Database {
                 [older_than_seconds_i64],
             )
             .context("delete expired snapshots")?;
+            delete_unreferenced_ocr_results(&tx)?;
             bump_revision_tx(&tx, &[ArchiveChangeKind::ArchiveContent])?;
         }
 
@@ -75,6 +77,22 @@ impl Database {
             .map(|seconds| self.purge_snapshots_older_than(seconds, false))
             .transpose()
     }
+}
+
+fn delete_unreferenced_ocr_results(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+    tx.execute(
+        r"
+            DELETE FROM ocr_results
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM item_representations ir
+                WHERE ir.raw_sha256 = ocr_results.raw_sha256
+            )
+        ",
+        [],
+    )
+    .context("delete unreferenced OCR results")?;
+    Ok(())
 }
 
 fn load_snapshot_deletion_report(

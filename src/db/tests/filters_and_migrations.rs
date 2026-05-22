@@ -43,6 +43,46 @@ fn purge_uses_last_observed_at_and_dry_run_does_not_delete() -> Result<()> {
 }
 
 #[test]
+fn purge_snapshots_older_than_deletes_orphaned_ocr_results() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+
+    let old = db.store_capture(&image_snapshot(
+        1,
+        vec![("public.png", b"old-image-bytes".to_vec())],
+    ))?;
+    let fresh = db.store_capture(&image_snapshot(
+        2,
+        vec![("public.png", b"fresh-image-bytes".to_vec())],
+    ))?;
+    for snapshot_id in [old.snapshot_id(), fresh.snapshot_id()] {
+        db.enqueue_ocr_for_snapshot(snapshot_id)?;
+    }
+    for candidate in db.next_ocr_candidates(25, None, false)? {
+        db.store_ocr_text(candidate.raw_sha256(), "fake", "fast", "Indexed image text")?;
+    }
+    set_event_observed_at(&db, old.event_id(), "2000-01-01 00:00:00")?;
+
+    let dry_run = db.purge_snapshots_older_than(30 * 24 * 60 * 60, true)?;
+    assert!(dry_run.dry_run());
+    assert_eq!(ocr_result_count(&db)?, 2);
+
+    let deleted = db.purge_snapshots_older_than(30 * 24 * 60 * 60, false)?;
+    assert!(!deleted.dry_run());
+    assert_eq!(deleted.snapshot_count(), 1);
+    assert!(db.find_snapshot(old.snapshot_id(), 10)?.is_none());
+    assert!(db.find_snapshot(fresh.snapshot_id(), 10)?.is_some());
+    assert_eq!(ocr_result_count(&db)?, 1);
+
+    Ok(())
+}
+
+fn ocr_result_count(db: &Database) -> Result<i64> {
+    Ok(db
+        .conn
+        .query_row("SELECT COUNT(*) FROM ocr_results", [], |row| row.get(0))?)
+}
+
+#[test]
 fn search_like_treats_underscore_as_literal() -> Result<()> {
     let mut db = Database::open_in_memory()?;
 
