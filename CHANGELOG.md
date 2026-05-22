@@ -18,6 +18,8 @@ versioning where practical.
 
 - Fixed `clipmem export --uti` so empty representation type values are rejected
   during CLI parsing before opening the archive database.
+- Fixed `clipmem ocr candidates --snapshot` so deduplicated image candidates
+  report their total snapshot count instead of the filtered snapshot count.
 - Fixed `clipmem recall --prefer-app` so empty preferred-app values are rejected
   during CLI parsing before opening the archive database.
 - Fixed the macOS History detail pane so image snapshots show an inline

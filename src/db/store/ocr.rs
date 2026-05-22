@@ -234,18 +234,36 @@ impl Database {
             .conn
             .prepare(
                 r"
+                    WITH candidate_hashes AS (
+                        SELECT o.raw_sha256, o.updated_at
+                        FROM ocr_results o
+                        WHERE o.status = 'pending'
+                          AND (
+                              ?1 IS NULL
+                              OR EXISTS (
+                                  SELECT 1
+                                  FROM item_representations ir
+                                  WHERE ir.raw_sha256 = o.raw_sha256
+                                    AND ir.snapshot_id = ?1
+                              )
+                          )
+                        ORDER BY o.updated_at ASC, o.raw_sha256 ASC
+                        LIMIT ?2
+                    )
                     SELECT
-                        o.raw_sha256,
-                        COALESCE(MAX(ir.byte_len), 0) AS byte_len,
-                        COUNT(DISTINCT ir.snapshot_id) AS snapshot_count,
-                        o.updated_at
-                    FROM ocr_results o
-                    JOIN item_representations ir ON ir.raw_sha256 = o.raw_sha256
-                    WHERE o.status = 'pending'
-                      AND (?1 IS NULL OR ir.snapshot_id = ?1)
-                    GROUP BY o.raw_sha256, o.updated_at
-                    ORDER BY o.updated_at ASC, o.raw_sha256 ASC
-                    LIMIT ?2
+                        c.raw_sha256,
+                        COALESCE((
+                            SELECT MAX(ir.byte_len)
+                            FROM item_representations ir
+                            WHERE ir.raw_sha256 = c.raw_sha256
+                        ), 0) AS byte_len,
+                        (
+                            SELECT COUNT(DISTINCT ir.snapshot_id)
+                            FROM item_representations ir
+                            WHERE ir.raw_sha256 = c.raw_sha256
+                        ) AS snapshot_count,
+                        c.updated_at
+                    FROM candidate_hashes c
                 ",
             )
             .context("prepare ocr candidate summary query")?;

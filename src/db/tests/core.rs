@@ -319,6 +319,44 @@ fn failed_ocr_results_do_not_enter_search() -> Result<()> {
 }
 
 #[test]
+fn ocr_candidate_summaries_keep_global_snapshot_count_when_filtered() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let shared_image = b"shared-image-bytes".to_vec();
+    let mut snapshot_ids = Vec::new();
+
+    for change_count in 1..=3 {
+        let image_item = build_item(
+            0,
+            vec![build_representation(
+                "public.png".to_string(),
+                None,
+                shared_image.clone(),
+            )],
+        );
+        let text_item = build_item(
+            1,
+            vec![build_representation(
+                "public.utf8-plain-text".to_string(),
+                None,
+                format!("unique snapshot {change_count}").into_bytes(),
+            )],
+        );
+        let stored = db.store_capture(&build_snapshot(
+            CaptureContext::new(change_count),
+            vec![image_item, text_item],
+        ))?;
+        snapshot_ids.push(stored.snapshot_id());
+        db.enqueue_ocr_for_snapshot(stored.snapshot_id())?;
+    }
+
+    let summaries = db.ocr_candidate_summaries(10, Some(snapshot_ids[0]))?;
+
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].snapshot_count(), 3);
+    Ok(())
+}
+
+#[test]
 fn store_capture_if_allowed_skips_api_key_like_snapshots_when_enabled() -> Result<()> {
     let mut db = Database::open_in_memory()?;
     db.set_api_key_filter_enabled(true)?;
