@@ -9,6 +9,11 @@ versioning where practical.
 
 ## Unreleased
 
+### Changed
+
+- Updated the packaged `clipboard-memory` skill to 1.3.7 so ClawHub publishes
+  the current package contents after the 0.5.2 release.
+
 ## 0.5.2 - 2026-05-30
 
 ### Changed
