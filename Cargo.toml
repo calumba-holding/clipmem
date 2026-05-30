@@ -1,6 +1,6 @@
 [package]
 name = "clipmem"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 description = "macOS clipboard memory backed by SQLite and searchable from agent runtimes"
 license = "MIT"

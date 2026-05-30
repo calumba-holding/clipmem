@@ -9,6 +9,8 @@ versioning where practical.
 
 ## Unreleased
 
+## 0.5.2 - 2026-05-30
+
 ### Changed
 
 - Expanded the README with a first-time user walkthrough, concrete clipboard
@@ -16,6 +18,8 @@ versioning where practical.
 
 ### Fixed
 
+- Fixed current-toolchain Clippy validation for agent context, storage image
+  candidate, and literal search regression coverage.
 - Fixed `clipmem export --uti` so empty representation type values are rejected
   during CLI parsing before opening the archive database.
 - Fixed `clipmem ocr candidates --snapshot` so deduplicated image candidates
