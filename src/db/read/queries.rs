@@ -199,12 +199,15 @@ pub(in crate::db) fn literal_query(
                  CASE
                      WHEN lower(COALESCE(sp.urls, '')) = :query_lower THEN 'Exact URL match'
                      WHEN :path_fragment_like IS NOT NULL AND lower(COALESCE(sp.file_urls, '')) LIKE :path_fragment_like ESCAPE '\\' THEN 'Path fragment match in file paths'
+                     WHEN lower(COALESCE(sp.file_urls, '')) LIKE :file_url_like ESCAPE '\\' THEN 'File name match in file paths'
                      WHEN lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) = :query_lower THEN 'Bundle ID match'
                      WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\\' THEN 'Exact phrase match in best text'
                      WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) = :query_lower THEN 'Exact text match in best text'
                      WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :prefix_like ESCAPE '\\' THEN 'Prefix match in best text'
                      WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :like ESCAPE '\\' THEN 'Literal text match in best text'
                      WHEN lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\\' THEN 'Literal search-text match'
+                     WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :loose_like ESCAPE '\\' THEN 'Ordered term match in best text'
+                     WHEN lower(COALESCE(s.search_text, '')) LIKE :loose_like ESCAPE '\\' THEN 'Ordered term match in search text'
                      WHEN lower(COALESCE(ss.last_frontmost_app_name, '')) LIKE :like ESCAPE '\\' THEN 'App name match'
                      ELSE 'Literal field match'
                  END AS why_matched,
@@ -212,8 +215,10 @@ pub(in crate::db) fn literal_query(
                      CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), '')) LIKE :like ESCAPE '\\' THEN 'best_text' || char(30) ELSE '' END ||
                      CASE WHEN lower(COALESCE(s.preview_text, '')) LIKE :like ESCAPE '\\' THEN 'preview_text' || char(30) ELSE '' END ||
                      CASE WHEN lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\\' THEN 'search_text' || char(30) ELSE '' END ||
+                     CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :loose_like ESCAPE '\\' THEN 'best_text' || char(30) ELSE '' END ||
+                     CASE WHEN lower(COALESCE(s.search_text, '')) LIKE :loose_like ESCAPE '\\' THEN 'search_text' || char(30) ELSE '' END ||
                      CASE WHEN lower(COALESCE(sp.urls, '')) LIKE :like ESCAPE '\\' OR lower(COALESCE(sp.urls, '')) = :query_lower THEN 'urls' || char(30) ELSE '' END ||
-                     CASE WHEN :path_fragment_like IS NOT NULL AND lower(COALESCE(sp.file_urls, '')) LIKE :path_fragment_like ESCAPE '\\' THEN 'file_paths' || char(30) ELSE '' END ||
+                     CASE WHEN (:path_fragment_like IS NOT NULL AND lower(COALESCE(sp.file_urls, '')) LIKE :path_fragment_like ESCAPE '\\') OR lower(COALESCE(sp.file_urls, '')) LIKE :file_url_like ESCAPE '\\' THEN 'file_paths' || char(30) ELSE '' END ||
                      CASE WHEN lower(COALESCE(ss.last_frontmost_app_name, '')) LIKE :like ESCAPE '\\' THEN 'app_name' || char(30) ELSE '' END ||
                      CASE WHEN lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) LIKE :like ESCAPE '\\' OR lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) = :query_lower THEN 'app_bundle_id' || char(30) ELSE '' END,
                      char(30)
@@ -230,6 +235,7 @@ pub(in crate::db) fn literal_query(
                  (
                      CASE WHEN lower(COALESCE(sp.urls, '')) = :query_lower THEN 1.16 ELSE 0 END +
                      CASE WHEN :path_fragment_like IS NOT NULL AND lower(COALESCE(sp.file_urls, '')) LIKE :path_fragment_like ESCAPE '\\' THEN 1.12 ELSE 0 END +
+                     CASE WHEN lower(COALESCE(sp.file_urls, '')) LIKE :file_url_like ESCAPE '\\' THEN 0.98 ELSE 0 END +
                      CASE WHEN lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) = :query_lower THEN 1.08 ELSE 0 END +
                      CASE WHEN :exact_phrase_lower IS NOT NULL AND lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE ('%' || :exact_phrase_lower || '%') ESCAPE '\\' THEN 0.98 ELSE 0 END +
                      CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) = :query_lower THEN 0.96 ELSE 0 END +
@@ -237,6 +243,11 @@ pub(in crate::db) fn literal_query(
                      CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :like ESCAPE '\\' THEN 0.78 ELSE 0 END +
                      CASE WHEN lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\\' THEN 0.72 ELSE 0 END +
                      CASE WHEN lower(COALESCE(sp.urls, '')) LIKE :like ESCAPE '\\' THEN 0.9 ELSE 0 END +
+                     CASE WHEN lower(COALESCE(sp.urls, '')) LIKE :like ESCAPE '\\' THEN -MIN(length(COALESCE(sp.urls, '')), 120) * 0.001 ELSE 0 END +
+                     CASE WHEN lower(COALESCE(NULLIF(s.preview_text, ''), s.search_text, '')) LIKE :loose_like ESCAPE '\\' THEN 0.7 ELSE 0 END +
+                     CASE WHEN lower(COALESCE(s.search_text, '')) LIKE :loose_like ESCAPE '\\' THEN 0.66 ELSE 0 END +
+                     CASE WHEN lower(COALESCE(sp.urls, '')) LIKE :prefix_like ESCAPE '\\' THEN 0.08 ELSE 0 END +
+                     CASE WHEN lower(COALESCE(sp.urls, '')) LIKE :prefix_like ESCAPE '\\' THEN -MIN(length(COALESCE(sp.urls, '')), 120) * 0.001 ELSE 0 END +
                      CASE WHEN lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) LIKE :like ESCAPE '\\' THEN 0.84 ELSE 0 END +
                      CASE WHEN lower(COALESCE(ss.last_frontmost_app_name, '')) LIKE :like ESCAPE '\\' THEN 0.7 ELSE 0 END +
                      CASE
@@ -252,9 +263,12 @@ pub(in crate::db) fn literal_query(
              LEFT JOIN snapshot_projection_cache sp ON sp.snapshot_id = s.id
              LEFT JOIN snapshot_event_filter_cache se ON se.snapshot_id = s.id
              WHERE (
-                    lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\\'
+                   lower(COALESCE(s.search_text, '')) LIKE :like ESCAPE '\\'
                  OR lower(COALESCE(s.preview_text, '')) LIKE :like ESCAPE '\\'
+                 OR lower(COALESCE(s.search_text, '')) LIKE :loose_like ESCAPE '\\'
+                 OR lower(COALESCE(s.preview_text, '')) LIKE :loose_like ESCAPE '\\'
                  OR lower(COALESCE(sp.urls, '')) LIKE :like ESCAPE '\\'
+                 OR lower(COALESCE(sp.file_urls, '')) LIKE :file_url_like ESCAPE '\\'
                  OR lower(COALESCE(ss.last_frontmost_app_name, '')) LIKE :like ESCAPE '\\'
                  OR lower(COALESCE(ss.last_frontmost_app_bundle_id, '')) LIKE :like ESCAPE '\\'
                  OR (:path_fragment_like IS NOT NULL AND lower(COALESCE(sp.file_urls, '')) LIKE :path_fragment_like ESCAPE '\\')
@@ -588,7 +602,7 @@ pub(in crate::db) fn ocr_fts_query(
              COALESCE(sp.file_urls, '') AS file_urls,
              s.total_bytes AS total_bytes,
              s.item_count AS item_count,
-             bm25(snapshot_ocr_fts) + 0.1 AS score
+             bm25(snapshot_ocr_fts) AS score
          FROM snapshot_ocr_fts
          JOIN snapshot_ocr_cache soc ON soc.snapshot_id = snapshot_ocr_fts.rowid
          JOIN snapshots s ON s.id = snapshot_ocr_fts.rowid
@@ -601,9 +615,9 @@ pub(in crate::db) fn ocr_fts_query(
            AND {event_filter_where_clause}
            AND (
                :cursor_score IS NULL
-               OR bm25(snapshot_ocr_fts) + 0.1 > :cursor_score
+               OR bm25(snapshot_ocr_fts) > :cursor_score
                OR (
-                   bm25(snapshot_ocr_fts) + 0.1 = :cursor_score
+                   bm25(snapshot_ocr_fts) = :cursor_score
                    AND (
                        ss.last_observed_at < :cursor_last_seen_at
                        OR (ss.last_observed_at = :cursor_last_seen_at AND s.id < :cursor_snapshot_id)

@@ -314,14 +314,28 @@ impl Database {
         }
         let literal_search_lower = analysis.literal_search_lower();
         let literal_search_like = escape_like_pattern(&literal_search_lower);
+        let loose_literal_like = literal_search_lower
+            .split_whitespace()
+            .filter(|term| !term.is_empty())
+            .map(escape_like_pattern)
+            .collect::<Vec<_>>()
+            .join("%");
         let exact_phrase_like = analysis
             .exact_phrase
             .as_ref()
             .map(|phrase| escape_like_pattern(&phrase.to_ascii_lowercase()));
         let like = format!("%{literal_search_like}%");
+        let loose_like = format!("%{loose_literal_like}%");
+        let file_url_like = format!("%{}%", literal_search_like.replace(' ', "%20"));
         let include_matching_events = requires_matching_events(filters);
         let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
-        let literal_match = literal_fts_match_query(&analysis);
+        let literal_match = if literal_search_lower.contains(char::is_whitespace)
+            || literal_search_lower.contains('.')
+        {
+            None
+        } else {
+            literal_fts_match_query(&analysis)
+        };
         let sql = literal_query(
             include_matching_events,
             use_snapshot_event_cache,
@@ -342,6 +356,8 @@ impl Database {
                 named_params! {
                     ":query_lower" : literal_search_lower.as_ref(),
                     ":like" : like,
+                    ":loose_like" : loose_like.as_str(),
+                    ":file_url_like" : file_url_like.as_str(),
                     ":prefix_like" : prefix_like.as_str(),
                     ":literal_match" : literal_match.as_deref(),
                     ":path_fragment_like" : path_fragment_like.as_deref(),

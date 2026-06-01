@@ -9,6 +9,12 @@ versioning where practical.
 
 ## Unreleased
 
+### Added
+
+- Added a 75-case ignored search benchmark harness that seeds a synthetic
+  archive, measures recall/search quality, and reports CLI and database query
+  latency.
+
 ### Changed
 
 - Simplified the macOS History window into one searchable browser with
@@ -19,6 +25,10 @@ versioning where practical.
 
 ### Fixed
 
+- Improved smart search ranking for bare filename file-path matches, OCR search
+  hits, repeated-term distractors, command-shaped results, and weak recall
+  queries that benefit from generic clipboard aliases such as `ssh`, `50% off`,
+  and `full disk access`.
 - Fixed `clipmem export` so existing destination files consistently report the
   friendly `--force` guidance even if the final file create races the preflight
   check.

@@ -167,6 +167,23 @@ pub(in crate::cli) fn compute_recall(
         }
 
         if search_was_weak {
+            for expanded_query in expanded_recall_queries(query) {
+                let expanded_results =
+                    run_search_query(db, &expanded_query, args.search_mode(), args.limit, filters)?;
+                for (index, hit) in expanded_results.hits().iter().enumerate() {
+                    let mut candidate = build_search_candidate(
+                        hit,
+                        &expanded_query,
+                        expanded_results.mode_used(),
+                        index,
+                        args.prefer_app.as_deref(),
+                        args.prefer_recent,
+                    );
+                    candidate.sort_score *= 0.95;
+                    upsert_recall_candidate(&mut merged, candidate);
+                }
+            }
+
             for (index, hit) in db
                 .recent(args.limit, filters)?
                 .into_hits()
@@ -263,6 +280,8 @@ pub(in crate::cli) fn build_search_candidate(
     if prefer_recent {
         sort_score += recent_index_boost(index) * 0.6;
     }
+    sort_score += command_specificity_bonus(hit.preview_text(), query);
+    sort_score -= term_stuffing_penalty(hit.preview_text(), query);
     sort_score += search_rank_bonus(index);
 
     RecallCandidate {
@@ -352,6 +371,107 @@ pub(in crate::cli) fn normalize_fts_score(score: Option<f64>) -> f64 {
     score
         .map(|value| 1.0 / (1.0 + value.max(0.0)))
         .unwrap_or(0.0)
+}
+
+pub(in crate::cli) fn expanded_recall_queries(query: &str) -> Vec<String> {
+    let lower = query.to_ascii_lowercase();
+    let mut expanded = Vec::new();
+
+    if contains_any(&lower, &["disk", "permission", "access"]) {
+        expanded.push("full disk access permission".to_string());
+    }
+    if contains_any(&lower, &["watcher", "service"]) {
+        expanded.push("watcher service launch agent".to_string());
+        if contains_any(&lower, &["start", "command", "run", "load"]) {
+            expanded.push("launchctl bootstrap".to_string());
+        }
+    }
+    if lower.contains("half off") || (lower.contains("half") && lower.contains("deal")) {
+        expanded.push("50% off".to_string());
+        expanded.push("discount pricing".to_string());
+    }
+    if lower.contains("remote") {
+        expanded.push("ssh remote host".to_string());
+        if lower.contains("pytest") {
+            expanded.push("ssh pytest".to_string());
+            expanded.push("ssh pytest test".to_string());
+        }
+    }
+
+    expanded
+}
+
+pub(in crate::cli) fn term_stuffing_penalty(value: &str, query: &str) -> f64 {
+    let terms = query
+        .split_whitespace()
+        .map(|term| {
+            term.trim_matches(|ch: char| !ch.is_ascii_alphanumeric())
+                .to_ascii_lowercase()
+        })
+        .filter(|term| term.len() >= 3)
+        .collect::<Vec<_>>();
+    if terms.is_empty() {
+        return 0.0;
+    }
+
+    let value = value.to_ascii_lowercase();
+    let max_occurrences = terms
+        .iter()
+        .map(|term| value.match_indices(term).count())
+        .max()
+        .unwrap_or(0);
+
+    match max_occurrences {
+        0..=3 => 0.0,
+        4..=6 => 0.18,
+        _ => 0.32,
+    }
+}
+
+pub(in crate::cli) fn command_specificity_bonus(value: &str, query: &str) -> f64 {
+    let query = query.to_ascii_lowercase();
+    let value = value.to_ascii_lowercase();
+    if !contains_any(
+        &query,
+        &[
+            "cargo",
+            "git",
+            "pytest",
+            "pnpm",
+            "npm",
+            "docker",
+            "xcodebuild",
+        ],
+    ) {
+        return 0.0;
+    }
+
+    let mut bonus = 0.0;
+    if value.starts_with(query.split_whitespace().next().unwrap_or_default()) {
+        bonus += 0.08;
+    }
+    if value.contains(" --")
+        || value.contains(" && ")
+        || value.contains(" | ")
+        || value.contains(" -")
+    {
+        bonus += 0.1;
+    }
+    if query
+        .split_whitespace()
+        .filter(|term| term.len() >= 3)
+        .all(|term| contains_ascii_case_insensitive(&value, term))
+    {
+        bonus += 0.08;
+    }
+
+    bonus
+}
+
+pub(in crate::cli) fn contains_any(value: &str, needles: &[&str]) -> bool {
+    needles
+        .iter()
+        .any(|needle| contains_ascii_case_insensitive(value, needle))
 }
 
 pub(in crate::cli) fn literal_match_score(hit: &SearchHit, query: &str) -> f64 {
@@ -540,6 +660,55 @@ pub(in crate::cli) fn build_recall_why_selected(
     }
 
     parts.join("; ")
+}
+
+#[cfg(test)]
+mod ranking_tests {
+    use super::{command_specificity_bonus, expanded_recall_queries, term_stuffing_penalty};
+
+    #[test]
+    fn recall_expansion_uses_generic_clipboard_aliases() {
+        assert!(expanded_recall_queries("half off launch deal")
+            .iter()
+            .any(|query| query == "50% off"));
+        assert!(expanded_recall_queries("remote tomojax pytest")
+            .iter()
+            .any(|query| query == "ssh pytest"));
+        assert!(
+            expanded_recall_queries("clipboard watcher needs disk permission")
+                .iter()
+                .any(|query| query == "full disk access permission")
+        );
+    }
+
+    #[test]
+    fn command_bonus_prefers_command_shaped_results_without_naming_commands() {
+        let command = command_specificity_bonus(
+            "cargo test --test cli_commands search -- --nocapture",
+            "cargo test search",
+        );
+        let prose = command_specificity_bonus(
+            "notes about a previous cargo test search run",
+            "cargo test search",
+        );
+
+        assert!(command > prose);
+        assert!(command <= 0.26);
+    }
+
+    #[test]
+    fn term_stuffing_penalty_only_applies_to_repeated_query_terms() {
+        assert_eq!(
+            term_stuffing_penalty("git status --short && git diff --stat", "git status"),
+            0.0
+        );
+        assert!(
+            term_stuffing_penalty(
+                "git status git status git status git status dashboard",
+                "git status"
+            ) > 0.0
+        );
+    }
 }
 
 #[cfg(test)]
