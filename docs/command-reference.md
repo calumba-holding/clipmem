@@ -464,13 +464,13 @@ Continuously poll the clipboard and archive observed changes.
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--interval-ms` | integer | 400 | Poll interval in milliseconds |
+| `--interval-ms` | integer | 50 | Poll interval in milliseconds |
 | `--quiet` | flag | — | Suppress per-capture status lines |
 | `--skip-initial` | flag | — | Skip the already-present clipboard state |
 
 ```bash
 clipmem watch
-clipmem watch --interval-ms 350
+clipmem watch --interval-ms 50
 clipmem watch --skip-initial --quiet
 ```
 

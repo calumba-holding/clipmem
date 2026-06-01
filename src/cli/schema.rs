@@ -124,7 +124,7 @@ pub(super) enum Command {
 #[command(after_help = WATCH_AFTER_HELP)]
 pub(super) struct WatchArgs {
     /// Poll interval in milliseconds.
-    #[arg(long, default_value_t = 400)]
+    #[arg(long, default_value_t = 50)]
     pub(super) interval_ms: u64,
 
     /// Do not print one-line status messages for each capture.

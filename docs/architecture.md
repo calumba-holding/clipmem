@@ -116,13 +116,13 @@ compression is not part of this phase.
 ## Polling behavior
 
 The watcher polls `NSPasteboard.changeCount` on a short interval
-(400ms by default). This is best-effort — if the clipboard changes
+(50ms by default). This is best-effort — if the clipboard changes
 multiple times within a single poll window, intermediate states can be
 missed.
 
 This trade-off is intentional. Clipboard polling is the only reliable
 approach on macOS (there is no push notification API for clipboard
-changes), and 400ms catches nearly all real-world copies.
+changes), and 50ms substantially reduces missed rapid copy sequences.
 
 ## Frontmost app tracking
 

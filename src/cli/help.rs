@@ -60,11 +60,11 @@ Notes:
 pub(super) const WATCH_AFTER_HELP: &str = "\
 Examples:
   clipmem watch
-  clipmem watch --interval-ms 350
+  clipmem watch --interval-ms 50
   clipmem watch --skip-initial
 
 Notes:
-  - Default interval is 400 ms.
+  - Default interval is 50 ms.
   - Intervals below 50 ms are clamped to 50 ms at runtime.
   - Status lines stream on stdout; runtime diagnostics go to stderr.";
 

@@ -9,6 +9,14 @@ versioning where practical.
 
 ## Unreleased
 
+## 0.5.5 - 2026-06-01
+
+### Changed
+
+- Reduced the default clipboard watch interval to 50ms for both foreground
+  `clipmem watch` and managed background services, improving copy capture
+  responsiveness and rapid-copy reliability.
+
 ## 0.5.4 - 2026-06-01
 
 ### Added

@@ -30,7 +30,7 @@ definition without losing existing data.
 
 1. Copy something to your clipboard (for example, select text in a
    browser and press Cmd+C).
-2. Wait a moment for the watcher to pick it up (it polls every 400ms
+2. Wait a moment for the watcher to pick it up (it polls every 50ms
    by default).
 3. Confirm the item appears in your archive:
 
@@ -88,7 +88,7 @@ clipmem doctor
 ## Background capture
 
 `clipmem setup` is the standard way to start background capture. The
-watcher polls `NSPasteboard.changeCount` on a short interval (400ms by
+watcher polls `NSPasteboard.changeCount` on a short interval (50ms by
 default) and archives every new clipboard state it observes.
 
 The current Homebrew formula doesn't include a Homebrew service stanza,
@@ -111,7 +111,7 @@ clipmem service uninstall    # remove the managed service definition
 Run the watcher in the foreground to see captures in real time:
 
 ```bash
-clipmem watch --interval-ms 350
+clipmem watch --interval-ms 50
 ```
 
 Use `--skip-initial` to avoid capturing the clipboard state that already

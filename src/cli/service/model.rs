@@ -6,7 +6,7 @@ use crate::db::{ArchiveRevision, CaptureSkipReason};
 
 pub(in crate::cli) const DIRECT_LABEL: &str = "io.openclaw.clipmem.watch";
 pub(in crate::cli) const HOMEBREW_LABEL: &str = "homebrew.mxcl.clipmem";
-pub(in crate::cli) const DEFAULT_INTERVAL_MS: u64 = 350;
+pub(in crate::cli) const DEFAULT_INTERVAL_MS: u64 = 50;
 pub(in crate::cli) const SERVICE_FRESHNESS_HOURS: u32 = 1;
 pub(in crate::cli) const DIRECT_PLIST_TEMPLATE: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),

@@ -62,7 +62,7 @@ and watcher use `target/debug/clipmem` together.
 
 Two common causes:
 
-- **Polling gap.** The watcher polls every 400ms by default. If the
+- **Polling gap.** The watcher polls every 50ms by default. If the
   clipboard changed multiple times within a single poll window,
   intermediate states can be missed. This is rare in practice but can
   happen with rapid clipboard automation.

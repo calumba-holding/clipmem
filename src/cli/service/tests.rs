@@ -2,9 +2,9 @@ use std::path::{Path, PathBuf};
 
 use crate::archive::Database;
 
-use super::launchctl::homebrew_prefix_for_binary;
+use super::launchctl::{homebrew_prefix_for_binary, write_direct_plist};
 use super::manage::bump_service_revision;
-use super::model::{ServiceProvider, ServiceProviderStatus, ServiceState};
+use super::model::{ServiceContext, ServiceProvider, ServiceProviderStatus, ServiceState};
 use super::status::{
     command_binary_path, configured_binary_path_from_plist, configured_binary_path_from_plist_xml,
     watcher_binary_mismatch_note,
@@ -82,6 +82,37 @@ fn service_revision_recording_updates_existing_archives() {
             .service_revision(),
         1
     );
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn direct_launchagent_plist_uses_fast_default_interval() {
+    let dir = std::env::temp_dir().join(format!(
+        "clipmem-service-test-{}-fast-default",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("test directory should initialize");
+
+    let context = ServiceContext {
+        binary_path: PathBuf::from("/tmp/clipmem"),
+        db_path: dir.join("clipmem.sqlite3"),
+        default_db_path: dir.join("clipmem.sqlite3"),
+        direct_plist_path: dir.join("io.openclaw.clipmem.watch.plist"),
+        homebrew_plist_path: dir.join("homebrew.mxcl.clipmem.plist"),
+        direct_stdout_path: dir.join("clipmem.stdout.log"),
+        direct_stderr_path: dir.join("clipmem.stderr.log"),
+        brew_path: None,
+        homebrew_prefix: None,
+    };
+
+    write_direct_plist(&context).expect("direct plist should render");
+    let plist = std::fs::read_to_string(&context.direct_plist_path)
+        .expect("direct plist should be readable");
+
+    assert!(plist.contains("<string>--interval-ms</string>"));
+    assert!(plist.contains("<string>50</string>"));
 
     let _ = std::fs::remove_dir_all(dir);
 }
