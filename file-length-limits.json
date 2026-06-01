@@ -11,10 +11,12 @@
   },
   "overrides": {
     "macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift": 912,
+    "src/cli/commands/retrieval/recall.rs": 879,
     "src/cli/schema.rs": 1045,
     "src/cli/tests.rs": 1026,
     "src/db/impls.rs": 831,
     "src/db/tests/filters_and_migrations.rs": 866,
+    "tests/search_benchmark.rs": 1625,
     "tests/cli_commands/pagination_and_exports.rs": 821,
     "tests/cli_commands/search_and_retrieval.rs": 878
   }

@@ -9,6 +9,8 @@ versioning where practical.
 
 ## Unreleased
 
+## 0.5.4 - 2026-06-01
+
 ### Added
 
 - Added a 75-case ignored search benchmark harness that seeds a synthetic
@@ -34,6 +36,11 @@ versioning where practical.
   check.
 - Fixed ClawHub skill parity checks so ClawHub's generated `skill-card.md` does
   not force a needless `clipboard-memory` skill version bump.
+
+### Notes
+
+- Updated release validation file-length baselines for the expanded recall
+  implementation and search benchmark harness.
 
 ## 0.5.3 - 2026-06-01
 
