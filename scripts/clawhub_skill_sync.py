@@ -19,6 +19,7 @@ DEFAULT_SKILL_DIR = Path("extras/openclaw/clipboard-memory")
 DEFAULT_TIMEOUT_SECONDS = 600
 DEFAULT_POLL_INTERVAL_SECONDS = 15
 VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
+GENERATED_REMOTE_FILES = {"skill-card.md"}
 
 
 class SyncError(RuntimeError):
@@ -160,7 +161,11 @@ def remote_file_hashes(slug: str, version: str) -> dict[str, str]:
             continue
         path = file.get("path")
         sha256 = file.get("sha256")
-        if isinstance(path, str) and isinstance(sha256, str):
+        if (
+            isinstance(path, str)
+            and isinstance(sha256, str)
+            and path not in GENERATED_REMOTE_FILES
+        ):
             hashes[path] = sha256
     return hashes
 
@@ -299,6 +304,7 @@ def wait_for_remote_hashes(
                         if isinstance(file, dict)
                         and isinstance(file.get("path"), str)
                         and isinstance(file.get("sha256"), str)
+                        and file["path"] not in GENERATED_REMOTE_FILES
                     }
                 last_error = "version did not include a files array"
         else:

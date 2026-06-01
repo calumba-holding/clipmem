@@ -9,6 +9,14 @@ versioning where practical.
 
 ## Unreleased
 
+### Fixed
+
+- Fixed `clipmem export` so existing destination files consistently report the
+  friendly `--force` guidance even if the final file create races the preflight
+  check.
+- Fixed ClawHub skill parity checks so ClawHub's generated `skill-card.md` does
+  not force a needless `clipboard-memory` skill version bump.
+
 ## 0.5.3 - 2026-06-01
 
 ### Changed

@@ -183,11 +183,18 @@ fn create_export_destination(path: &Path, force: bool) -> Result<File> {
         }
     }
 
-    OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .with_context(|| format!("failed to create export file {}", path.display()))
+    match OpenOptions::new().write(true).create_new(true).open(path) {
+        Ok(file) => Ok(file),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            Err(invalid_args_error(format!(
+                "export destination {} already exists (pass --force to replace it)",
+                path.display()
+            )))
+        }
+        Err(error) => {
+            Err(error).with_context(|| format!("failed to create export file {}", path.display()))
+        }
+    }
 }
 
 fn render_restore_text(output: &RestoreOutput) -> String {
