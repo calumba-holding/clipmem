@@ -36,6 +36,7 @@ impl Database {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .context("begin ocr candidate transaction")?;
 
+        let pruned = prune_orphan_ocr_results_tx(&tx)?;
         let enqueued = enqueue_ocr_candidates_tx(&tx, snapshot_id)?;
         let requeued = if retry_failed {
             tx.execute(
@@ -70,6 +71,13 @@ impl Database {
                         SELECT o.raw_sha256
                         FROM ocr_results o
                         WHERE o.status = 'pending'
+                          AND EXISTS (
+                              SELECT 1
+                              FROM item_representations ir
+                              WHERE ir.raw_sha256 = o.raw_sha256
+                                AND ir.kind = 'image'
+                                AND length(ir.blob_value) > 0
+                          )
                           AND (
                               ?1 IS NULL
                               OR EXISTS (
@@ -113,7 +121,7 @@ impl Database {
             .context("execute ocr candidate query")?;
         let candidates = collect_rows(rows).context("collect ocr candidates")?;
         drop(stmt);
-        if enqueued != 0 || requeued != 0 {
+        if pruned != 0 || enqueued != 0 || requeued != 0 {
             bump_revision_tx(&tx, &[ArchiveChangeKind::Ocr])?;
         }
         tx.commit().context("commit ocr candidate transaction")?;
@@ -238,6 +246,13 @@ impl Database {
                         SELECT o.raw_sha256, o.updated_at
                         FROM ocr_results o
                         WHERE o.status = 'pending'
+                          AND EXISTS (
+                              SELECT 1
+                              FROM item_representations ir
+                              WHERE ir.raw_sha256 = o.raw_sha256
+                                AND ir.kind = 'image'
+                                AND length(ir.blob_value) > 0
+                          )
                           AND (
                               ?1 IS NULL
                               OR EXISTS (
@@ -357,6 +372,23 @@ pub(in crate::db) fn enqueue_ocr_candidates_tx(
         [snapshot_id],
     )
     .context("enqueue ocr candidates")
+}
+
+pub(in crate::db) fn prune_orphan_ocr_results_tx(tx: &rusqlite::Transaction<'_>) -> Result<usize> {
+    tx.execute(
+        r"
+            DELETE FROM ocr_results
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM item_representations ir
+                WHERE ir.raw_sha256 = ocr_results.raw_sha256
+                  AND ir.kind = 'image'
+                  AND length(ir.blob_value) > 0
+            )
+        ",
+        [],
+    )
+    .context("prune orphan ocr results")
 }
 
 pub(in crate::db) fn enqueue_ocr_for_snapshot_tx(

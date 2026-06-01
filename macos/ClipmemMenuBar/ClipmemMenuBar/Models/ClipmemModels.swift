@@ -296,7 +296,9 @@ struct SnapshotDetails: Decodable, Equatable, Sendable {
 
     var imagePreviewRepresentation: ImagePreviewRepresentation? {
         for item in items {
-            if let representation = item.representations.first(where: { $0.isPreviewableImage }) {
+            if let representation = item.representations
+                .filter(\.isPreviewableImage)
+                .min(by: { $0.previewRank < $1.previewRank }) {
                 return ImagePreviewRepresentation(
                     itemIndex: item.itemIndex,
                     uti: representation.uti,
@@ -364,10 +366,39 @@ struct ClipboardRepresentation: Decodable, Equatable, Identifiable, Sendable {
     var id: String { uti }
 
     var isPreviewableImage: Bool {
+        if previewRank == .unsupported {
+            return false
+        }
         if kind == .image {
             return true
         }
         return UTType(uti)?.conforms(to: .image) == true
+    }
+
+    var previewRank: ImagePreviewRank {
+        switch uti.lowercased() {
+        case "public.png":
+            return .png
+        case "public.jpeg", "public.jpg", "public.jpeg-2000":
+            return .jpeg
+        case "public.tiff":
+            return .tiff
+        case "public.heic", "public.heif", "public.heics", "public.heifs":
+            return .heic
+        case "org.webmproject.webp":
+            return .webp
+        case "com.compuserve.gif":
+            return .gif
+        case "com.microsoft.bmp", "public.bmp":
+            return .bmp
+        case "com.apple.uikit.image":
+            return .unsupported
+        default:
+            if UTType(uti)?.conforms(to: .image) == true {
+                return .otherImage
+            }
+            return .unsupported
+        }
     }
 
     var previewFileExtension: String {
@@ -384,6 +415,22 @@ struct ClipboardRepresentation: Decodable, Equatable, Identifiable, Sendable {
         default:
             return "png"
         }
+    }
+}
+
+enum ImagePreviewRank: Int, Comparable, Sendable {
+    case png
+    case jpeg
+    case tiff
+    case heic
+    case webp
+    case gif
+    case bmp
+    case otherImage
+    case unsupported
+
+    static func < (lhs: ImagePreviewRank, rhs: ImagePreviewRank) -> Bool {
+        lhs.rawValue < rhs.rawValue
     }
 }
 

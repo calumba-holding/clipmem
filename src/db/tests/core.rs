@@ -319,6 +319,36 @@ fn failed_ocr_results_do_not_enter_search() -> Result<()> {
 }
 
 #[test]
+fn next_ocr_candidates_prunes_orphan_pending_rows() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    db.conn.execute(
+        "INSERT INTO ocr_results (raw_sha256, status, updated_at)
+         VALUES (?1, 'pending', '2026-04-29 11:21:58')",
+        ["4240b1324fdb30ff0f0fd538b0bb40a8a93e4f75072ff0cd25f5886d11fe45fe"],
+    )?;
+    let stored = db.store_capture(&image_snapshot(
+        1,
+        vec![("public.png", b"valid-image-candidate".to_vec())],
+    ))?;
+    db.enqueue_ocr_for_snapshot(stored.snapshot_id())?;
+
+    let summaries = db.ocr_candidate_summaries(25, None)?;
+    assert_eq!(summaries.len(), 1);
+    assert_eq!(summaries[0].byte_len(), b"valid-image-candidate".len());
+
+    let candidates = db.next_ocr_candidates(25, None, false)?;
+
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].blob_value(), b"valid-image-candidate");
+    assert!(db
+        .ocr_result("4240b1324fdb30ff0f0fd538b0bb40a8a93e4f75072ff0cd25f5886d11fe45fe")?
+        .is_none());
+    assert_eq!(db.ocr_status_report()?.pending(), 1);
+
+    Ok(())
+}
+
+#[test]
 fn ocr_candidate_summaries_keep_global_snapshot_count_when_filtered() -> Result<()> {
     let mut db = Database::open_in_memory()?;
     let shared_image = b"shared-image-bytes".to_vec();

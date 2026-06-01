@@ -14,6 +14,13 @@ versioning where practical.
 - Updated the packaged `clipboard-memory` skill to 1.3.7 so ClawHub publishes
   the current package contents after the 0.5.2 release.
 
+### Fixed
+
+- Fixed image detail previews so decodable public image formats are preferred
+  over non-previewable internal pasteboard image archives.
+- Fixed OCR workers so stale pending OCR rows without a remaining image
+  representation are pruned instead of blocking newer image OCR jobs.
+
 ## 0.5.2 - 2026-05-30
 
 ### Changed

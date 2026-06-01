@@ -103,6 +103,55 @@ struct DecodingTests {
         #expect(firstEvent.frontmostAppName == "Terminal")
     }
 
+    @Test func imagePreviewPrefersDecodablePublicImageOverUIKitArchive() throws {
+        let detail = SnapshotDetails(
+            snapshotId: 7607,
+            sha256: "abc",
+            snapshotKind: .image,
+            bestText: nil,
+            bestTextUti: nil,
+            textFragments: nil,
+            urls: [],
+            filePaths: [],
+            htmlText: nil,
+            rtfText: nil,
+            textSummary: nil,
+            ocrText: nil,
+            ocrStatus: "pending",
+            previewText: "[image]",
+            searchText: "",
+            itemCount: 1,
+            totalBytes: 1,
+            createdAt: nil,
+            captureCount: 1,
+            firstObservedAt: nil,
+            lastObservedAt: nil,
+            lastFrontmostAppName: nil,
+            lastFrontmostAppBundleId: nil,
+            recentEvents: [],
+            items: [
+                ClipboardItemDetail(
+                    itemIndex: 0,
+                    primaryKind: .image,
+                    primaryUti: "com.apple.uikit.image",
+                    previewText: nil,
+                    searchText: nil,
+                    totalBytes: 1,
+                    representations: [
+                        imageRepresentation("com.apple.uikit.image"),
+                        imageRepresentation("public.jpeg"),
+                        imageRepresentation("public.png"),
+                    ]
+                )
+            ]
+        )
+
+        let preview = try #require(detail.imagePreviewRepresentation)
+
+        #expect(preview.uti == "public.png")
+        #expect(preview.fileExtension == "png")
+    }
+
     @Test func settingsFixtureDecodesPolicy() throws {
         let settings = try decode(SettingsReport.self, "settings")
 
@@ -209,6 +258,17 @@ struct DecodingTests {
             .appendingPathComponent("\(name).json")
         let data = try Data(contentsOf: url)
         return try ClipmemClient.decoder.decode(T.self, from: data)
+    }
+
+    private func imageRepresentation(_ uti: String) -> ClipboardRepresentation {
+        ClipboardRepresentation(
+            uti: uti,
+            kind: .image,
+            isText: false,
+            byteLen: 1,
+            rawSha256: nil,
+            textValue: nil
+        )
     }
 
     private func status(
