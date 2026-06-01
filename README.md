@@ -63,6 +63,14 @@ brew install --cask tristanmanchester/tap/clipmem-app
 open -a ClipmemMenuBar
 ```
 
+If Homebrew says `tristanmanchester/tap` is not trusted, trust only the
+clipmem install surfaces and rerun the install command:
+
+```bash
+brew trust --formula tristanmanchester/tap/clipmem
+brew trust --cask tristanmanchester/tap/clipmem-app
+```
+
 The cask installs the CLI, runs `clipmem setup`, and enables launch at login.
 See [docs/installation.md](docs/installation.md) for Cargo, source builds,
 upgrades, and Intel Mac support.

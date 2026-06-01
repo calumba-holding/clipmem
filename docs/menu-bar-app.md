@@ -17,6 +17,14 @@ brew install --cask tristanmanchester/tap/clipmem-app
 open -a ClipmemMenuBar
 ```
 
+If Homebrew says `tristanmanchester/tap` is not trusted, trust the formula and
+cask first:
+
+```bash
+brew trust --formula tristanmanchester/tap/clipmem
+brew trust --cask tristanmanchester/tap/clipmem-app
+```
+
 The cask depends on the `clipmem` formula, runs `clipmem setup` after
 installation, and enables launch at login by default. You can disable
 launch at login in the app's **Settings** window.

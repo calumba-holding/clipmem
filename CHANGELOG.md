@@ -9,6 +9,11 @@ versioning where practical.
 
 ## Unreleased
 
+### Changed
+
+- Documented Homebrew tap trust commands for users who run with stricter tap
+  trust checks enabled.
+
 ### Fixed
 
 - Fixed `clipmem export` so existing destination files consistently report the

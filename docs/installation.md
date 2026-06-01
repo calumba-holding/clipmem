@@ -28,6 +28,14 @@ clipmem --version
 clipmem doctor
 ```
 
+If Homebrew reports that `tristanmanchester/tap` is not trusted, trust the
+formula and rerun the install command:
+
+```bash
+brew trust --formula tristanmanchester/tap/clipmem
+brew install tristanmanchester/tap/clipmem
+```
+
 ## Homebrew (CLI + menu bar app)
 
 Install the CLI and the native SwiftUI menu bar app together:
@@ -39,6 +47,15 @@ open -a ClipmemMenuBar
 
 The cask depends on the CLI formula, runs `clipmem setup` after
 installation, and enables launch at login by default.
+
+If Homebrew reports that `tristanmanchester/tap` is not trusted, trust the
+formula and cask before installing:
+
+```bash
+brew trust --formula tristanmanchester/tap/clipmem
+brew trust --cask tristanmanchester/tap/clipmem-app
+brew install --cask tristanmanchester/tap/clipmem-app
+```
 
 ## Cargo
 
