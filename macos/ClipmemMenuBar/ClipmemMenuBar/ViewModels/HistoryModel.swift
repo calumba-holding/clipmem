@@ -8,11 +8,13 @@ typealias HistoryDetailLoader = @MainActor (Int) async throws -> SnapshotDetails
 @MainActor
 @Observable
 final class HistoryModel {
-    var mode: QueryMode
+    var searchStyle: SearchStyle
+    var resultScope: HistoryResultScope
     var query = ""
     var filters = RetrievalFilterState.defaultValue
     var results: [ClipmemItem] = []
     var selectedID: Int?
+    var selectedRowID: String?
     var selectedDetail: SnapshotDetails?
     var nextCursor: String?
     var isLoading = false
@@ -24,6 +26,7 @@ final class HistoryModel {
     @ObservationIgnored private let detailLoader: HistoryDetailLoader
     @ObservationIgnored private var loadGeneration = 0
     @ObservationIgnored private var detailGeneration = 0
+    @ObservationIgnored private var loadedPageKey: HistoryPageKey?
 
     init(
         mode: QueryMode = UserDefaults.standard.clipmemDefaultMode,
@@ -31,7 +34,10 @@ final class HistoryModel {
         pageLoader: HistoryPageLoader? = nil,
         detailLoader: HistoryDetailLoader? = nil
     ) {
-        self.mode = mode
+        let historyMode = mode.historyCompatibleMode
+        let displayState = DisplayMode.from(queryMode: historyMode)
+        searchStyle = displayState.searchStyle
+        resultScope = HistoryResultScope.from(queryMode: historyMode)
         self.appModel = appModel
         self.pageLoader = pageLoader
         self.detailLoader = detailLoader ?? { snapshotID in
@@ -41,33 +47,46 @@ final class HistoryModel {
 
     var selectedItem: ClipmemItem? {
         guard let selectedID else { return nil }
+        if let selectedRowID, let item = results.first(where: { $0.id == selectedRowID }) {
+            return item
+        }
         return results.first { $0.snapshotId == selectedID }
+    }
+
+    var mode: QueryMode {
+        resolvedMode
+    }
+
+    var displaysCopyEvents: Bool {
+        loadedPageKey?.mode == .timeline
     }
 
     func reload(selecting snapshotID: Int? = nil) async {
         loadGeneration += 1
         let generation = loadGeneration
         nextCursor = nil
+        loadedPageKey = nil
         results = []
         selectedID = snapshotID
+        selectedRowID = nil
         selectedDetail = nil
         await loadMore(generation: generation)
     }
 
     func loadMore() async {
+        guard loadedPageKey == nil || loadedPageKey == currentPageKey else { return }
         loadGeneration += 1
         await loadMore(generation: loadGeneration)
     }
 
     func refreshForExternalHistoryChange() async {
-        guard mode != .diagnostics else { return }
-
         loadGeneration += 1
         let generation = loadGeneration
         let previousSelectedID = selectedID
+        let previousSelectedRowID = selectedRowID
         let request = HistoryRequest(
             generation: generation,
-            mode: mode,
+            mode: resolvedMode,
             query: query,
             filters: filters,
             cursor: nil
@@ -85,10 +104,16 @@ final class HistoryModel {
             guard isCurrent(request) else { return }
             results = page.items
             nextCursor = page.nextCursor
-            if let previousSelectedID, results.contains(where: { $0.snapshotId == previousSelectedID }) {
+            loadedPageKey = request.pageKey
+            if let previousSelectedRowID, results.contains(where: { $0.id == previousSelectedRowID }) {
+                selectedRowID = previousSelectedRowID
+                selectedID = results.first { $0.id == previousSelectedRowID }?.snapshotId
+            } else if let previousSelectedID, results.contains(where: { $0.snapshotId == previousSelectedID }) {
                 selectedID = previousSelectedID
+                selectedRowID = results.first { $0.snapshotId == previousSelectedID }?.id
             } else {
                 selectedID = results.first?.snapshotId
+                selectedRowID = results.first?.id
                 selectedDetail = nil
             }
             error = nil
@@ -100,13 +125,10 @@ final class HistoryModel {
     }
 
     private func loadMore(generation: Int) async {
-        guard mode != .diagnostics else {
-            await appModel.refreshDoctor()
-            return
-        }
+        guard nextCursor == nil || loadedPageKey == currentPageKey else { return }
         let request = HistoryRequest(
             generation: generation,
-            mode: mode,
+            mode: resolvedMode,
             query: query,
             filters: filters,
             cursor: nextCursor
@@ -126,8 +148,12 @@ final class HistoryModel {
                 results.append(contentsOf: page.items)
             }
             nextCursor = page.nextCursor
+            loadedPageKey = request.pageKey
             if selectedID == nil {
                 selectedID = results.first?.snapshotId
+                selectedRowID = results.first?.id
+            } else if selectedRowID == nil {
+                selectedRowID = results.first { $0.snapshotId == selectedID }?.id
             }
             if selectedID != nil, selectedDetail == nil {
                 await loadSelectedDetail()
@@ -172,11 +198,23 @@ final class HistoryModel {
     }
 
     func forgetSelected() async {
-        guard let selectedItem else { return }
-        guard await appModel.forget(selectedItem) else { return }
-        results.removeAll { $0.snapshotId == selectedItem.snapshotId }
-        selectedID = results.first?.snapshotId
+        guard let selectedID else { return }
+        guard await appModel.forget(snapshotID: selectedID) else { return }
+        results.removeAll { $0.snapshotId == selectedID }
+        self.selectedID = results.first?.snapshotId
+        selectedRowID = results.first?.id
         await loadSelectedDetail()
+    }
+
+    func selectRow(id rowID: String?) {
+        selectedRowID = rowID
+        guard let rowID else {
+            selectedID = nil
+            selectedDetail = nil
+            return
+        }
+        guard let item = results.first(where: { $0.id == rowID }) else { return }
+        selectedID = item.snapshotId
     }
 
     private func loadPage(_ request: HistoryRequest) async throws -> HistoryPage {
@@ -203,9 +241,19 @@ final class HistoryModel {
 
     private func isCurrent(_ request: HistoryRequest) -> Bool {
         request.generation == loadGeneration
-            && request.mode == mode
+            && request.mode == resolvedMode
             && request.query == query
             && request.filters == filters
+    }
+
+    private var resolvedMode: QueryMode {
+        query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? resultScope.queryMode
+            : searchStyle.queryMode
+    }
+
+    private var currentPageKey: HistoryPageKey {
+        HistoryPageKey(mode: resolvedMode, query: query, filters: filters)
     }
 }
 
@@ -215,4 +263,14 @@ private struct HistoryRequest: Equatable, Sendable {
     var query: String
     var filters: RetrievalFilterState
     var cursor: String?
+
+    var pageKey: HistoryPageKey {
+        HistoryPageKey(mode: mode, query: query, filters: filters)
+    }
+}
+
+private struct HistoryPageKey: Equatable, Sendable {
+    var mode: QueryMode
+    var query: String
+    var filters: RetrievalFilterState
 }

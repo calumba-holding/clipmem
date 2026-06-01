@@ -7,12 +7,11 @@ struct HistoryWindowView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var history: HistoryModel
     @SceneStorage("history.mode") private var storedMode = ""
+    @SceneStorage("history.searchStyle") private var storedSearchStyle = ""
+    @SceneStorage("history.resultScope") private var storedResultScope = ""
     @SceneStorage("history.query") private var storedQuery = ""
-    @SceneStorage("history.inspector") private var inspectorPresented = false
     @SceneStorage("history.selected") private var storedSelectedID = 0
     @State private var handledHistoryOpenRequestID = 0
-    @State private var displayMode: DisplayMode = .recent
-    @State private var searchStyle: SearchStyle = .smart
 
     init(appModel: AppModel) {
         self.appModel = appModel
@@ -27,11 +26,11 @@ struct HistoryWindowView: View {
         } detail: {
             detailColumn
         }
-        .navigationTitle(displayMode.title)
+        .navigationTitle("History")
         .toolbar {
             ToolbarItem(placement: .principal) {
                 HStack(spacing: Spacing.sm) {
-                    Text(displayMode.title)
+                    Text("History")
                         .font(DesignType.bodySecondary.weight(.medium))
                     if !history.results.isEmpty {
                         Text("\u{2014} \(history.results.count) item\(history.results.count == 1 ? "" : "s")")
@@ -46,34 +45,16 @@ struct HistoryWindowView: View {
                     Task { await history.reload() }
                 }
                 .keyboardShortcut("r", modifiers: .command)
-                Button("Search", systemImage: "magnifyingglass") {
+                Button("Quick Recall", systemImage: "sparkle.magnifyingglass") {
                     WindowActivation.openWindow(openWindow, id: .quickRecall)
                 }
-                Button("Inspector", systemImage: inspectorPresented ? "sidebar.right.fill" : "sidebar.right") {
-                    inspectorPresented.toggle()
-                }
-                .help("Toggle inspector (\u{2318}\u{21E7}I)")
             }
-        }
-        .inspector(isPresented: $inspectorPresented) {
-            inspector
-                .inspectorColumnWidth(min: 220, ideal: 260, max: 320)
         }
         .overlay(alignment: .top) {
             ActionFeedbackOverlay(message: appModel.actionMessage)
                 .padding(.top, Spacing.sm)
         }
         .navigationSplitViewStyle(.balanced)
-        .background {
-            GeometryReader { proxy in
-                Color.clear.preference(key: HistoryWindowWidthKey.self, value: proxy.size.width)
-            }
-        }
-        .onPreferenceChange(HistoryWindowWidthKey.self) { width in
-            if inspectorPresented, width < 1_400 {
-                inspectorPresented = false
-            }
-        }
         .task {
             restoreSceneState()
             if await applyPendingHistoryOpenRequestIfNeeded() == false {
@@ -100,13 +81,7 @@ struct HistoryWindowView: View {
     // MARK: - Sidebar
 
     private var sidebar: some View {
-        List(selection: displayModeBinding) {
-            Section("Browse") {
-                ForEach(DisplayMode.allCases) { mode in
-                    Label(mode.title, systemImage: mode.symbol)
-                        .tag(mode)
-                }
-            }
+        List {
             if let status = appModel.serviceStatus {
                 Section("Statistics") {
                     LabeledContent("Database", value: DisplayFormatters.byteCount(status.dbSizeBytes) ?? "\u{2014}")
@@ -139,18 +114,6 @@ struct HistoryWindowView: View {
         }
     }
 
-    private var displayModeBinding: Binding<DisplayMode> {
-        Binding {
-            displayMode
-        } set: { newMode in
-            guard displayMode != newMode else { return }
-            displayMode = newMode
-            syncMode()
-            storedMode = history.mode.rawValue
-            Task { await history.reload() }
-        }
-    }
-
     // MARK: - Content Column
 
     private var contentColumn: some View {
@@ -160,7 +123,7 @@ struct HistoryWindowView: View {
             Divider()
             resultList
         }
-        .navigationTitle(displayMode.title)
+        .navigationTitle("History")
         .navigationSplitViewColumnWidth(min: 320, ideal: 420, max: 560)
     }
 
@@ -169,9 +132,10 @@ struct HistoryWindowView: View {
             detail: history.selectedDetail,
             fallback: history.selectedItem,
             appModel: appModel,
-            isLoading: history.isLoadingDetail
+            isLoading: history.isLoadingDetail,
+            onForgot: { await history.forgetSelected() }
         )
-            .navigationTitle(displayMode.title)
+            .navigationTitle("History")
             .navigationSplitViewColumnWidth(min: 360, ideal: 580)
     }
 
@@ -180,46 +144,57 @@ struct HistoryWindowView: View {
     private var queryControls: some View {
         VStack(spacing: Spacing.md) {
             HStack(spacing: Spacing.sm) {
-                if displayMode == .search {
-                    Picker("Style", selection: $searchStyle) {
-                        Text("Smart").tag(SearchStyle.smart)
-                        Text("Exact").tag(SearchStyle.exact)
-                    }
-                    .pickerStyle(.segmented)
-                    .fixedSize()
-                    .controlSize(.small)
-                    .onChange(of: searchStyle) {
-                        syncMode()
-                        Task { await history.reload() }
-                    }
-                }
-
                 TextField(searchPrompt, text: $history.query)
                     .textFieldStyle(.roundedBorder)
-                    .disabled(displayMode == .recent || displayMode == .timeline)
                     .onSubmit {
-                        Task { await history.reload() }
+                        Task { await reloadAndStoreMode() }
                     }
-                Button("Search", systemImage: "magnifyingglass") {
-                    Task { await history.reload() }
+                Picker("Style", selection: $history.searchStyle) {
+                    Text("Smart").tag(SearchStyle.smart)
+                    Text("Exact").tag(SearchStyle.exact)
                 }
-                .disabled(displayMode == .search && history.query.isEmpty)
+                .pickerStyle(.segmented)
+                .fixedSize()
+                .controlSize(.small)
+                .onChange(of: history.searchStyle) {
+                    Task { await reloadAndStoreMode() }
+                }
+                Button("Search", systemImage: "magnifyingglass") {
+                    Task { await reloadAndStoreMode() }
+                }
             }
             .padding(Spacing.md)
             .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: DesignRadius.md))
+
+            Picker("Results", selection: $history.resultScope) {
+                ForEach(HistoryResultScope.allCases) { scope in
+                    Text(scope.title).tag(scope)
+                }
+            }
+            .pickerStyle(.segmented)
+            .disabled(isSearching)
+            .help(isSearching ? "Result organization applies when browsing without search text." : history.resultScope.help)
+            .onChange(of: history.resultScope) {
+                Task { await reloadAndStoreMode() }
+            }
 
             FilterBar(history: history)
         }
     }
 
     private var searchPrompt: String {
-        switch displayMode {
-        case .search:
-            searchStyle == .smart ? "Describe what you want to recall" : "Search for exact text"
-        case .recent:
-            "Recent mode uses filters"
-        case .timeline:
-            "Timeline mode uses filters"
+        history.searchStyle == .smart ? "Describe what you want to find" : "Search exact text"
+    }
+
+    private var isSearching: Bool {
+        history.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
+
+    private var selectedRowBinding: Binding<String?> {
+        Binding {
+            history.selectedRowID
+        } set: { rowID in
+            history.selectRow(id: rowID)
         }
     }
 
@@ -235,13 +210,17 @@ struct HistoryWindowView: View {
                 )
                 .padding()
             }
-            List(selection: $history.selectedID) {
+            List(selection: selectedRowBinding) {
                 ForEach(Array(history.results.enumerated()), id: \.element.id) { index, item in
-                    ResultRowView(item: item, selected: item.snapshotId == history.selectedID)
-                        .tag(item.snapshotId)
+                    ResultRowView(
+                        item: item,
+                        selected: item.id == history.selectedRowID,
+                        presentation: history.displaysCopyEvents ? .copyEvent : .uniqueSnapshot
+                    )
+                        .tag(item.id)
                         .animation(DesignAnimation.staggerDelay(index: index, reduceMotion: reduceMotion), value: history.results.count)
                         .onAppear {
-                            if item.snapshotId == history.results.last?.snapshotId,
+                            if item.id == history.results.last?.id,
                                history.nextCursor != nil {
                                 Task { await history.loadMore() }
                             }
@@ -259,11 +238,11 @@ struct HistoryWindowView: View {
             .overlay {
                 if !history.isLoading && history.results.isEmpty && history.error == nil {
                     EmptyStateView(
-                        title: displayMode == .recent || displayMode == .timeline ? "No recent history" : "No results",
-                        detail: displayMode == .recent || displayMode == .timeline
-                            ? "Start copying to build your clipboard history, or run clipmem agents context --format json to check capture health."
-                            : "Try adjusting your filters or use the agent context command in Diagnostics to check archive freshness.",
-                        symbol: displayMode == .recent || displayMode == .timeline ? "clock" : "magnifyingglass"
+                        title: history.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No history yet" : "No results",
+                        detail: history.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            ? "Start copying to build your clipboard history, or check Diagnostics when capture looks stale."
+                            : "Try different search text or loosen your filters.",
+                        symbol: history.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "clock" : "magnifyingglass"
                     )
                 }
             }
@@ -274,70 +253,16 @@ struct HistoryWindowView: View {
         }
     }
 
-    // MARK: - Inspector
-
-    private var inspector: some View {
-        VStack(alignment: .leading, spacing: Spacing.lg) {
-            Text("Inspector")
-                .font(DesignType.sectionHeader)
-            if let selected = history.selectedItem {
-                Text(selected.displayText)
-                    .font(DesignType.bodySecondary)
-                    .lineLimit(2)
-                    .foregroundStyle(.secondary)
-
-                Divider()
-
-                Text("Metadata")
-                    .font(DesignType.rowMeta.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                Grid(alignment: .leading, horizontalSpacing: Spacing.md, verticalSpacing: Spacing.sm) {
-                    FieldRow(title: "Snapshot", value: String(selected.snapshotId))
-                    FieldRow(title: "Event", value: selected.eventId.map(String.init))
-                    FieldRow(title: "Kind", value: selected.kind.displayTitle)
-                    FieldRow(title: "Bytes", value: selected.totalBytes.map(String.init))
-                    FieldRow(title: "Matched", value: selected.matchedFields?.joined(separator: ", "))
-                    FieldRow(title: "Why", value: selected.whyMatched)
-                }
-
-                Divider()
-
-                Text("Actions")
-                    .font(DesignType.rowMeta.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                ItemActionButtons(
-                    item: selected,
-                    detail: history.selectedDetail,
-                    appModel: appModel,
-                    onForgot: { await history.forgetSelected() }
-                )
-            } else {
-                Text("Select a result for metadata and actions.")
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .padding()
-        .background(.ultraThinMaterial)
-    }
-
     // MARK: - State Management
-
-    private func syncMode() {
-        history.mode = displayMode.queryMode(searchStyle: searchStyle)
-        storedMode = history.mode.rawValue
-    }
 
     private func restoreSceneState() {
         let restoredMode = storedMode.isEmpty ? UserDefaults.standard.clipmemDefaultMode.rawValue : storedMode
         let queryMode = (QueryMode(rawValue: restoredMode) ?? .recent).historyCompatibleMode
-        let (dm, ss) = DisplayMode.from(queryMode: queryMode)
-        displayMode = dm
-        searchStyle = ss
-        history.mode = queryMode
+        let displayState = DisplayMode.from(queryMode: queryMode)
+        history.searchStyle = SearchStyle(rawValue: storedSearchStyle) ?? displayState.searchStyle
+        history.resultScope = HistoryResultScope(rawValue: storedResultScope) ?? HistoryResultScope.from(queryMode: queryMode)
         storedMode = queryMode.rawValue
+        storePresentationState()
         history.query = storedQuery
         history.selectedID = storedSelectedID == 0 ? nil : storedSelectedID
     }
@@ -350,24 +275,30 @@ struct HistoryWindowView: View {
         handledHistoryOpenRequestID = request.id
 
         let queryMode = request.mode.historyCompatibleMode
-        let (dm, ss) = DisplayMode.from(queryMode: queryMode)
-        displayMode = dm
-        searchStyle = ss
-        history.mode = queryMode
+        let displayState = DisplayMode.from(queryMode: queryMode)
+        history.searchStyle = displayState.searchStyle
+        history.resultScope = HistoryResultScope.from(queryMode: queryMode)
 
         history.query = request.query
         storedMode = history.mode.rawValue
+        storePresentationState()
         storedQuery = request.query
         storedSelectedID = request.focusedSnapshotID ?? 0
         await history.reload(selecting: request.focusedSnapshotID)
+        storedMode = history.mode.rawValue
+        storePresentationState()
         return true
     }
-}
 
-private struct HistoryWindowWidthKey: SwiftUI.PreferenceKey {
-    static let defaultValue: CGFloat = 0
+    @MainActor
+    private func reloadAndStoreMode() async {
+        await history.reload()
+        storedMode = history.mode.rawValue
+        storePresentationState()
+    }
 
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+    private func storePresentationState() {
+        storedSearchStyle = history.searchStyle.rawValue
+        storedResultScope = history.resultScope.rawValue
     }
 }

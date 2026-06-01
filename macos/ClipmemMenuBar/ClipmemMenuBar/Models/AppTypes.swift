@@ -242,6 +242,41 @@ enum SearchStyle: String, CaseIterable, Identifiable, Codable, Hashable, Sendabl
     }
 }
 
+enum HistoryResultScope: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
+    case uniqueItems
+    case copyEvents
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .uniqueItems: "Unique items"
+        case .copyEvents: "Every copy event"
+        }
+    }
+
+    var help: String {
+        switch self {
+        case .uniqueItems: "Show each unique clipboard state once."
+        case .copyEvents: "Show every observed copy, including repeats."
+        }
+    }
+
+    var queryMode: QueryMode {
+        switch self {
+        case .uniqueItems: .recent
+        case .copyEvents: .timeline
+        }
+    }
+
+    static func from(queryMode: QueryMode) -> HistoryResultScope {
+        switch queryMode.historyCompatibleMode {
+        case .timeline: .copyEvents
+        default: .uniqueItems
+        }
+    }
+}
+
 enum DisplayMode: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
     case search
     case recent

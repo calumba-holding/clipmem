@@ -371,10 +371,10 @@ struct HistoryExternalRefreshTests {
         #expect(history.selectedID == 3)
     }
 
-    @Test func externalHistoryRefreshIgnoresDiagnosticsMode() async {
-        var loadCount = 0
-        let history = HistoryModel(mode: .diagnostics, appModel: AppModel()) { _, _, _, _ in
-            loadCount += 1
+    @Test func externalHistoryRefreshCoercesDiagnosticsModeToRecent() async {
+        var requestedModes: [QueryMode] = []
+        let history = HistoryModel(mode: .diagnostics, appModel: AppModel()) { mode, _, _, _ in
+            requestedModes.append(mode)
             return ([Self.item(3)], nil)
         }
         history.results = [Self.item(1)]
@@ -382,9 +382,9 @@ struct HistoryExternalRefreshTests {
 
         await history.refreshForExternalHistoryChange()
 
-        #expect(loadCount == 0)
-        #expect(history.results.map(\.snapshotId) == [1])
-        #expect(history.selectedID == 1)
+        #expect(requestedModes == [.recent])
+        #expect(history.results.map(\.snapshotId) == [3])
+        #expect(history.selectedID == 3)
     }
 
     private static func item(_ snapshotID: Int) -> ClipmemItem {

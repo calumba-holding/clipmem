@@ -334,11 +334,15 @@ final class AppModel {
     }
 
     func restore(_ item: ClipmemItem) async {
+        await restore(snapshotID: item.snapshotId, successMessage: "Restored to clipboard")
+    }
+
+    func restore(snapshotID: Int, successMessage: String = "Restored to clipboard") async {
         do {
-            _ = try await client.restore(snapshotID: item.snapshotId)
+            _ = try await client.restore(snapshotID: snapshotID)
             pasteboardMonitor?.markCurrentChangeHandled()
             lastError = nil
-            showActionMessage("Restored to clipboard")
+            showActionMessage(successMessage)
             await refreshRecentPreview()
         } catch {
             lastError = UserError(error)
@@ -346,15 +350,7 @@ final class AppModel {
     }
 
     func copySnapshotToPasteboard(snapshotID: Int) async {
-        do {
-            _ = try await client.restore(snapshotID: snapshotID)
-            pasteboardMonitor?.markCurrentChangeHandled()
-            lastError = nil
-            showActionMessage("Copied to clipboard")
-            await refreshRecentPreview()
-        } catch {
-            lastError = UserError(error)
-        }
+        await restore(snapshotID: snapshotID, successMessage: "Copied to clipboard")
     }
 
     func copyPlainTextToPasteboard(_ text: String) {
@@ -366,9 +362,13 @@ final class AppModel {
 
     @discardableResult
     func forget(_ item: ClipmemItem) async -> Bool {
+        await forget(snapshotID: item.snapshotId)
+    }
+    @discardableResult
+    func forget(snapshotID: Int) async -> Bool {
         do {
-            _ = try await client.forget(snapshotID: item.snapshotId)
-            recentPreview.removeAll { $0.snapshotId == item.snapshotId }
+            _ = try await client.forget(snapshotID: snapshotID)
+            recentPreview.removeAll { $0.snapshotId == snapshotID }
             lastError = nil
             return true
         } catch {

@@ -6,9 +6,12 @@ struct SnapshotDetailView: View {
     let fallback: ClipmemItem?
     let appModel: AppModel
     var isLoading: Bool = false
+    var onForgot: () async -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var visibleSections = 0
+    @State private var advancedMetadataPresented = false
+    @State private var confirmForget = false
     @State private var imagePreviewState: ImagePreviewState = .notAvailable
 
     var body: some View {
@@ -21,17 +24,12 @@ struct SnapshotDetailView: View {
                     }
                     if visibleSections >= 2 {
                         Divider()
-                        metadataSection(detail)
+                        summaryMetadataSection(detail)
                             .transition(.opacity)
                     }
                     if visibleSections >= 3 {
                         Divider()
-                        representationsSection(detail)
-                            .transition(.opacity)
-                    }
-                    if visibleSections >= 4 {
-                        Divider()
-                        eventsSection(detail)
+                        advancedSection(detail)
                             .transition(.opacity)
                     }
                 } else if let fallback {
@@ -55,31 +53,38 @@ struct SnapshotDetailView: View {
                     .padding()
             }
         }
-        .onChange(of: detail?.snapshotId) {
-            revealSections()
-        }
         .task(id: detail?.snapshotId) {
-            revealSections()
+            await revealSections()
             await loadImagePreview()
         }
         .onDisappear {
             removeLoadedPreview()
             imagePreviewState = .notAvailable
         }
+        .confirmationDialog("Forget this snapshot?", isPresented: $confirmForget) {
+            Button("Forget", role: .destructive) {
+                Task {
+                    await onForgot()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently removes the saved content and all records of when it was copied. This cannot be undone.")
+        }
     }
 
-    private func revealSections() {
+    private func revealSections() async {
+        advancedMetadataPresented = false
         if reduceMotion || detail == nil {
-            visibleSections = 4
+            visibleSections = 3
             return
         }
         visibleSections = 0
-        Task { @MainActor in
-            for section in 1...4 {
-                try? await Task.sleep(for: .milliseconds(100))
-                withAnimation(DesignAnimation.standard) {
-                    visibleSections = section
-                }
+        for section in 1...3 {
+            try? await Task.sleep(for: .milliseconds(100))
+            guard !Task.isCancelled else { return }
+            withAnimation(DesignAnimation.standard) {
+                visibleSections = section
             }
         }
     }
@@ -91,15 +96,9 @@ struct SnapshotDetailView: View {
                 Text("Content")
                     .font(DesignType.sectionHeader)
                 Spacer()
-                if canCopy(detail) {
-                    Button(copyButtonTitle(for: detail), systemImage: "doc.on.doc") {
-                        copy(detail)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .help(copyButtonHelp(for: detail))
-                }
             }
+
+            actionBar(detail)
 
             if detail.imagePreviewRepresentation != nil {
                 imagePreviewView
@@ -196,6 +195,30 @@ struct SnapshotDetailView: View {
         Task { await appModel.copySnapshotToPasteboard(snapshotID: detail.snapshotId) }
     }
 
+    private func actionBar(_ detail: SnapshotDetails) -> some View {
+        HStack(spacing: Spacing.sm) {
+            if canCopy(detail) {
+                Button(copyButtonTitle(for: detail), systemImage: "doc.on.doc") {
+                    copy(detail)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .help(copyButtonHelp(for: detail))
+            }
+            Button("Restore", systemImage: "arrow.uturn.backward.square") {
+                Task { await appModel.restore(snapshotID: detail.snapshotId) }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            Button("Forget", systemImage: "trash", role: .destructive) {
+                confirmForget = true
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+            Spacer()
+        }
+    }
+
     private func loadImagePreview() async {
         guard let detail, let representation = detail.imagePreviewRepresentation else {
             removeLoadedPreview()
@@ -246,21 +269,41 @@ struct SnapshotDetailView: View {
         }
     }
 
-    private func metadataSection(_ detail: SnapshotDetails) -> some View {
-        GroupBox("Metadata") {
+    private func summaryMetadataSection(_ detail: SnapshotDetails) -> some View {
+        GroupBox("Summary") {
             Grid(alignment: .leading, horizontalSpacing: Spacing.md, verticalSpacing: Spacing.sm) {
                 FieldRow(title: "Kind", value: detail.snapshotKind.displayTitle)
+                FieldRow(title: "Copied", value: DisplayFormatters.localTimestamp(detail.lastObservedAt ?? detail.firstObservedAt))
+                FieldRow(title: "App", value: detail.lastFrontmostAppName.map { "Copied while in \($0)" })
+                FieldRow(title: "Bytes", value: DisplayFormatters.byteCount(detail.totalBytes) ?? String(detail.totalBytes))
+                FieldRow(title: "OCR status", value: detail.ocrStatus)
+                FieldRow(title: "URLs", value: detail.urls.joined(separator: "\n"), lineLimit: 3)
+                FieldRow(title: "Files", value: detail.filePaths.joined(separator: "\n"), lineLimit: 3)
+            }
+        }
+    }
+
+    private func advancedSection(_ detail: SnapshotDetails) -> some View {
+        DisclosureGroup("Advanced metadata", isExpanded: $advancedMetadataPresented) {
+            VStack(alignment: .leading, spacing: Spacing.lg) {
+                ItemActionButtons(detail: detail, appModel: appModel)
+                metadataSection(detail)
+                representationsSection(detail)
+                eventsSection(detail)
+            }
+            .padding(.top, Spacing.sm)
+        }
+    }
+
+    private func metadataSection(_ detail: SnapshotDetails) -> some View {
+        GroupBox("Snapshot") {
+            Grid(alignment: .leading, horizontalSpacing: Spacing.md, verticalSpacing: Spacing.sm) {
                 FieldRow(title: "Snapshot ID", value: String(detail.snapshotId))
                 FieldRow(title: "Content fingerprint", value: detail.sha256, lineLimit: 1)
                 FieldRow(title: "First Seen", value: DisplayFormatters.localTimestamp(detail.firstObservedAt))
                 FieldRow(title: "Last Seen", value: DisplayFormatters.localTimestamp(detail.lastObservedAt))
                 FieldRow(title: "Capture Count", value: String(detail.captureCount))
-                FieldRow(title: "Bytes", value: DisplayFormatters.byteCount(detail.totalBytes) ?? String(detail.totalBytes))
-                FieldRow(title: "OCR status", value: detail.ocrStatus)
-                FieldRow(title: "App Hint", value: detail.lastFrontmostAppName.map { "Copied while in \($0)" })
                 FieldRow(title: "App identifier", value: detail.lastFrontmostAppBundleId, lineLimit: 1)
-                FieldRow(title: "URLs", value: detail.urls.joined(separator: "\n"), lineLimit: 3)
-                FieldRow(title: "Files", value: detail.filePaths.joined(separator: "\n"), lineLimit: 3)
             }
         }
     }

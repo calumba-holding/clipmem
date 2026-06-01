@@ -1,8 +1,14 @@
 import SwiftUI
 
 struct ResultRowView: View {
+    enum Presentation {
+        case uniqueSnapshot
+        case copyEvent
+    }
+
     let item: ClipmemItem
     let selected: Bool
+    var presentation: Presentation = .uniqueSnapshot
     var animatedHighlight = true
     @State private var resolvedLinkBadge: ResolvedLinkBadge?
 
@@ -80,6 +86,12 @@ struct ResultRowView: View {
                 presentation: presentation,
                 selected: selected
             )
+            if self.presentation == .copyEvent, let eventId = item.eventId {
+                Text("#\(eventId)")
+                    .font(DesignType.rowMeta.monospacedDigit())
+                    .foregroundStyle(selected ? .white.opacity(0.82) : .secondary)
+                    .help("Copy event \(eventId)")
+            }
             if let relative = DisplayFormatters.relativeTimestamp(item.observedAt) {
                 Text(relative)
                     .font(DesignType.rowMeta)

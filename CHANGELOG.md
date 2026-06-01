@@ -11,6 +11,9 @@ versioning where practical.
 
 ### Changed
 
+- Simplified the macOS History window into one searchable browser with
+  `Unique items` and `Every copy event` result views, clearer Quick Recall
+  labeling, and a recovery-first detail pane.
 - Documented Homebrew tap trust commands for users who run with stricter tap
   trust checks enabled.
 

@@ -138,6 +138,155 @@ struct HistoryModelTests {
     }
 
     @Test
+    @MainActor
+    func emptyQueryUniqueItemsLoadsRecent() async {
+        var requestedModes: [QueryMode] = []
+        let history = HistoryModel(
+            mode: .timeline,
+            appModel: AppModel(loadRecentPreview: { [] }),
+            pageLoader: { mode, query, _, _ in
+                requestedModes.append(mode)
+                #expect(query == "")
+                return ([Self.item(snapshotID: 1)], nil)
+            }
+        )
+        history.resultScope = .uniqueItems
+        history.searchStyle = .exact
+        history.query = ""
+
+        await history.reload()
+
+        #expect(requestedModes == [.recent])
+        #expect(history.mode == .recent)
+    }
+
+    @Test
+    @MainActor
+    func emptyQueryCopyEventsLoadsTimeline() async {
+        var requestedModes: [QueryMode] = []
+        let history = HistoryModel(
+            mode: .recent,
+            appModel: AppModel(loadRecentPreview: { [] }),
+            pageLoader: { mode, query, _, _ in
+                requestedModes.append(mode)
+                #expect(query == "")
+                return ([Self.item(snapshotID: 1)], nil)
+            }
+        )
+        history.resultScope = .copyEvents
+        history.searchStyle = .smart
+        history.query = ""
+
+        await history.reload()
+
+        #expect(requestedModes == [.timeline])
+        #expect(history.mode == .timeline)
+    }
+
+    @Test
+    @MainActor
+    func nonEmptyQuerySmartSearchLoadsRecall() async {
+        var requestedModes: [QueryMode] = []
+        let history = HistoryModel(
+            mode: .recent,
+            appModel: AppModel(loadRecentPreview: { [] }),
+            pageLoader: { mode, query, _, _ in
+                requestedModes.append(mode)
+                #expect(query == "release notes")
+                return ([Self.item(snapshotID: 1)], nil)
+            }
+        )
+        history.resultScope = .copyEvents
+        history.searchStyle = .smart
+        history.query = "release notes"
+
+        await history.reload()
+
+        #expect(requestedModes == [.recall])
+        #expect(history.mode == .recall)
+    }
+
+    @Test
+    @MainActor
+    func nonEmptyQueryExactSearchLoadsSearch() async {
+        var requestedModes: [QueryMode] = []
+        let history = HistoryModel(
+            mode: .timeline,
+            appModel: AppModel(loadRecentPreview: { [] }),
+            pageLoader: { mode, query, _, _ in
+                requestedModes.append(mode)
+                #expect(query == "launchctl")
+                return ([Self.item(snapshotID: 1)], nil)
+            }
+        )
+        history.resultScope = .uniqueItems
+        history.searchStyle = .exact
+        history.query = "launchctl"
+
+        await history.reload()
+
+        #expect(requestedModes == [.search])
+        #expect(history.mode == .search)
+    }
+
+    @Test
+    @MainActor
+    func loadMoreDoesNotReuseCursorAfterQueryChanges() async {
+        var requests: [(QueryMode, String, String?)] = []
+        let history = HistoryModel(
+            mode: .recent,
+            appModel: AppModel(loadRecentPreview: { [] }),
+            pageLoader: { mode, query, _, cursor in
+                requests.append((mode, query, cursor))
+                if cursor == nil {
+                    return ([Self.item(snapshotID: 1)], "recent-cursor")
+                }
+                return ([Self.item(snapshotID: 2)], nil)
+            }
+        )
+
+        await history.reload()
+        history.query = "new search"
+        await history.loadMore()
+
+        #expect(requests.count == 1)
+        #expect(requests.first?.0 == .recent)
+        #expect(requests.first?.1 == "")
+        #expect(requests.first?.2 == nil)
+        #expect(history.results.map(\.snapshotId) == [1])
+        #expect(history.nextCursor == "recent-cursor")
+    }
+
+    @Test
+    @MainActor
+    func copyEventSelectionDistinguishesRepeatedSnapshots() async {
+        let firstCopy = Self.item(snapshotID: 7, eventID: 101)
+        let secondCopy = Self.item(snapshotID: 7, eventID: 102)
+        let history = HistoryModel(
+            mode: .timeline,
+            appModel: AppModel(loadRecentPreview: { [] }),
+            pageLoader: { _, _, _, _ in
+                ([firstCopy, secondCopy], nil)
+            }
+        )
+
+        await history.reload()
+        history.selectRow(id: secondCopy.id)
+
+        #expect(history.selectedID == 7)
+        #expect(history.selectedRowID == secondCopy.id)
+        #expect(history.selectedItem?.eventId == 102)
+    }
+
+    @Test
+    func historyResultScopeMapsLegacySearchDefaultsToUniqueItems() {
+        #expect(HistoryResultScope.from(queryMode: .recall) == .uniqueItems)
+        #expect(HistoryResultScope.from(queryMode: .search) == .uniqueItems)
+        #expect(HistoryResultScope.from(queryMode: .recent) == .uniqueItems)
+        #expect(HistoryResultScope.from(queryMode: .timeline) == .copyEvents)
+    }
+
+    @Test
     func imagePreviewRepresentationPrefersImageRepresentations() {
         let detail = Self.detail(
             snapshotID: 7,
@@ -203,10 +352,10 @@ struct HistoryModelTests {
         #expect(textDetail.copyableDetailText == "copy this text")
     }
 
-    private static func item(snapshotID: Int) -> ClipmemItem {
+    private static func item(snapshotID: Int, eventID: Int? = nil) -> ClipmemItem {
         ClipmemItem(
             snapshotId: snapshotID,
-            eventId: nil,
+            eventId: eventID,
             sha256: nil,
             kind: .plainText,
             observedAt: nil,

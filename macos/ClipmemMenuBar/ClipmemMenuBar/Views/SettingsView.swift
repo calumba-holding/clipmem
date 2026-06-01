@@ -75,9 +75,9 @@ struct ClipmemSettingsView: View {
 
             Section("Preferences") {
                 Stepper("Recent window: \(defaultRecentHours) hours", value: $defaultRecentHours, in: 1...720)
-                Picker("Default mode", selection: defaultDisplayModeBinding) {
-                    ForEach(DisplayMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
+                Picker("Default History view", selection: defaultHistoryScopeBinding) {
+                    ForEach(HistoryResultScope.allCases) { scope in
+                        Text(scope.title).tag(scope)
                     }
                 }
                 Toggle("Enable Option-Shift-V global hotkey", isOn: $hotkeyEnabled)
@@ -348,16 +348,12 @@ struct ClipmemSettingsView: View {
 
     // MARK: - Bindings
 
-    private var defaultDisplayModeBinding: Binding<DisplayMode> {
+    private var defaultHistoryScopeBinding: Binding<HistoryResultScope> {
         Binding {
             let mode = QueryMode(rawValue: defaultQueryMode) ?? .recent
-            return DisplayMode.from(queryMode: mode).displayMode
-        } set: { newDisplayMode in
-            switch newDisplayMode {
-            case .search: defaultQueryMode = QueryMode.recall.rawValue
-            case .recent: defaultQueryMode = QueryMode.recent.rawValue
-            case .timeline: defaultQueryMode = QueryMode.timeline.rawValue
-            }
+            return HistoryResultScope.from(queryMode: mode)
+        } set: { newScope in
+            defaultQueryMode = newScope.queryMode.rawValue
         }
     }
 
