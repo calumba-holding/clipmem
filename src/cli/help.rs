@@ -203,7 +203,8 @@ Examples:
 
 Notes:
   - `compact` reclaims SQLite and WAL disk space without changing clipboard content.
-  - `optimize-images` converts eligible stored image bytes to lossless WebP, then compacts SQLite storage by default.
+  - `optimize-images` converts all current eligible stored image bytes to lossless WebP, then compacts SQLite storage by default.
+  - Add `--limit` when you intentionally want a bounded optimization batch.
   - `optimize-images --progress jsonl` streams machine-readable progress events.
   - Use `--no-compact` when batching optimization runs and compacting once at the end.";
 

@@ -748,9 +748,8 @@ fn storage_commands_parse_expected_arguments() {
     match optimize_cli.command {
         Command::Storage(args) => match args.command {
             StorageCommand::OptimizeImages(args) => {
-                assert!(!args.dry_run);
-                assert!(args.no_compact);
-                assert_eq!(args.limit, 50);
+                assert!(!args.dry_run && args.no_compact);
+                assert_eq!(args.limit, Some(50));
                 assert_eq!(args.output.resolved().unwrap(), OutputFormat::Json);
             }
             other => panic!("expected storage optimize-images command, got {other:?}"),
@@ -768,7 +767,7 @@ fn storage_commands_parse_expected_arguments() {
     match progress_cli.command {
         Command::Storage(args) => match args.command {
             StorageCommand::OptimizeImages(args) => {
-                assert_eq!(args.progress, Some(ProgressFormat::Jsonl));
+                assert!(args.progress == Some(ProgressFormat::Jsonl) && args.limit.is_none());
             }
             other => panic!("expected storage optimize-images command, got {other:?}"),
         },

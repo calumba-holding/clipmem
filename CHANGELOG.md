@@ -9,6 +9,19 @@ versioning where practical.
 
 ## Unreleased
 
+## 0.5.6 - 2026-06-03
+
+### Fixed
+
+- Fixed `clipmem storage optimize-images` and the menu bar image compression
+  action so runs without `--limit` scan all current uncompressed image rows
+  instead of silently stopping after 25 candidates.
+
+### Notes
+
+- Lowered the release validation file-length baseline for the trimmed CLI
+  parser tests.
+
 ## 0.5.5 - 2026-06-01
 
 ### Changed

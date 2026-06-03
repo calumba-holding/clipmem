@@ -352,7 +352,7 @@ metadata.
 |---|---|---|---|
 | `--dry-run` | flag | — | Estimate work and savings without changing rows |
 | `--no-compact` | flag | — | Skip the automatic SQLite compaction step |
-| `--limit` | 1-250 | 25 | Maximum unprocessed image rows to scan |
+| `--limit` | 1-250 | — | Maximum unprocessed image rows to scan; omit to scan all current candidates |
 | `--progress` | `jsonl` | — | Stream progress events as newline-delimited JSON |
 | `--format` | `text\|json\|human` | `text` | Output format |
 | `--json` | flag | — | Alias for `--format json` |
@@ -368,10 +368,12 @@ clipmem storage optimize-images --progress jsonl
 ```
 
 Rows already marked `compressed` or `skipped` are not retried by
-normal runs. JSON output reports scanned rows, compressed rows,
-skipped rows, conflicts, original bytes, optimized bytes, logical
-bytes saved, whether compaction ran, filesystem bytes reclaimed, and
-whether database compaction is still recommended.
+normal runs. Without `--limit`, a run scans all image rows that are
+currently eligible; use `--limit` only when you want an intentionally
+bounded batch. JSON output reports scanned rows, compressed rows,
+skipped rows, conflicts, original bytes, optimized bytes, logical bytes
+saved, whether compaction ran, filesystem bytes reclaimed, and whether
+database compaction is still recommended.
 
 `--progress jsonl` streams newline-delimited JSON records to stdout and
 cannot be combined with `--format`, `--json`, or `--human`. Progress

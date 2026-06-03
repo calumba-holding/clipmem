@@ -115,9 +115,10 @@ Only image rows marked `uncompressed` are considered. Rows converted
 to WebP are marked `compressed`, and rows that are unsupported,
 corrupt, animated, not smaller, or conflict with existing archive rows
 are marked `skipped`. Normal optimization runs never retry rows that
-have already been compressed or skipped. Use `--no-compact` only when
-you want to batch several limited optimization runs and compact once at
-the end.
+have already been compressed or skipped. Omit `--limit` to scan all
+current candidates, or add `--limit` when you intentionally want a
+bounded batch. Use `--no-compact` only when you want to batch several
+limited optimization runs and compact once at the end.
 
 ## Capture policy
 

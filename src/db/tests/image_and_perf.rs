@@ -35,7 +35,7 @@ fn lossless_webp_optimization_rewrites_image_once_and_preserves_pixels() -> Resu
                 row.get(0)
             })?;
 
-    let report = db.optimize_images(false, 25, true)?;
+    let report = db.optimize_images(false, Some(25), true)?;
 
     assert_eq!(report.scanned_rows, 1);
     assert_eq!(report.compressed_rows, 1);
@@ -100,9 +100,62 @@ fn lossless_webp_optimization_rewrites_image_once_and_preserves_pixels() -> Resu
     assert_eq!(total_bytes, byte_len);
     assert_eq!(decode_rgba(&blob)?, original_pixels);
 
-    let second_report = db.optimize_images(false, 25, true)?;
+    let second_report = db.optimize_images(false, Some(25), true)?;
     assert_eq!(second_report.scanned_rows, 0);
     assert_eq!(second_report.compressed_rows, 0);
+    Ok(())
+}
+
+#[test]
+fn image_optimization_without_limit_processes_every_current_candidate() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let original = lossless_test_tiff()?;
+    let representations = (0..30).map(|_| ("public.tiff", original.clone())).collect();
+    let snapshot = image_snapshot(1, representations);
+    db.store_capture(&snapshot)?;
+
+    let report = db.optimize_images(false, None, true)?;
+
+    assert_eq!(report.scanned_rows, 30);
+    assert_eq!(report.compressed_rows, 30);
+    assert_eq!(report.skipped_rows, 0);
+
+    let (compressed, uncompressed): (i64, i64) = db.conn.query_row(
+        r"
+            SELECT
+                SUM(CASE WHEN image_compression_status = 'compressed' THEN 1 ELSE 0 END),
+                SUM(CASE WHEN image_compression_status = 'uncompressed' THEN 1 ELSE 0 END)
+            FROM item_representations
+        ",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+
+    assert_eq!(compressed, 30);
+    assert_eq!(uncompressed, 0);
+    Ok(())
+}
+
+#[test]
+fn explicit_image_optimization_limit_still_caps_scanned_rows() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let original = lossless_test_tiff()?;
+    let representations = (0..30).map(|_| ("public.tiff", original.clone())).collect();
+    let snapshot = image_snapshot(1, representations);
+    db.store_capture(&snapshot)?;
+
+    let report = db.optimize_images(false, Some(25), true)?;
+
+    assert_eq!(report.scanned_rows, 25);
+    assert_eq!(report.compressed_rows, 25);
+
+    let uncompressed: i64 = db.conn.query_row(
+        "SELECT COUNT(*) FROM item_representations WHERE image_compression_status = 'uncompressed'",
+        [],
+        |row| row.get(0),
+    )?;
+
+    assert_eq!(uncompressed, 5);
     Ok(())
 }
 
@@ -135,7 +188,7 @@ fn image_optimization_preserves_literal_search_by_app_identity() -> Result<()> {
         1
     );
 
-    let report = db.optimize_images(false, 25, true)?;
+    let report = db.optimize_images(false, Some(25), true)?;
 
     assert_eq!(report.compressed_rows, 1);
     assert_eq!(
@@ -165,7 +218,7 @@ fn file_backed_image_optimization_compacts_without_adding_rows() -> Result<()> {
                 row.get(0)
             })?;
 
-    let report = db.optimize_images(false, 25, true)?;
+    let report = db.optimize_images(false, Some(25), true)?;
 
     let row_count_after: i64 =
         db.conn
@@ -200,11 +253,11 @@ fn no_compact_optimization_leaves_reclaimable_pages_for_later_compaction() -> Re
     let mut db = Database::open_or_init(&path)?;
     db.store_capture(&snapshot)?;
 
-    let first = db.optimize_images(false, 25, false)?;
+    let first = db.optimize_images(false, Some(25), false)?;
     let freelist_after_rewrite: i64 = db
         .conn
         .query_row("PRAGMA freelist_count", [], |row| row.get(0))?;
-    let second = db.optimize_images(false, 25, true)?;
+    let second = db.optimize_images(false, Some(25), true)?;
 
     assert_eq!(first.compressed_rows, 1);
     assert!(!first.compact_run);
@@ -226,7 +279,7 @@ fn corrupt_image_rows_are_marked_skipped_once() -> Result<()> {
     let snapshot = image_snapshot(1, vec![("public.png", b"not actually a png".to_vec())]);
     let stored = db.store_capture(&snapshot)?;
 
-    let report = db.optimize_images(false, 25, true)?;
+    let report = db.optimize_images(false, Some(25), true)?;
     assert_eq!(report.scanned_rows, 1);
     assert_eq!(report.compressed_rows, 0);
     assert_eq!(report.skipped_rows, 1);
@@ -239,7 +292,7 @@ fn corrupt_image_rows_are_marked_skipped_once() -> Result<()> {
     assert_eq!(status, "skipped");
     assert_eq!(reason.as_deref(), Some("corrupt_or_unsupported"));
 
-    let second_report = db.optimize_images(false, 25, true)?;
+    let second_report = db.optimize_images(false, Some(25), true)?;
     assert_eq!(second_report.scanned_rows, 0);
     Ok(())
 }

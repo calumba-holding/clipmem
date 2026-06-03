@@ -101,9 +101,10 @@ efficiency, but they are not the proof of primitive coverage:
 - `setup` composes database initialization, one capture, and service
   startup. Agents can still inspect the resulting state with `service
   status`, `service revision`, `settings show`, and `agents context`.
-- `purge`, `ocr run`, and `storage optimize-images` are bounded batch
-  workflows with dry-run or candidate inspection commands where a preview
-  is meaningful.
+- `purge` and `ocr run` are bounded batch workflows with dry-run or
+  candidate inspection commands where a preview is meaningful. `storage
+  optimize-images` scans all current image candidates by default, while
+  `--limit` remains available for intentionally bounded batches.
 
 ## Agent context contract
 

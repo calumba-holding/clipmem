@@ -706,9 +706,9 @@ pub(super) struct StorageOptimizeImagesArgs {
     #[arg(long, default_value_t = false)]
     pub(super) no_compact: bool,
 
-    /// Maximum number of unprocessed image rows to scan.
-    #[arg(long, default_value_t = 25, value_parser = parse_bounded_limit)]
-    pub(super) limit: usize,
+    /// Maximum number of unprocessed image rows to scan. Omit to scan all current candidates.
+    #[arg(long, value_parser = parse_bounded_limit)]
+    pub(super) limit: Option<usize>,
 
     /// Stream progress events as newline-delimited JSON.
     #[arg(long, value_enum)]

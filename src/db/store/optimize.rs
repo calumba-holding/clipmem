@@ -30,11 +30,13 @@ pub(in crate::db) struct OptimizedImage {
     pub(in crate::db) raw_sha256: String,
 }
 
+const IMAGE_OPTIMIZATION_BATCH_LIMIT: usize = 250;
+
 impl Database {
     pub(crate) fn optimize_images(
         &mut self,
         dry_run: bool,
-        limit: usize,
+        limit: Option<usize>,
         auto_compact: bool,
     ) -> Result<ImageOptimizationReport> {
         self.optimize_images_with_progress(dry_run, limit, auto_compact, |_| Ok(()))
@@ -43,7 +45,7 @@ impl Database {
     pub(crate) fn optimize_images_with_progress(
         &mut self,
         dry_run: bool,
-        limit: usize,
+        limit: Option<usize>,
         auto_compact: bool,
         mut progress: impl FnMut(ImageOptimizationProgressEvent) -> Result<()>,
     ) -> Result<ImageOptimizationReport> {
@@ -52,8 +54,8 @@ impl Database {
         } else {
             None
         };
-        let candidates = load_image_optimization_candidates(&self.conn, limit)?;
-        let total_rows = candidates.len();
+        let limit = limit.map(clamp_result_limit);
+        let total_rows = count_image_optimization_candidates(&self.conn, limit)?;
         let mut report = ImageOptimizationReport {
             dry_run,
             format: IMAGE_OPTIMIZATION_FORMAT,
@@ -75,7 +77,6 @@ impl Database {
 
         self.process_image_optimization_candidates(
             dry_run,
-            candidates,
             total_rows,
             &mut report,
             &mut progress,
@@ -105,14 +106,29 @@ impl Database {
     fn process_image_optimization_candidates(
         &mut self,
         dry_run: bool,
-        candidates: Vec<ImageOptimizationCandidate>,
         total_rows: usize,
         report: &mut ImageOptimizationReport,
         progress: &mut impl FnMut(ImageOptimizationProgressEvent) -> Result<()>,
     ) -> Result<()> {
-        for candidate in candidates {
-            process_image_optimization_candidate(&mut self.conn, dry_run, &candidate, report)?;
-            Self::emit_image_optimization_scan_progress(progress, report, total_rows)?;
+        let mut dry_run_offset = 0;
+        while report.scanned_rows < total_rows {
+            let batch_limit =
+                (total_rows - report.scanned_rows).min(IMAGE_OPTIMIZATION_BATCH_LIMIT);
+            let batch_offset = if dry_run { dry_run_offset } else { 0 };
+            let candidates =
+                load_image_optimization_candidate_batch(&self.conn, batch_limit, batch_offset)?;
+            if candidates.is_empty() {
+                break;
+            }
+
+            if dry_run {
+                dry_run_offset += candidates.len();
+            }
+
+            for candidate in candidates {
+                process_image_optimization_candidate(&mut self.conn, dry_run, &candidate, report)?;
+                Self::emit_image_optimization_scan_progress(progress, report, total_rows)?;
+            }
         }
         Ok(())
     }
@@ -279,11 +295,33 @@ fn assign_image_optimization_filesystem_delta(
     }
 }
 
-pub(in crate::db) fn load_image_optimization_candidates(
+pub(in crate::db) fn count_image_optimization_candidates(
+    conn: &rusqlite::Connection,
+    limit: Option<usize>,
+) -> Result<usize> {
+    let count = conn
+        .query_row(
+            r"
+                SELECT COUNT(*)
+                FROM item_representations
+                WHERE kind = 'image'
+                  AND image_compression_status = 'uncompressed'
+                  AND length(blob_value) > 0
+            ",
+            [],
+            |row| row_usize(row, 0),
+        )
+        .context("count image optimization candidates")?;
+    Ok(limit.map_or(count, |limit| count.min(limit)))
+}
+
+pub(in crate::db) fn load_image_optimization_candidate_batch(
     conn: &rusqlite::Connection,
     limit: usize,
+    offset: usize,
 ) -> Result<Vec<ImageOptimizationCandidate>> {
     let limit = usize_to_i64(clamp_result_limit(limit))?;
+    let offset = usize_to_i64(offset)?;
     let mut stmt = conn
         .prepare(
             r"
@@ -294,11 +332,12 @@ pub(in crate::db) fn load_image_optimization_candidates(
                   AND length(blob_value) > 0
                 ORDER BY byte_len DESC, snapshot_id ASC, item_index ASC, uti ASC
                 LIMIT ?1
+                OFFSET ?2
             ",
         )
         .context("prepare image optimization candidate query")?;
     let rows = stmt
-        .query_map([limit], |row| {
+        .query_map(params![limit, offset], |row| {
             Ok(ImageOptimizationCandidate {
                 snapshot_id: row.get(0)?,
                 item_index: row.get(1)?,
