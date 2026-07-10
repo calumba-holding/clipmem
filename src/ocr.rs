@@ -60,8 +60,8 @@ pub(crate) fn run_ocr_jobs(
                 } else {
                     ready += 1;
                 }
-                db.store_ocr_text(
-                    candidate.raw_sha256(),
+                db.store_ocr_candidate_text(
+                    candidate,
                     engine.engine_name(),
                     engine.recognition_level(),
                     trimmed,
@@ -69,8 +69,8 @@ pub(crate) fn run_ocr_jobs(
             }
             Err(error) => {
                 failed += 1;
-                db.store_ocr_failure(
-                    candidate.raw_sha256(),
+                db.store_ocr_candidate_failure(
+                    candidate,
                     engine.engine_name(),
                     engine.recognition_level(),
                     &error.to_string(),

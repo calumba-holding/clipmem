@@ -155,6 +155,55 @@ CREATE TABLE IF NOT EXISTS snapshot_ocr_cache (
     updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Durable ownership for expensive local work. Operations are retained so a
+-- caller can reconnect after a process restart and obtain a truthful summary.
+CREATE TABLE IF NOT EXISTS job_operations (
+    id              TEXT PRIMARY KEY,
+    kind            TEXT NOT NULL,
+    state           TEXT NOT NULL DEFAULT 'running' CHECK (state IN ('running', 'completed', 'completed_with_errors', 'cancel_requested', 'cancelled', 'failed')),
+    requested_by    TEXT,
+    options_json    TEXT NOT NULL DEFAULT '{}',
+    options_version INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    started_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at     TEXT
+);
+
+CREATE TABLE IF NOT EXISTS jobs (
+    id                INTEGER PRIMARY KEY,
+    kind              TEXT NOT NULL,
+    dedupe_key        TEXT NOT NULL,
+    algorithm_version TEXT NOT NULL,
+    state             TEXT NOT NULL DEFAULT 'queued' CHECK (state IN ('queued', 'leased', 'succeeded', 'failed', 'skipped', 'cancelled')),
+    priority          INTEGER NOT NULL DEFAULT 0,
+    not_before        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    lease_owner       TEXT,
+    lease_token       TEXT,
+    lease_until       TEXT,
+    attempts          INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    max_attempts      INTEGER NOT NULL DEFAULT 3 CHECK (max_attempts > 0),
+    last_error        TEXT,
+    source_ref_json   TEXT NOT NULL DEFAULT '{}',
+    result_ref_json   TEXT,
+    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at       TEXT,
+    UNIQUE(kind, dedupe_key, algorithm_version)
+);
+
+CREATE TABLE IF NOT EXISTS operation_jobs (
+    operation_id TEXT NOT NULL REFERENCES job_operations(id) ON DELETE CASCADE,
+    job_id       INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    PRIMARY KEY (operation_id, job_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_claim
+ON jobs(kind, state, not_before, lease_until, priority DESC, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_operation_jobs_job
+ON operation_jobs(job_id, operation_id);
+CREATE INDEX IF NOT EXISTS idx_job_operations_state
+ON job_operations(state, created_at);
+
 -- Builder-owned retrieval nucleus. Plan 4 may rename this table, but must keep the
 -- one-row-per-snapshot and builder-version contract rather than creating another projection.
 CREATE TABLE IF NOT EXISTS snapshot_search_documents (

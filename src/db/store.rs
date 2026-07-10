@@ -1,5 +1,6 @@
 mod capture;
 mod config;
+pub(in crate::db) mod jobs;
 mod ocr;
 mod optimize;
 mod purge;
