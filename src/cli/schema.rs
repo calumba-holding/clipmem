@@ -906,11 +906,11 @@ pub(super) struct SettingsIgnoreListArgs {
 #[derive(Debug, Args)]
 #[command(after_help = DOCTOR_AFTER_HELP)]
 pub(super) struct DoctorArgs {
+    #[arg(long, default_value_t = false)]
+    pub(super) verify_invariants: bool,
     /// Emit diagnostics as JSON.
     #[arg(long, default_value_t = false)]
     pub(super) json: bool,
-
-    /// Emit diagnostics as polished terminal output.
     #[arg(long, default_value_t = false)]
     pub(super) human: bool,
 }

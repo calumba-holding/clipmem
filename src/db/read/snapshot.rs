@@ -277,6 +277,8 @@ impl Database {
             .context("probe FTS5 temp virtual table creation")?;
         let fts5_create_virtual_table_ok = true;
 
+        let invariant_counts = super::invariants::verify(&self.conn)?;
+
         Ok(DoctorReport::new(
             self.path.display().to_string(),
             sqlite_version,
@@ -284,6 +286,7 @@ impl Database {
             fts5_compile_option_present,
             fts5_create_virtual_table_ok,
             compile_options,
+            invariant_counts,
         ))
     }
 

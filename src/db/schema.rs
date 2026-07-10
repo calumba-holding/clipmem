@@ -9,8 +9,10 @@ use crate::model::{
 
 use super::sqlite_helpers::{collect_rows, row_enum};
 
+mod integrity;
+
 pub(super) const SCHEMA: &str = include_str!("schema.sql");
-pub(super) const CURRENT_SCHEMA_VERSION: i64 = 19;
+pub(super) const CURRENT_SCHEMA_VERSION: i64 = 20;
 const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
 
 pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {
@@ -25,8 +27,11 @@ pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {
         .context("read PRAGMA user_version")?;
 
     validate_supported_user_version(&tx, user_version)?;
+    ensure_image_compression_columns(&tx)?;
     if user_version < CURRENT_SCHEMA_VERSION {
         run_schema_migration_steps(&tx, user_version)?;
+        tx.execute_batch(SCHEMA)
+            .context("reapply schema objects after migration")?;
         tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
             .context("set PRAGMA user_version")?;
     }
@@ -91,6 +96,11 @@ struct MigrationStep {
 
 const MIGRATION_STEPS: &[MigrationStep] = &[
     MigrationStep {
+        name: "enforce representation item integrity",
+        applies_to: source_version_through_19,
+        run: integrity::enforce_representation_item_integrity,
+    },
+    MigrationStep {
         name: "expire legacy pending restores",
         applies_to: source_version_before_restore_operations,
         run: expire_legacy_pending_restores,
@@ -132,7 +142,7 @@ const MIGRATION_STEPS: &[MigrationStep] = &[
     },
     MigrationStep {
         name: "build unified snapshot search documents",
-        applies_to: source_version_through_18,
+        applies_to: source_version_through_19,
         run: super::store::search_document::rebuild_all_snapshot_search_documents,
     },
 ];
@@ -140,13 +150,11 @@ const MIGRATION_STEPS: &[MigrationStep] = &[
 fn source_version_before_restore_operations(version: i64) -> bool {
     version < 19
 }
-
 fn expire_legacy_pending_restores(conn: &Connection) -> Result<()> {
     conn.execute("DELETE FROM pending_restores", [])
         .context("expire legacy pending restores")?;
     Ok(())
 }
-
 fn validate_supported_user_version(conn: &Connection, user_version: i64) -> Result<()> {
     if user_version > CURRENT_SCHEMA_VERSION {
         bail!(
@@ -163,7 +171,6 @@ fn validate_supported_user_version(conn: &Connection, user_version: i64) -> Resu
     }
     Ok(())
 }
-
 fn run_schema_migration_steps(conn: &Connection, source_version: i64) -> Result<()> {
     for step in MIGRATION_STEPS
         .iter()
@@ -173,15 +180,12 @@ fn run_schema_migration_steps(conn: &Connection, source_version: i64) -> Result<
     }
     Ok(())
 }
-
 fn source_version_is_zero(version: i64) -> bool {
     version == 0
 }
-
 fn source_version_through_1(version: i64) -> bool {
     version <= 1
 }
-
 fn source_version_through_2(version: i64) -> bool {
     version <= 2
 }
@@ -194,8 +198,8 @@ fn source_version_through_5(version: i64) -> bool {
     version <= 5
 }
 
-fn source_version_through_18(version: i64) -> bool {
-    version <= 18
+fn source_version_through_19(version: i64) -> bool {
+    version <= 19
 }
 
 fn source_version_needs_literal_cache_rebuild(version: i64) -> bool {

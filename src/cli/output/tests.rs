@@ -189,6 +189,7 @@ pub(in crate::cli) fn render_doctor_text_lists_compile_options() {
         true,
         true,
         vec!["ENABLE_FTS5".to_string()],
+        crate::model::DoctorIntegrityReport::new(0, 0, 0),
     ));
 
     assert!(text.contains("database: /tmp/clipmem.sqlite3"));

@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS snapshot_items (
 );
 
 CREATE TABLE IF NOT EXISTS item_representations (
-    snapshot_id    INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+    snapshot_id    INTEGER NOT NULL,
     item_index     INTEGER NOT NULL CHECK (item_index >= 0),
     uti            TEXT NOT NULL,
     kind           TEXT NOT NULL,
@@ -48,7 +48,9 @@ CREATE TABLE IF NOT EXISTS item_representations (
     image_original_byte_len INTEGER,
     image_original_raw_sha256 TEXT,
     image_compression_reason TEXT,
-    PRIMARY KEY (snapshot_id, item_index, uti)
+    PRIMARY KEY (snapshot_id, item_index, uti),
+    FOREIGN KEY (snapshot_id, item_index)
+        REFERENCES snapshot_items(snapshot_id, item_index) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS capture_events (

@@ -2,6 +2,7 @@ mod browse;
 #[cfg(test)]
 mod contract_tests;
 mod filter_sql;
+mod invariants;
 mod queries;
 mod query_analysis;
 mod row_mapping;

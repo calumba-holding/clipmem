@@ -5,8 +5,8 @@ mod kinds;
 mod text_projection;
 
 pub use archive::{
-    CaptureEvent, CaptureStoreResult, DoctorReport, MatchEvidence, SearchHit, SnapshotDetails,
-    TimelineEvent,
+    CaptureEvent, CaptureStoreResult, DoctorIntegrityReport, DoctorReport, MatchEvidence,
+    SearchHit, SnapshotDetails, TimelineEvent,
 };
 pub(crate) use archive::{SearchHitParts, SearchOrderKey};
 pub use builders::{build_item, build_representation, build_snapshot};
