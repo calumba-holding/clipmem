@@ -1,15 +1,223 @@
+use std::collections::{HashMap, HashSet};
+
 use anyhow::{Context, Result};
 use rusqlite::{params, OptionalExtension};
 
 use crate::db::core::clamp_result_limit;
 use crate::db::sqlite_helpers::{collect_rows, row_enum, row_usize, usize_to_i64};
-use crate::db::types::Database;
+use crate::db::types::{
+    Database, RepresentationManifest, RepresentationPayload, RestorePayloadPlan,
+    SnapshotItemManifest, SnapshotMetadata,
+};
 use crate::model::{
     CaptureEvent, ClipboardItem, ClipboardRepresentation, DoctorReport, FlattenedTextProjection,
     SnapshotDetails,
 };
 
 impl Database {
+    /// Load snapshot metadata, event summaries, and representation manifests without payload BLOBs.
+    pub fn find_snapshot_metadata(
+        &self,
+        snapshot_id: i64,
+        event_limit: usize,
+    ) -> Result<Option<SnapshotMetadata>> {
+        let Some(summary) = self.load_snapshot_summary(snapshot_id)? else {
+            return Ok(None);
+        };
+        let events = self.load_recent_events(snapshot_id, clamp_result_limit(event_limit))?;
+        let items = self.load_snapshot_manifests(snapshot_id)?;
+        let projection = projection_from_manifests(&items).with_ocr(
+            summary.ocr_text().map(ToOwned::to_owned),
+            summary.ocr_status().map(ToOwned::to_owned),
+        );
+        Ok(Some(SnapshotMetadata::from_summary(
+            &summary,
+            &projection,
+            events,
+            items,
+        )))
+    }
+
+    /// Load canonical/legacy snapshot documents in set-based batches without payload BLOBs.
+    pub fn find_snapshot_documents(
+        &self,
+        snapshot_ids: &[i64],
+    ) -> Result<HashMap<i64, FlattenedTextProjection>> {
+        const IDS_PER_QUERY: usize = 400;
+        let mut seen = HashSet::new();
+        let unique_ids = snapshot_ids
+            .iter()
+            .copied()
+            .filter(|id| seen.insert(*id))
+            .collect::<Vec<_>>();
+        let mut items_by_snapshot: HashMap<i64, Vec<SnapshotItemManifest>> = HashMap::new();
+        let mut ocr_by_snapshot: HashMap<i64, (Option<String>, Option<String>)> = HashMap::new();
+
+        for ids in unique_ids.chunks(IDS_PER_QUERY) {
+            let placeholders = std::iter::repeat_n("?", ids.len())
+                .collect::<Vec<_>>()
+                .join(",");
+            let item_sql = format!(
+                "SELECT si.snapshot_id, si.item_index, si.primary_kind, si.primary_uti, si.preview_text, si.search_text, si.total_bytes, soc.ocr_text, soc.status
+                 FROM snapshot_items si
+                 LEFT JOIN snapshot_ocr_cache soc ON soc.snapshot_id = si.snapshot_id
+                 WHERE si.snapshot_id IN ({placeholders})
+                 ORDER BY si.snapshot_id, si.item_index"
+            );
+            let mut item_stmt = self
+                .conn
+                .prepare(&item_sql)
+                .context("prepare bulk snapshot document items")?;
+            let rows = item_stmt
+                .query_map(rusqlite::params_from_iter(ids.iter()), |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        SnapshotItemManifest {
+                            item_index: row_usize(row, 1)?,
+                            primary_kind: row_enum(row, 2)?,
+                            primary_uti: row.get(3)?,
+                            preview_text: row.get(4)?,
+                            search_text: row.get(5)?,
+                            total_bytes: row_usize(row, 6)?,
+                            representations: Vec::new(),
+                        },
+                        (row.get(7)?, row.get(8)?),
+                    ))
+                })
+                .context("execute bulk snapshot document items")?;
+            for (snapshot_id, item, ocr) in collect_rows(rows)? {
+                items_by_snapshot.entry(snapshot_id).or_default().push(item);
+                ocr_by_snapshot.entry(snapshot_id).or_insert(ocr);
+            }
+
+            let rep_sql = format!(
+                "SELECT snapshot_id, item_index, uti, kind, byte_len, raw_sha256, text_value
+                 FROM item_representations
+                 WHERE snapshot_id IN ({placeholders})
+                 ORDER BY snapshot_id, item_index, uti"
+            );
+            let mut rep_stmt = self
+                .conn
+                .prepare(&rep_sql)
+                .context("prepare bulk snapshot document manifests")?;
+            let rows = rep_stmt
+                .query_map(rusqlite::params_from_iter(ids.iter()), |row| {
+                    let text_value = row.get::<_, Option<String>>(6)?;
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row_usize(row, 1)?,
+                        RepresentationManifest {
+                            uti: row.get(2)?,
+                            kind: row_enum(row, 3)?,
+                            is_text: text_value.is_some(),
+                            byte_len: row_usize(row, 4)?,
+                            raw_sha256: row.get(5)?,
+                            text_value,
+                        },
+                    ))
+                })
+                .context("execute bulk snapshot document manifests")?;
+            for (snapshot_id, item_index, manifest) in collect_rows(rows)? {
+                if let Some(item) = items_by_snapshot
+                    .get_mut(&snapshot_id)
+                    .and_then(|items| items.iter_mut().find(|item| item.item_index == item_index))
+                {
+                    item.representations.push(manifest);
+                }
+            }
+        }
+
+        Ok(items_by_snapshot
+            .into_iter()
+            .map(|(snapshot_id, items)| {
+                let (ocr_text, ocr_status) =
+                    ocr_by_snapshot.remove(&snapshot_id).unwrap_or((None, None));
+                (
+                    snapshot_id,
+                    projection_from_manifests(&items).with_ocr(ocr_text, ocr_status),
+                )
+            })
+            .collect())
+    }
+
+    pub fn find_representation_manifest(
+        &self,
+        snapshot_id: i64,
+        item_index: usize,
+        uti: &str,
+    ) -> Result<Option<RepresentationManifest>> {
+        let item_index = usize_to_i64(item_index)?;
+        self.conn
+            .query_row(
+                "SELECT uti, kind, byte_len, raw_sha256, text_value FROM item_representations WHERE snapshot_id = ?1 AND item_index = ?2 AND uti = ?3",
+                params![snapshot_id, item_index, uti],
+                |row| {
+                    let text_value = row.get::<_, Option<String>>(4)?;
+                    Ok(RepresentationManifest {
+                        uti: row.get(0)?,
+                        kind: row_enum(row, 1)?,
+                        is_text: text_value.is_some(),
+                        byte_len: row_usize(row, 2)?,
+                        raw_sha256: row.get(3)?,
+                        text_value,
+                    })
+                },
+            )
+            .optional()
+            .context("load representation manifest")
+    }
+
+    /// Read exactly one representation payload and its manifest.
+    pub fn read_representation_payload(
+        &self,
+        snapshot_id: i64,
+        item_index: usize,
+        uti: &str,
+    ) -> Result<Option<RepresentationPayload>> {
+        let item_index = usize_to_i64(item_index)?;
+        self.conn
+            .query_row(
+                "SELECT uti, kind, byte_len, raw_sha256, text_value, blob_value FROM item_representations WHERE snapshot_id = ?1 AND item_index = ?2 AND uti = ?3",
+                params![snapshot_id, item_index, uti],
+                |row| {
+                    let text_value = row.get::<_, Option<String>>(4)?;
+                    Ok(RepresentationPayload {
+                        manifest: RepresentationManifest {
+                            uti: row.get(0)?,
+                            kind: row_enum(row, 1)?,
+                            is_text: text_value.is_some(),
+                            byte_len: row_usize(row, 2)?,
+                            raw_sha256: row.get(3)?,
+                            text_value,
+                        },
+                        bytes: row.get(5)?,
+                    })
+                },
+            )
+            .optional()
+            .context("load representation payload")
+    }
+
+    /// Intentionally hydrate every source representation required for restore exactly once.
+    pub fn load_restore_payload(&self, snapshot_id: i64) -> Result<Option<RestorePayloadPlan>> {
+        let sha256 = self
+            .conn
+            .query_row(
+                "SELECT sha256 FROM snapshots WHERE id = ?1",
+                [snapshot_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .context("load restore snapshot identity")?;
+        let Some(snapshot_sha256) = sha256 else {
+            return Ok(None);
+        };
+        Ok(Some(RestorePayloadPlan {
+            snapshot_sha256,
+            items: self.load_snapshot_items(snapshot_id)?,
+        }))
+    }
+
     /// Load one snapshot with its recent events and stored item representations.
     ///
     /// # Errors
@@ -30,47 +238,6 @@ impl Database {
         details.set_items(self.load_snapshot_items(snapshot_id)?);
 
         Ok(Some(details))
-    }
-
-    pub(crate) fn snapshot_projection(
-        &self,
-        snapshot_id: i64,
-    ) -> Result<Option<FlattenedTextProjection>> {
-        if !self.snapshot_exists(snapshot_id)? {
-            return Ok(None);
-        }
-
-        let items = self.load_snapshot_items(snapshot_id)?;
-        let ocr = self
-            .conn
-            .query_row(
-                "SELECT ocr_text, status FROM snapshot_ocr_cache WHERE snapshot_id = ?1",
-                [snapshot_id],
-                |row| {
-                    Ok((
-                        row.get::<_, Option<String>>(0)?,
-                        row.get::<_, Option<String>>(1)?,
-                    ))
-                },
-            )
-            .optional()
-            .context("load snapshot ocr projection")?
-            .unwrap_or((None, None));
-        Ok(Some(
-            FlattenedTextProjection::from_items(&items).with_ocr(ocr.0, ocr.1),
-        ))
-    }
-
-    fn snapshot_exists(&self, snapshot_id: i64) -> Result<bool> {
-        let exists = self
-            .conn
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM snapshots WHERE id = ?1)",
-                [snapshot_id],
-                |row| row.get::<_, i64>(0),
-            )
-            .context("check snapshot exists for projection")?;
-        Ok(exists != 0)
     }
 
     /// Collect `SQLite` and FTS5 diagnostics for the current archive database.
@@ -131,26 +298,17 @@ impl Database {
         item_index: usize,
         uti: &str,
     ) -> Result<Option<ClipboardRepresentation>> {
-        let item_index = usize_to_i64(item_index)?;
-
-        rusqlite::OptionalExtension::optional(self.conn.query_row(
-            r"
-                SELECT uti, kind, raw_sha256, text_value, blob_value
-                FROM item_representations
-                WHERE snapshot_id = ?1 AND item_index = ?2 AND uti = ?3
-            ",
-            params![snapshot_id, item_index, uti],
-            |row| {
-                Ok(ClipboardRepresentation::new(
-                    row.get(0)?,
-                    row_enum(row, 1)?,
-                    row.get(2)?,
-                    row.get(3)?,
-                    row.get(4)?,
-                ))
-            },
-        ))
-        .context("load representation bytes")
+        Ok(self
+            .read_representation_payload(snapshot_id, item_index, uti)?
+            .map(|payload| {
+                ClipboardRepresentation::new(
+                    payload.manifest.uti,
+                    payload.manifest.kind,
+                    payload.manifest.raw_sha256,
+                    payload.manifest.text_value,
+                    payload.bytes,
+                )
+            }))
     }
 
     fn load_snapshot_summary(&self, snapshot_id: i64) -> Result<Option<SnapshotDetails>> {
@@ -354,6 +512,298 @@ impl Database {
         }
 
         Ok(items)
+    }
+
+    fn load_snapshot_manifests(&self, snapshot_id: i64) -> Result<Vec<SnapshotItemManifest>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT si.item_index, si.primary_kind, si.primary_uti, si.preview_text, si.search_text, si.total_bytes,
+                    ir.uti, ir.kind, ir.byte_len, ir.raw_sha256, ir.text_value
+             FROM snapshot_items si
+             LEFT JOIN item_representations ir ON ir.snapshot_id = si.snapshot_id AND ir.item_index = si.item_index
+             WHERE si.snapshot_id = ?1
+             ORDER BY si.item_index, ir.uti"
+        ).context("prepare snapshot manifest query")?;
+        let rows = stmt
+            .query_map([snapshot_id], |row| {
+                let uti = row.get::<_, Option<String>>(6)?;
+                let representation = match uti {
+                    Some(uti) => {
+                        let text_value = row.get::<_, Option<String>>(10)?;
+                        Some(RepresentationManifest {
+                            uti,
+                            kind: row_enum(row, 7)?,
+                            is_text: text_value.is_some(),
+                            byte_len: row_usize(row, 8)?,
+                            raw_sha256: row.get(9)?,
+                            text_value,
+                        })
+                    }
+                    None => None,
+                };
+                Ok((
+                    row_usize(row, 0)?,
+                    row_enum(row, 1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                    row_usize(row, 5)?,
+                    representation,
+                ))
+            })
+            .context("execute snapshot manifest query")?;
+        let mut items: Vec<SnapshotItemManifest> = Vec::new();
+        for (
+            item_index,
+            primary_kind,
+            primary_uti,
+            preview_text,
+            search_text,
+            total_bytes,
+            representation,
+        ) in collect_rows(rows)?
+        {
+            if items
+                .last()
+                .is_none_or(|item| item.item_index != item_index)
+            {
+                items.push(SnapshotItemManifest {
+                    item_index,
+                    primary_kind,
+                    primary_uti,
+                    preview_text,
+                    search_text,
+                    total_bytes,
+                    representations: Vec::new(),
+                });
+            }
+            if let Some(representation) = representation {
+                items
+                    .last_mut()
+                    .expect("item was just inserted")
+                    .representations
+                    .push(representation);
+            }
+        }
+        Ok(items)
+    }
+}
+
+fn projection_from_manifests(items: &[SnapshotItemManifest]) -> FlattenedTextProjection {
+    let items = items
+        .iter()
+        .map(|item| {
+            ClipboardItem::from_manifest(
+                item.item_index,
+                item.primary_kind,
+                item.primary_uti.clone(),
+                item.preview_text.clone(),
+                item.search_text.clone(),
+                item.total_bytes,
+                item.representations
+                    .iter()
+                    .map(|rep| {
+                        ClipboardRepresentation::from_manifest(
+                            rep.uti.clone(),
+                            rep.kind,
+                            rep.byte_len,
+                            rep.raw_sha256.clone(),
+                            rep.text_value.clone(),
+                        )
+                    })
+                    .collect(),
+            )
+        })
+        .collect::<Vec<_>>();
+    FlattenedTextProjection::from_items(&items)
+}
+
+#[cfg(test)]
+mod contract_tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    use anyhow::Result;
+    use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
+
+    use crate::db::Database;
+    use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
+
+    #[test]
+    fn metadata_documents_and_revision_never_authorize_blob_reads() -> Result<()> {
+        let mut db = Database::open_in_memory()?;
+        let snapshot = build_snapshot(
+            CaptureContext::new(1),
+            vec![build_item(
+                0,
+                vec![build_representation(
+                    "public.data".to_string(),
+                    None,
+                    b"seed".to_vec(),
+                )],
+            )],
+        );
+        let stored = db.store_capture(&snapshot)?;
+        db.conn.execute(
+            "UPDATE item_representations SET blob_value = zeroblob(100000000), byte_len = 100000000 WHERE snapshot_id = ?1",
+            [stored.snapshot_id()],
+        )?;
+        db.conn
+            .authorizer(Some(|context: AuthContext<'_>| match context.action {
+                AuthAction::Read {
+                    table_name: "item_representations",
+                    column_name: "blob_value",
+                } => Authorization::Deny,
+                _ => Authorization::Allow,
+            }))?;
+
+        let metadata = db
+            .find_snapshot_metadata(stored.snapshot_id(), 10)?
+            .expect("snapshot metadata exists");
+        assert_eq!(
+            metadata.items()[0].representations()[0].byte_len(),
+            100_000_000
+        );
+        assert_eq!(
+            db.find_snapshot_documents(&[stored.snapshot_id(), stored.snapshot_id()])?
+                .len(),
+            1
+        );
+        let _ = db.archive_revision()?;
+        assert!(db
+            .read_representation_payload(stored.snapshot_id(), 0, "public.data")
+            .is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn snapshot_metadata_serialization_preserves_legacy_get_shape() -> Result<()> {
+        let mut db = Database::open_in_memory()?;
+        let stored = db.store_capture(&build_snapshot(
+            CaptureContext::new(7),
+            vec![build_item(
+                0,
+                vec![build_representation(
+                    "public.utf8-plain-text".to_string(),
+                    None,
+                    b"json contract".to_vec(),
+                )],
+            )],
+        ))?;
+        let legacy = db
+            .find_snapshot(stored.snapshot_id(), 10)?
+            .expect("legacy details exist");
+        let metadata = db
+            .find_snapshot_metadata(stored.snapshot_id(), 10)?
+            .expect("metadata exists");
+        assert_eq!(
+            serde_json::to_value(legacy)?,
+            serde_json::to_value(metadata)?
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn bulk_documents_deduplicate_ids_and_chunk_above_sqlite_bind_limits() -> Result<()> {
+        let mut db = Database::open_in_memory()?;
+        let stored = db.store_capture(&build_snapshot(
+            CaptureContext::new(1),
+            vec![build_item(
+                0,
+                vec![build_representation(
+                    "public.utf8-plain-text".to_string(),
+                    None,
+                    b"bulk document".to_vec(),
+                )],
+            )],
+        ))?;
+        let mut ids = (10_000..11_100).collect::<Vec<_>>();
+        ids.extend(std::iter::repeat_n(stored.snapshot_id(), 500));
+        let documents = db.find_snapshot_documents(&ids)?;
+        assert_eq!(documents.len(), 1);
+        assert_eq!(
+            documents[&stored.snapshot_id()].best_text(),
+            "bulk document"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn forty_snapshot_document_load_is_two_bounded_blob_free_queries() -> Result<()> {
+        let mut db = Database::open_in_memory()?;
+        let mut ids = Vec::new();
+        for change_count in 1..=40 {
+            ids.push(
+                db.store_capture(&build_snapshot(
+                    CaptureContext::new(change_count),
+                    vec![build_item(
+                        0,
+                        vec![build_representation(
+                            "public.utf8-plain-text".to_string(),
+                            None,
+                            format!("document {change_count}").into_bytes(),
+                        )],
+                    )],
+                ))?
+                .snapshot_id(),
+            );
+        }
+        let selects = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&selects);
+        db.conn
+            .authorizer(Some(move |context: AuthContext<'_>| match context.action {
+                AuthAction::Read {
+                    table_name: "item_representations",
+                    column_name: "blob_value",
+                } => Authorization::Deny,
+                AuthAction::Select => {
+                    observed.fetch_add(1, Ordering::SeqCst);
+                    Authorization::Allow
+                }
+                _ => Authorization::Allow,
+            }))?;
+
+        assert_eq!(db.find_snapshot_documents(&ids)?.len(), 40);
+        assert_eq!(selects.load(Ordering::SeqCst), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn restore_payload_authorizes_blob_column_once() -> Result<()> {
+        let mut db = Database::open_in_memory()?;
+        let stored = db.store_capture(&build_snapshot(
+            CaptureContext::new(1),
+            vec![build_item(
+                0,
+                vec![build_representation(
+                    "public.data".to_string(),
+                    None,
+                    vec![1, 2, 3, 4],
+                )],
+            )],
+        ))?;
+        let blob_reads = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&blob_reads);
+        db.conn.authorizer(Some(move |context: AuthContext<'_>| {
+            if matches!(
+                context.action,
+                AuthAction::Read {
+                    table_name: "item_representations",
+                    column_name: "blob_value"
+                }
+            ) {
+                observed.fetch_add(1, Ordering::SeqCst);
+            }
+            Authorization::Allow
+        }))?;
+        let payload = db
+            .load_restore_payload(stored.snapshot_id())?
+            .expect("restore payload exists");
+        assert_eq!(
+            payload.items()[0].representations()[0].raw_bytes(),
+            &[1, 2, 3, 4]
+        );
+        assert_eq!(blob_reads.load(Ordering::SeqCst), 1);
+        Ok(())
     }
 }
 

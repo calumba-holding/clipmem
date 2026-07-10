@@ -448,7 +448,7 @@ fn search_auto_keeps_valid_quoted_fts_queries_in_fts_mode() -> Result<()> {
 }
 
 #[test]
-fn open_existing_migrates_legacy_database_and_rebuilds_fts() -> Result<()> {
+fn explicit_migrate_open_upgrades_legacy_database_and_rebuilds_fts() -> Result<()> {
     let path = temp_db_path("legacy-migration");
     let parent = path.parent().expect("temporary path should have a parent");
     std::fs::create_dir_all(parent)?;
@@ -489,7 +489,7 @@ fn open_existing_migrates_legacy_database_and_rebuilds_fts() -> Result<()> {
     )?;
     drop(conn);
 
-    let db = Database::open_existing(&path)?;
+    let db = Database::open_or_init_and_migrate(&path)?;
     let version: i64 = db
         .conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))?;
@@ -569,7 +569,7 @@ fn migration_repairs_embedded_nul_snapshot_text_projection() -> Result<()> {
     conn.pragma_update(None, "user_version", 9)?;
     drop(conn);
 
-    let db = Database::open_existing(&path)?;
+    let db = Database::open_or_init_and_migrate(&path)?;
     let version: i64 = db
         .conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))?;
@@ -632,7 +632,7 @@ fn migration_repairs_utf16_only_embedded_nul_snapshot_text_projection() -> Resul
     conn.pragma_update(None, "user_version", 9)?;
     drop(conn);
 
-    let db = Database::open_existing(&path)?;
+    let db = Database::open_or_init_and_migrate(&path)?;
     let version: i64 = db
         .conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))?;
@@ -685,7 +685,7 @@ fn schema_version_11_adds_image_compression_metadata() -> Result<()> {
     )?;
     drop(conn);
 
-    let db = Database::open_existing(&path)?;
+    let db = Database::open_or_init_and_migrate(&path)?;
     let version: i64 = db
         .conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))?;
@@ -735,7 +735,7 @@ fn schema_version_13_adds_pending_restore_backstop() -> Result<()> {
     )?;
     drop(conn);
 
-    let db = Database::open_existing(&path)?;
+    let db = Database::open_or_init_and_migrate(&path)?;
     let version: i64 = db
         .conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))?;
@@ -799,7 +799,7 @@ fn schema_version_14_adds_representation_cache_deferral_column() -> Result<()> {
     )?;
     drop(conn);
 
-    let db = Database::open_existing(&path)?;
+    let db = Database::open_or_init_and_migrate(&path)?;
     let version: i64 = db
         .conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))?;
@@ -851,7 +851,7 @@ fn schema_version_18_adds_archive_revisions_table() -> Result<()> {
     )?;
     drop(conn);
 
-    let db = Database::open_existing(&path)?;
+    let db = Database::open_or_init_and_migrate(&path)?;
     let version: i64 = db
         .conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))?;

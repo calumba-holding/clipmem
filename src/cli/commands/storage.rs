@@ -15,7 +15,7 @@ use crate::db::{ImageOptimizationCandidateSummary, ImageOptimizationReport};
 
 use super::mutation_support::require_text_or_json;
 use super::notify::notify_app_refresh;
-use super::runtime::open_existing_db;
+use super::runtime::{open_read_only_db, open_read_write_db};
 
 pub(in crate::cli) fn storage(db_path: &Path, args: &StorageArgs) -> Result<()> {
     match &args.command {
@@ -27,7 +27,7 @@ pub(in crate::cli) fn storage(db_path: &Path, args: &StorageArgs) -> Result<()> 
 
 fn storage_compact(db_path: &Path, args: &StorageCompactArgs) -> Result<()> {
     let format = require_text_or_json(args.output.resolved()?, "storage compact")?;
-    let mut db = open_existing_db(db_path)?;
+    let mut db = open_read_write_db(db_path)?;
     let report = db.compact_storage(args.dry_run)?;
     emit_storage_compact_output(format, &report)?;
     if !report.dry_run && report.completed {
@@ -38,7 +38,7 @@ fn storage_compact(db_path: &Path, args: &StorageCompactArgs) -> Result<()> {
 
 fn storage_optimize_images(db_path: &Path, args: &StorageOptimizeImagesArgs) -> Result<()> {
     if matches!(args.progress, Some(ProgressFormat::Jsonl)) {
-        let mut db = open_existing_db(db_path)?;
+        let mut db = open_read_write_db(db_path)?;
         db.optimize_images_with_progress(args.dry_run, args.limit, !args.no_compact, |event| {
             print_json_line(&event)
         })?;
@@ -49,7 +49,7 @@ fn storage_optimize_images(db_path: &Path, args: &StorageOptimizeImagesArgs) -> 
     }
 
     let format = require_text_or_json(args.output.resolved()?, "storage optimize-images")?;
-    let mut db = open_existing_db(db_path)?;
+    let mut db = open_read_write_db(db_path)?;
     let report = db.optimize_images(args.dry_run, args.limit, !args.no_compact)?;
     emit_image_optimization_output(format, &report)?;
     if should_notify_after_image_optimization(&report) {
@@ -64,7 +64,7 @@ fn should_notify_after_image_optimization(report: &ImageOptimizationReport) -> b
 
 fn storage_image_candidates(db_path: &Path, args: &StorageImageCandidatesArgs) -> Result<()> {
     let format = require_text_or_json(args.output.resolved()?, "storage image-candidates")?;
-    let db = open_existing_db(db_path)?;
+    let db = open_read_only_db(db_path)?;
     let candidates = db.image_optimization_candidate_summaries(args.limit)?;
     match format {
         OutputFormat::Json => {

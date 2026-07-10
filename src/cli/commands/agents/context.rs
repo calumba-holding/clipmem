@@ -197,7 +197,7 @@ fn build_agent_context(db_path: &Path) -> Result<AgentContextOutput> {
     let status = load_agent_context_status(db_path)?;
     let generated_at = generated_at_now()?;
     let db_snapshot = if db_path.is_file() {
-        let db = Database::open_existing(db_path)?;
+        let db = Database::open_read_only_current(db_path)?;
         Some((
             db.archive_revision()?,
             db.stats(&RetrievalFilters::default())?,
@@ -420,7 +420,7 @@ fn load_agent_context_status(db_path: &Path) -> Result<AgentContextStatus> {
         });
     }
 
-    let db = Database::open_existing(db_path)?;
+    let db = Database::open_read_only_current(db_path)?;
     let policy = db.capture_policy()?;
     let settings = policy.settings();
     let paused = settings.paused();

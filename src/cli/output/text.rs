@@ -9,8 +9,9 @@ use super::support::{
     push_snapshot_leaderboard_entry,
 };
 use crate::cli::display::{format_duration_seconds, peak_bucket};
+use crate::db::SnapshotMetadata;
 use crate::db::{ImageOptimizationReport, StorageCompactReport};
-use crate::model::{DoctorReport, SnapshotDetails};
+use crate::model::DoctorReport;
 
 pub(in crate::cli) fn render_capture_once_text(output: &CaptureOnceOutput) -> String {
     let mut out = String::new();
@@ -257,7 +258,7 @@ pub(in crate::cli) fn render_get_text(envelope: &GetEnvelope) -> String {
     render_snapshot_text(&envelope.snapshot)
 }
 
-pub(in crate::cli) fn render_snapshot_text(snapshot: &SnapshotDetails) -> String {
+pub(in crate::cli) fn render_snapshot_text(snapshot: &SnapshotMetadata) -> String {
     let mut out = String::new();
     let _ = writeln!(
         out,

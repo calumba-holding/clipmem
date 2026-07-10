@@ -41,14 +41,7 @@ where
         }
     }
 
-    let mut projections = HashMap::with_capacity(unique_ids.len());
-    for snapshot_id in unique_ids {
-        if let Some(projection) = db.snapshot_projection(snapshot_id)? {
-            projections.insert(snapshot_id, projection);
-        }
-    }
-
-    Ok(projections)
+    db.find_snapshot_documents(&unique_ids)
 }
 
 pub(in crate::cli) fn merge_applied_filters(

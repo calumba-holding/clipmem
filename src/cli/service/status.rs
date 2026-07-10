@@ -170,24 +170,26 @@ impl ServiceDatabaseStatus {
             };
         }
 
-        match Database::open_existing(db_path).and_then(|db| {
-            let policy = db.capture_policy()?;
-            Ok(Self {
-                exists,
-                size_bytes,
-                recent_capture_at: db.latest_capture_observed_at()?,
-                recent_capture_within_last_hour: Some(
-                    db.has_capture_within_hours(SERVICE_FRESHNESS_HOURS)?,
-                ),
-                paused: Some(policy.settings().paused()),
-                api_key_filter_enabled: Some(policy.settings().api_key_filter_enabled()),
-                retention_seconds: policy.settings().retention_seconds(),
-                retention: Some(render_retention_value(policy.settings())),
-                ignored_bundle_id_count: Some(policy.ignored_bundle_id_count()),
-                revision: Some(db.archive_revision()?),
-                error: None,
-            })
-        }) {
+        match Database::open_read_only_current(db_path)
+            .map_err(anyhow::Error::from)
+            .and_then(|db| {
+                let policy = db.capture_policy()?;
+                Ok(Self {
+                    exists,
+                    size_bytes,
+                    recent_capture_at: db.latest_capture_observed_at()?,
+                    recent_capture_within_last_hour: Some(
+                        db.has_capture_within_hours(SERVICE_FRESHNESS_HOURS)?,
+                    ),
+                    paused: Some(policy.settings().paused()),
+                    api_key_filter_enabled: Some(policy.settings().api_key_filter_enabled()),
+                    retention_seconds: policy.settings().retention_seconds(),
+                    retention: Some(render_retention_value(policy.settings())),
+                    ignored_bundle_id_count: Some(policy.ignored_bundle_id_count()),
+                    revision: Some(db.archive_revision()?),
+                    error: None,
+                })
+            }) {
             Ok(status) => status,
             Err(error) => Self {
                 exists,

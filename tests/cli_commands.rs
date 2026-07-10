@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 #[path = "cli_commands/support.rs"]
 mod support;
 

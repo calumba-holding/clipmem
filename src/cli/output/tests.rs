@@ -169,7 +169,8 @@ pub(in crate::cli) fn render_get_text_lists_items_and_events() {
                     b"git push".to_vec(),
                 )],
             )],
-        ),
+        )
+        .into(),
     });
 
     assert!(text.contains("snapshot 7"));
@@ -439,7 +440,8 @@ pub(in crate::cli) fn get_markdown_renders_summary_items_and_events() {
                     b"git push".to_vec(),
                 )],
             )],
-        ),
+        )
+        .into(),
     });
 
     assert!(markdown.contains("## Items"));

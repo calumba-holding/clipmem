@@ -298,7 +298,7 @@ fn corrupt_image_rows_are_marked_skipped_once() -> Result<()> {
 }
 
 #[test]
-fn repeated_open_existing_is_idempotent_after_migration() -> Result<()> {
+fn repeated_explicit_migrate_open_is_idempotent() -> Result<()> {
     let path = temp_db_path("legacy-idempotent");
     let parent = path.parent().expect("temporary path should have a parent");
     std::fs::create_dir_all(parent)?;
@@ -329,8 +329,8 @@ fn repeated_open_existing_is_idempotent_after_migration() -> Result<()> {
     )?;
     drop(conn);
 
-    drop(Database::open_existing(&path)?);
-    let db = Database::open_existing(&path)?;
+    drop(Database::open_or_init_and_migrate(&path)?);
+    let db = Database::open_or_init_and_migrate(&path)?;
     let version: i64 = db
         .conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))?;

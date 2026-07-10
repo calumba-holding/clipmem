@@ -609,7 +609,7 @@ fn push_unique_path(paths: &mut Vec<PathBuf>, path: PathBuf) {
 
 fn bump_app_preferences_revisions(paths: &[PathBuf]) -> Result<()> {
     for path in paths {
-        Database::open_or_init(path)?
+        Database::open_or_init_and_migrate(path)?
             .bump_app_preferences_revision()
             .map(|_| ())
             .with_context(|| format!("record app preference revision in {}", path.display()))?;

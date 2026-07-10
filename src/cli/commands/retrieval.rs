@@ -19,7 +19,7 @@ use super::retrieval_support::{
     load_snapshot_projections, merge_applied_filters, normalize_retrieval_filters,
     query_search_results,
 };
-use super::runtime::open_existing_db;
+use super::runtime::open_read_only_db;
 
 mod cursor;
 mod recall;
@@ -36,7 +36,7 @@ pub(in crate::cli) fn search(db_path: &Path, args: &SearchArgs) -> Result<()> {
         .as_deref()
         .map(|value| parse_search_cursor(value, &args.query, search_mode, &filters))
         .transpose()?;
-    let db = open_existing_db(db_path)?;
+    let db = open_read_only_db(db_path)?;
     let results = anyhow::Context::with_context(
         query_search_results(&db, args, &filters, cursor.as_ref()),
         || format!("search failed for query '{}'", args.query),
@@ -96,7 +96,7 @@ pub(in crate::cli) fn recent(db_path: &Path, args: &RecentArgs) -> Result<()> {
         .as_deref()
         .map(|value| parse_recent_cursor(value, &filters))
         .transpose()?;
-    let db = open_existing_db(db_path)?;
+    let db = open_read_only_db(db_path)?;
     let hits = anyhow::Context::with_context(
         db.recent_page(args.limit, &filters, cursor.as_ref()),
         || "recent query failed".to_string(),
@@ -151,7 +151,7 @@ pub(in crate::cli) fn timeline(db_path: &Path, args: &TimelineArgs) -> Result<()
         .as_deref()
         .map(|value| parse_timeline_cursor(value, &filters, timeline_sort))
         .transpose()?;
-    let db = open_existing_db(db_path)?;
+    let db = open_read_only_db(db_path)?;
     let events = anyhow::Context::with_context(
         db.timeline_page(args.limit, &filters, timeline_sort, cursor.as_ref()),
         || "timeline query failed".to_string(),
@@ -201,7 +201,7 @@ pub(in crate::cli) fn timeline(db_path: &Path, args: &TimelineArgs) -> Result<()
 pub(in crate::cli) fn stats(db_path: &Path, args: &StatsArgs) -> Result<()> {
     let format = args.output.resolved()?;
     let filters = normalize_retrieval_filters(&args.filters)?;
-    let db = open_existing_db(db_path)?;
+    let db = open_read_only_db(db_path)?;
     let report = anyhow::Context::context(db.stats(&filters), "stats query failed")?;
 
     let envelope = StatsEnvelope {
@@ -217,12 +217,12 @@ pub(in crate::cli) fn stats(db_path: &Path, args: &StatsArgs) -> Result<()> {
 pub(in crate::cli) fn show_snapshot(db_path: &Path, args: &GetArgs) -> Result<()> {
     let format = require_get_output_format(args.output.resolved()?)?;
     let filters = normalize_retrieval_filters(&args.filters)?;
-    let db = open_existing_db(db_path)?;
-    let snapshot =
-        anyhow::Context::with_context(db.find_snapshot(args.snapshot_id, args.events), || {
-            format!("get failed for snapshot {}", args.snapshot_id)
-        })?
-        .ok_or_else(|| not_found_error(format!("snapshot {} was not found", args.snapshot_id)))?;
+    let db = open_read_only_db(db_path)?;
+    let snapshot = anyhow::Context::with_context(
+        db.find_snapshot_metadata(args.snapshot_id, args.events),
+        || format!("get failed for snapshot {}", args.snapshot_id),
+    )?
+    .ok_or_else(|| not_found_error(format!("snapshot {} was not found", args.snapshot_id)))?;
     if !db.snapshot_matches_filters(args.snapshot_id, &filters)? {
         return Err(anyhow!(
             "snapshot {} does not satisfy the active filters",
