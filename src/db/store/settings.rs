@@ -209,21 +209,6 @@ impl Database {
             .context("commit ignored bundle-id remove transaction")?;
         Ok(changed != 0)
     }
-
-    pub(crate) fn bundle_id_is_ignored(&self, bundle_id: Option<&str>) -> Result<bool> {
-        let Some(bundle_id) = bundle_id else {
-            return Ok(false);
-        };
-        let bundle_id = normalize_bundle_id(bundle_id)?;
-        self.conn
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM ignored_bundle_ids WHERE bundle_id = ?1)",
-                [bundle_id],
-                |row| row.get::<_, i64>(0),
-            )
-            .map(|value| value != 0)
-            .context("check ignored bundle id")
-    }
 }
 
 fn normalize_bundle_id(bundle_id: &str) -> Result<String> {

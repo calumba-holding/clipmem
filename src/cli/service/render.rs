@@ -1,7 +1,7 @@
 use std::fmt::Write as _;
 
 use crate::cli::display::format_duration_compact;
-use crate::db::{CaptureSettings, CaptureSkipReason};
+use crate::db::CaptureSettings;
 
 use super::model::{
     SeedCaptureOutcome, ServiceActionReport, ServiceProviderStatus, ServiceStatusReport,
@@ -153,11 +153,6 @@ pub(super) fn render_retention_value(settings: &CaptureSettings) -> String {
 
 const fn render_seed_capture_outcome(outcome: SeedCaptureOutcome) -> &'static str {
     match outcome {
-        SeedCaptureOutcome::Stored => "stored",
-        SeedCaptureOutcome::Skipped(CaptureSkipReason::ApiKeyFilter) => "skipped_api_key_filter",
-        SeedCaptureOutcome::Skipped(CaptureSkipReason::RestoredSnapshot) => {
-            "skipped_restored_snapshot"
-        }
         SeedCaptureOutcome::NotAttempted => "not_attempted",
     }
 }

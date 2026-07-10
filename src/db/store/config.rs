@@ -4,7 +4,6 @@ pub(in crate::db) const IMAGE_OPTIMIZATION_MIN_ABSOLUTE_SAVINGS: usize = 64 * 10
 pub(in crate::db) const IMAGE_OPTIMIZATION_MIN_RELATIVE_SAVINGS_NUMERATOR: usize = 1;
 pub(in crate::db) const IMAGE_OPTIMIZATION_MIN_RELATIVE_SAVINGS_DENOMINATOR: usize = 10;
 pub(in crate::db) const IMAGE_OPTIMIZATION_MAX_DIMENSION: u32 = 16_384;
-pub(in crate::db) const RESTORE_SUPPRESSION_WINDOW_SECONDS: i64 = 30;
 
 #[derive(Debug, Clone)]
 pub(in crate::db) struct ImageOptimizationCandidate {

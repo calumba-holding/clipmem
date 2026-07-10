@@ -22,6 +22,81 @@ pub(crate) struct RestoreReport {
     item_count: usize,
     representation_count: usize,
     total_bytes: usize,
+    change_count: i64,
+    rollback_available: bool,
+}
+
+#[derive(Debug)]
+pub(crate) struct RestoreWriteFailure {
+    write_error: anyhow::Error,
+    rollback_attempted: bool,
+    rollback_succeeded: bool,
+}
+
+impl std::fmt::Display for RestoreWriteFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "restore write failed: {}; rollback_attempted={}; rollback_succeeded={}",
+            self.write_error, self.rollback_attempted, self.rollback_succeeded
+        )
+    }
+}
+
+impl std::error::Error for RestoreWriteFailure {}
+
+pub(crate) fn execute_restore_protocol<T, Prepare, Rollback, Write>(
+    prepare: Prepare,
+    capture_rollback: Rollback,
+    mut write: Write,
+) -> anyhow::Result<(i64, bool)>
+where
+    Prepare: FnOnce() -> anyhow::Result<T>,
+    Rollback: FnOnce() -> anyhow::Result<Option<T>>,
+    Write: FnMut(&T) -> anyhow::Result<i64>,
+{
+    let prepared = prepare()?;
+    let rollback = capture_rollback().unwrap_or(None);
+    match write(&prepared) {
+        Ok(change_count) => Ok((change_count, rollback.is_some())),
+        Err(write_error) => {
+            let rollback_attempted = rollback.is_some();
+            let rollback_succeeded = rollback.as_ref().is_some_and(|plan| write(plan).is_ok());
+            Err(RestoreWriteFailure {
+                write_error,
+                rollback_attempted,
+                rollback_succeeded,
+            }
+            .into())
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TransientPasteboardChanged;
+
+impl std::fmt::Display for TransientPasteboardChanged {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("clipboard changed during capture; retry the capture")
+    }
+}
+
+impl std::error::Error for TransientPasteboardChanged {}
+
+pub(crate) fn stable_capture_with<F>(
+    mut attempt: F,
+) -> anyhow::Result<crate::model::ClipboardSnapshot>
+where
+    F: FnMut() -> anyhow::Result<(i64, crate::model::ClipboardSnapshot, i64)>,
+{
+    for _ in 0..3 {
+        let (before, snapshot, after) = attempt()?;
+        if before == after {
+            return Ok(snapshot);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    Err(TransientPasteboardChanged.into())
 }
 
 #[cfg(target_os = "macos")]
@@ -30,13 +105,13 @@ pub use self::macos::capture_snapshot;
 pub use self::macos::current_change_count;
 #[cfg(target_os = "macos")]
 #[cfg_attr(not(test), allow(unused_imports))]
-pub(crate) use self::macos::{build_restore_plan, restore_items};
+pub(crate) use self::macos::{build_restore_plan, restore_items_registered};
 #[cfg(not(target_os = "macos"))]
 pub use self::unsupported::capture_snapshot;
 #[cfg(not(target_os = "macos"))]
 pub use self::unsupported::current_change_count;
 #[cfg(not(target_os = "macos"))]
-pub(crate) use self::unsupported::restore_items;
+pub(crate) use self::unsupported::restore_items_registered;
 
 #[cfg(target_os = "macos")]
 impl RestorePlanRepresentation {
@@ -80,11 +155,19 @@ impl RestorePlanItem {
 impl RestoreReport {
     #[cfg(target_os = "macos")]
     #[must_use]
-    pub(crate) fn new(item_count: usize, representation_count: usize, total_bytes: usize) -> Self {
+    pub(crate) fn new(
+        item_count: usize,
+        representation_count: usize,
+        total_bytes: usize,
+        change_count: i64,
+        rollback_available: bool,
+    ) -> Self {
         Self {
             item_count,
             representation_count,
             total_bytes,
+            change_count,
+            rollback_available,
         }
     }
 
@@ -102,10 +185,89 @@ impl RestoreReport {
     pub(crate) fn total_bytes(&self) -> usize {
         self.total_bytes
     }
+
+    #[must_use]
+    pub(crate) fn change_count(&self) -> i64 {
+        self.change_count
+    }
+
+    #[must_use]
+    pub(crate) fn rollback_available(&self) -> bool {
+        self.rollback_available
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::model::{build_snapshot, CaptureContext};
+
+    use super::{
+        execute_restore_protocol, stable_capture_with, RestoreWriteFailure,
+        TransientPasteboardChanged,
+    };
+
+    #[test]
+    fn stable_capture_discards_changed_attempt_and_returns_whole_retry() {
+        let mut attempt = 0;
+        let snapshot = stable_capture_with(|| {
+            attempt += 1;
+            let generation = if attempt == 1 { (1, 2) } else { (3, 3) };
+            Ok((
+                generation.0,
+                build_snapshot(CaptureContext::new(generation.0), Vec::new()),
+                generation.1,
+            ))
+        })
+        .unwrap();
+        assert_eq!(snapshot.change_count(), 3);
+        assert_eq!(attempt, 2);
+    }
+
+    #[test]
+    fn stable_capture_exhaustion_is_typed() {
+        let error =
+            stable_capture_with(|| Ok((1, build_snapshot(CaptureContext::new(1), Vec::new()), 2)))
+                .unwrap_err();
+        assert!(error.downcast_ref::<TransientPasteboardChanged>().is_some());
+    }
+
+    #[test]
+    fn restore_preparation_failure_does_not_touch_destination() {
+        let writes = std::cell::Cell::new(0);
+        let error = execute_restore_protocol::<Vec<u8>, _, _, _>(
+            || anyhow::bail!("bad representation"),
+            || Ok(Some(vec![1])),
+            |_| {
+                writes.set(writes.get() + 1);
+                Ok(1)
+            },
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("bad representation"));
+        assert_eq!(writes.get(), 0);
+    }
+
+    #[test]
+    fn restore_write_failure_attempts_rollback_and_reports_result() {
+        let writes = std::cell::Cell::new(0);
+        let error = execute_restore_protocol(
+            || Ok(vec![2]),
+            || Ok(Some(vec![1])),
+            |plan: &Vec<u8>| {
+                writes.set(writes.get() + 1);
+                if plan == &vec![2] {
+                    anyhow::bail!("destination write failed");
+                }
+                Ok(9)
+            },
+        )
+        .unwrap_err();
+        let failure = error.downcast_ref::<RestoreWriteFailure>().unwrap();
+        assert!(failure.rollback_attempted);
+        assert!(failure.rollback_succeeded);
+        assert_eq!(writes.get(), 2);
+    }
+
     #[test]
     fn capture_snapshot_entrypoint_is_exposed() {
         let capture: fn() -> anyhow::Result<crate::model::ClipboardSnapshot> =
@@ -130,11 +292,5 @@ mod tests {
             ) -> Vec<super::RestorePlanItem> = super::build_restore_plan;
             let _ = build_restore_plan;
         }
-
-        let restore_items: fn(
-            &[crate::model::ClipboardItem],
-        ) -> anyhow::Result<super::RestoreReport> = super::restore_items;
-
-        let _ = restore_items;
     }
 }

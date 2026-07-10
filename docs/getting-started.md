@@ -6,8 +6,8 @@ setup, background capture, and your first queries.
 
 ## Initialize and start capture
 
-Run the setup command to create the database, capture the current
-clipboard state, and start the background watcher:
+Run the setup command to create the database and start the background
+watcher:
 
 ```bash
 clipmem setup
@@ -18,10 +18,13 @@ clipmem setup
 1. Creates the database directory at
    `~/Library/Application Support/clipmem/` with `0700` permissions.
 2. Initializes the SQLite database and FTS5 indexes.
-3. Captures the current clipboard state as the first archive entry.
-4. Writes or updates a per-user LaunchAgent plist
+3. Writes or updates a per-user LaunchAgent plist
    (`io.openclaw.clipmem.watch`).
-5. Bootstraps the LaunchAgent so the watcher runs in the background.
+4. Bootstraps the LaunchAgent so the watcher runs in the background.
+
+Setup doesn't archive the clipboard state that existed before the watcher
+started. Copy new content after setup, or run `clipmem capture-once` when you
+want to archive the current clipboard explicitly.
 
 Re-running `clipmem setup` is always safe. It updates the service
 definition without losing existing data.

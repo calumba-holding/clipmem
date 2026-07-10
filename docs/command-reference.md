@@ -388,8 +388,7 @@ while the final `complete.report` contains the same fields as
 
 ### `clipmem setup`
 
-Initialize the database, seed one capture, and start background
-capture.
+Initialize the database and start background capture.
 
 ```bash
 clipmem setup
@@ -397,6 +396,8 @@ clipmem setup --db /tmp/clipmem.sqlite3
 ```
 
 Re-running `setup` is safe and updates the managed service definition.
+It doesn't archive the current clipboard implicitly. Run
+`clipmem capture-once` when you want to capture the current state.
 
 ### `clipmem service start`
 

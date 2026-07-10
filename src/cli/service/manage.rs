@@ -1,12 +1,10 @@
-use std::env;
 use std::fs;
 use std::path::Path;
 use std::process::Command as ProcessCommand;
 
 use anyhow::{anyhow, bail, Context, Result};
 
-use crate::db::{CaptureStoreOutcome, Database};
-use crate::platform::capture_snapshot;
+use crate::db::Database;
 
 use crate::cli::commands::notify::notify_app_refresh;
 
@@ -24,7 +22,9 @@ pub(crate) fn setup(db_path: &Path) -> Result<SetupReport> {
     let status = status_report(db_path)?;
     let selection = select_provider(&context);
     ensure_no_conflict(&status)?;
-    let seed_capture = seed_capture(db_path)?;
+    // Setup is intentionally non-mutating: the watcher captures only the next
+    // clipboard generation after it starts.
+    let seed_capture = SeedCaptureOutcome::NotAttempted;
     let action = start_with_provider(&context, &selection)?;
     bump_service_revision(db_path);
     notify_app_refresh();
@@ -231,22 +231,6 @@ fn uninstall_direct_provider(context: &ServiceContext) -> Result<ServiceActionRe
         label: DIRECT_LABEL,
         notes,
     })
-}
-
-fn seed_capture(db_path: &Path) -> Result<SeedCaptureOutcome> {
-    if env::var_os("CLIPMEM_TEST_SKIP_SETUP_CAPTURE_ONCE").as_deref() == Some("1".as_ref()) {
-        return Ok(SeedCaptureOutcome::NotAttempted);
-    }
-
-    let mut db = Database::open_or_init_and_migrate(db_path)?;
-    let snapshot = capture_snapshot().context("setup clipboard read failed")?;
-    match db
-        .store_capture_if_allowed(&snapshot)
-        .context("setup database write failed")?
-    {
-        CaptureStoreOutcome::Stored(_) => Ok(SeedCaptureOutcome::Stored),
-        CaptureStoreOutcome::Skipped(reason) => Ok(SeedCaptureOutcome::Skipped(reason)),
-    }
 }
 
 pub(super) fn bump_service_revision(db_path: &Path) {

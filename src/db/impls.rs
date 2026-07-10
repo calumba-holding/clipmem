@@ -479,8 +479,11 @@ impl CaptureSkipReason {
     #[must_use]
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
+            Self::Paused => "paused",
+            Self::IgnoredApp => "ignored_app",
             Self::ApiKeyFilter => "api_key_filter",
             Self::RestoredSnapshot => "restored_snapshot",
+            Self::TransientPlatformChange => "transient_platform_change",
         }
     }
 }

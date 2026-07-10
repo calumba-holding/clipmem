@@ -39,6 +39,9 @@ pub(in crate::cli) struct RestoreOutput {
     pub(in crate::cli) item_count: usize,
     pub(in crate::cli) representation_count: usize,
     pub(in crate::cli) total_bytes: usize,
+    pub(in crate::cli) operation_id: String,
+    pub(in crate::cli) change_count: i64,
+    pub(in crate::cli) rollback_available: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

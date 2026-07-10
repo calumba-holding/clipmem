@@ -6,6 +6,7 @@
 pub(crate) mod app;
 pub mod archive;
 pub mod capture;
+pub(crate) mod capture_service;
 pub(crate) mod cli;
 pub(crate) mod db;
 pub(crate) mod file_url;

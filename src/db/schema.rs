@@ -36,6 +36,7 @@ pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {
     ensure_image_compression_columns(&tx)?;
     ensure_image_optimization_queue_index(&tx)?;
     ensure_representation_cache_deferred_column(&tx)?;
+    ensure_capture_origin_columns(&tx)?;
     ensure_archive_revisions_table(&tx)?;
     tx.execute(
         "INSERT OR IGNORE INTO clipmem_settings (id, paused, retention_seconds, api_key_filter_enabled, ocr_enabled) VALUES (1, 0, NULL, 0, 0)",
@@ -52,6 +53,36 @@ pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {
     Ok(())
 }
 
+fn ensure_capture_origin_columns(conn: &Connection) -> Result<()> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(capture_events)")
+        .context("prepare capture_events table info query")?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .context("query capture_events columns")?;
+    let columns = collect_rows(rows).context("collect capture_events columns")?;
+    for (name, sql) in [
+        (
+            "content_origin_bundle_id",
+            "ALTER TABLE capture_events ADD COLUMN content_origin_bundle_id TEXT",
+        ),
+        (
+            "content_origin_name",
+            "ALTER TABLE capture_events ADD COLUMN content_origin_name TEXT",
+        ),
+        (
+            "content_origin_kind",
+            "ALTER TABLE capture_events ADD COLUMN content_origin_kind TEXT",
+        ),
+    ] {
+        if !columns.iter().any(|column| column == name) {
+            conn.execute(sql, [])
+                .with_context(|| format!("add {name} column"))?;
+        }
+    }
+    Ok(())
+}
+
 struct MigrationStep {
     name: &'static str,
     applies_to: fn(i64) -> bool,
@@ -59,6 +90,11 @@ struct MigrationStep {
 }
 
 const MIGRATION_STEPS: &[MigrationStep] = &[
+    MigrationStep {
+        name: "expire legacy pending restores",
+        applies_to: source_version_before_restore_operations,
+        run: expire_legacy_pending_restores,
+    },
     MigrationStep {
         name: "rebuild FTS5 index",
         applies_to: source_version_is_zero,
@@ -95,6 +131,16 @@ const MIGRATION_STEPS: &[MigrationStep] = &[
         run: rebuild_snapshot_file_url_fts,
     },
 ];
+
+fn source_version_before_restore_operations(version: i64) -> bool {
+    version < 19
+}
+
+fn expire_legacy_pending_restores(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM pending_restores", [])
+        .context("expire legacy pending restores")?;
+    Ok(())
+}
 
 fn validate_supported_user_version(conn: &Connection, user_version: i64) -> Result<()> {
     if user_version > CURRENT_SCHEMA_VERSION {

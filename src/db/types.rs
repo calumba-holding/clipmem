@@ -460,14 +460,42 @@ pub(crate) struct CapturePolicy {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum CaptureSkipReason {
+    Paused,
+    IgnoredApp,
     ApiKeyFilter,
     RestoredSnapshot,
+    TransientPlatformChange,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum CaptureMode {
+    Watch,
+    Manual,
+    #[allow(dead_code)]
+    SetupSeed,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum CaptureStoreOutcome {
-    Stored(crate::model::CaptureStoreResult),
-    Skipped(CaptureSkipReason),
+pub(crate) enum CaptureOutcome {
+    Stored {
+        store: crate::model::CaptureStoreResult,
+        enqueue_ocr: bool,
+    },
+    ObservedExisting {
+        store: crate::model::CaptureStoreResult,
+        enqueue_ocr: bool,
+    },
+    SuppressedRestore {
+        operation_id: String,
+    },
+    SkippedPaused,
+    SkippedIgnoredApp {
+        bundle_id: String,
+    },
+    SkippedSensitive,
+    #[allow(dead_code)]
+    TransientPlatformChange,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

@@ -25,7 +25,7 @@ pub use self::types::{
     StatsSnapshotLeaderboardEntry, StatsTimeBucketEntry, TimelineResults, TimelineSort,
 };
 pub(crate) use self::types::{
-    CapturePolicy, CaptureSettings, CaptureSkipReason, CaptureStoreOutcome,
+    CaptureMode, CaptureOutcome, CapturePolicy, CaptureSettings, CaptureSkipReason,
     ImageOptimizationCandidateSummary, ImageOptimizationReport, OcrCandidateSummary,
     OcrResultRecord, OcrRunReport, OcrStatusReport, PurgeReport, RecentCursorState,
     SearchCursorState, SnapshotDeletionReport, StorageCompactReport, TimelineCursorState,

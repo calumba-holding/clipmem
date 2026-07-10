@@ -1,5 +1,5 @@
 use anyhow::Result;
-use objc2::rc::autoreleasepool;
+use objc2::rc::{autoreleasepool, Retained};
 use objc2::runtime::ProtocolObject;
 use objc2_app_kit::{NSPasteboard, NSPasteboardItem, NSWorkspace};
 use objc2_foundation::{NSArray, NSData, NSString};
@@ -8,7 +8,10 @@ use crate::model::{
     build_item, build_representation, build_snapshot, CaptureContext, ClipboardItem,
     ClipboardSnapshot,
 };
-use crate::platform::{RestorePlanItem, RestorePlanRepresentation, RestoreReport};
+use crate::platform::{
+    execute_restore_protocol, stable_capture_with, RestorePlanItem, RestorePlanRepresentation,
+    RestoreReport,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct OriginApp {
@@ -24,62 +27,73 @@ pub fn current_change_count() -> Result<i64> {
 }
 
 pub fn capture_snapshot() -> Result<ClipboardSnapshot> {
-    autoreleasepool(|_| {
-        let pasteboard = NSPasteboard::generalPasteboard();
-        let change_count = pasteboard.changeCount() as i64;
-        let (frontmost_app_name, frontmost_app_bundle_id) = current_frontmost_app();
+    stable_capture_with(|| {
+        autoreleasepool(|_| {
+            let pasteboard = NSPasteboard::generalPasteboard();
+            let before_change_count = pasteboard.changeCount() as i64;
+            let (frontmost_app_name, frontmost_app_bundle_id) = current_frontmost_app();
 
-        let mut items = Vec::new();
-        if let Some(pasteboard_items) = pasteboard.pasteboardItems() {
-            for idx in 0..pasteboard_items.len() {
-                let item = pasteboard_items.objectAtIndex(idx);
-                items.push(read_item(idx, &item));
+            let mut items = Vec::new();
+            if let Some(pasteboard_items) = pasteboard.pasteboardItems() {
+                for idx in 0..pasteboard_items.len() {
+                    let item = pasteboard_items.objectAtIndex(idx);
+                    items.push(read_item(idx, &item));
+                }
             }
-        }
 
-        let origin_app = infer_origin_app_from_items(
-            &items,
-            frontmost_app_name.as_deref(),
-            frontmost_app_bundle_id.as_deref(),
-        );
-        let mut capture = CaptureContext::new(change_count);
-        if let Some(origin) = origin_app {
-            capture = capture
-                .with_frontmost_app_name(origin.name)
-                .with_frontmost_app_bundle_id(origin.bundle_id);
-        } else if let Some(name) = frontmost_app_name {
-            capture = capture.with_frontmost_app_name(name);
-            if let Some(bundle_id) = frontmost_app_bundle_id {
+            let origin_app = infer_origin_app_from_items(
+                &items,
+                frontmost_app_name.as_deref(),
+                frontmost_app_bundle_id.as_deref(),
+            );
+            let mut capture = CaptureContext::new(before_change_count);
+            if let Some(name) = frontmost_app_name {
+                capture = capture.with_frontmost_app_name(name);
+                if let Some(bundle_id) = frontmost_app_bundle_id {
+                    capture = capture.with_frontmost_app_bundle_id(bundle_id);
+                }
+            } else if let Some(bundle_id) = frontmost_app_bundle_id {
                 capture = capture.with_frontmost_app_bundle_id(bundle_id);
             }
-        } else if let Some(bundle_id) = frontmost_app_bundle_id {
-            capture = capture.with_frontmost_app_bundle_id(bundle_id);
-        }
+            if let Some(origin) = origin_app {
+                capture =
+                    capture.with_content_origin(origin.name, origin.bundle_id, "chromium_metadata");
+            }
 
-        Ok(build_snapshot(capture, items))
+            let snapshot = build_snapshot(capture, items);
+            let after_change_count = pasteboard.changeCount() as i64;
+            Ok((before_change_count, snapshot, after_change_count))
+        })
     })
 }
 
-pub(crate) fn restore_items(items: &[ClipboardItem]) -> Result<RestoreReport> {
+pub(crate) fn restore_items_registered<F>(
+    items: &[ClipboardItem],
+    register: F,
+) -> Result<RestoreReport>
+where
+    F: FnOnce() -> Result<()>,
+{
     let plan = build_restore_plan(items);
 
     autoreleasepool(|_| {
         let pasteboard = NSPasteboard::generalPasteboard();
-        pasteboard.clearContents();
-
-        let pasteboard_items = plan
-            .iter()
-            .map(build_pasteboard_item)
-            .collect::<Result<Vec<_>>>()?;
-        let writers = pasteboard_items
-            .into_iter()
-            .map(ProtocolObject::from_retained)
-            .collect::<Vec<_>>();
-        let array = NSArray::from_retained_slice(&writers);
-        let wrote = pasteboard.writeObjects(&array);
-        if !wrote {
-            anyhow::bail!("failed to write restored pasteboard items");
-        }
+        let mut register = Some(register);
+        let (change_count, rollback_available) = execute_restore_protocol(
+            || prepare_pasteboard_items(&plan),
+            || {
+                let current = capture_snapshot()?;
+                Ok(Some(prepare_pasteboard_items(&build_restore_plan(
+                    current.items(),
+                ))?))
+            },
+            |pasteboard_items| {
+                if let Some(register) = register.take() {
+                    register()?;
+                }
+                write_pasteboard_items(&pasteboard, pasteboard_items)
+            },
+        )?;
 
         Ok(RestoreReport::new(
             plan.len(),
@@ -88,8 +102,31 @@ pub(crate) fn restore_items(items: &[ClipboardItem]) -> Result<RestoreReport> {
                 .flat_map(RestorePlanItem::representations)
                 .map(|representation| representation.bytes().len())
                 .sum(),
+            change_count,
+            rollback_available,
         ))
     })
+}
+
+fn prepare_pasteboard_items(plan: &[RestorePlanItem]) -> Result<Vec<Retained<NSPasteboardItem>>> {
+    plan.iter().map(build_pasteboard_item).collect()
+}
+
+fn write_pasteboard_items(
+    pasteboard: &NSPasteboard,
+    pasteboard_items: &[Retained<NSPasteboardItem>],
+) -> Result<i64> {
+    let writers = pasteboard_items
+        .iter()
+        .cloned()
+        .map(ProtocolObject::from_retained)
+        .collect::<Vec<_>>();
+    let array = NSArray::from_retained_slice(&writers);
+    pasteboard.clearContents();
+    if !pasteboard.writeObjects(&array) {
+        anyhow::bail!("failed to write restored pasteboard items");
+    }
+    Ok(pasteboard.changeCount() as i64)
 }
 
 pub(crate) fn build_restore_plan(items: &[ClipboardItem]) -> Vec<RestorePlanItem> {
