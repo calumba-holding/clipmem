@@ -72,7 +72,7 @@ mod tests {
             true,
             true,
             vec!["ENABLE_FTS5".to_string()],
-            crate::model::DoctorIntegrityReport::new(0, 0, 0),
+            Some(crate::model::DoctorIntegrityReport::new(0, 0, 0)),
         );
 
         assert_eq!(snapshot.recent_events()[0].event_id(), 21);

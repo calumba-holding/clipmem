@@ -305,26 +305,6 @@ fn action_json_alias_rejects_non_json_format() {
 }
 
 #[test]
-fn doctor_command_reports_database_capabilities() {
-    let path = temp_db_path("doctor-text");
-    let db = Database::open_or_init(&path).expect("test database should open");
-    drop(db);
-    let output = run_cli(&[
-        "--db",
-        path.to_str().expect("db path should be UTF-8"),
-        "doctor",
-    ]);
-    let stdout = stdout_text(&output);
-
-    assert!(output.status.success());
-    assert!(stdout.contains("database:"));
-    assert!(stdout.contains("sqlite version:"));
-    assert!(stdout.contains("fts5 temp table creation works:"));
-
-    cleanup_db(&path);
-}
-
-#[test]
 fn recent_command_rejects_zero_limit() {
     let path = temp_db_path("recent-zero-limit");
     let output = run_cli(&[

@@ -273,7 +273,7 @@ pub struct DoctorReport {
     fts5_compile_option_present: bool,
     fts5_create_virtual_table_ok: bool,
     compile_options: Vec<String>,
-    integrity: DoctorIntegrityReport,
+    integrity: Option<DoctorIntegrityReport>,
 }
 
 impl CaptureStoreResult {
