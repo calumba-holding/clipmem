@@ -125,7 +125,7 @@ mod tests {
             .unwrap()
             .sha256()
             .to_string();
-        let operation = setup.begin_restore_operation(original.snapshot_id(), &sha)?;
+        let operation = setup.begin_restore_operation(original.snapshot_id(), &sha, 2)?;
         setup.mark_restore_written(&operation, 2)?;
         drop(setup);
 

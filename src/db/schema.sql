@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS restore_operations (
     snapshot_sha256     TEXT NOT NULL,
     state               TEXT NOT NULL CHECK (state IN ('preparing', 'written', 'expired', 'failed')),
     result_change_count INTEGER CHECK (result_change_count IS NULL OR result_change_count >= 0),
+    expected_change_count INTEGER CHECK (expected_change_count IS NULL OR expected_change_count >= 0),
     writer_instance_id  TEXT,
     created_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires_at          TEXT NOT NULL DEFAULT (datetime('now', '+30 seconds')),

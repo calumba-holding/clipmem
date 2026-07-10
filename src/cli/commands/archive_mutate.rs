@@ -80,9 +80,12 @@ pub(in crate::cli) fn restore_snapshot(db_path: &Path, args: &RestoreArgs) -> Re
     })?
     .ok_or_else(|| not_found_error(format!("snapshot {} was not found", args.snapshot_id)))?;
     let mut operation_id = None;
-    let report = match restore_items_registered(payload.items(), || {
-        operation_id =
-            Some(db.begin_restore_operation(args.snapshot_id, payload.snapshot_sha256())?);
+    let report = match restore_items_registered(payload.items(), |expected_change_count| {
+        operation_id = Some(db.begin_restore_operation(
+            args.snapshot_id,
+            payload.snapshot_sha256(),
+            expected_change_count,
+        )?);
         Ok(())
     }) {
         Ok(report) => report,

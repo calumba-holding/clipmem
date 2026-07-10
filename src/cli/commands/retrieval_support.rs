@@ -429,7 +429,7 @@ mod tests {
             .sha256()
             .to_string();
         let operation = db
-            .begin_restore_operation(stored.snapshot_id(), &sha256)
+            .begin_restore_operation(stored.snapshot_id(), &sha256, 2)
             .expect("restore operation should register");
         db.mark_restore_written(&operation, 2)
             .expect("restore operation should record generation");

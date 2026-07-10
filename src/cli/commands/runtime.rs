@@ -367,7 +367,7 @@ mod tests {
         let snapshot = db
             .find_snapshot(stored.snapshot_id(), 1)?
             .expect("stored snapshot should exist");
-        let operation = db.begin_restore_operation(stored.snapshot_id(), snapshot.sha256())?;
+        let operation = db.begin_restore_operation(stored.snapshot_id(), snapshot.sha256(), 2)?;
         db.mark_restore_written(&operation, 2)?;
 
         let payload = capture_once_payload(&mut db, || Ok(fake_snapshot(2, "restored text")))?;

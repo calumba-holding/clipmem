@@ -72,7 +72,7 @@ pub(crate) fn restore_items_registered<F>(
     register: F,
 ) -> Result<RestoreReport>
 where
-    F: FnOnce() -> Result<()>,
+    F: FnOnce(i64) -> Result<()>,
 {
     let plan = build_restore_plan(items);
 
@@ -89,7 +89,9 @@ where
             },
             |pasteboard_items| {
                 if let Some(register) = register.take() {
-                    register()?;
+                    // clearContents is the write's only generation bump, so the
+                    // restored generation is knowable before any mutation.
+                    register(pasteboard.changeCount() as i64 + 1)?;
                 }
                 write_pasteboard_items(&pasteboard, pasteboard_items)
             },

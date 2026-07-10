@@ -552,7 +552,7 @@ fn written_restore_suppresses_only_its_exact_generation() -> Result<()> {
         .unwrap()
         .sha256()
         .to_string();
-    let operation = db.begin_restore_operation(stored.snapshot_id(), &sha)?;
+    let operation = db.begin_restore_operation(stored.snapshot_id(), &sha, 2)?;
     db.mark_restore_written(&operation, 2)?;
     let outcome = CaptureApplicationService::new(&mut db)
         .capture(&fake_snapshot(2, "git status"), CaptureMode::Watch)?;
@@ -583,7 +583,7 @@ fn expired_restore_operation_does_not_suppress_capture() -> Result<()> {
         .unwrap()
         .sha256()
         .to_string();
-    let operation = db.begin_restore_operation(stored.snapshot_id(), &sha256)?;
+    let operation = db.begin_restore_operation(stored.snapshot_id(), &sha256, 2)?;
     db.mark_restore_written(&operation, 2)?;
     db.conn.execute(
         "UPDATE restore_operations SET expires_at = datetime('now', '-1 second') WHERE operation_id = ?1",

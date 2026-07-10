@@ -79,7 +79,7 @@ impl Database {
                  WHERE snapshot_sha256 = ?1
                    AND datetime(expires_at) >= datetime('now')
                    AND (
-                       state = 'preparing'
+                       (state = 'preparing' AND expected_change_count = ?2)
                        OR (state = 'written' AND result_change_count = ?2)
                    )
                  ORDER BY created_at DESC, operation_id DESC
@@ -120,6 +120,7 @@ impl Database {
         &self,
         snapshot_id: i64,
         snapshot_sha256: &str,
+        expected_change_count: i64,
     ) -> Result<String> {
         self.conn.execute(
             "UPDATE restore_operations SET state = 'expired' WHERE state IN ('preparing', 'written') AND datetime(expires_at) < datetime('now')",
@@ -128,10 +129,10 @@ impl Database {
         let operation_id: String = self
             .conn
             .query_row(
-                "INSERT INTO restore_operations (operation_id, snapshot_id, snapshot_sha256, state, expires_at)
-             VALUES (lower(hex(randomblob(16))), ?1, ?2, 'preparing', datetime('now', '+5 seconds'))
+                "INSERT INTO restore_operations (operation_id, snapshot_id, snapshot_sha256, state, expected_change_count, expires_at)
+             VALUES (lower(hex(randomblob(16))), ?1, ?2, 'preparing', ?3, datetime('now', '+5 seconds'))
              RETURNING operation_id",
-                params![snapshot_id, snapshot_sha256],
+                params![snapshot_id, snapshot_sha256, expected_change_count],
                 |row| row.get(0),
             )
             .context("begin restore operation")?;
