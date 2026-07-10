@@ -98,8 +98,9 @@ efficiency, but they are not the proof of primitive coverage:
 - `recall` ranks likely answers and packages alternatives. Agents should
   treat it as a convenience ranking helper, then verify uncertain results
   with `search`, `recent`, `timeline`, or `get`.
-- `setup` composes database initialization, one capture, and service
-  startup. Agents can still inspect the resulting state with `service
+- `setup` composes database initialization and service startup. Use
+  `capture-once` for an explicit current-clipboard capture. Agents can still
+  inspect the resulting state with `service
   status`, `service revision`, `settings show`, and `agents context`.
 - `purge` and `ocr run` are bounded batch workflows with dry-run or
   candidate inspection commands where a preview is meaningful. `storage

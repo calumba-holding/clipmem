@@ -16,8 +16,15 @@ clipmem restore 42
 clipmem restore 42 --format json
 ```
 
-The active watcher suppresses the matching restored state, so restoring
-an archived snapshot doesn't create a duplicate capture event.
+Active watchers suppress the exact pasteboard generation written by the
+restore operation, so restoring an archived snapshot doesn't create duplicate
+capture events. A later manual copy of identical content uses a new generation
+and is captured normally.
+
+Restore prepares every destination item before changing the live clipboard. If
+the destination write fails after mutation starts, clipmem attempts to restore
+the prior clipboard state and reports whether rollback was available and
+successful.
 
 `restore` is macOS-only.
 
