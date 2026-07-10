@@ -88,10 +88,13 @@ where
                 ))?))
             },
             |pasteboard_items| {
+                // clearContents opens the restored generation and returns its
+                // actual change count; item writes do not bump it again. An
+                // interleaved writer after this point moves the pasteboard to a
+                // newer generation, so suppression fails open to normal capture.
+                let generation = pasteboard.clearContents() as i64;
                 if let Some(register) = register.take() {
-                    // clearContents is the write's only generation bump, so the
-                    // restored generation is knowable before any mutation.
-                    register(pasteboard.changeCount() as i64 + 1)?;
+                    register(generation)?;
                 }
                 write_pasteboard_items(&pasteboard, pasteboard_items)
             },
@@ -124,7 +127,6 @@ fn write_pasteboard_items(
         .map(ProtocolObject::from_retained)
         .collect::<Vec<_>>();
     let array = NSArray::from_retained_slice(&writers);
-    pasteboard.clearContents();
     if !pasteboard.writeObjects(&array) {
         anyhow::bail!("failed to write restored pasteboard items");
     }
