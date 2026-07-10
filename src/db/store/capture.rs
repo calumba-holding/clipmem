@@ -52,7 +52,16 @@ impl Database {
             tx.commit().context("commit paused capture decision")?;
             return Ok(CaptureOutcome::SkippedPaused);
         }
-        if let Some(bundle_id) = snapshot.frontmost_app_bundle_id() {
+        // Both the frontmost application and the inferred content origin
+        // (e.g. a Chromium app writing the clipboard in the background) are
+        // policy identities; ignoring either one skips the capture.
+        for bundle_id in [
+            snapshot.frontmost_app_bundle_id(),
+            snapshot.content_origin_bundle_id(),
+        ]
+        .into_iter()
+        .flatten()
+        {
             let ignored: bool = tx
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM ignored_bundle_ids WHERE bundle_id = ?1 COLLATE NOCASE)",

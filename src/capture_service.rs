@@ -85,6 +85,35 @@ mod tests {
     }
 
     #[test]
+    fn ignored_content_origin_is_skipped_even_with_other_frontmost_app() -> Result<()> {
+        let mut db = Database::open_in_memory()?;
+        db.add_ignored_bundle_id("com.example.chromium-app")?;
+        let background_write = build_snapshot(
+            CaptureContext::new(1)
+                .with_frontmost_app_bundle_id("com.example.editor")
+                .with_content_origin(
+                    "Chromium App",
+                    "com.example.chromium-app",
+                    "chromium_metadata",
+                ),
+            vec![build_item(
+                0,
+                vec![build_representation(
+                    "public.utf8-plain-text".into(),
+                    None,
+                    b"secret from ignored app".to_vec(),
+                )],
+            )],
+        );
+        let outcome = CaptureApplicationService::new(&mut db)
+            .capture(&background_write, CaptureMode::Watch)?;
+        assert!(
+            matches!(outcome, CaptureOutcome::SkippedIgnoredApp { ref bundle_id } if bundle_id == "com.example.chromium-app")
+        );
+        Ok(())
+    }
+
+    #[test]
     fn all_modes_enforce_pause_and_ignored_app_policy() -> Result<()> {
         for mode in [
             CaptureMode::Watch,
