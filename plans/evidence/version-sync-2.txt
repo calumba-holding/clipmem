@@ -1,0 +1,2 @@
+version sync passed (Cargo.toml and menu bar app are 0.5.6)
+version=0

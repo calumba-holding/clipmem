@@ -1,0 +1,2419 @@
+===== src/app.rs (191 lines) =====
+   8: pub struct WatchState {
+  13: impl WatchState {
+  15: pub fn new() -> Self {
+  23: impl Default for WatchState {
+  24: fn default() -> Self {
+  29: pub fn should_skip_initial_change(skip_initial: bool, state: &WatchState) -> bool {
+  33: pub fn should_capture_change(change_count: i64, state: &WatchState) -> bool {
+  37: pub fn mark_change_handled(change_count: i64, state: &mut WatchState) {
+  43: pub fn format_watch_capture_line(
+  69: mod tests {
+  82: fn process_watch_snapshot(
+  97: fn skip_initial_marks_first_change_as_seen_without_storing() -> Result<()> {
+ 118: fn repeated_change_counts_are_ignored_after_the_first_store() -> Result<()> {
+ 136: fn changed_change_counts_store_new_events_for_existing_content() -> Result<()> {
+ 167: fn watch_log_line_includes_capture_context() {
+
+===== src/archive.rs (82 lines) =====
+  11: mod tests {
+  16: fn archive_dtos_preserve_constructor_data() {
+
+===== src/capture.rs (33 lines) =====
+   7: mod tests {
+  11: fn capture_facade_builds_normalized_plain_text_snapshots() {
+
+===== src/cli/commands/agents/context.rs (629 lines) =====
+  19: struct AgentContextOutput {
+  36: struct AgentServiceSummary {
+  47: struct AgentSettingsSummary {
+  56: struct AgentStatsSummary {
+  65: struct AgentAppSummary {
+  72: struct AgentAppSettingsSummary {
+  81: struct AgentLaunchAtLoginSummary {
+  89: struct AgentUpdateCheckSummary {
+  98: struct AgentRecentActivitySummary {
+ 107: struct AgentActivityWindowSummary {
+ 118: struct AgentTopAppSummary {
+ 124: struct AgentKindSummary {
+ 130: struct AgentPrivacySummary {
+ 138: struct AgentCapabilitySummary {
+ 151: struct AgentContextStatus {
+ 167: pub(in crate::cli) fn agent_context(db_path: &Path, format: OutputFormat) -> Result<()> {
+ 182: fn require_agent_context_output_format(format: OutputFormat) -> Result<OutputFormat> {
+ 196: fn build_agent_context(db_path: &Path) -> Result<AgentContextOutput> {
+ 382: fn load_agent_context_status(db_path: &Path) -> Result<AgentContextStatus> {
+ 403: fn load_agent_context_status(db_path: &Path) -> Result<AgentContextStatus> {
+ 452: fn render_agent_retention(retention_seconds: Option<u64>) -> String {
+ 456: fn nonempty_option(value: Option<String>) -> Option<String> {
+ 467: fn build_recent_activity(db: &Database) -> Result<AgentRecentActivitySummary> {
+ 482: fn activity_window(db: &Database, hours: u32) -> Result<AgentActivityWindowSummary> {
+ 495: fn top_apps(stats: &StatsReport) -> Vec<AgentTopAppSummary> {
+ 507: fn kind_breakdown(stats: &StatsReport) -> Vec<AgentKindSummary> {
+ 519: fn service_health_label(status: &ServiceStatusReport) -> &'static str {
+ 547: fn render_agent_context_text(context: &AgentContextOutput) -> String {
+ 620: mod tests {
+ 624: fn agent_retention_uses_compact_duration_format() {
+
+===== src/cli/commands/agents/doctor.rs (97 lines) =====
+   4: pub(in crate::cli) struct OpenClawDoctorReport {
+  10: pub(in crate::cli) struct AgentDoctorCheck {
+  18: pub(in crate::cli) enum AgentDoctorStatus {
+  25: pub(in crate::cli) struct HermesDoctorReport {
+  30: pub(in crate::cli) fn render_agent_doctor_report(
+  56: fn doctor_status_label(status: AgentDoctorStatus) -> &'static str {
+  65: mod tests {
+  69: fn render_agent_doctor_report_lists_statuses_details_and_next_steps() {
+
+===== src/cli/commands/agents/hermes_manage.rs (82 lines) =====
+  10: pub(in crate::cli) fn hermes_install_skill(args: &HermesInstallSkillArgs) -> Result<()> {
+  36: pub(in crate::cli) fn hermes_uninstall_skill(args: &HermesUninstallSkillArgs) -> Result<()> {
+  49: pub(in crate::cli) fn install_hermes_package(target_dir: &Path) -> Result<()> {
+  54: mod tests {
+  60: fn resolve_hermes_skill_dir_uses_explicit_destination() {
+  70: fn packaged_hermes_files_include_skill_and_setup_script() {
+
+===== src/cli/commands/agents/hermes_validate.rs (447 lines) =====
+  18: pub(in crate::cli) fn hermes_doctor(args: &HermesDoctorArgs) -> Result<()> {
+  33: pub(in crate::cli) fn build_hermes_doctor_report(
+ 111: pub(in crate::cli) fn hermes_binary_check(path: Option<&PathBuf>) -> AgentDoctorCheck {
+ 131: pub(in crate::cli) fn hermes_skill_discovery_check(
+ 197: pub(in crate::cli) fn validate_hermes_skill_file(path: &Path) -> Result<()> {
+ 203: pub(in crate::cli) fn validate_hermes_skill_dir(path: &Path) -> Result<()> {
+ 215: pub(in crate::cli) fn validate_hermes_skill_content(content: &str) -> Result<()> {
+ 280: fn inline_yaml_list_contains(value: &str, expected: &str) -> bool {
+ 290: pub(in crate::cli) fn render_hermes_doctor_report(report: &HermesDoctorReport) -> String {
+ 299: mod tests {
+ 309: fn packaged_hermes_skill_includes_required_metadata() {
+ 334: fn packaged_hermes_package_embeds_reference_files() {
+ 359: fn packaged_hermes_skill_references_relative_markdown_files() {
+ 379: fn hermes_skill_validation_rejects_missing_required_frontmatter() {
+ 426: fn hermes_skill_validation_requires_exact_inline_list_items() {
+
+===== src/cli/commands/agents/openclaw_manage.rs (133 lines) =====
+  10: pub(in crate::cli) fn openclaw_install_skill(args: &OpenClawInstallSkillArgs) -> Result<()> {
+  38: pub(in crate::cli) fn openclaw_uninstall_skill(args: &OpenClawUninstallSkillArgs) -> Result<()> {
+  51: pub(in crate::cli) fn install_openclaw_package(target_dir: &Path) -> Result<()> {
+  56: mod tests {
+  64: fn temp_skill_dir(name: &str) -> std::path::PathBuf {
+  73: fn resolve_openclaw_skill_dir_uses_explicit_destination() {
+  84: fn packaged_openclaw_files_include_skill_and_setup_script() {
+  98: fn install_packaged_skill_writes_nested_files_and_marks_scripts_executable() {
+
+===== src/cli/commands/agents/openclaw_validate.rs (448 lines) =====
+  20: pub(in crate::cli) fn openclaw_doctor(args: &OpenClawDoctorArgs) -> Result<()> {
+  35: pub(in crate::cli) fn build_openclaw_doctor_report(
+ 127: pub(in crate::cli) fn openclaw_sandbox_check(openclaw_path: Option<&PathBuf>) -> AgentDoctorCheck {
+ 189: pub(in crate::cli) fn validate_openclaw_skill_file(path: &Path) -> Result<()> {
+ 195: pub(in crate::cli) fn validate_openclaw_skill_dir(path: &Path) -> Result<()> {
+ 207: pub(in crate::cli) fn validate_openclaw_skill_content(content: &str) -> Result<()> {
+ 249: pub(in crate::cli) fn validate_openclaw_install_entries(
+ 283: pub(in crate::cli) fn render_openclaw_doctor_report(report: &OpenClawDoctorReport) -> String {
+ 292: mod tests {
+ 301: fn packaged_openclaw_skill_includes_required_metadata() {
+ 324: fn packaged_openclaw_package_embeds_reference_files() {
+ 349: fn packaged_openclaw_skill_references_relative_markdown_files() {
+ 370: mod profile_tests {
+ 377: fn profile_referenced_markdown_file_extraction() {
+ 390: fn median_duration(
+ 406: fn large_skill_markdown_with_repeated_references(reference_count: usize) -> String {
+ 425: fn referenced_markdown_files_linear_dedupe_for_profile(content: &str) -> Vec<PathBuf> {
+
+===== src/cli/commands/agents/package.rs (282 lines) =====
+   8: pub(in crate::cli) const OPENCLAW_SKILL_NAME: &str = "clipboard-memory";
+   9: pub(in crate::cli) const OPENCLAW_SHARED_ROOT: &str = ".openclaw/skills";
+  10: pub(in crate::cli) const OPENCLAW_WORKSPACE_ROOT: &str = ".openclaw/workspace";
+  11: pub(in crate::cli) const HERMES_SKILL_NAME: &str = "clipboard-memory";
+  12: pub(in crate::cli) const HERMES_SKILL_ROOT: &str = ".hermes/skills/productivity";
+  14: pub(in crate::cli) const OPENCLAW_SKILL_MD: &str = include_str!(concat!(
+  18: pub(in crate::cli) const OPENCLAW_COMMANDS_REF: &str = include_str!(concat!(
+  22: pub(in crate::cli) const OPENCLAW_TROUBLESHOOTING_REF: &str = include_str!(concat!(
+  26: pub(in crate::cli) const OPENCLAW_JSON_SCHEMA_REF: &str = include_str!(concat!(
+  30: pub(in crate::cli) const OPENCLAW_EXAMPLES_REF: &str = include_str!(concat!(
+  34: pub(in crate::cli) const OPENCLAW_SETUP_CHECK_REF: &str = include_str!(concat!(
+  38: pub(in crate::cli) const OPENCLAW_CHECK_SETUP_SH: &str = include_str!(concat!(
+  43: pub(in crate::cli) const HERMES_SKILL_MD: &str = include_str!(concat!(
+  47: pub(in crate::cli) const HERMES_COMMANDS_REF: &str = include_str!(concat!(
+  51: pub(in crate::cli) const HERMES_TROUBLESHOOTING_REF: &str = include_str!(concat!(
+  55: pub(in crate::cli) const HERMES_JSON_SCHEMA_REF: &str = include_str!(concat!(
+  59: pub(in crate::cli) const HERMES_EXAMPLES_REF: &str = include_str!(concat!(
+  63: pub(in crate::cli) const HERMES_SETUP_CHECK_REF: &str = include_str!(concat!(
+  67: pub(in crate::cli) const HERMES_CHECK_SETUP_SH: &str = include_str!(concat!(
+  72: pub(in crate::cli) fn packaged_openclaw_skill() -> String {
+  76: pub(in crate::cli) fn packaged_openclaw_files() -> &'static [PackagedSkillFile] {
+ 109: pub(in crate::cli) fn resolve_openclaw_skill_dir(
+ 125: pub(in crate::cli) fn resolve_openclaw_workspace_root() -> Result<PathBuf> {
+ 147: pub(in crate::cli) fn packaged_hermes_skill() -> String {
+ 151: pub(in crate::cli) fn packaged_hermes_files() -> &'static [PackagedSkillFile] {
+ 184: pub(in crate::cli) fn resolve_hermes_skill_dir(dest: Option<&Path>) -> Result<PathBuf> {
+ 193: mod tests {
+ 207: fn packaged_skill_strings_return_embedded_skill_markdown() {
+ 215: fn packaged_openclaw_manifest_lists_all_embedded_files() {
+ 240: fn packaged_hermes_manifest_lists_all_embedded_files() {
+ 262: fn explicit_skill_destinations_bypass_default_resolution() {
+
+===== src/cli/commands/agents/support.rs (189 lines) =====
+   9: pub(in crate::cli) struct PackagedSkillFile {
+  14: pub(in crate::cli) fn install_packaged_skill(
+  39: pub(in crate::cli) fn set_executable(path: &Path) -> Result<()> {
+  49: pub(in crate::cli) fn set_executable(_path: &Path) -> Result<()> {
+  55: pub(in crate::cli) fn home_dir() -> Result<PathBuf> {
+  61: pub(in crate::cli) fn find_executable(name: &str) -> Option<PathBuf> {
+  69: pub(in crate::cli) fn binary_check(
+  90: pub(in crate::cli) fn validate_packaged_skill_file(path: &Path, relative_path: &str) -> Result<()> {
+ 104: pub(in crate::cli) fn ensure_executable(path: &Path) -> Result<()> {
+ 116: pub(in crate::cli) fn ensure_executable(_path: &Path) -> Result<()> {
+ 120: pub(in crate::cli) fn referenced_markdown_files(content: &str) -> Vec<PathBuf> {
+ 142: pub(in crate::cli) fn parse_skill_frontmatter(content: &str) -> Result<Vec<&str>> {
+ 159: pub(in crate::cli) fn frontmatter_value<'a>(lines: &'a [&str], key: &str) -> Option<&'a str> {
+ 166: pub(in crate::cli) fn required_frontmatter_value<'a>(
+ 175: pub(in crate::cli) fn validate_required_skill_references(
+
+===== src/cli/commands/agents.rs (15 lines) =====
+   1: pub(in crate::cli) mod context;
+   2: pub(in crate::cli) mod doctor;
+   3: pub(in crate::cli) mod hermes_manage;
+   4: pub(in crate::cli) mod hermes_validate;
+   5: pub(in crate::cli) mod openclaw_manage;
+   6: pub(in crate::cli) mod openclaw_validate;
+   7: pub(in crate::cli) mod package;
+   8: pub(in crate::cli) mod support;
+
+===== src/cli/commands/app.rs (691 lines) =====
+  23: const APP_DOMAIN: &str = "io.openclaw.clipmem.menubar";
+  24: const LAUNCH_AT_LOGIN_ENABLED_KEY: &str = "launchAtLoginEnabled";
+  25: const DID_CONFIGURE_LAUNCH_AT_LOGIN_KEY: &str = "didConfigureLaunchAtLogin";
+  26: const CACHED_LATEST_VERSION_KEY: &str = "cachedLatestVersion";
+  27: const CACHED_LATEST_RELEASE_URL_KEY: &str = "cachedLatestReleaseURL";
+  28: const LAST_UPDATE_CHECK_AT_KEY: &str = "lastUpdateCheckAt";
+  29: const UPDATE_CHECK_URL: &str =
+  33: pub(in crate::cli::commands) struct AppSettingsOutput {
+  42: pub(in crate::cli::commands) struct AppLaunchAtLoginOutput {
+  51: pub(in crate::cli::commands) struct AppUpdateCheckOutput {
+  61: struct AppQuitOutput {
+  68: struct GitHubRelease {
+  75: pub(in crate::cli) fn app(db_path: &Path, args: &AppArgs) -> Result<()> {
+  84: fn app_settings(db_path: &Path, args: &AppSettingsArgs) -> Result<()> {
+  92: fn app_settings_show(args: &AppSettingsShowArgs) -> Result<()> {
+ 102: fn app_settings_set(db_path: &Path, args: &AppSettingsSetArgs) -> Result<()> {
+ 117: fn app_settings_clear(db_path: &Path, args: &AppSettingsClearArgs) -> Result<()> {
+ 131: fn app_launch_at_login(db_path: &Path, args: &AppLaunchAtLoginArgs) -> Result<()> {
+ 139: fn app_launch_at_login_show(args: &AppLaunchAtLoginShowArgs) -> Result<()> {
+ 149: fn app_launch_at_login_set(db_path: &Path, args: &AppLaunchAtLoginSetArgs) -> Result<()> {
+ 165: fn app_launch_at_login_clear(db_path: &Path, args: &AppLaunchAtLoginClearArgs) -> Result<()> {
+ 180: fn app_update_check(db_path: &Path, args: &AppUpdateCheckArgs) -> Result<()> {
+ 188: fn app_update_check_show(args: &AppUpdateCheckShowArgs) -> Result<()> {
+ 198: fn app_update_check_run(db_path: &Path, args: &AppUpdateCheckRunArgs) -> Result<()> {
+ 227: fn app_update_check_clear(db_path: &Path, args: &AppUpdateCheckClearArgs) -> Result<()> {
+ 243: fn app_quit(args: &AppQuitArgs) -> Result<()> {
+ 249: fn require_app_output_format(format: OutputFormat, command_name: &str) -> Result<OutputFormat> {
+ 260: pub(in crate::cli::commands) fn load_app_settings() -> Result<AppSettingsOutput> {
+ 271: pub(in crate::cli::commands) fn load_launch_at_login() -> Result<AppLaunchAtLoginOutput> {
+ 291: pub(in crate::cli::commands) fn load_update_check() -> Result<AppUpdateCheckOutput> {
+ 314: fn fetch_latest_release() -> Result<Option<GitHubRelease>> {
+ 351: fn unix_timestamp_now() -> Result<u64> {
+ 358: fn request_menu_bar_app_quit() -> Result<AppQuitOutput> {
+ 388: fn parse_app_preference_value(key: AppPreferenceKey, value: &str) -> Result<Value> {
+ 425: fn read_string(key: AppPreferenceKey) -> Result<Option<String>> {
+ 429: fn read_u32(key: AppPreferenceKey) -> Result<Option<u32>> {
+ 435: fn read_bool(key: AppPreferenceKey) -> Result<Option<bool>> {
+ 439: fn read_preference(key: AppPreferenceKey) -> Result<Option<Value>> {
+ 443: fn read_named_preference(key: &str) -> Result<Option<Value>> {
+ 473: fn set_preference(key: AppPreferenceKey, value: Value) -> Result<()> {
+ 477: fn set_named_preference(key: &str, value: Value) -> Result<()> {
+ 506: fn clear_preference(key: AppPreferenceKey) -> Result<()> {
+ 510: fn clear_named_preference(key: &str) -> Result<()> {
+ 532: fn ensure_macos_app_preference_store() -> Result<()> {
+ 540: fn run_defaults(mut command: Command, label: &str) -> Result<()> {
+ 552: fn defaults_key(key: AppPreferenceKey) -> &'static str {
+ 562: fn override_store_path() -> Option<PathBuf> {
+ 566: fn read_override_store(path: &Path) -> Result<BTreeMap<String, Value>> {
+ 574: fn write_override_store(path: &Path, store: &BTreeMap<String, Value>) -> Result<()> {
+ 582: fn app_preference_revision_paths(db_path: &Path) -> Result<Vec<PathBuf>> {
+ 594: fn app_preference_revision_paths_after_mutation(
+ 604: fn push_unique_path(paths: &mut Vec<PathBuf>, path: PathBuf) {
+ 610: fn bump_app_preferences_revisions(paths: &[PathBuf]) -> Result<()> {
+ 621: fn render_app_settings_text(output: &AppSettingsOutput) -> String {
+ 632: fn render_launch_at_login_text(output: &AppLaunchAtLoginOutput) -> String {
+ 646: fn render_update_check_text(output: &AppUpdateCheckOutput) -> String {
+ 661: fn render_quit_text(output: &AppQuitOutput) -> String {
+ 668: fn version_is_newer(current: &str, latest: &str) -> bool {
+ 678: fn parse_stable_version(value: &str) -> Option<Vec<u64>> {
+
+===== src/cli/commands/archive_mutate.rs (337 lines) =====
+  24: pub(in crate::cli) fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -> Result<()> {
+  81: pub(in crate::cli) fn restore_snapshot(db_path: &Path, args: &RestoreArgs) -> Result<()> {
+ 116: pub(in crate::cli) fn forget_snapshot(db_path: &Path, args: &ForgetArgs) -> Result<()> {
+ 134: pub(in crate::cli) fn purge_snapshots(db_path: &Path, args: &PurgeArgs) -> Result<()> {
+ 154: fn create_export_destination(path: &Path, force: bool) -> Result<File> {
+ 200: fn render_restore_text(output: &RestoreOutput) -> String {
+ 207: fn render_export_text(output: &ExportOutput) -> String {
+ 219: fn render_forget_text(report: &SnapshotDeletionReport) -> String {
+ 230: fn render_purge_text(report: &PurgeReport) -> String {
+ 249: mod tests {
+ 257: fn create_export_destination_rejects_existing_file_without_force() {
+ 270: fn create_export_destination_replaces_existing_file_with_force() {
+ 284: fn create_export_destination_rejects_directory() {
+ 297: fn create_export_destination_rejects_symlink() {
+ 312: fn temp_path(name: &str) -> PathBuf {
+ 325: fn cleanup_path(path: &std::path::Path) {
+
+===== src/cli/commands/doctor.rs (22 lines) =====
+  12: pub(in crate::cli) fn doctor(db_path: &Path, args: &DoctorArgs) -> Result<()> {
+
+===== src/cli/commands/entry.rs (200 lines) =====
+  35: pub(in crate::cli) fn run_command(command: Command, db_path: &Path) -> Result<()> {
+  60: pub(in crate::cli) fn setup(db_path: &Path, _args: &SetupArgs) -> Result<()> {
+  66: pub(in crate::cli) fn service(db_path: &Path, args: &ServiceArgs) -> Result<()> {
+  89: pub(in crate::cli) fn service_revision(db_path: &Path, args: &ServiceRevisionArgs) -> Result<()> {
+ 112: struct ServiceProvidersOutput {
+ 119: pub(in crate::cli) fn service_providers(db_path: &Path, args: &ServiceProvidersArgs) -> Result<()> {
+ 135: fn render_service_providers_text(output: &ServiceProvidersOutput) -> String {
+ 153: pub(in crate::cli) fn service_status(db_path: &Path, args: &ServiceStatusArgs) -> Result<()> {
+ 165: pub(in crate::cli) fn agents(db_path: &Path, args: &AgentsArgs) -> Result<()> {
+ 173: pub(in crate::cli) fn agents_context(db_path: &Path, args: &AgentsContextArgs) -> Result<()> {
+ 178: pub(in crate::cli) fn openclaw(args: &OpenClawArgs) -> Result<()> {
+ 190: pub(in crate::cli) fn hermes(args: &HermesArgs) -> Result<()> {
+
+===== src/cli/commands/mutation_support.rs (52 lines) =====
+   6: pub(in crate::cli) fn require_text_or_json(
+  21: mod tests {
+  27: fn require_text_or_json_accepts_text_json_and_human() {
+  43: fn require_text_or_json_rejects_other_formats_with_command_name() {
+
+===== src/cli/commands/notify.rs (23 lines) =====
+   2: pub(in crate::cli) const APP_REFRESH_NOTIFICATION: &str = "io.openclaw.clipmem.revision.changed";
+   4: pub(in crate::cli) fn notify_app_refresh() {
+
+===== src/cli/commands/ocr.rs (160 lines) =====
+  19: pub(in crate::cli) fn ocr(db_path: &Path, args: &OcrArgs) -> Result<()> {
+  29: fn ocr_status(db_path: &Path, args: &OcrStatusArgs) -> Result<()> {
+  42: fn ocr_run(db_path: &Path, args: &OcrRunArgs) -> Result<()> {
+  65: fn ocr_candidates(db_path: &Path, args: &OcrCandidatesArgs) -> Result<()> {
+  81: fn ocr_get(db_path: &Path, args: &OcrGetArgs) -> Result<()> {
+  95: fn ocr_clear(db_path: &Path, args: &OcrClearArgs) -> Result<()> {
+ 115: fn render_ocr_status_text(report: &OcrStatusReport) -> String {
+ 126: fn render_ocr_run_text(report: &OcrRunReport) -> String {
+ 137: fn render_ocr_candidates_text(candidates: &[OcrCandidateSummary]) -> String {
+ 153: fn render_ocr_result_text(result: &OcrResultRecord) -> String {
+
+===== src/cli/commands/retrieval/cursor.rs (402 lines) =====
+  12: pub(in crate::cli) struct SearchCursorToken {
+  24: pub(in crate::cli) struct RecentCursorToken {
+  32: pub(in crate::cli) struct TimelineCursorToken {
+  40: pub(in crate::cli) fn parse_search_cursor(
+  79: pub(in crate::cli) fn parse_recent_cursor(
+ 102: pub(in crate::cli) fn parse_timeline_cursor(
+ 123: pub(in crate::cli) fn encode_search_cursor(
+ 142: pub(in crate::cli) fn encode_recent_cursor(
+ 154: pub(in crate::cli) fn encode_timeline_cursor(
+ 168: pub(in crate::cli) fn encode_cursor<T: Serialize>(token: &T) -> Result<String> {
+ 173: pub(in crate::cli) fn decode_cursor<T: for<'de> Deserialize<'de>>(encoded: &str) -> Result<T> {
+ 180: mod tests {
+ 193: fn search_cursor_round_trips_with_auto_mode_and_score() {
+ 208: fn search_cursor_rejects_wrong_command() {
+ 230: fn search_cursor_rejects_query_mode_and_filter_mismatches() {
+ 265: fn recent_cursor_round_trips_and_rejects_filter_mismatch() {
+ 282: fn recent_cursor_rejects_wrong_command() {
+ 304: fn timeline_cursor_round_trips_and_rejects_sort_mismatch() {
+ 320: fn timeline_cursor_rejects_wrong_command() {
+ 339: fn decode_cursor_rejects_invalid_hex() {
+ 346: fn decode_cursor_rejects_invalid_json_payload() {
+ 354: fn search_hit(snapshot_id: i64, last_observed_at: &str, score: Option<f64>) -> SearchHit {
+ 376: fn timeline_event(event_id: i64, observed_at: &str) -> TimelineEvent {
+ 395: fn assert_error_contains(error: anyhow::Error, expected: &str) {
+
+===== src/cli/commands/retrieval/recall.rs (879 lines) =====
+  23: pub(in crate::cli) enum RecallCandidateSource {
+  29: pub(in crate::cli) struct RecallCandidate {
+  38: pub(in crate::cli) struct RecallComputation {
+  45: pub(in crate::cli) fn recall(db_path: &Path, args: &RecallArgs) -> Result<()> {
+  57: fn build_recall_envelope(
+ 122: pub(in crate::cli) fn compute_recall(
+ 250: pub(in crate::cli) fn run_search_query(
+ 264: pub(in crate::cli) fn build_search_candidate(
+ 296: pub(in crate::cli) fn build_recent_candidate(
+ 324: pub(in crate::cli) fn upsert_recall_candidate(
+ 341: pub(in crate::cli) fn compare_recall_candidates(
+ 363: pub(in crate::cli) fn default_recall_threshold(mode_used: SearchMode) -> f64 {
+ 370: pub(in crate::cli) fn normalize_fts_score(score: Option<f64>) -> f64 {
+ 376: pub(in crate::cli) fn expanded_recall_queries(query: &str) -> Vec<String> {
+ 404: pub(in crate::cli) fn term_stuffing_penalty(value: &str, query: &str) -> f64 {
+ 431: pub(in crate::cli) fn command_specificity_bonus(value: &str, query: &str) -> f64 {
+ 471: pub(in crate::cli) fn contains_any(value: &str, needles: &[&str]) -> bool {
+ 477: pub(in crate::cli) fn literal_match_score(hit: &SearchHit, query: &str) -> f64 {
+ 529: pub(in crate::cli) fn search_match_field_bonus(hit: &SearchHit) -> f64 {
+ 551: pub(in crate::cli) fn matches_preferred_app(hit: &SearchHit, prefer_app: Option<&str>) -> bool {
+ 564: pub(in crate::cli) fn starts_with_ascii_case_insensitive(value: &str, prefix: &str) -> bool {
+ 572: pub(in crate::cli) fn contains_ascii_case_insensitive(value: &str, needle: &str) -> bool {
+ 587: pub(in crate::cli) fn ascii_eq_ignore_case(left: &[u8], right: &[u8]) -> bool {
+ 593: pub(in crate::cli) fn app_preference_boost(app_preferred: bool) -> f64 {
+ 601: pub(in crate::cli) fn recent_index_boost(index: usize) -> f64 {
+ 611: pub(in crate::cli) fn search_rank_bonus(index: usize) -> f64 {
+ 620: pub(in crate::cli) fn build_recall_why_selected(
+ 666: mod ranking_tests {
+ 670: fn recall_expansion_uses_generic_clipboard_aliases() {
+ 685: fn command_bonus_prefers_command_shaped_results_without_naming_commands() {
+ 700: fn term_stuffing_penalty_only_applies_to_repeated_query_terms() {
+ 715: mod profile_tests {
+ 722: fn profile_recall_literal_match_scoring() {
+ 748: fn profile_recall_preferred_app_matching() {
+ 769: fn median_duration(runs: usize, mut f: impl FnMut()) -> Duration {
+ 780: fn large_recall_hits(count: usize) -> Vec<SearchHit> {
+ 809: fn literal_match_score_before_for_profile(hit: &SearchHit, query: &str) -> f64 {
+ 859: fn matches_preferred_app_before_for_profile(hit: &SearchHit, prefer_app: Option<&str>) -> bool {
+ 873: fn token_candidates_for_profile(query: &str) -> Vec<&str> {
+
+===== src/cli/commands/retrieval.rs (241 lines) =====
+  24: mod cursor;
+  25: mod recall;
+  30: pub(in crate::cli) fn search(db_path: &Path, args: &SearchArgs) -> Result<()> {
+  91: pub(in crate::cli) fn recent(db_path: &Path, args: &RecentArgs) -> Result<()> {
+ 145: pub(in crate::cli) fn timeline(db_path: &Path, args: &TimelineArgs) -> Result<()> {
+ 201: pub(in crate::cli) fn stats(db_path: &Path, args: &StatsArgs) -> Result<()> {
+ 217: pub(in crate::cli) fn show_snapshot(db_path: &Path, args: &GetArgs) -> Result<()> {
+
+===== src/cli/commands/retrieval_support.rs (727 lines) =====
+  22: pub(in crate::cli) fn normalize_retrieval_filters(
+  29: pub(in crate::cli) fn load_snapshot_projections<I>(
+  54: pub(in crate::cli) fn merge_applied_filters(
+  67: pub(in crate::cli) fn query_search_results(
+  81: mod tests {
+  98: fn temp_db_path(test_name: &str) -> PathBuf {
+ 111: fn cleanup_db(path: &std::path::Path) {
+ 126: fn unfiltered() -> RetrievalFilters {
+ 131: fn search_query_dispatches_literal_mode_against_database() {
+ 205: fn search_cursor_round_trips_and_rejects_mismatches() {
+ 235: fn recent_cursor_round_trips_and_rejects_mismatches() {
+ 262: fn watch_iteration_skips_initial_clipboard_state_once() {
+ 304: fn watch_iteration_captures_when_clipboard_changes() {
+ 346: fn watch_iteration_uses_captured_change_count_for_duplicate_guard() {
+ 414: fn watch_iteration_skips_restored_snapshots_and_marks_them_handled() {
+ 491: fn watch_iteration_skips_paused_changes_and_marks_them_handled() {
+ 543: fn watch_iteration_skips_ignored_bundle_ids_and_does_not_backfill_later() {
+ 601: fn watch_iteration_skips_api_key_like_content_and_does_not_backfill_later() {
+ 659: fn watch_iteration_applies_retention_after_successful_store() {
+
+===== src/cli/commands/runtime.rs (407 lines) =====
+  25: static OCR_WORKERS: LazyLock<Mutex<HashSet<PathBuf>>> =
+  28: fn capture_skip_reason_label(reason: CaptureSkipReason) -> &'static str {
+  32: pub(in crate::cli) fn watch(db_path: &Path, args: &WatchArgs) -> Result<()> {
+  46: pub(in crate::cli) fn run_watch_iteration(
+  54: pub(in crate::cli) fn run_watch_iteration_with_capture<CountFn, CaptureFn>(
+ 139: pub(in crate::cli) fn start_ocr_worker(db_path: PathBuf) {
+ 168: fn claim_ocr_worker(db_path: &Path) -> Option<OcrWorkerRegistration> {
+ 177: fn ocr_workers() -> MutexGuard<'static, HashSet<PathBuf>> {
+ 184: fn canonical_ocr_worker_key(db_path: &Path) -> PathBuf {
+ 196: struct OcrWorkerRegistration {
+ 200: impl Drop for OcrWorkerRegistration {
+ 201: fn drop(&mut self) {
+ 206: pub(in crate::cli) fn capture_once(db_path: &Path, args: &CaptureOnceArgs) -> Result<()> {
+ 221: fn capture_once_payload<CaptureFn>(
+ 254: pub(in crate::cli) fn open_existing_db(path: &Path) -> Result<Database> {
+ 292: pub(in crate::cli) fn open_or_init_db(path: &Path) -> Result<Database> {
+ 299: mod tests {
+ 311: fn ocr_worker_guard_allows_distinct_database_paths_in_same_process() {
+ 339: fn capture_once_reports_restored_snapshot_as_skip() -> anyhow::Result<()> {
+ 362: fn temp_db_path(test_name: &str) -> PathBuf {
+ 372: fn create_empty_file(path: &Path) {
+ 378: fn cleanup_db(path: &Path) {
+ 392: fn fake_snapshot(change_count: i64, text: &str) -> crate::model::ClipboardSnapshot {
+
+===== src/cli/commands/settings.rs (138 lines) =====
+  20: pub(in crate::cli) fn settings(db_path: &Path, args: &SettingsArgs) -> Result<()> {
+  32: fn settings_show(db_path: &Path, args: &SettingsShowArgs) -> Result<()> {
+  39: fn settings_pause(db_path: &Path, args: &SettingsPauseArgs) -> Result<()> {
+  48: fn settings_api_key_filter(db_path: &Path, args: &SettingsApiKeyFilterArgs) -> Result<()> {
+  57: fn settings_ocr(db_path: &Path, args: &SettingsOcrArgs) -> Result<()> {
+  66: fn settings_retention(db_path: &Path, args: &SettingsRetentionArgs) -> Result<()> {
+  75: fn settings_reset(db_path: &Path, args: &SettingsResetArgs) -> Result<()> {
+  83: fn settings_ignore(db_path: &Path, args: &SettingsIgnoreArgs) -> Result<()> {
+  91: fn settings_ignore_add(db_path: &Path, args: &SettingsIgnoreBundleArgs) -> Result<()> {
+ 102: fn settings_ignore_remove(db_path: &Path, args: &SettingsIgnoreBundleArgs) -> Result<()> {
+ 113: fn settings_ignore_list(db_path: &Path, args: &SettingsIgnoreListArgs) -> Result<()> {
+ 122: fn settings_view(policy: CapturePolicy) -> SettingsView {
+ 133: fn render_retention_value(settings: &CaptureSettings) -> String {
+
+===== src/cli/commands/storage.rs (138 lines) =====
+  20: pub(in crate::cli) fn storage(db_path: &Path, args: &StorageArgs) -> Result<()> {
+  28: fn storage_compact(db_path: &Path, args: &StorageCompactArgs) -> Result<()> {
+  39: fn storage_optimize_images(db_path: &Path, args: &StorageOptimizeImagesArgs) -> Result<()> {
+  61: fn should_notify_after_image_optimization(report: &ImageOptimizationReport) -> bool {
+  65: fn storage_image_candidates(db_path: &Path, args: &StorageImageCandidatesArgs) -> Result<()> {
+  81: fn render_image_candidates_text(candidates: &[ImageOptimizationCandidateSummary]) -> String {
+  99: mod tests {
+ 103: fn report(dry_run: bool, compressed_rows: usize, compact_run: bool) -> ImageOptimizationReport {
+ 124: fn image_optimization_notify_predicate_includes_compaction_only_mutation() {
+
+===== src/cli/commands.rs (13 lines) =====
+   1: mod agents;
+   2: mod app;
+   3: mod archive_mutate;
+   4: mod doctor;
+   5: pub(in crate::cli) mod entry;
+   6: mod mutation_support;
+   7: pub(in crate::cli) mod notify;
+   8: mod ocr;
+   9: mod retrieval;
+  10: mod retrieval_support;
+  11: mod runtime;
+  12: mod settings;
+  13: mod storage;
+
+===== src/cli/db_path.rs (62 lines) =====
+   5: pub(super) fn default_db_path() -> PathBuf {
+  13: fn expand_tilde(path: &str) -> PathBuf {
+  17: fn expand_tilde_with_home(path: &str, home: Option<PathBuf>) -> PathBuf {
+  26: fn home_dir() -> Option<PathBuf> {
+  31: mod tests {
+  37: fn default_db_path_ends_with_clipmem_database_name() {
+  44: fn expand_tilde_uses_supplied_home_directory() {
+  57: fn expand_tilde_preserves_input_when_home_is_missing() {
+
+===== src/cli/display.rs (69 lines) =====
+   3: pub(in crate::cli) fn format_duration_compact(seconds: u64) -> String {
+  19: pub(in crate::cli) fn format_duration_seconds(seconds: u64) -> String {
+  36: pub(in crate::cli) fn peak_bucket(
+  51: mod tests {
+  55: fn format_duration_compact_prefers_days_hours_minutes_then_seconds() {
+  63: fn format_duration_seconds_renders_largest_two_units() {
+
+===== src/cli/errors.rs (330 lines) =====
+   6: pub(super) struct CliValueError {
+  11: impl CliValueError {
+  12: pub(super) fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
+  20: impl std::fmt::Display for CliValueError {
+  21: fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  26: impl std::error::Error for CliValueError {}
+  29: pub(in crate::cli) struct UnsupportedFormatError {
+  33: impl UnsupportedFormatError {
+  34: pub(in crate::cli) fn new(message: impl Into<String>) -> Self {
+  41: impl std::fmt::Display for UnsupportedFormatError {
+  42: fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  47: impl std::error::Error for UnsupportedFormatError {}
+  50: pub(in crate::cli) struct CliCommandError {
+  55: impl CliCommandError {
+  56: fn new(exit_code: CliExitCode, message: impl Into<String>) -> Self {
+  63: const fn exit_code(&self) -> CliExitCode {
+  67: fn message(&self) -> &str {
+  72: impl std::fmt::Display for CliCommandError {
+  73: fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  78: impl std::error::Error for CliCommandError {}
+  80: pub(in crate::cli) fn invalid_args_error(message: impl Into<String>) -> anyhow::Error {
+  84: pub(in crate::cli) fn not_found_error(message: impl Into<String>) -> anyhow::Error {
+  88: pub(in crate::cli) fn db_error(message: impl Into<String>) -> anyhow::Error {
+  92: pub(in crate::cli) fn platform_error(message: impl Into<String>) -> anyhow::Error {
+  96: pub(super) fn value_error(kind: ErrorKind, message: impl Into<String>) -> CliValueError {
+ 100: pub(super) fn clap_error_from_value(error: CliValueError) -> clap::Error {
+ 104: pub(super) fn clap_error(kind: ErrorKind, message: impl Into<String>) -> clap::Error {
+ 108: pub(super) fn classify_clap_error(error: clap::Error) -> CliError {
+ 112: pub(super) fn classify_clap_exit_code(kind: ErrorKind) -> CliExitCode {
+ 119: pub(super) fn classify_command_error(error: anyhow::Error) -> CliError {
+ 142: pub(super) fn sanitize_error_message(error: &anyhow::Error) -> String {
+ 165: pub(super) fn is_invalid_argument_error(error: &anyhow::Error, message: &str) -> bool {
+ 177: pub(super) fn is_not_found_error(error: &anyhow::Error, message: &str) -> bool {
+ 192: pub(super) fn is_unsupported_format_error(_error: &anyhow::Error, message: &str) -> bool {
+ 197: pub(super) fn is_platform_error(error: &anyhow::Error, message: &str) -> bool {
+ 212: pub(super) fn is_db_error(error: &anyhow::Error, message: &str) -> bool {
+ 225: mod tests {
+ 236: fn classify_command_error_preserves_explicit_cli_command_error_codes() {
+ 246: fn classify_clap_exit_code_treats_help_and_version_as_ok() {
+ 262: fn sanitize_error_message_rewrites_sqlite_schema_failures() {
+ 273: fn sanitize_error_message_keeps_non_database_messages() {
+ 283: fn rusqlite_errors_are_db_errors_not_not_found_errors() {
+ 296: fn platform_error_detection_checks_error_chain() {
+ 309: fn unsupported_format_error_is_classified_before_invalid_args() {
+ 320: fn explicit_error_helpers_set_expected_exit_codes() {
+
+===== src/cli/exit.rs (57 lines) =====
+   4: pub enum CliExitCode {
+  14: impl CliExitCode {
+  16: pub const fn as_u8(self) -> u8 {
+  21: pub fn as_exit_code(self) -> ExitCode {
+  27: pub struct CliError {
+  32: impl CliError {
+  34: pub const fn exit_code(&self) -> CliExitCode {
+  39: pub fn message(&self) -> &str {
+  43: pub(super) fn new(exit_code: CliExitCode, message: impl Into<String>) -> Self {
+  51: impl std::fmt::Display for CliError {
+  52: fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  57: impl std::error::Error for CliError {}
+
+===== src/cli/formats.rs (393 lines) =====
+   6: pub(super) enum OutputFormat {
+  15: impl OutputFormat {
+  17: pub const fn as_str(self) -> &'static str {
+  30: pub(super) enum RecallOutputFormat {
+  37: impl RecallOutputFormat {
+  39: pub const fn as_str(self) -> &'static str {
+  50: pub(super) enum StatsOutputFormat {
+  56: impl StatsOutputFormat {
+  58: pub const fn as_str(self) -> &'static str {
+  68: pub(super) enum ProgressFormat {
+  72: impl ProgressFormat {
+  74: pub const fn as_str(self) -> &'static str {
+  82: pub(super) enum ToggleState {
+  88: pub(super) struct OutputArgs {
+ 102: impl OutputArgs {
+ 103: pub(super) fn resolved(&self) -> Result<OutputFormat, CliValueError> {
+ 117: pub(super) struct RecallOutputArgs {
+ 131: impl RecallOutputArgs {
+ 132: pub(super) fn resolved(&self) -> Result<RecallOutputFormat, CliValueError> {
+ 146: pub(super) struct StatsOutputArgs {
+ 160: impl StatsOutputArgs {
+ 161: pub(super) fn resolved(&self) -> Result<StatsOutputFormat, CliValueError> {
+ 174: fn resolve_json_human_aliases<F>(
+ 197: fn resolve_alias_format<F>(
+ 220: impl ToggleState {
+ 222: pub(super) fn is_on(self) -> bool {
+ 228: mod tests {
+ 235: fn output_args_defaults_to_text() {
+ 246: fn output_args_accepts_matching_aliases_and_rejects_conflicts() {
+ 299: fn recall_output_args_defaults_to_markdown_and_rejects_human_conflicts() {
+ 344: fn stats_output_args_defaults_to_text_and_rejects_alias_conflicts() {
+ 389: fn toggle_state_is_on_matches_only_on() {
+
+===== src/cli/help.rs (355 lines) =====
+   1: pub(super) const ROOT_AFTER_HELP: &str = "\
+  24: pub(super) const APP_AFTER_HELP: &str = "\
+  36: pub(super) const APP_SETTINGS_AFTER_HELP: &str = "\
+  50: pub(super) const AGENTS_CONTEXT_AFTER_HELP: &str = "\
+  60: pub(super) const WATCH_AFTER_HELP: &str = "\
+  71: pub(super) const CAPTURE_ONCE_AFTER_HELP: &str = "\
+  77: pub(super) const SEARCH_AFTER_HELP: &str = "\
+  90: pub(super) const RECENT_AFTER_HELP: &str = "\
+ 102: pub(super) const TIMELINE_AFTER_HELP: &str = "\
+ 114: pub(super) const STATS_AFTER_HELP: &str = "\
+ 126: pub(super) const RECALL_AFTER_HELP: &str = "\
+ 139: pub(super) const GET_AFTER_HELP: &str = "\
+ 151: pub(super) const EXPORT_AFTER_HELP: &str = "\
+ 165: pub(super) const RESTORE_AFTER_HELP: &str = "\
+ 174: pub(super) const FORGET_AFTER_HELP: &str = "\
+ 183: pub(super) const PURGE_AFTER_HELP: &str = "\
+ 193: pub(super) const STORAGE_AFTER_HELP: &str = "\
+ 211: pub(super) const SETTINGS_AFTER_HELP: &str = "\
+ 223: pub(super) const OCR_AFTER_HELP: &str = "\
+ 238: pub(super) const DOCTOR_AFTER_HELP: &str = "\
+ 248: pub(super) const SETUP_AFTER_HELP: &str = "\
+ 257: pub(super) const SERVICE_AFTER_HELP: &str = "\
+ 271: pub(super) const SERVICE_STATUS_AFTER_HELP: &str = "\
+ 282: pub(super) const SERVICE_REVISION_AFTER_HELP: &str = "\
+ 293: pub(super) const OPENCLAW_INSTALL_AFTER_HELP: &str = "\
+ 303: pub(super) const OPENCLAW_UNINSTALL_AFTER_HELP: &str = "\
+ 309: pub(super) const OPENCLAW_PRINT_AFTER_HELP: &str = "\
+ 316: pub(super) const OPENCLAW_DOCTOR_AFTER_HELP: &str = "\
+ 326: pub(super) const HERMES_INSTALL_AFTER_HELP: &str = "\
+ 335: pub(super) const HERMES_UNINSTALL_AFTER_HELP: &str = "\
+ 340: pub(super) const HERMES_PRINT_AFTER_HELP: &str = "\
+ 347: pub(super) const HERMES_DOCTOR_AFTER_HELP: &str = "\
+
+===== src/cli/human/actions.rs (397 lines) =====
+  19: pub(in crate::cli) fn render_capture_once_human(output: &CaptureOnceOutput) -> String {
+  67: pub(in crate::cli) fn render_restore_human(output: &RestoreOutput) -> String {
+  81: pub(in crate::cli) fn render_export_human(output: &ExportOutput) -> String {
+  93: pub(in crate::cli) fn render_forget_human(report: &SnapshotDeletionReport) -> String {
+ 116: pub(in crate::cli) fn render_purge_human(report: &PurgeReport) -> String {
+ 147: pub(in crate::cli) fn render_storage_compact_human(report: &StorageCompactReport) -> String {
+ 180: pub(in crate::cli) fn render_image_optimization_human(report: &ImageOptimizationReport) -> String {
+ 236: pub(in crate::cli) fn render_settings_view_human(view: &SettingsView) -> String {
+ 256: pub(in crate::cli) fn render_settings_ignore_list_human(
+ 270: pub(in crate::cli) fn render_ocr_status_human(report: &OcrStatusReport) -> String {
+ 285: pub(in crate::cli) fn render_ocr_run_human(report: &OcrRunReport) -> String {
+ 300: pub(in crate::cli) fn render_service_status_human(report: &ServiceStatusReport) -> String {
+ 362: pub(in crate::cli) fn render_doctor_human(report: &DoctorReport) -> String {
+
+===== src/cli/human/detail.rs (223 lines) =====
+  11: pub(in crate::cli) fn render_get_human(envelope: &GetEnvelope) -> String {
+  90: pub(in crate::cli) fn push_snapshot_items(
+ 144: pub(in crate::cli) fn push_recent_events(out: &mut String, snapshot: &SnapshotDetails) {
+ 176: pub(in crate::cli) fn push_ignored_bundle_table(out: &mut String, bundle_ids: &[String]) {
+ 189: pub(in crate::cli) fn push_provider_row(out: &mut String, provider: &ServiceProviderStatus) {
+ 206: pub(in crate::cli) fn push_optional_text(
+ 221: pub(in crate::cli) fn push_kpi(out: &mut String, label: &str, value: String) {
+
+===== src/cli/human/fmt.rs (244 lines) =====
+   4: pub(in crate::cli) fn render_filter_summary(value: &serde_json::Value) -> String {
+  26: pub(in crate::cli) fn render_confidence(confidence: &RecallMatchConfidence) -> &'static str {
+  34: pub(in crate::cli) fn render_bool_status(value: bool) -> String {
+  42: pub(in crate::cli) fn render_score_cell(theme: &HumanTheme, score: Option<f64>) -> String {
+  48: pub(in crate::cli) fn human_score(score: Option<f64>) -> Option<f64> {
+  56: pub(in crate::cli) fn first_non_empty<'a>(values: &[&'a str]) -> &'a str {
+  64: pub(in crate::cli) fn separator(width: usize, heavy: bool) -> String {
+  72: pub(in crate::cli) fn bar(value: usize, max: usize, width: usize) -> String {
+  81: pub(in crate::cli) fn format_count(value: usize) -> String {
+  91: pub(in crate::cli) fn format_bytes(value: u64) -> String {
+  92: const KB: f64 = 1024.0;
+ 105: pub(in crate::cli) fn format_percent(value: f64) -> String {
+ 109: pub(in crate::cli) fn format_timestamp_short(timestamp: &str) -> String {
+ 120: pub(in crate::cli) fn truncate_multiline(text: &str, limit: usize) -> String {
+ 124: pub(in crate::cli) fn truncate_cell(text: &str, width: usize) -> String {
+ 128: fn truncate_cell_mapped(text: &str, width: usize, map_char: impl Fn(char) -> char) -> String {
+ 153: mod tests {
+ 157: fn truncate_cell_preserves_existing_width_behavior() {
+ 166: fn truncate_multiline_replaces_newlines_without_full_input_copy() {
+ 176: mod profile_tests {
+ 182: fn profile_large_human_cell_truncation() {
+ 200: fn median_duration(
+ 216: fn large_human_cells(count: usize, chars_per_cell: usize) -> Vec<String> {
+ 231: fn truncate_cell_before_for_profile(text: &str, width: usize) -> String {
+
+===== src/cli/human/list.rs (267 lines) =====
+  10: pub(in crate::cli) fn render_list_human(envelope: &ListEnvelope) -> String {
+  35: pub(in crate::cli) fn render_recall_human(envelope: &RecallEnvelope) -> String {
+ 124: pub(in crate::cli) fn render_unknown_list_human(command: &str, envelope: &ListEnvelope) -> String {
+ 131: pub(in crate::cli) fn header(theme: &HumanTheme, title: &str) -> String {
+ 139: pub(in crate::cli) fn push_meta(out: &mut String, envelope: &ListEnvelope) {
+ 161: pub(in crate::cli) fn push_snapshot_table(out: &mut String, theme: &HumanTheme, rows: &[ListRow]) {
+ 230: pub(in crate::cli) fn push_timeline_table(out: &mut String, theme: &HumanTheme, rows: &[ListRow]) {
+
+===== src/cli/human/stats.rs (245 lines) =====
+  11: pub(in crate::cli) fn render_stats_human(envelope: &StatsEnvelope) -> String {
+  94: pub(in crate::cli) fn push_content_mix(out: &mut String, theme: &HumanTheme, stats: &StatsReport) {
+ 128: pub(in crate::cli) fn push_top_apps(out: &mut String, theme: &HumanTheme, stats: &StatsReport) {
+ 157: pub(in crate::cli) fn push_activity(out: &mut String, stats: &StatsReport) {
+ 190: pub(in crate::cli) fn push_leaderboards(out: &mut String, theme: &HumanTheme, stats: &StatsReport) {
+ 207: pub(in crate::cli) fn push_leaderboard(
+ 224: pub(in crate::cli) fn push_leaderboard_row(
+
+===== src/cli/human/theme.rs (104 lines) =====
+   5: pub(in crate::cli) const WIDTH: usize = 96;
+   6: pub(in crate::cli) const BAR_WIDTH: usize = 18;
+   9: pub(in crate::cli) struct HumanTheme {
+  13: impl HumanTheme {
+  14: pub(in crate::cli) fn detect() -> Self {
+  22: pub(in crate::cli) fn title(self, text: &str) -> String {
+  30: pub(in crate::cli) fn section(self, text: &str) -> String {
+  38: pub(in crate::cli) fn id(self, text: impl ToString) -> String {
+  47: pub(in crate::cli) fn score(self, value: f64, text: &str) -> String {
+  60: pub(in crate::cli) fn warning(self, text: &str) -> String {
+  68: pub(in crate::cli) fn bar(self, value: usize, max: usize, width: usize) -> String {
+  79: enum Style {
+  88: impl Style {
+  89: const fn code(self) -> &'static str {
+ 101: fn ansi(text: &str, styles: &[Style]) -> String {
+
+===== src/cli/human.rs (13 lines) =====
+   1: mod actions;
+   2: mod detail;
+   3: mod fmt;
+   4: mod list;
+   5: mod stats;
+   6: mod theme;
+
+===== src/cli/output/json.rs (63 lines) =====
+   9: pub(in crate::cli) fn print_json<T: Serialize>(value: &T) -> Result<()> {
+  15: pub(in crate::cli) fn print_json_line<T: Serialize>(value: &T) -> Result<()> {
+  21: pub(in crate::cli) fn write_json_pretty<T: Serialize>(
+  30: pub(in crate::cli) fn write_json_line<T: Serialize>(
+  39: pub(in crate::cli) fn print_jsonl_list(envelope: &ListEnvelope) -> Result<()> {
+
+===== src/cli/output/markdown.rs (259 lines) =====
+   6: pub(in crate::cli) fn render_list_markdown(envelope: &ListEnvelope) -> String {
+  81: pub(in crate::cli) fn render_get_markdown(envelope: &GetEnvelope) -> String {
+ 196: pub(in crate::cli) fn render_recall_markdown(envelope: &RecallEnvelope) -> String {
+
+===== src/cli/output/model.rs (392 lines) =====
+  12: pub(in crate::cli) const OUTPUT_SCHEMA_VERSION: u32 = 2;
+  15: pub(in crate::cli) struct CaptureOnceStoredOutput {
+  21: pub(in crate::cli) struct CaptureOnceSkippedOutput {
+  32: pub(in crate::cli) enum CaptureOnceOutput {
+  38: pub(in crate::cli) struct RestoreOutput {
+  46: pub(in crate::cli) struct ExportOutput {
+  56: pub(in crate::cli) struct SettingsView {
+  66: pub(in crate::cli) struct SettingsIgnoreListOutput {
+  71: pub(in crate::cli) struct ListEnvelope {
+  82: pub(in crate::cli) struct GetEnvelope {
+  91: pub(in crate::cli) struct StatsEnvelope {
+ 101: pub(in crate::cli) enum RecallMatchConfidence {
+ 107: impl RecallMatchConfidence {
+ 109: pub(in crate::cli) fn from_normalized_score(score: f64) -> Self {
+ 120: pub(in crate::cli) const fn as_str(&self) -> &'static str {
+ 130: pub(in crate::cli) struct RecallEnvelope {
+ 145: pub(in crate::cli) struct TextProjectionOutput {
+ 158: pub(in crate::cli) struct SnapshotListRow {
+ 181: pub(in crate::cli) struct TimelineListRow {
+ 200: pub(in crate::cli) enum ListRow {
+ 206: pub(in crate::cli) struct RecallOutputRow {
+ 229: impl TextProjectionOutput {
+ 231: pub(in crate::cli) fn from_projection(projection: &FlattenedTextProjection) -> Self {
+ 246: impl SnapshotListRow {
+ 248: pub(in crate::cli) fn from_hit(
+ 279: impl TimelineListRow {
+ 281: pub(in crate::cli) fn from_event(
+ 303: impl ListRow {
+ 305: pub(in crate::cli) fn from_hit(
+ 318: pub(in crate::cli) fn from_timeline_event(
+ 326: pub(in crate::cli) fn app_name(&self) -> Option<&str> {
+ 334: pub(in crate::cli) fn app_bundle_id(&self) -> Option<&str> {
+ 342: pub(in crate::cli) fn best_text(&self) -> &str {
+ 350: impl RecallOutputRow {
+ 352: pub(in crate::cli) fn from_hit(
+
+===== src/cli/output/row_text.rs (24 lines) =====
+   3: pub(in crate::cli) fn best_text_from_hit(hit: &SearchHit) -> String {
+  14: pub(in crate::cli) fn truncate_for_display(value: &str, limit: usize) -> String {
+
+===== src/cli/output/support.rs (90 lines) =====
+   9: pub(in crate::cli) fn render_filter_pairs(filters: &Value) -> String {
+  28: pub(in crate::cli) fn escape_markdown_cell(value: &str) -> String {
+  32: pub(in crate::cli) fn truncate_for_markdown(value: &str, limit: usize) -> String {
+  36: pub(in crate::cli) fn push_blank_line(out: &mut String) {
+  40: pub(in crate::cli) fn push_snapshot_leaderboard(
+  55: pub(in crate::cli) fn push_snapshot_leaderboard_entry(
+  80: pub(in crate::cli) fn format_utc_timestamp(timestamp: &str) -> String {
+
+===== src/cli/output/tests.rs (774 lines) =====
+  29: fn text_projection_output(
+  49: pub(in crate::cli) fn render_capture_once_text_reports_summary_lines() {
+  73: pub(in crate::cli) fn render_capture_once_text_skips_preview_for_filtered_content() {
+  89: pub(in crate::cli) fn render_list_text_includes_search_mode_match_score_urls_and_files() {
+ 135: pub(in crate::cli) fn render_get_text_lists_items_and_events() {
+ 181: pub(in crate::cli) fn render_doctor_text_lists_compile_options() {
+ 197: pub(in crate::cli) fn render_storage_compact_text_distinguishes_dry_run_from_completed_compaction()
+ 217: pub(in crate::cli) fn render_image_optimization_text_reports_compact_error_and_recommendation() {
+ 245: pub(in crate::cli) fn render_settings_view_text_lists_policy_and_ignored_bundle_ids() {
+ 275: pub(in crate::cli) fn render_settings_ignore_list_text_handles_empty_and_populated_lists() {
+ 294: pub(in crate::cli) fn render_timeline_list_text_reports_event_history() {
+ 330: pub(in crate::cli) fn markdown_and_toon_render_envelopes() {
+ 405: pub(in crate::cli) fn get_markdown_renders_summary_items_and_events() {
+ 453: pub(in crate::cli) fn recall_markdown_and_toon_render_best_match_and_alternatives() {
+ 539: pub(in crate::cli) fn timeline_toon_uses_scalar_projection_display_text_fallback() {
+ 581: pub(in crate::cli) fn profile_json_output_serialization() {
+ 599: pub(in crate::cli) fn profile_toon_output_rendering() {
+ 614: fn median_duration(runs: usize, mut f: impl FnMut()) -> Duration {
+ 625: fn large_list_envelope(row_count: usize) -> ListEnvelope {
+ 672: fn render_list_toon_join_encoded_for_profile(envelope: &ListEnvelope) -> String {
+ 715: fn encode_toon_scalar_for_profile(value: &Value) -> String {
+ 727: fn encode_toon_string_for_profile(text: &str) -> String {
+ 750: fn temp_storage_path(name: &str) -> PathBuf {
+ 763: fn cleanup_storage_path(path: &std::path::Path) {
+
+===== src/cli/output/text.rs (476 lines) =====
+  15: pub(in crate::cli) fn render_capture_once_text(output: &CaptureOnceOutput) -> String {
+  52: pub(in crate::cli) fn render_list_text(envelope: &ListEnvelope) -> String {
+  77: fn push_snapshot_row_text(out: &mut String, row: &SnapshotListRow) {
+ 118: fn push_timeline_row_text(out: &mut String, row: &TimelineListRow) {
+ 151: pub(in crate::cli) fn render_stats_text(envelope: &StatsEnvelope) -> String {
+ 256: pub(in crate::cli) fn render_get_text(envelope: &GetEnvelope) -> String {
+ 260: pub(in crate::cli) fn render_snapshot_text(snapshot: &SnapshotDetails) -> String {
+ 359: pub(in crate::cli) fn render_doctor_text(report: &DoctorReport) -> String {
+ 386: pub(in crate::cli) fn render_storage_compact_text(report: &StorageCompactReport) -> String {
+ 408: pub(in crate::cli) fn render_image_optimization_text(report: &ImageOptimizationReport) -> String {
+ 445: pub(in crate::cli) fn render_settings_view_text(view: &SettingsView) -> String {
+ 464: pub(in crate::cli) fn render_settings_ignore_list_text(
+
+===== src/cli/output/toon.rs (570 lines) =====
+   9: pub(in crate::cli) struct ToonSearchRowProjection {
+  26: impl ToonSearchRowProjection {
+  27: pub(in crate::cli) fn from_snapshot_row(row: &SnapshotListRow) -> Self {
+  50: pub(in crate::cli) fn from_recall_row(row: &RecallOutputRow) -> Self {
+  74: fn from_parts(parts: ToonSearchRowParts) -> Self {
+  93: fn schema_row() -> Self {
+ 112: pub(in crate::cli) fn field_names() -> Vec<&'static str> {
+ 116: pub(in crate::cli) fn fields_and_values(&self) -> Vec<(&'static str, Value)> {
+ 147: struct ToonSearchRowParts {
+ 164: pub(in crate::cli) struct ToonTimelineRowProjection {
+ 177: impl ToonTimelineRowProjection {
+ 178: pub(in crate::cli) fn from_row(row: &TimelineListRow) -> Self {
+ 197: fn schema_row() -> Self {
+ 212: pub(in crate::cli) fn field_names() -> Vec<&'static str> {
+ 216: pub(in crate::cli) fn fields_and_values(&self) -> Vec<(&'static str, Value)> {
+ 240: fn toon_field_names(fields_and_values: &[(&'static str, Value)]) -> Vec<&'static str> {
+ 247: fn toon_field_values(fields_and_values: Vec<(&'static str, Value)>) -> Vec<Value> {
+ 254: fn push_toon_field_values_tab_separated(
+ 262: pub(in crate::cli) fn first_non_empty_text(candidates: &[&str]) -> String {
+ 270: pub(in crate::cli) fn render_list_toon(envelope: &ListEnvelope) -> String {
+ 329: pub(in crate::cli) fn render_recall_toon(envelope: &RecallEnvelope) -> String {
+ 388: pub(in crate::cli) fn render_recall_rows_toon(
+ 407: pub(in crate::cli) fn render_toon_entry(out: &mut String, key: &str, value: &Value, indent: usize) {
+ 423: pub(in crate::cli) fn render_toon_object_entries(
+ 433: pub(in crate::cli) fn render_toon_array(
+ 466: pub(in crate::cli) fn render_toon_list_item(out: &mut String, value: &Value, indent: usize) {
+ 482: pub(in crate::cli) fn render_toon_object_list_item(
+ 515: pub(in crate::cli) fn push_toon_scalar(out: &mut String, value: &Value) {
+ 531: pub(in crate::cli) fn push_toon_string(out: &mut String, text: &str) {
+ 559: pub(in crate::cli) fn push_toon_scalars_tab_separated(out: &mut String, values: &[Value]) {
+ 568: fn estimated_list_toon_capacity(envelope: &ListEnvelope) -> usize {
+
+===== src/cli/output.rs (16 lines) =====
+   1: mod json;
+   2: mod markdown;
+   3: mod model;
+   4: mod row_text;
+   5: mod support;
+   6: mod text;
+   7: mod toon;
+  16: mod tests;
+
+===== src/cli/parsing.rs (301 lines) =====
+   7: pub(super) struct DurationValue {
+  12: impl DurationValue {
+  14: pub(super) fn new(raw: String, seconds: u64) -> Self {
+  19: pub(super) fn raw(&self) -> &str {
+  24: pub(super) fn seconds(&self) -> u64 {
+  30: pub(super) enum RetentionValue {
+  35: impl RetentionValue {
+  37: pub(super) fn retention_seconds(&self) -> Option<u64> {
+  45: pub(super) fn parse_normalized_score(value: &str) -> Result<f64, LimitParseError> {
+  60: pub(super) struct LimitParseError(String);
+  62: impl std::fmt::Display for LimitParseError {
+  63: fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  68: impl std::error::Error for LimitParseError {}
+  70: pub(super) fn parse_bounded_limit(value: &str) -> Result<usize, LimitParseError> {
+  84: pub(super) fn parse_rfc3339_timestamp(value: &str) -> Result<String, LimitParseError> {
+  94: pub(super) fn parse_nonnegative_bytes(value: &str) -> Result<usize, LimitParseError> {
+ 108: pub(super) fn parse_item_index(value: &str) -> Result<usize, LimitParseError> {
+ 122: pub(super) fn parse_sha256_hash(value: &str) -> Result<String, LimitParseError> {
+ 132: pub(super) fn parse_bundle_id(value: &str) -> Result<String, LimitParseError> {
+ 141: pub(super) fn parse_preferred_app(value: &str) -> Result<String, LimitParseError> {
+ 150: pub(super) fn parse_representation_uti(value: &str) -> Result<String, LimitParseError> {
+ 159: pub(super) fn parse_search_mode(value: &str) -> Result<SearchMode, LimitParseError> {
+ 168: pub(super) fn parse_timeline_sort(value: &str) -> Result<TimelineSort, LimitParseError> {
+ 176: pub(super) fn parse_retrieval_kind(value: &str) -> Result<RetrievalKind, LimitParseError> {
+ 195: fn one_of_error(label: &str, value: &str, allowed: &str) -> LimitParseError {
+ 199: pub(super) fn parse_duration_value(value: &str) -> Result<DurationValue, LimitParseError> {
+ 238: pub(super) fn parse_retention_value(value: &str) -> Result<RetentionValue, LimitParseError> {
+ 247: mod tests {
+ 256: fn retention_value_returns_none_for_forever_and_seconds_for_duration() {
+ 266: fn cli_domain_parsers_return_database_enums() {
+ 276: fn sha256_hash_parser_accepts_hex_and_normalizes_case() {
+ 285: fn bundle_id_parser_trims_and_rejects_empty_values() {
+ 294: fn representation_uti_parser_trims_and_rejects_empty_values() {
+
+===== src/cli/presentation.rs (211 lines) =====
+  21: pub(in crate::cli) fn generated_at_now() -> Result<String> {
+  27: pub(in crate::cli) fn emit_json_or_text<T>(
+  43: pub(in crate::cli) fn emit_list_output(
+  69: pub(in crate::cli) fn emit_get_output(format: OutputFormat, envelope: &GetEnvelope) -> Result<()> {
+  93: pub(in crate::cli) fn require_get_output_format(format: OutputFormat) -> Result<OutputFormat> {
+ 103: pub(in crate::cli) fn emit_stats_output(
+ 120: pub(in crate::cli) fn emit_recall_output(
+ 141: pub(in crate::cli) fn emit_storage_compact_output(
+ 159: pub(in crate::cli) fn emit_image_optimization_output(
+ 177: pub(in crate::cli) fn emit_settings_view_output(
+ 195: pub(in crate::cli) fn emit_settings_ignore_list_output(
+
+===== src/cli/runtime.rs (67 lines) =====
+  17: pub fn run() -> std::result::Result<(), CliError> {
+  26: pub fn run_from<I, T>(args: I) -> std::result::Result<(), CliError>
+  37: pub fn run_cli() -> ExitCode {
+  51: fn try_run_cli<I, T>(args: I) -> std::result::Result<CliExitCode, clap::Error>
+
+===== src/cli/schema.rs (1045 lines) =====
+  31: pub(super) enum AppPreferenceKey {
+  39: impl AppPreferenceKey {
+  40: pub(super) const fn as_str(self) -> &'static str {
+  51: fn parse_app_preference_key(value: &str) -> Result<AppPreferenceKey, String> {
+  70: pub(super) struct Cli {
+  80: pub(super) enum Command {
+ 125: pub(super) struct WatchArgs {
+ 141: pub(super) struct SetupArgs {}
+ 145: pub(super) struct ServiceArgs {
+ 151: pub(super) enum ServiceCommand {
+ 167: pub(super) struct ServiceProvidersArgs {
+ 174: pub(super) struct ServiceRevisionArgs {
+ 181: pub(super) struct ServiceStatusArgs {
+ 193: pub(super) struct AppArgs {
+ 199: pub(super) enum AppCommand {
+ 212: pub(super) struct AppSettingsArgs {
+ 218: pub(super) enum AppSettingsCommand {
+ 228: pub(super) struct AppSettingsShowArgs {
+ 234: pub(super) struct AppSettingsSetArgs {
+ 247: pub(super) struct AppSettingsClearArgs {
+ 257: pub(super) struct AppLaunchAtLoginArgs {
+ 263: pub(super) enum AppLaunchAtLoginCommand {
+ 273: pub(super) struct AppLaunchAtLoginShowArgs {
+ 279: pub(super) struct AppLaunchAtLoginSetArgs {
+ 288: pub(super) struct AppLaunchAtLoginClearArgs {
+ 294: pub(super) struct AppUpdateCheckArgs {
+ 300: pub(super) enum AppUpdateCheckCommand {
+ 310: pub(super) struct AppUpdateCheckShowArgs {
+ 316: pub(super) struct AppUpdateCheckRunArgs {
+ 322: pub(super) struct AppUpdateCheckClearArgs {
+ 328: pub(super) struct AppQuitArgs {
+ 335: pub(super) struct CaptureOnceArgs {
+ 347: pub(super) struct SearchArgs {
+ 370: impl SearchArgs {
+ 371: pub(super) fn search_mode(&self) -> SearchMode {
+ 377: pub(super) struct RetrievalFilterArgs {
+ 431: impl RetrievalFilterArgs {
+ 432: pub(super) fn normalized(
+ 480: pub(super) struct RecentArgs {
+ 498: pub(super) struct TimelineArgs {
+ 518: impl TimelineArgs {
+ 519: pub(super) fn timeline_sort(&self) -> TimelineSort {
+ 526: pub(super) struct StatsArgs {
+ 536: pub(super) struct RecallArgs {
+ 575: impl RecallArgs {
+ 576: pub(super) fn search_mode(&self) -> SearchMode {
+ 583: pub(super) struct GetArgs {
+ 600: pub(super) struct ExportArgs {
+ 629: pub(super) struct RestoreArgs {
+ 639: pub(super) struct ForgetArgs {
+ 649: pub(super) struct PurgeArgs {
+ 664: pub(super) struct StorageArgs {
+ 670: pub(super) enum StorageCommand {
+ 680: pub(super) struct StorageCompactArgs {
+ 690: pub(super) struct StorageImageCandidatesArgs {
+ 700: pub(super) struct StorageOptimizeImagesArgs {
+ 723: pub(super) struct OcrArgs {
+ 729: pub(super) enum OcrCommand {
+ 743: pub(super) struct OcrStatusArgs {
+ 749: pub(super) struct OcrCandidatesArgs {
+ 763: pub(super) struct OcrGetArgs {
+ 773: pub(super) struct OcrClearArgs {
+ 783: pub(super) struct OcrRunArgs {
+ 802: pub(super) struct SettingsArgs {
+ 808: pub(super) enum SettingsCommand {
+ 826: pub(super) struct SettingsShowArgs {
+ 832: pub(super) struct SettingsPauseArgs {
+ 841: pub(super) struct SettingsApiKeyFilterArgs {
+ 850: pub(super) struct SettingsOcrArgs {
+ 859: pub(super) struct SettingsRetentionArgs {
+ 869: pub(super) struct SettingsResetArgs {
+ 875: pub(super) struct SettingsIgnoreArgs {
+ 881: pub(super) enum SettingsIgnoreCommand {
+ 891: pub(super) struct SettingsIgnoreBundleArgs {
+ 901: pub(super) struct SettingsIgnoreListArgs {
+ 908: pub(super) struct DoctorArgs {
+ 919: pub(super) struct AgentsArgs {
+ 925: pub(super) enum AgentsCommand {
+ 936: pub(super) struct AgentsContextArgs {
+ 942: pub(super) struct OpenClawArgs {
+ 948: pub(super) enum OpenClawCommand {
+ 962: pub(super) struct OpenClawInstallSkillArgs {
+ 978: pub(super) struct OpenClawUninstallSkillArgs {
+ 990: pub(super) struct OpenClawDoctorArgs {
+1001: pub(super) struct HermesArgs {
+1007: pub(super) enum HermesCommand {
+1021: pub(super) struct HermesInstallSkillArgs {
+1033: pub(super) struct HermesUninstallSkillArgs {
+1041: pub(super) struct HermesDoctorArgs {
+
+===== src/cli/service/context.rs (111 lines) =====
+  16: pub(super) fn ensure_supported() -> Result<()> {
+  24: pub(super) fn build_context(db_path: &Path) -> Result<ServiceContext> {
+  56: pub(super) fn select_provider(context: &ServiceContext) -> ProviderSelection {
+  94: fn brew_services_can_manage_clipmem(brew: &Path) -> bool {
+ 109: pub(super) fn conflict_message() -> String {
+
+===== src/cli/service/launchctl.rs (252 lines) =====
+  10: pub(super) fn write_direct_plist(context: &ServiceContext) -> Result<()> {
+  35: pub(super) fn run_command_checked(
+  54: pub(super) fn launchctl_bootout(label: &str) -> Result<()> {
+  60: pub(super) fn launchctl_bootstrap(plist_path: &Path) -> Result<()> {
+  73: pub(super) fn launchctl_enable(label: &str) -> Result<()> {
+  82: pub(super) fn launchctl_disable(label: &str) -> Result<()> {
+  88: pub(super) fn launchctl_kickstart(label: &str) -> Result<()> {
+  97: fn run_launchctl_idempotent<const N: usize>(args: [&str; N], command: &str) -> Result<()> {
+ 109: fn launchctl_reports_absent_service(output: &std::process::Output) -> bool {
+ 126: pub(super) fn uid() -> Result<String> {
+ 141: pub(super) fn ensure_parent_dir(path: &Path) -> Result<()> {
+ 150: pub(super) fn touch_log_file(path: &Path) -> Result<()> {
+ 161: pub(super) fn set_mode_700(path: &Path) -> Result<()> {
+ 171: pub(super) fn set_mode_700(_path: &Path) -> Result<()> {
+ 176: pub(super) fn set_mode_600(path: &Path) -> Result<()> {
+ 186: pub(super) fn set_mode_600(_path: &Path) -> Result<()> {
+ 190: pub(super) fn xml_escape(value: &str) -> String {
+ 199: pub(super) fn brew_services_available(brew_path: &Path) -> bool {
+ 207: pub(super) fn trusted_binary_path() -> Result<PathBuf> {
+ 215: pub(super) fn find_executable(name: &str) -> Option<PathBuf> {
+ 223: pub(super) fn homebrew_prefix_for_binary(path: &Path) -> Option<PathBuf> {
+ 248: pub(super) fn home_dir() -> Result<PathBuf> {
+
+===== src/cli/service/manage.rs (256 lines) =====
+  21: pub(crate) fn setup(db_path: &Path) -> Result<SetupReport> {
+  37: pub(crate) fn start(db_path: &Path) -> Result<ServiceActionReport> {
+  49: pub(crate) fn stop(db_path: &Path) -> Result<ServiceActionReport> {
+  67: pub(crate) fn uninstall(db_path: &Path) -> Result<ServiceActionReport> {
+  85: fn ensure_no_conflict(status: &ServiceStatusReport) -> Result<()> {
+  92: fn start_with_provider(
+ 102: fn start_homebrew_provider(
+ 136: fn brew_services_formula_unavailable(stderr: &str) -> bool {
+ 142: fn stop_homebrew_provider(context: &ServiceContext) -> Result<ServiceActionReport> {
+ 163: fn uninstall_homebrew_provider(context: &ServiceContext) -> Result<ServiceActionReport> {
+ 172: fn start_direct_provider(
+ 195: fn stop_direct_provider(context: &ServiceContext) -> Result<ServiceActionReport> {
+ 208: fn uninstall_direct_provider(context: &ServiceContext) -> Result<ServiceActionReport> {
+ 236: fn seed_capture(db_path: &Path) -> Result<SeedCaptureOutcome> {
+ 252: pub(super) fn bump_service_revision(db_path: &Path) {
+
+===== src/cli/service/model.rs (130 lines) =====
+   7: pub(in crate::cli) const DIRECT_LABEL: &str = "io.openclaw.clipmem.watch";
+   8: pub(in crate::cli) const HOMEBREW_LABEL: &str = "homebrew.mxcl.clipmem";
+   9: pub(in crate::cli) const DEFAULT_INTERVAL_MS: u64 = 50;
+  10: pub(in crate::cli) const SERVICE_FRESHNESS_HOURS: u32 = 1;
+  11: pub(in crate::cli) const DIRECT_PLIST_TEMPLATE: &str = include_str!(concat!(
+  18: pub(in crate::cli) enum ServiceProvider {
+  23: impl ServiceProvider {
+  24: pub(in crate::cli) const fn as_str(self) -> &'static str {
+  34: pub(in crate::cli) enum ServiceState {
+  42: pub(in crate::cli) struct ServiceProviderStatus {
+  59: pub(in crate::cli) struct ServiceStatusReport {
+  85: pub(in crate::cli) struct ServiceActionReport {
+  95: pub(in crate::cli) struct SetupReport {
+ 101: pub(in crate::cli) enum SeedCaptureOutcome {
+ 108: pub(in crate::cli) struct ServiceContext {
+ 121: pub(in crate::cli) struct ProviderSelection {
+ 128: pub(in crate::cli) struct LaunchctlRow {
+
+===== src/cli/service/render.rs (163 lines) =====
+  11: pub(in crate::cli) fn render_setup_text(report: &SetupReport) -> String {
+  32: pub(in crate::cli) fn render_service_action_text(report: &ServiceActionReport) -> String {
+  49: pub(in crate::cli) fn render_service_status_text(report: &ServiceStatusReport) -> String {
+ 118: fn render_provider_status(out: &mut String, status: &ServiceProviderStatus) {
+ 148: pub(super) fn render_retention_value(settings: &CaptureSettings) -> String {
+ 154: const fn render_seed_capture_outcome(outcome: SeedCaptureOutcome) -> &'static str {
+
+===== src/cli/service/status.rs (655 lines) =====
+  13: pub(crate) fn status_report(db_path: &Path) -> Result<ServiceStatusReport> {
+  65: struct ProviderProbeSpec {
+  73: impl ProviderProbeSpec {
+  74: fn launchagent(context: &ServiceContext) -> Self {
+  84: fn homebrew(context: &ServiceContext) -> Self {
+ 101: struct ProviderProbeResult {
+ 106: fn probe_provider_status(spec: ProviderProbeSpec) -> ProviderProbeResult {
+ 137: struct ServiceDatabaseStatus {
+ 151: impl ServiceDatabaseStatus {
+ 152: fn load(db_path: &Path) -> Self {
+ 208: fn is_stale_without_running_service(
+ 219: struct ServiceStatusNotesInput<'a> {
+ 229: fn service_status_notes(input: ServiceStatusNotesInput<'_>) -> Vec<String> {
+ 262: struct ServiceProbe<T> {
+ 267: impl<T> ServiceProbe<T> {
+ 268: fn ok(value: T) -> Self {
+ 275: fn warning(value: T, warning: impl Into<String>) -> Self {
+ 283: fn launchctl_row_probe(label: &str) -> ServiceProbe<Option<LaunchctlRow>> {
+ 340: fn provider_status_probe(input: ProviderStatusInput) -> ServiceProbe<ServiceProviderStatus> {
+ 395: pub(super) fn configured_binary_path_from_plist(plist_path: &Path) -> Option<String> {
+ 399: fn configured_binary_path_from_plist_probe(plist_path: &Path) -> ServiceProbe<Option<String>> {
+ 457: pub(super) fn configured_binary_path_from_plist_xml(plist_path: &Path) -> Option<String> {
+ 461: fn configured_binary_path_from_plist_xml_probe(plist_path: &Path) -> ServiceProbe<Option<String>> {
+ 546: fn process_command_probe(pid: i64) -> ServiceProbe<Option<String>> {
+ 577: struct ProviderStatusInput {
+ 588: fn decode_plist_xml_text(value: &str) -> String {
+ 597: pub(super) fn command_binary_path(command: &str) -> Option<String> {
+ 615: pub(super) fn watcher_binary_mismatch_note<'a>(
+ 647: fn paths_equivalent(left: &Path, right: &Path) -> bool {
+
+===== src/cli/service/tests.rs (221 lines) =====
+  14: fn homebrew_prefix_matches_opt_homebrew_wrapper_path() {
+  22: fn homebrew_prefix_matches_usr_local_wrapper_path() {
+  30: fn homebrew_prefix_matches_opt_homebrew_cellar_path() {
+  38: fn homebrew_prefix_matches_usr_local_cellar_path() {
+  46: fn homebrew_prefix_rejects_non_homebrew_paths() {
+  54: fn service_revision_recording_is_best_effort_for_missing_archives() {
+  67: fn service_revision_recording_updates_existing_archives() {
+  90: fn direct_launchagent_plist_uses_fast_default_interval() {
+ 121: fn command_binary_path_reads_first_program_argument() {
+ 133: fn launchagent_plist_reports_configured_binary_path() {
+ 165: fn launchagent_plist_xml_fallback_reports_configured_binary_path() {
+ 196: fn watcher_binary_mismatch_reports_configured_path() {
+
+===== src/cli/service.rs (16 lines) =====
+   1: mod context;
+   2: mod launchctl;
+   3: mod manage;
+   4: mod model;
+   5: mod render;
+   6: mod status;
+  16: mod tests;
+
+===== src/cli/tests.rs (1025 lines) =====
+  18: fn watch_command_parses_global_db_and_runtime_flags() {
+  42: fn service_providers_parses_json_output() {
+  57: fn service_revision_parses_json_output() {
+  72: fn agents_openclaw_commands_parse_install_and_doctor_flags() {
+ 123: fn agents_context_parses_json_output() {
+ 138: fn agents_context_output_alias_conflicts_fail_during_validation() {
+ 151: fn app_settings_commands_parse_key_and_output() {
+ 180: fn app_state_commands_parse_output() {
+ 231: fn agents_hermes_commands_parse_install_doctor_print_and_uninstall() {
+ 301: fn search_command_parses_explicit_mode() {
+ 315: fn list_commands_parse_output_format_and_cursor() {
+ 330: fn timeline_command_parses_filters_and_sort() {
+ 365: fn timeline_command_defaults_to_desc_sort() {
+ 377: fn recall_command_parses_optional_query_and_flags() {
+ 414: fn recall_command_defaults_to_markdown_output() {
+ 426: fn json_alias_resolves_to_json_output() {
+ 438: fn json_alias_rejects_non_json_format() {
+ 448: fn settings_mutation_output_alias_conflicts_fail_during_validation() {
+ 463: fn timeline_command_rejects_inverted_time_range() {
+ 480: fn get_command_parses_shared_filters() {
+ 522: fn export_command_parses_shared_filters() {
+ 562: fn shared_filters_reject_inverted_byte_window() {
+ 580: fn shared_filters_reject_byte_values_above_sqlite_range() {
+ 594: fn shared_filters_reject_zero_hours() {
+ 604: fn shared_filters_reject_empty_app_and_bundle_id_values() {
+ 617: fn shared_filters_normalize_hours_away_when_since_is_present() {
+ 639: fn search_command_rejects_zero_limit() {
+ 646: fn export_command_parses_required_arguments() {
+ 673: fn restore_forget_and_purge_commands_parse_expected_arguments() {
+ 698: fn storage_commands_parse_expected_arguments() {
+ 779: fn storage_optimize_images_progress_rejects_output_format_flags() {
+ 797: fn settings_commands_parse_policy_variants() {
+ 876: fn ocr_commands_parse_status_and_run_options() {
+ 978: fn duration_parser_accepts_single_unit_values_and_rejects_invalid_ones() {
+1011: fn get_command_rejects_zero_event_limit() {
+1018: fn command_error_classifier_marks_platform_failures() {
+
+===== src/cli/validate.rs (213 lines) =====
+  10: fn validate_value<T>(
+  16: pub(super) fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
+ 184: fn validate_optimize_images_progress(
+ 201: pub(super) fn validate_json_human_flags(
+
+===== src/cli/value_validation.rs (69 lines) =====
+   6: pub(super) fn validate_time_window(
+  32: pub(super) fn validate_byte_window(
+  46: pub(super) fn validate_positive_hours(hours: Option<u32>) -> Result<(), CliValueError> {
+  57: pub(super) fn normalize_nonempty_filter_value(
+
+===== src/cli.rs (22 lines) =====
+   1: mod commands;
+   2: mod db_path;
+   3: mod display;
+   4: mod errors;
+   5: mod exit;
+   6: mod formats;
+   7: mod help;
+   8: mod human;
+   9: mod output;
+  10: mod parsing;
+  11: mod presentation;
+  12: mod runtime;
+  13: mod schema;
+  14: mod service;
+  15: mod validate;
+  16: mod value_validation;
+  22: mod tests;
+
+===== src/db/core.rs (260 lines) =====
+  14: impl Database {
+  24: pub fn open_or_init(path: &Path) -> Result<Self> {
+  58: pub fn open_existing(path: &Path) -> Result<Self> {
+  78: pub(crate) fn ensure_supported_schema_shape(&self) -> Result<()> {
+  93: pub(crate) fn path(&self) -> &Path {
+  97: pub(crate) fn compact_storage(&mut self, dry_run: bool) -> Result<StorageCompactReport> {
+ 141: pub(crate) fn open_in_memory() -> Result<Self> {
+ 151: impl StorageFileSizes {
+ 153: pub(crate) const fn total_bytes(&self) -> u64 {
+ 158: pub(in crate::db) fn storage_file_sizes(path: &Path) -> Result<StorageFileSizes> {
+ 166: pub(in crate::db) fn sidecar_path(path: &Path, suffix: &str) -> PathBuf {
+ 170: pub(in crate::db) fn harden_existing_sqlite_sidecar_permissions(path: &Path) -> Result<()> {
+ 185: pub(in crate::db) fn metadata_len(path: &Path) -> Result<u64> {
+ 193: pub(in crate::db) fn pragma_usize(conn: &Connection, pragma: &str) -> Result<usize> {
+ 199: pub(in crate::db) fn run_wal_checkpoint(
+ 214: pub(in crate::db) fn clamp_result_limit(limit: usize) -> usize {
+ 218: pub(in crate::db) fn open_connection(path: &Path, flags: OpenFlags) -> Result<Connection> {
+ 224: pub(in crate::db) fn prepare_connection(conn: &mut Connection) -> Result<()> {
+ 231: pub(in crate::db) fn harden_path_permissions(path: &Path, mode: u32) -> Result<()> {
+ 241: pub(in crate::db) fn harden_path_permissions(_path: &Path, _mode: u32) -> Result<()> {
+ 245: pub(in crate::db) fn configure_connection(conn: &Connection) -> Result<()> {
+ 255: pub(in crate::db) fn configure_pragma(conn: &Connection, pragma: &str, value: &str) -> Result<()> {
+
+===== src/db/impls.rs (831 lines) =====
+  11: impl ArchiveChangeKind {
+  13: pub(in crate::db) const fn as_str(self) -> &'static str {
+  25: pub(in crate::db) const fn revision_column(self) -> &'static str {
+  37: impl ArchiveRevision {
+  39: pub fn revision(&self) -> u64 {
+  44: pub fn archive_content_revision(&self) -> u64 {
+  49: pub fn settings_revision(&self) -> u64 {
+  54: pub fn ocr_revision(&self) -> u64 {
+  59: pub fn storage_revision(&self) -> u64 {
+  64: pub fn service_revision(&self) -> u64 {
+  69: pub fn app_preferences_revision(&self) -> u64 {
+  74: pub fn last_change_kind(&self) -> &str {
+  79: pub fn updated_at(&self) -> &str {
+  84: impl SearchResults {
+  86: pub(crate) fn new(mode_used: SearchMode, hits: Vec<SearchHit>, has_more: bool) -> Self {
+  95: pub fn mode_used(&self) -> SearchMode {
+ 100: pub fn hits(&self) -> &[SearchHit] {
+ 105: pub fn has_more(&self) -> bool {
+ 110: impl RecentResults {
+ 112: pub(crate) fn new(hits: Vec<SearchHit>, has_more: bool) -> Self {
+ 117: pub fn hits(&self) -> &[SearchHit] {
+ 122: pub fn has_more(&self) -> bool {
+ 127: pub fn into_hits(self) -> Vec<SearchHit> {
+ 132: impl TimelineResults {
+ 134: pub(crate) fn new(events: Vec<crate::model::TimelineEvent>, has_more: bool) -> Self {
+ 139: pub fn events(&self) -> &[crate::model::TimelineEvent] {
+ 144: pub fn has_more(&self) -> bool {
+ 149: pub fn into_events(self) -> Vec<crate::model::TimelineEvent> {
+ 154: impl<T> Page<T> {
+ 156: pub(crate) fn new(items: Vec<T>, has_more: bool) -> Self {
+ 161: pub(crate) fn items(&self) -> &[T] {
+ 166: pub(crate) fn into_items(self) -> Vec<T> {
+ 171: pub(crate) fn has_more(&self) -> bool {
+ 176: impl RecentCursorState {
+ 178: pub(crate) fn new(last_seen_at: String, snapshot_id: i64) -> Self {
+ 186: pub(crate) fn last_seen_at(&self) -> &str {
+ 191: pub(crate) fn snapshot_id(&self) -> i64 {
+ 196: impl SearchCursorState {
+ 198: pub(crate) fn new(
+ 213: pub(crate) fn mode_used(&self) -> SearchMode {
+ 218: pub(crate) fn score(&self) -> Option<f64> {
+ 223: pub(crate) fn last_seen_at(&self) -> &str {
+ 228: pub(crate) fn snapshot_id(&self) -> i64 {
+ 233: impl SearchMode {
+ 235: pub const fn as_str(self) -> &'static str {
+ 244: impl TimelineSort {
+ 246: pub const fn as_str(self) -> &'static str {
+ 254: impl RetrievalKind {
+ 256: pub const fn as_str(self) -> &'static str {
+ 271: impl RetrievalFilters {
+ 273: pub fn with_since(mut self, since: Option<String>) -> Self {
+ 279: pub fn with_until(mut self, until: Option<String>) -> Self {
+ 285: pub fn with_hours(mut self, hours: Option<u32>) -> Self {
+ 291: pub fn with_app(mut self, app: Option<String>) -> Self {
+ 297: pub fn with_bundle_id(mut self, bundle_id: Option<String>) -> Self {
+ 303: pub fn with_kind(mut self, kind: Option<RetrievalKind>) -> Self {
+ 309: pub fn requiring_text(mut self) -> Self {
+ 315: pub fn requiring_url(mut self) -> Self {
+ 321: pub fn requiring_file_url(mut self) -> Self {
+ 327: pub fn requiring_image(mut self) -> Self {
+ 333: pub fn requiring_pdf(mut self) -> Self {
+ 339: pub fn with_min_bytes(mut self, min_bytes: Option<usize>) -> Self {
+ 345: pub fn with_max_bytes(mut self, max_bytes: Option<usize>) -> Self {
+ 351: pub fn since(&self) -> Option<&str> {
+ 356: pub fn until(&self) -> Option<&str> {
+ 361: pub fn hours(&self) -> Option<u32> {
+ 366: pub fn app(&self) -> Option<&str> {
+ 371: pub fn bundle_id(&self) -> Option<&str> {
+ 376: pub fn kind(&self) -> Option<RetrievalKind> {
+ 381: pub fn has_text(&self) -> bool {
+ 386: pub fn has_url(&self) -> bool {
+ 391: pub fn has_file_url(&self) -> bool {
+ 396: pub fn has_image(&self) -> bool {
+ 401: pub fn has_pdf(&self) -> bool {
+ 406: pub fn min_bytes(&self) -> Option<usize> {
+ 411: pub fn max_bytes(&self) -> Option<usize> {
+ 416: impl CaptureSettings {
+ 418: pub(crate) fn new(
+ 433: pub(crate) fn paused(&self) -> bool {
+ 438: pub(crate) fn retention_seconds(&self) -> Option<u64> {
+ 443: pub(crate) fn api_key_filter_enabled(&self) -> bool {
+ 448: pub(crate) fn ocr_enabled(&self) -> bool {
+ 453: impl CapturePolicy {
+ 455: pub(crate) fn new(settings: CaptureSettings, ignored_bundle_ids: Vec<String>) -> Self {
+ 463: pub(crate) fn settings(&self) -> &CaptureSettings {
+ 468: pub(crate) fn ignored_bundle_ids(&self) -> &[String] {
+ 473: pub(crate) fn ignored_bundle_id_count(&self) -> usize {
+ 478: impl CaptureSkipReason {
+ 480: pub(crate) const fn as_str(self) -> &'static str {
+ 488: impl SnapshotDeletionReport {
+ 490: pub(crate) fn new(
+ 507: pub(crate) fn snapshot_id(&self) -> i64 {
+ 512: pub(crate) fn item_count(&self) -> usize {
+ 517: pub(crate) fn representation_count(&self) -> usize {
+ 522: pub(crate) fn capture_event_count(&self) -> usize {
+ 527: pub(crate) fn total_bytes(&self) -> usize {
+ 532: impl PurgeReport {
+ 534: pub(crate) fn new(
+ 555: pub(crate) fn older_than_seconds(&self) -> u64 {
+ 560: pub(crate) fn dry_run(&self) -> bool {
+ 565: pub(crate) fn snapshot_count(&self) -> usize {
+ 570: pub(crate) fn item_count(&self) -> usize {
+ 575: pub(crate) fn representation_count(&self) -> usize {
+ 580: pub(crate) fn capture_event_count(&self) -> usize {
+ 585: pub(crate) fn total_bytes(&self) -> usize {
+ 590: impl OcrCandidate {
+ 592: pub(crate) fn new(raw_sha256: String, blob_value: Vec<u8>, snapshot_count: usize) -> Self {
+ 601: pub(crate) fn raw_sha256(&self) -> &str {
+ 606: pub(crate) fn blob_value(&self) -> &[u8] {
+ 611: impl OcrStatusReport {
+ 613: pub(crate) fn new(
+ 630: pub(crate) fn pending(&self) -> usize {
+ 635: pub(crate) fn ready(&self) -> usize {
+ 640: pub(crate) fn failed(&self) -> usize {
+ 645: pub(crate) fn skipped(&self) -> usize {
+ 650: pub(crate) fn snapshots_with_ocr_text(&self) -> usize {
+ 655: impl OcrCandidateSummary {
+ 657: pub(crate) fn new(
+ 672: pub(crate) fn raw_sha256(&self) -> &str {
+ 677: pub(crate) fn byte_len(&self) -> usize {
+ 682: pub(crate) fn snapshot_count(&self) -> usize {
+ 687: impl OcrResultRecord {
+ 690: pub(crate) fn new(
+ 715: pub(crate) fn raw_sha256(&self) -> &str {
+ 720: pub(crate) fn status(&self) -> &str {
+ 725: pub(crate) fn snapshot_count(&self) -> usize {
+ 730: impl ImageOptimizationCandidateSummary {
+ 732: pub(crate) fn new(
+ 749: pub(crate) fn snapshot_id(&self) -> i64 {
+ 754: pub(crate) fn item_index(&self) -> i64 {
+ 759: pub(crate) fn uti(&self) -> &str {
+ 764: pub(crate) fn byte_len(&self) -> usize {
+ 769: impl OcrRunReport {
+ 771: pub(crate) fn new(
+ 788: pub(crate) fn processed(&self) -> usize {
+ 793: pub(crate) fn ready(&self) -> usize {
+ 798: pub(crate) fn failed(&self) -> usize {
+ 803: pub(crate) fn skipped(&self) -> usize {
+ 808: pub(crate) fn remaining_pending(&self) -> usize {
+ 813: impl TimelineCursorState {
+ 815: pub(crate) fn new(observed_at: String, event_id: i64) -> Self {
+ 823: pub(crate) fn observed_at(&self) -> &str {
+ 828: pub(crate) fn event_id(&self) -> i64 {
+
+===== src/db/read/browse.rs (235 lines) =====
+  20: impl Database {
+  28: pub fn recent(&self, limit: usize, filters: &RetrievalFilters) -> Result<RecentResults> {
+  41: pub fn recent_hits(&self, limit: usize, filters: &RetrievalFilters) -> Result<Vec<SearchHit>> {
+  52: pub fn timeline(
+  63: pub(crate) fn recent_page(
+ 119: pub(crate) fn timeline_page(
+ 163: pub(crate) fn snapshot_matches_filters(
+ 221: pub fn stats(&self, filters: &RetrievalFilters) -> Result<StatsReport> {
+
+===== src/db/read/filter_sql.rs (346 lines) =====
+   5: const EVENT_FILTER_PARAMETERS: &[&str] = &[":since", ":until", ":app_like", ":bundle_id"];
+   7: pub(in crate::db) fn has_temporal_event_filters(filters: &RetrievalFilters) -> bool {
+  11: pub(in crate::db) fn requires_matching_events(filters: &RetrievalFilters) -> bool {
+  15: pub(in crate::db) fn can_use_snapshot_stats_since_filter(filters: &RetrievalFilters) -> bool {
+  22: pub(in crate::db) fn can_use_snapshot_stats_for_stats(filters: &RetrievalFilters) -> bool {
+  26: pub(in crate::db) fn can_use_snapshot_event_cache(filters: &RetrievalFilters) -> bool {
+  31: pub(in crate::db) fn event_filter_clause(alias: &str) -> String {
+  42: pub(in crate::db) fn parameter_bindings_clause(parameters: &[&str]) -> String {
+  50: pub(in crate::db) fn event_filter_parameter_bindings_clause() -> String {
+  54: pub(in crate::db) fn snapshot_event_filter_clause(cache_alias: &str) -> String {
+  63: pub(in crate::db) fn base_event_filter_clause(
+  77: pub(in crate::db) fn snapshot_stats_since_filter_clause(
+  89: pub(in crate::db) fn event_filter_where_clause(
+ 112: struct RetrievalKindPredicate {
+ 117: enum SnapshotPredicate {
+ 122: struct PresencePredicate {
+ 127: enum PresencePredicateSql {
+ 132: const TEXT_RETRIEVAL_KINDS: &[&str] = &["plain_text", "html", "json", "xml", "rtf"];
+ 133: const TEXT_PRESENCE_KINDS: &[&str] = &[
+ 142: const OTHER_SNAPSHOT_KINDS: &[&str] = &["mixed", "empty"];
+ 144: const RETRIEVAL_KIND_PREDICATES: &[RetrievalKindPredicate] = &[
+ 183: const PRESENCE_PREDICATES: &[PresencePredicate] = &[
+ 206: pub(in crate::db) fn snapshot_filter_clause(
+ 223: fn retrieval_kind_filter_clause(snapshot_alias: &str, snapshot_id_expr: &str) -> String {
+ 239: fn presence_filter_clause(
+ 251: fn snapshot_predicate_sql(
+ 269: fn presence_predicate_sql(
+ 293: fn representation_kind_exists_clause(
+ 313: fn sql_string_list(values: &[&str]) -> String {
+ 321: pub(in crate::db) fn app_like_pattern(filters: &RetrievalFilters) -> Option<String> {
+ 327: pub(in crate::db) fn effective_since_param(filters: &RetrievalFilters) -> Result<Option<String>> {
+ 341: pub(in crate::db) fn escape_like_pattern(query: &str) -> String {
+
+===== src/db/read/queries.rs (769 lines) =====
+   7: pub(in crate::db) fn recent_query(
+  83: pub(in crate::db) fn timeline_query(sort: TimelineSort) -> String {
+ 136: pub(in crate::db) fn literal_query(
+ 307: pub(in crate::db) fn file_path_literal_query(
+ 432: pub(in crate::db) fn fts_query(
+ 581: pub(in crate::db) fn ocr_fts_query(
+ 639: pub(in crate::db) fn ocr_literal_query(
+ 748: pub(in crate::db) fn matching_events_cte(include_matching_events: bool) -> String {
+ 763: pub(in crate::db) fn matching_events_join(include_matching_events: bool) -> &'static str {
+
+===== src/db/read/query_analysis.rs (140 lines) =====
+   8: pub(in crate::db) struct QueryAnalysis {
+  16: impl QueryAnalysis {
+  17: pub(in crate::db) fn literal_search_lower(&self) -> Cow<'_, str> {
+  25: pub(in crate::db) fn is_simple_fts_query(analysis: &QueryAnalysis) -> bool {
+  35: pub(in crate::db) fn analyze_query(query: &str) -> QueryAnalysis {
+ 103: pub(in crate::db) fn is_invalid_fts_query(error: &SqlError) -> bool {
+ 113: pub(in crate::db) fn invalid_fts_message(message: &str) -> bool {
+ 121: pub(in crate::db) fn literal_fts_match_query(analysis: &QueryAnalysis) -> Option<String> {
+
+===== src/db/read/row_mapping.rs (77 lines) =====
+   9: pub(in crate::db) fn map_search_hit_row(
+  39: pub(in crate::db) fn map_scored_search_hit_row(row: &Row<'_>) -> rusqlite::Result<SearchHit> {
+  43: pub(in crate::db) fn map_timeline_event_row(row: &Row<'_>) -> rusqlite::Result<TimelineEvent> {
+  65: fn row_enum_named<T>(row: &Row<'_>, column: &str) -> rusqlite::Result<T>
+  74: fn row_usize_named(row: &Row<'_>, column: &str) -> rusqlite::Result<usize> {
+
+===== src/db/read/search.rs (609 lines) =====
+  22: pub(in crate::db) const FAST_FILE_PATH_LITERAL_QUERY: &str = r"
+  58: struct SearchExecutionParams<'a> {
+  77: impl<'a> SearchExecutionParams<'a> {
+  78: fn new(
+ 104: fn collect_search_results<I>(
+ 122: impl Database {
+ 123: pub(crate) fn latest_capture_observed_at(&self) -> Result<Option<String>> {
+ 133: pub(crate) fn has_capture_within_hours(&self, hours: u32) -> Result<bool> {
+ 154: pub fn search_auto(
+ 163: pub(crate) fn search_auto_page(
+ 214: pub fn search_fts(
+ 223: pub(crate) fn search_fts_page(
+ 288: pub fn search_literal(
+ 297: pub(crate) fn search_literal_page(
+ 390: fn merge_literal_hits_with_ocr(
+ 408: fn search_ocr_fts_hits(
+ 452: fn search_ocr_literal_hits(
+ 513: fn search_file_path_literal_page(
+ 574: fn search_unfiltered_file_path_literal_page(
+ 603: fn ocr_literal_fts_match_query(analysis: &QueryAnalysis) -> Option<String> {
+
+===== src/db/read/search_results.rs (75 lines) =====
+   6: pub(in crate::db) fn paginate_rows(mut rows: Vec<SearchHit>, limit: usize) -> Page<SearchHit> {
+  15: pub(in crate::db) fn merge_scored_search_results(
+  65: pub(in crate::db) fn paginate_timeline_rows(
+
+===== src/db/read/snapshot.rs (519 lines) =====
+  12: impl Database {
+  18: pub fn find_snapshot(
+  35: pub(crate) fn snapshot_projection(
+  64: fn snapshot_exists(&self, snapshot_id: i64) -> Result<bool> {
+  81: pub fn doctor(&self) -> Result<DoctorReport> {
+ 128: pub fn find_representation_bytes(
+ 156: fn load_snapshot_summary(&self, snapshot_id: i64) -> Result<Option<SnapshotDetails>> {
+ 247: fn load_recent_events(
+ 280: fn load_snapshot_items(&self, snapshot_id: i64) -> Result<Vec<ClipboardItem>> {
+ 361: mod profile_tests {
+ 376: fn profile_snapshot_item_hydration() -> Result<()> {
+ 395: fn median_duration(
+ 411: fn many_item_snapshot(item_count: usize, representations_per_item: usize) -> ClipboardSnapshot {
+ 438: fn representation_count(items: &[ClipboardItem]) -> usize {
+ 442: fn load_snapshot_items_n_plus_one_for_profile(
+
+===== src/db/read/stats.rs (676 lines) =====
+  14: pub(in crate::db) struct StatsQueryParams {
+  29: pub(in crate::db) fn stats_params(filters: &RetrievalFilters) -> Result<StatsQueryParams> {
+  47: pub(in crate::db) struct StatsOverview {
+  57: impl StatsOverview {
+  58: pub(in crate::db) fn average_bytes_per_snapshot(&self) -> f64 {
+  66: pub(in crate::db) fn average_captures_per_snapshot(&self) -> f64 {
+  74: pub(in crate::db) fn dedupe_ratio(&self) -> f64 {
+  83: fn weekday_name(index: usize) -> &'static str {
+  97: pub(in crate::db) enum StatsReadSource {
+ 102: impl StatsReadSource {
+ 103: fn label(self) -> &'static str {
+ 110: fn snapshots(self) -> StatsSnapshotSource {
+ 139: fn events(self) -> StatsEventSource {
+ 156: fn observation_range(self) -> StatsObservationRangeSource {
+ 171: fn snapshot_leaderboard_order_by(
+ 193: struct StatsSnapshotSource {
+ 207: struct StatsEventSource {
+ 215: struct StatsObservationRangeSource {
+ 222: enum StatsSnapshotLeaderboardOrdering {
+ 227: fn stats_overview_from_row(row: &Row<'_>) -> rusqlite::Result<StatsOverview> {
+ 239: fn stats_kind_breakdown_entry_from_row(row: &Row<'_>) -> rusqlite::Result<StatsKindBreakdownEntry> {
+ 247: fn stats_app_entry_from_row(row: &Row<'_>) -> rusqlite::Result<StatsAppEntry> {
+ 254: fn stats_snapshot_leaderboard_entry_from_row(
+ 270: impl Database {
+ 271: pub(in crate::db) fn reset_stats_temp_tables(&self) -> Result<()> {
+ 280: pub(in crate::db) fn materialize_stats_matching_events(
+ 319: pub(in crate::db) fn index_stats_matching_events(&self) -> Result<()> {
+ 330: pub(in crate::db) fn materialize_stats_matching_snapshots(
+ 342: fn materialize_stats_matching_snapshots_from_stats(
+ 380: fn materialize_stats_matching_snapshots_from_events(
+ 431: pub(in crate::db) fn index_stats_matching_snapshots(&self) -> Result<()> {
+ 442: pub(in crate::db) fn load_stats_report(&self, source: StatsReadSource) -> Result<StatsReport> {
+ 481: fn load_stats_overview(&self, source: StatsReadSource) -> Result<StatsOverview> {
+ 518: fn load_stats_kind_breakdown(
+ 546: fn load_stats_top_apps(&self, source: StatsReadSource) -> Result<Vec<StatsAppEntry>> {
+ 570: fn load_stats_hours(&self, source: StatsReadSource) -> Result<Vec<StatsTimeBucketEntry>> {
+ 574: fn load_stats_weekdays(&self, source: StatsReadSource) -> Result<Vec<StatsTimeBucketEntry>> {
+ 580: fn load_stats_time_distribution(
+ 632: fn load_stats_snapshot_leaderboard(
+
+===== src/db/read/tests.rs (305 lines) =====
+  12: pub(in crate::db) fn fake_snapshot(
+  31: pub(in crate::db) fn fake_file_snapshot(
+  50: pub(in crate::db) fn fake_image_snapshot(
+  65: pub(in crate::db) fn unfiltered() -> RetrievalFilters {
+  70: pub(in crate::db) fn like_special_characters_skip_fts_mode() {
+  83: pub(in crate::db) fn query_analysis_preserves_exact_phrase_without_forcing_literal() {
+  93: pub(in crate::db) fn simple_fts_query_skips_per_row_phrase_scoring() {
+ 109: pub(in crate::db) fn invalid_fts_messages_are_narrowly_classified() {
+ 117: pub(in crate::db) fn literal_fts_match_query_skips_like_escaped_inputs() {
+ 140: pub(in crate::db) fn file_urls_decode_to_paths() {
+ 156: pub(in crate::db) fn search_auto_uses_literal_matching_for_wildcard_queries() -> Result<()> {
+ 170: pub(in crate::db) fn file_path_search_matches_paths_with_spaces() -> Result<()> {
+ 195: pub(in crate::db) fn file_path_literal_fast_path_includes_ocr_results() -> Result<()> {
+ 228: pub(in crate::db) fn file_path_search_matches_percent_encoded_path_characters() -> Result<()> {
+ 249: pub(in crate::db) fn file_path_search_handles_case_insensitive_localhost_authority() -> Result<()> {
+ 270: pub(in crate::db) fn find_snapshot_hydrates_nested_items_and_recent_events() -> Result<()> {
+ 297: pub(in crate::db) fn empty_fts_results_fall_back_to_literal_matches() -> Result<()> {
+
+===== src/db/read/value_decoding.rs (148 lines) =====
+   3: const LIST_VALUE_SEPARATOR: char = '\u{1f}';
+   4: const MATCHED_FIELDS_SEPARATOR: char = '\u{1e}';
+   6: pub(in crate::db) fn split_aggregated_values(value: &str) -> Vec<String> {
+  18: pub(in crate::db) fn split_aggregated_file_paths(value: &str) -> Vec<String> {
+  30: pub(in crate::db) fn split_match_fields(value: &str) -> Vec<String> {
+  43: mod profile_tests {
+  50: fn profile_aggregated_file_path_normalization() {
+  75: fn median_duration(
+  91: fn large_file_url_list(path_count: usize) -> String {
+ 104: fn split_aggregated_file_paths_before_for_profile(value: &str) -> Vec<String> {
+ 111: fn normalize_file_path_before_for_profile(value: &str) -> String {
+ 115: fn decode_file_url_path_before_for_profile(value: &str) -> Option<String> {
+ 140: fn hex_value(byte: u8) -> Option<u8> {
+
+===== src/db/read.rs (13 lines) =====
+   1: mod browse;
+   2: mod filter_sql;
+   3: mod queries;
+   4: mod query_analysis;
+   5: mod row_mapping;
+   6: mod search;
+   7: mod search_results;
+   8: mod snapshot;
+   9: mod stats;
+  10: mod value_decoding;
+  13: mod tests;
+
+===== src/db/schema.rs (741 lines) =====
+  12: pub(super) const SCHEMA: &str = include_str!("schema.sql");
+  13: pub(super) const CURRENT_SCHEMA_VERSION: i64 = 18;
+  14: const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
+  16: pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {
+  55: struct MigrationStep {
+  61: const MIGRATION_STEPS: &[MigrationStep] = &[
+  99: fn validate_supported_user_version(conn: &Connection, user_version: i64) -> Result<()> {
+ 116: fn run_schema_migration_steps(conn: &Connection, source_version: i64) -> Result<()> {
+ 126: fn source_version_is_zero(version: i64) -> bool {
+ 130: fn source_version_through_1(version: i64) -> bool {
+ 134: fn source_version_through_2(version: i64) -> bool {
+ 138: fn source_version_through_3(version: i64) -> bool {
+ 142: fn source_version_through_5(version: i64) -> bool {
+ 146: fn source_version_needs_literal_cache_rebuild(version: i64) -> bool {
+ 150: fn source_version_needs_text_projection_repair(version: i64) -> bool {
+ 154: fn rebuild_snapshots_fts(conn: &Connection) -> Result<()> {
+ 163: pub(in crate::db) fn ensure_api_key_filter_setting_column(conn: &Connection) -> Result<()> {
+ 187: pub(in crate::db) fn ensure_ocr_enabled_setting_column(conn: &Connection) -> Result<()> {
+ 208: pub(in crate::db) fn ensure_image_compression_columns(conn: &Connection) -> Result<()> {
+ 253: pub(in crate::db) fn ensure_image_optimization_queue_index(conn: &Connection) -> Result<()> {
+ 272: pub(in crate::db) fn ensure_representation_cache_deferred_column(conn: &Connection) -> Result<()> {
+ 296: pub(in crate::db) fn ensure_archive_revisions_table(conn: &Connection) -> Result<()> {
+ 318: pub(in crate::db) fn rebuild_snapshot_stats(conn: &Connection) -> Result<()> {
+ 366: pub(in crate::db) fn rebuild_snapshot_projection_cache(conn: &Connection) -> Result<()> {
+ 409: pub(in crate::db) fn rebuild_snapshot_event_filter_cache(conn: &Connection) -> Result<()> {
+ 447: pub(in crate::db) struct StoredProjectionItem {
+ 453: pub(in crate::db) struct StoredProjectionRepresentation {
+ 461: pub(in crate::db) fn rebuild_snapshot_text_from_representations(conn: &Connection) -> Result<()> {
+ 528: pub(in crate::db) fn load_stored_projection_items(
+ 575: pub(in crate::db) fn rebuilt_primary_representation(
+ 587: pub(in crate::db) fn rebuilt_primary_kind(
+ 593: pub(in crate::db) fn rebuilt_primary_uti(
+ 599: pub(in crate::db) fn rebuilt_item_search_text(
+ 610: pub(in crate::db) fn rebuilt_search_fragment_for_representation(
+ 628: fn rebuilt_text_for_representation(
+ 653: pub(in crate::db) fn rebuilt_item_preview_text(
+ 671: pub(in crate::db) fn rebuild_snapshot_literal_cache(conn: &Connection) -> Result<()> {
+ 699: pub(in crate::db) fn rebuild_snapshot_file_url_fts(conn: &Connection) -> Result<()> {
+ 708: pub(in crate::db) fn legacy_prerelease_schema_detected(conn: &Connection) -> Result<bool> {
+ 728: pub(crate) fn explain_query_plan(
+
+===== src/db/sqlite_helpers.rs (56 lines) =====
+   6: pub(in crate::db) fn collect_rows<T, I>(rows: I) -> Result<Vec<T>>
+  17: pub(in crate::db) fn usize_to_i64(value: usize) -> Result<i64> {
+  21: pub(in crate::db) fn row_usize(row: &Row<'_>, index: usize) -> rusqlite::Result<usize> {
+  32: pub(in crate::db) fn row_u64(row: &Row<'_>, index: usize) -> rusqlite::Result<u64> {
+  43: pub(in crate::db) fn row_enum<T>(row: &Row<'_>, index: usize) -> rusqlite::Result<T>
+
+===== src/db/store/capture.rs (225 lines) =====
+  15: struct RestoreSuppressedCapture;
+  17: impl std::fmt::Display for RestoreSuppressedCapture {
+  18: fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+  23: impl std::error::Error for RestoreSuppressedCapture {}
+  25: impl Database {
+  32: pub fn store_capture(&mut self, snapshot: &ClipboardSnapshot) -> Result<CaptureStoreResult> {
+ 115: pub(crate) fn store_capture_if_allowed(
+ 132: pub(crate) fn store_watched_capture_if_allowed(
+ 151: pub(crate) fn register_pending_restore(&self, snapshot_sha256: &str) -> Result<()> {
+ 164: pub(crate) fn clear_pending_restore(&self, snapshot_sha256: &str) -> Result<()> {
+ 174: fn consume_pending_restore(&mut self, snapshot_sha256: &str) -> Result<bool> {
+ 191: fn delete_expired_pending_restores(&self) -> Result<()> {
+ 196: fn restore_suppressed_capture(error: &anyhow::Error) -> bool {
+ 200: fn delete_expired_pending_restores(conn: &rusqlite::Connection) -> Result<()> {
+ 212: mod tests {
+ 216: fn restore_suppression_is_typed_for_watched_capture_mapping() {
+
+===== src/db/store/config.rs (17 lines) =====
+   1: pub(in crate::db) const WEBP_UTI: &str = "org.webmproject.webp";
+   2: pub(in crate::db) const IMAGE_OPTIMIZATION_FORMAT: &str = "webp_lossless";
+   3: pub(in crate::db) const IMAGE_OPTIMIZATION_MIN_ABSOLUTE_SAVINGS: usize = 64 * 1024;
+   4: pub(in crate::db) const IMAGE_OPTIMIZATION_MIN_RELATIVE_SAVINGS_NUMERATOR: usize = 1;
+   5: pub(in crate::db) const IMAGE_OPTIMIZATION_MIN_RELATIVE_SAVINGS_DENOMINATOR: usize = 10;
+   6: pub(in crate::db) const IMAGE_OPTIMIZATION_MAX_DIMENSION: u32 = 16_384;
+   7: pub(in crate::db) const RESTORE_SUPPRESSION_WINDOW_SECONDS: i64 = 30;
+  10: pub(in crate::db) struct ImageOptimizationCandidate {
+
+===== src/db/store/ocr.rs (485 lines) =====
+  13: impl Database {
+  14: pub(crate) fn enqueue_ocr_for_snapshot(&mut self, snapshot_id: i64) -> Result<usize> {
+  28: pub(crate) fn next_ocr_candidates(
+ 131: pub(crate) fn store_ocr_text(
+ 171: pub(crate) fn store_ocr_failure(
+ 206: pub(crate) fn ocr_status_report(&self) -> Result<OcrStatusReport> {
+ 235: pub(crate) fn ocr_candidate_summaries(
+ 298: pub(crate) fn ocr_result(&self, raw_sha256: &str) -> Result<Option<OcrResultRecord>> {
+ 338: pub(crate) fn clear_ocr_result(&mut self, raw_sha256: &str) -> Result<bool> {
+ 358: pub(in crate::db) fn enqueue_ocr_candidates_tx(
+ 377: pub(in crate::db) fn prune_orphan_ocr_results_tx(tx: &rusqlite::Transaction<'_>) -> Result<usize> {
+ 394: pub(in crate::db) fn enqueue_ocr_for_snapshot_tx(
+ 401: pub(in crate::db) fn rebuild_snapshot_ocr_cache_for_hash(
+ 425: pub(in crate::db) fn rebuild_snapshot_ocr_cache(
+
+===== src/db/store/optimize.rs (734 lines) =====
+  28: pub(in crate::db) struct OptimizedImage {
+  33: const IMAGE_OPTIMIZATION_BATCH_LIMIT: usize = 250;
+  35: impl Database {
+  36: pub(crate) fn optimize_images(
+  45: pub(crate) fn optimize_images_with_progress(
+  99: pub(crate) fn image_optimization_candidate_summaries(
+ 106: fn process_image_optimization_candidates(
+ 136: fn maybe_compact_after_image_optimization(
+ 170: fn compact_after_image_optimization(
+ 204: fn assign_current_image_optimization_filesystem_delta(
+ 216: fn emit_image_optimization_scan_progress(
+ 231: fn process_image_optimization_candidate(
+ 269: fn record_image_optimization_skip(
+ 287: fn assign_image_optimization_filesystem_delta(
+ 298: pub(in crate::db) fn count_image_optimization_candidates(
+ 318: pub(in crate::db) fn load_image_optimization_candidate_batch(
+ 354: fn load_image_optimization_candidate_summaries(
+ 386: pub(in crate::db) fn database_path_is_file_backed(path: &Path) -> bool {
+ 390: pub(in crate::db) fn storage_compaction_would_help(db: &Database) -> Result<bool> {
+ 396: pub(in crate::db) fn format_compaction_error(error: &anyhow::Error) -> String {
+ 406: pub(in crate::db) fn encode_candidate_as_lossless_webp(
+ 431: pub(in crate::db) fn candidate_looks_animated_or_unsupported(
+ 443: pub(in crate::db) fn webp_has_animation_flag(bytes: &[u8]) -> bool {
+ 451: pub(in crate::db) fn image_optimization_is_beneficial(
+ 464: pub(in crate::db) fn mark_image_optimization_skipped(
+ 490: pub(in crate::db) fn image_optimization_would_conflict(
+ 532: pub(in crate::db) fn replace_image_with_optimized_webp(
+ 603: pub(in crate::db) fn copy_ocr_result_for_optimized_image(
+ 640: pub(in crate::db) fn rebuild_snapshot_item_summary(
+
+===== src/db/store/purge.rs (186 lines) =====
+   8: impl Database {
+   9: pub(crate) fn forget_snapshot(
+  32: pub(crate) fn purge_snapshots_older_than(
+  74: pub(crate) fn apply_retention_policy(&mut self) -> Result<Option<PurgeReport>> {
+  82: fn delete_unreferenced_ocr_results(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+  98: fn load_snapshot_deletion_report(
+ 136: fn load_purge_report(
+
+===== src/db/store/rebuild.rs (382 lines) =====
+   8: pub(in crate::db) fn rebuild_snapshot_summary(
+  78: pub(in crate::db) fn rebuild_snapshot_literal_cache_for_snapshot(
+ 110: pub(in crate::db) fn snapshot_kind_from_item_rows(
+ 126: fn parse_item_kind(kind: &str) -> Result<ClipboardKind> {
+ 131: pub(in crate::db) fn snapshot_fingerprint_with_replacement(
+ 146: pub(in crate::db) fn recompute_snapshot_fingerprint(
+ 155: pub(in crate::db) fn recompute_snapshot_fingerprint_with<F>(
+ 215: pub(in crate::db) fn insert_item(
+ 278: pub(in crate::db) fn set_representation_cache_deferred(
+ 290: pub(in crate::db) fn rebuild_snapshot_projection_cache_for_snapshot(
+ 344: mod tests {
+ 348: fn item_row(kind: &str) -> (String, String, String, usize) {
+ 353: fn snapshot_kind_from_item_rows_returns_typed_kinds() {
+ 371: fn snapshot_kind_from_item_rows_rejects_invalid_item_kind() {
+
+===== src/db/store/revision.rs (104 lines) =====
+   7: impl Database {
+   8: pub fn archive_revision(&self) -> Result<ArchiveRevision> {
+  43: pub(crate) fn bump_service_revision(&self) -> Result<ArchiveRevision> {
+  48: pub(crate) fn bump_app_preferences_revision(&self) -> Result<ArchiveRevision> {
+  54: pub(in crate::db) fn bump_revision(
+  91: pub(in crate::db) fn bump_revision_tx(
+  98: fn change_kind_label(kinds: &[ArchiveChangeKind]) -> String {
+
+===== src/db/store/settings.rs (235 lines) =====
+   8: impl Database {
+   9: pub(crate) fn capture_settings(&self) -> Result<CaptureSettings> {
+  40: pub(crate) fn capture_policy(&self) -> Result<CapturePolicy> {
+  47: pub(crate) fn set_paused(&mut self, paused: bool) -> Result<CaptureSettings> {
+  65: pub(crate) fn set_retention_seconds(
+  91: pub(crate) fn set_api_key_filter_enabled(&mut self, enabled: bool) -> Result<CaptureSettings> {
+ 110: pub(crate) fn set_ocr_enabled(&mut self, enabled: bool) -> Result<CaptureSettings> {
+ 128: pub(crate) fn reset_capture_policy(&mut self) -> Result<CapturePolicy> {
+ 162: pub(crate) fn list_ignored_bundle_ids(&self) -> Result<Vec<String>> {
+ 173: pub(crate) fn add_ignored_bundle_id(&mut self, bundle_id: &str) -> Result<bool> {
+ 193: pub(crate) fn remove_ignored_bundle_id(&mut self, bundle_id: &str) -> Result<bool> {
+ 213: pub(crate) fn bundle_id_is_ignored(&self, bundle_id: Option<&str>) -> Result<bool> {
+ 229: fn normalize_bundle_id(bundle_id: &str) -> Result<String> {
+
+===== src/db/store/tests.rs (146 lines) =====
+   6: pub(in crate::db) fn fake_snapshot(
+  24: pub(in crate::db) fn empty_snapshots_store_without_placeholder_rows() -> Result<()> {
+  46: pub(in crate::db) fn duplicate_snapshots_reuse_content_row_and_append_events() -> Result<()> {
+  67: pub(in crate::db) fn store_capture_bumps_archive_revision_once_per_event() -> Result<()> {
+  86: pub(in crate::db) fn settings_revision_only_changes_for_real_setting_mutations() -> Result<()> {
+ 106: pub(in crate::db) fn deferred_representation_cache_keeps_file_urls_searchable() -> Result<()> {
+
+===== src/db/store.rs (11 lines) =====
+   1: mod capture;
+   2: mod config;
+   3: mod ocr;
+   4: mod optimize;
+   5: mod purge;
+   6: mod rebuild;
+   7: pub(in crate::db) mod revision;
+   8: mod settings;
+  11: mod tests;
+
+===== src/db/tests/core.rs (694 lines) =====
+   5: fn duplicate_snapshots_share_content_row() -> Result<()> {
+  33: fn open_existing_does_not_create_missing_database_paths() {
+  44: fn hardening_sqlite_sidecars_applies_private_file_permissions() -> Result<()> {
+  69: fn search_like_treats_percent_as_literal() -> Result<()> {
+  87: fn stats_empty_result_returns_zeroes_and_empty_leaderboards() -> Result<()> {
+ 114: fn stats_uses_event_and_snapshot_filtering_semantics() -> Result<()> {
+ 153: fn stats_app_grouping_falls_back_to_bundle_and_unknown() -> Result<()> {
+ 178: fn stats_ordering_ties_are_deterministic() -> Result<()> {
+ 209: fn capture_policy_persists_across_reopen() -> Result<()> {
+ 239: fn ocr_setting_defaults_to_off_and_toggles() -> Result<()> {
+ 252: fn ready_ocr_text_is_cached_deduped_and_searchable() -> Result<()> {
+ 295: fn failed_ocr_results_do_not_enter_search() -> Result<()> {
+ 322: fn next_ocr_candidates_prunes_orphan_pending_rows() -> Result<()> {
+ 352: fn ocr_candidate_summaries_keep_global_snapshot_count_when_filtered() -> Result<()> {
+ 390: fn store_capture_if_allowed_skips_api_key_like_snapshots_when_enabled() -> Result<()> {
+ 408: fn store_capture_if_allowed_stores_sensitive_text_when_filter_is_disabled() -> Result<()> {
+ 422: fn recent_reports_whether_more_results_are_available() -> Result<()> {
+ 438: fn timeline_exposes_public_events_and_pagination_state() -> Result<()> {
+ 454: fn watched_capture_skips_pending_restored_snapshot_once() -> Result<()> {
+ 481: fn pending_restore_trigger_suppresses_direct_capture_event_once() -> Result<()> {
+ 533: fn store_capture_reports_restore_trigger_suppression_without_stale_event_id() -> Result<()> {
+ 556: fn expired_pending_restore_does_not_suppress_capture() -> Result<()> {
+ 583: fn expired_pending_restore_trigger_allows_direct_capture_event() -> Result<()> {
+ 618: fn forget_snapshot_cascades_and_removes_search_visibility() -> Result<()> {
+ 657: fn forget_snapshot_deletes_orphaned_ocr_results() -> Result<()> {
+ 690: fn ocr_result_count(db: &Database) -> Result<i64> {
+
+===== src/db/tests/filters_and_migrations.rs (866 lines) =====
+   5: fn purge_uses_last_observed_at_and_dry_run_does_not_delete() -> Result<()> {
+  46: fn purge_snapshots_older_than_deletes_orphaned_ocr_results() -> Result<()> {
+  79: fn ocr_result_count(db: &Database) -> Result<i64> {
+  86: fn search_like_treats_underscore_as_literal() -> Result<()> {
+ 105: fn search_like_treats_escape_character_as_literal() -> Result<()> {
+ 123: fn search_literal_matches_file_url_paths() -> Result<()> {
+ 161: fn search_percent_literal_returns_only_exact_matches() -> Result<()> {
+ 180: fn search_underscore_literal_returns_only_exact_matches() -> Result<()> {
+ 200: fn search_propagates_non_syntax_fts_failures() -> Result<()> {
+ 210: fn schema_keeps_fts_index_and_triggers() {
+ 221: fn timeline_returns_real_events_in_stable_descending_order() -> Result<()> {
+ 249: fn timeline_paging_respects_sort_and_cursor_boundaries() -> Result<()> {
+ 289: fn shared_filters_constrain_search_recent_and_timeline_consistently() -> Result<()> {
+ 344: fn configure_connection_enables_foreign_keys() -> Result<()> {
+ 354: fn search_auto_falls_back_for_url_queries() -> Result<()> {
+ 370: fn search_auto_falls_back_for_colon_queries() -> Result<()> {
+ 383: fn search_auto_falls_back_for_bundle_id_queries() -> Result<()> {
+ 396: fn search_auto_falls_back_for_slashy_path_queries() -> Result<()> {
+ 409: fn search_auto_literal_phrase_uses_unquoted_escaped_phrase() -> Result<()> {
+ 427: fn search_auto_handles_leading_colon_queries_without_error() -> Result<()> {
+ 439: fn search_auto_keeps_valid_quoted_fts_queries_in_fts_mode() -> Result<()> {
+ 451: fn open_existing_migrates_legacy_database_and_rebuilds_fts() -> Result<()> {
+ 513: fn migration_repairs_embedded_nul_snapshot_text_projection() -> Result<()> {
+ 593: fn migration_repairs_utf16_only_embedded_nul_snapshot_text_projection() -> Result<()> {
+ 664: fn schema_version_11_adds_image_compression_metadata() -> Result<()> {
+ 708: fn schema_version_13_adds_pending_restore_backstop() -> Result<()> {
+ 762: fn schema_version_14_adds_representation_cache_deferral_column() -> Result<()> {
+ 832: fn schema_version_18_adds_archive_revisions_table() -> Result<()> {
+
+===== src/db/tests/image_and_perf.rs (342 lines) =====
+   4: fn new_image_captures_start_uncompressed() -> Result<()> {
+  20: fn lossless_webp_optimization_rewrites_image_once_and_preserves_pixels() -> Result<()> {
+ 110: fn image_optimization_without_limit_processes_every_current_candidate() -> Result<()> {
+ 140: fn explicit_image_optimization_limit_still_caps_scanned_rows() -> Result<()> {
+ 163: fn image_optimization_preserves_literal_search_by_app_identity() -> Result<()> {
+ 208: fn file_backed_image_optimization_compacts_without_adding_rows() -> Result<()> {
+ 249: fn no_compact_optimization_leaves_reclaimable_pages_for_later_compaction() -> Result<()> {
+ 277: fn corrupt_image_rows_are_marked_skipped_once() -> Result<()> {
+ 301: fn repeated_open_existing_is_idempotent_after_migration() -> Result<()> {
+
+===== src/db/tests/indexes_and_profiles.rs (568 lines) =====
+   5: fn concurrent_store_capture_reuses_snapshot_and_appends_events() -> Result<()> {
+  52: fn latest_event_query_uses_compound_capture_events_index() -> Result<()> {
+  73: fn duplicate_capture_event_cache_preserves_distinct_apps() -> Result<()> {
+  98: fn ocr_candidate_scan_uses_image_candidate_index() -> Result<()> {
+ 118: fn purge_candidate_scan_uses_snapshot_stats_time_index() -> Result<()> {
+ 137: fn recent_since_only_filter_uses_snapshot_stats_time_index() -> Result<()> {
+ 183: fn ocr_status_counts_use_status_and_text_indexes() -> Result<()> {
+ 209: fn pending_ocr_candidate_query_uses_pending_queue_index() -> Result<()> {
+ 234: fn unfiltered_stats_leaderboards_use_ordering_indexes() -> Result<()> {
+ 278: fn image_optimization_candidate_query_uses_queue_index() -> Result<()> {
+ 305: fn profile_pending_ocr_candidate_query() -> Result<()> {
+ 343: fn profile_unfiltered_stats_leaderboards() -> Result<()> {
+ 414: fn profile_large_retrieval_queries() -> Result<()> {
+ 479: fn profile_image_optimization_candidate_query() -> Result<()> {
+ 546: fn profile_open_existing_on_large_archive() -> Result<()> {
+
+===== src/db/tests/support.rs (481 lines) =====
+  21: pub(in crate::db::tests) type RepresentationCompressionRow = (
+  32: pub(in crate::db::tests) fn temp_db_path(test_name: &str) -> std::path::PathBuf {
+  43: pub(in crate::db::tests) fn cleanup_db(path: &std::path::Path) {
+  58: pub(in crate::db::tests) fn fake_snapshot(change_count: i64, text: &str) -> ClipboardSnapshot {
+  62: pub(in crate::db::tests) fn fake_snapshot_with_app(
+  83: pub(in crate::db::tests) fn image_snapshot(
+ 105: pub(in crate::db::tests) fn lossless_test_tiff() -> Result<Vec<u8>> {
+ 117: pub(in crate::db::tests) fn decode_rgba(bytes: &[u8]) -> Result<Vec<u8>> {
+ 125: pub(in crate::db::tests) fn set_event_observed_at(
+ 137: pub(in crate::db::tests) fn set_event_app(
+ 152: pub(in crate::db::tests) fn unfiltered() -> RetrievalFilters {
+ 156: pub(in crate::db::tests) fn filters_with_app(app: &str) -> RetrievalFilters {
+ 160: pub(in crate::db::tests) fn filters_with_kind(kind: RetrievalKind) -> RetrievalFilters {
+ 164: pub(in crate::db::tests) fn seed_large_archive(
+ 299: pub(in crate::db::tests) fn seed_image_optimization_candidate_archive(
+ 372: pub(in crate::db::tests) fn seed_pending_ocr_candidate_archive(
+ 405: pub(in crate::db::tests) fn seed_stats_leaderboard_archive(
+ 457: pub(in crate::db::tests) fn median_profile_run<F>(runs: usize, f: F) -> Result<std::time::Duration>
+ 464: pub(in crate::db::tests) fn median_profile_run_expected<F>(
+
+===== src/db/tests.rs (11 lines) =====
+   1: mod support;
+   8: mod core;
+   9: mod filters_and_migrations;
+  10: mod image_and_perf;
+  11: mod indexes_and_profiles;
+
+===== src/db/types.rs (516 lines) =====
+   8: pub struct Database {
+  14: pub(in crate::db) enum ArchiveChangeKind {
+  25: pub struct ArchiveRevision {
+  38: pub enum SearchMode {
+  45: pub enum TimelineSort {
+  52: pub enum RetrievalKind {
+  65: pub struct RetrievalFilters {
+  82: pub(crate) struct CaptureSettings {
+  90: pub(crate) struct CapturePolicy {
+  97: pub(crate) enum CaptureSkipReason {
+ 103: pub(crate) enum CaptureStoreOutcome {
+ 109: pub(crate) struct SnapshotDeletionReport {
+ 118: pub(crate) struct PurgeReport {
+ 129: pub(crate) struct OcrCandidate {
+ 136: pub(crate) struct OcrStatusReport {
+ 145: pub(crate) struct OcrRunReport {
+ 154: pub(crate) struct OcrCandidateSummary {
+ 162: pub(crate) struct OcrResultRecord {
+ 175: pub(crate) struct StorageFileSizes {
+ 182: pub(crate) struct StorageCheckpointReport {
+ 189: pub(crate) struct StorageCompactReport {
+ 205: pub(crate) struct ImageOptimizationReport {
+ 224: pub(crate) struct ImageOptimizationCandidateSummary {
+ 234: pub(crate) enum ImageOptimizationProgressEvent {
+ 258: pub struct SearchResults {
+ 265: pub struct RecentResults {
+ 271: pub struct TimelineResults {
+ 277: pub struct StatsReport {
+ 298: pub struct StatsKindBreakdownEntry {
+ 305: pub struct StatsAppEntry {
+ 311: pub struct StatsTimeBucketEntry {
+ 317: pub struct StatsSnapshotLeaderboardEntry {
+ 327: impl StatsReport {
+ 329: pub fn snapshot_count(&self) -> usize {
+ 334: pub fn capture_event_count(&self) -> usize {
+ 339: pub fn unique_app_count(&self) -> usize {
+ 344: pub fn total_bytes(&self) -> usize {
+ 349: pub fn average_bytes_per_snapshot(&self) -> f64 {
+ 354: pub fn average_captures_per_snapshot(&self) -> f64 {
+ 359: pub fn dedupe_ratio(&self) -> f64 {
+ 364: pub fn first_observed_at(&self) -> Option<&str> {
+ 369: pub fn last_observed_at(&self) -> Option<&str> {
+ 374: pub fn archive_span_seconds(&self) -> Option<i64> {
+ 379: pub fn most_recopied_snapshot(&self) -> Option<&StatsSnapshotLeaderboardEntry> {
+ 384: pub fn kind_breakdown(&self) -> &[StatsKindBreakdownEntry] {
+ 389: pub fn top_apps(&self) -> &[StatsAppEntry] {
+ 394: pub fn busiest_hours(&self) -> &[StatsTimeBucketEntry] {
+ 399: pub fn busiest_weekdays(&self) -> &[StatsTimeBucketEntry] {
+ 404: pub fn largest_snapshots(&self) -> &[StatsSnapshotLeaderboardEntry] {
+ 409: pub fn most_captured_snapshots(&self) -> &[StatsSnapshotLeaderboardEntry] {
+ 414: impl StatsKindBreakdownEntry {
+ 416: pub fn kind(&self) -> SnapshotKind {
+ 421: pub fn snapshot_count(&self) -> usize {
+ 426: pub fn total_bytes(&self) -> usize {
+ 431: impl StatsAppEntry {
+ 433: pub fn app(&self) -> &str {
+ 438: pub fn capture_event_count(&self) -> usize {
+ 443: impl StatsTimeBucketEntry {
+ 445: pub fn bucket(&self) -> &str {
+ 450: pub fn capture_event_count(&self) -> usize {
+ 455: impl StatsSnapshotLeaderboardEntry {
+ 457: pub fn snapshot_id(&self) -> i64 {
+ 462: pub fn capture_count(&self) -> usize {
+ 467: pub fn kind(&self) -> SnapshotKind {
+ 472: pub fn preview_text(&self) -> &str {
+ 477: pub fn app_name(&self) -> Option<&str> {
+ 482: pub fn last_observed_at(&self) -> &str {
+ 487: pub fn total_bytes(&self) -> usize {
+ 493: pub(crate) struct Page<T> {
+ 499: pub(crate) struct RecentCursorState {
+ 505: pub(crate) struct SearchCursorState {
+ 513: pub(crate) struct TimelineCursorState {
+
+===== src/db.rs (31 lines) =====
+   1: mod core;
+   2: mod impls;
+   3: mod read;
+   4: mod schema;
+   5: mod sqlite_helpers;
+   6: mod store;
+   7: mod types;
+  10: mod tests;
+
+===== src/file_url.rs (123 lines) =====
+   1: pub(crate) fn normalize_file_path(value: &str) -> String {
+   5: pub(crate) fn projected_file_url_path(value: &str) -> Option<String> {
+  13: pub(crate) fn decode_file_url_path(value: &str) -> Option<String> {
+  29: pub(crate) fn file_url_cache_path_fragment(value: &str) -> String {
+  42: const FILE_URL_PREFIX: &str = "file://";
+  44: fn strip_localhost_authority(value: &str) -> &str {
+  45: const LOCALHOST: &str = "localhost";
+  55: fn has_ascii_prefix(value: &str, prefix: &str) -> bool {
+  62: fn percent_decode(value: &str) -> String {
+  89: fn hex_value(byte: u8) -> Option<u8> {
+  99: mod tests {
+ 103: fn file_url_paths_decode_percent_encoding_and_localhost_authority() {
+ 115: fn file_url_projection_keeps_non_url_values_but_drops_empty_file_urls() {
+
+===== src/lib.rs (48 lines) =====
+   6: pub(crate) mod app;
+   7: pub mod archive;
+   8: pub mod capture;
+   9: pub(crate) mod cli;
+  10: pub(crate) mod db;
+  11: pub(crate) mod file_url;
+  12: pub(crate) mod model;
+  13: pub(crate) mod ocr;
+  14: pub(crate) mod platform;
+  15: pub(crate) mod sensitive;
+  20: mod tests {
+  24: fn run_from_returns_parse_errors_without_exiting_process() {
+  32: fn public_facades_expose_archive_and_capture_boundaries() {
+
+===== src/main.rs (16 lines) =====
+   3: fn main() -> ExitCode {
+   8: mod tests {
+  10: fn binary_entrypoint_can_exercise_parse_failures_through_library_seam() {
+
+===== src/model/archive.rs (752 lines) =====
+   8: pub struct CaptureStoreResult {
+  16: pub struct SearchHit {
+  38: pub(crate) struct SearchHitParts {
+  60: impl SearchHitParts {
+  62: pub(crate) fn plain_text(snapshot_id: i64, event_id: i64, preview_text: String) -> Self {
+  86: pub(crate) fn with_sha256(mut self, sha256: String) -> Self {
+  92: pub(crate) fn with_match(
+ 103: pub(crate) fn with_capture_summary(
+ 116: pub(crate) fn with_last_frontmost_app(
+ 127: pub(crate) fn with_size(mut self, total_bytes: usize, item_count: usize) -> Self {
+ 134: pub(crate) fn with_score(mut self, score: Option<f64>) -> Self {
+ 142: pub struct CaptureEvent {
+ 152: pub struct TimelineEvent {
+ 171: pub struct SnapshotDetails {
+ 201: pub struct DoctorReport {
+ 210: impl CaptureStoreResult {
+ 212: pub(crate) fn new(snapshot_id: i64, event_id: i64, inserted_new_snapshot: bool) -> Self {
+ 221: pub fn snapshot_id(&self) -> i64 {
+ 226: pub fn event_id(&self) -> i64 {
+ 231: pub fn inserted_new_snapshot(&self) -> bool {
+ 236: impl SearchHit {
+ 238: pub(crate) fn from_parts(parts: SearchHitParts) -> Self {
+ 262: pub fn snapshot_id(&self) -> i64 {
+ 267: pub fn event_id(&self) -> i64 {
+ 272: pub fn sha256(&self) -> &str {
+ 277: pub fn snapshot_kind(&self) -> SnapshotKind {
+ 282: pub fn preview_text(&self) -> &str {
+ 287: pub fn search_text(&self) -> &str {
+ 292: pub fn why_matched(&self) -> Option<&str> {
+ 297: pub fn matched_fields(&self) -> &[String] {
+ 302: pub fn capture_count(&self) -> usize {
+ 307: pub fn first_observed_at(&self) -> &str {
+ 312: pub fn last_observed_at(&self) -> &str {
+ 317: pub fn last_frontmost_app_name(&self) -> Option<&str> {
+ 322: pub fn last_frontmost_app_bundle_id(&self) -> Option<&str> {
+ 327: pub fn urls(&self) -> &[String] {
+ 332: pub fn file_paths(&self) -> &[String] {
+ 337: pub fn total_bytes(&self) -> usize {
+ 342: pub fn item_count(&self) -> usize {
+ 347: pub fn score(&self) -> Option<f64> {
+ 352: impl CaptureEvent {
+ 354: pub(crate) fn new(
+ 371: pub fn event_id(&self) -> i64 {
+ 376: pub fn observed_at(&self) -> &str {
+ 381: pub fn change_count(&self) -> i64 {
+ 386: pub fn frontmost_app_name(&self) -> Option<&str> {
+ 391: pub fn frontmost_app_bundle_id(&self) -> Option<&str> {
+ 396: impl TimelineEvent {
+ 399: pub(crate) fn new(
+ 434: pub fn event_id(&self) -> i64 {
+ 439: pub fn snapshot_id(&self) -> i64 {
+ 444: pub fn observed_at(&self) -> &str {
+ 449: pub fn change_count(&self) -> i64 {
+ 454: pub fn sha256(&self) -> &str {
+ 459: pub fn snapshot_kind(&self) -> SnapshotKind {
+ 464: pub fn best_text(&self) -> &str {
+ 469: pub fn preview_text(&self) -> &str {
+ 474: pub fn frontmost_app_name(&self) -> Option<&str> {
+ 479: pub fn frontmost_app_bundle_id(&self) -> Option<&str> {
+ 484: pub fn urls(&self) -> &[String] {
+ 489: pub fn file_paths(&self) -> &[String] {
+ 494: pub fn total_bytes(&self) -> usize {
+ 499: pub fn item_count(&self) -> usize {
+ 504: impl SnapshotDetails {
+ 507: pub(crate) fn new(
+ 558: pub fn snapshot_id(&self) -> i64 {
+ 563: pub fn sha256(&self) -> &str {
+ 568: pub fn snapshot_kind(&self) -> SnapshotKind {
+ 573: pub fn best_text(&self) -> &str {
+ 578: pub fn best_text_uti(&self) -> Option<&str> {
+ 583: pub fn text_fragments(&self) -> &[TextFragment] {
+ 588: pub fn urls(&self) -> &[String] {
+ 593: pub fn file_paths(&self) -> &[String] {
+ 598: pub fn html_text(&self) -> Option<&str> {
+ 603: pub fn rtf_text(&self) -> Option<&str> {
+ 608: pub fn text_summary(&self) -> &str {
+ 613: pub fn ocr_text(&self) -> Option<&str> {
+ 618: pub fn ocr_status(&self) -> Option<&str> {
+ 623: pub fn preview_text(&self) -> &str {
+ 628: pub fn search_text(&self) -> &str {
+ 633: pub fn item_count(&self) -> usize {
+ 638: pub fn total_bytes(&self) -> usize {
+ 643: pub fn created_at(&self) -> &str {
+ 648: pub fn capture_count(&self) -> usize {
+ 653: pub fn first_observed_at(&self) -> &str {
+ 658: pub fn last_observed_at(&self) -> &str {
+ 663: pub fn last_frontmost_app_name(&self) -> Option<&str> {
+ 668: pub fn last_frontmost_app_bundle_id(&self) -> Option<&str> {
+ 673: pub fn recent_events(&self) -> &[CaptureEvent] {
+ 678: pub fn items(&self) -> &[ClipboardItem] {
+ 682: pub(crate) fn set_recent_events(&mut self, recent_events: Vec<CaptureEvent>) {
+ 686: pub(crate) fn set_items(&mut self, items: Vec<ClipboardItem>) {
+ 703: impl DoctorReport {
+ 705: pub(crate) fn new(
+ 724: pub fn db_path(&self) -> &str {
+ 729: pub fn sqlite_version(&self) -> &str {
+ 734: pub fn journal_mode(&self) -> &str {
+ 739: pub fn fts5_compile_option_present(&self) -> bool {
+ 744: pub fn fts5_create_virtual_table_ok(&self) -> bool {
+ 749: pub fn compile_options(&self) -> &[String] {
+
+===== src/model/builders/profile_tests.rs (264 lines) =====
+  10: fn profile_normalize_whitespace() {
+  27: fn profile_rtf_to_text_lossy() {
+  44: fn profile_build_representation_with_string_value() {
+  84: fn median_duration(runs: usize, mut f: impl FnMut()) -> Duration {
+  95: fn median_duration_with_total(
+ 111: fn large_whitespace_heavy_text(token_count: usize) -> String {
+ 121: fn large_plain_text(byte_count: usize) -> String {
+ 130: fn normalize_whitespace_collect_join_for_profile(text: &str) -> String {
+ 134: fn build_representation_decode_raw_first_for_profile(
+ 164: fn is_searchable_text_fragment_before_for_profile(text: &str) -> bool {
+ 182: fn large_rtf_text(token_count: usize) -> String {
+ 194: fn rtf_to_text_lossy_vec_chars_for_profile(rtf: &str) -> String {
+
+===== src/model/builders.rs (764 lines) =====
+   8: pub fn build_snapshot(capture: CaptureContext, items: Vec<ClipboardItem>) -> ClipboardSnapshot {
+  21: pub fn build_item(
+  43: pub fn build_representation(
+  72: pub(crate) fn hash_bytes(bytes: &[u8]) -> String {
+  80: pub(crate) fn classify_uti(uti: &str, text_value_present: bool) -> ClipboardKind {
+ 123: fn is_file_url_uti(lower: &str) -> bool {
+ 127: fn is_url_uti(lower: &str) -> bool {
+ 131: fn is_origin_metadata_uti(lower: &str) -> bool {
+ 135: pub(crate) fn decode_text_bytes_strict(bytes: &[u8]) -> Option<String> {
+ 153: pub(crate) fn decode_text_bytes_lossy(bytes: &[u8]) -> Option<String> {
+ 165: fn fingerprint_snapshot(items: &[ClipboardItem]) -> String {
+ 187: fn snapshot_kind(items: &[ClipboardItem]) -> SnapshotKind {
+ 205: pub(crate) fn truncate_chars(text: &str, max_chars: usize) -> String {
+ 221: pub(crate) fn normalize_whitespace(text: &str) -> String {
+ 236: pub(crate) fn dedupe_text_fragments<I>(fragments: I) -> Vec<String>
+ 259: pub(crate) fn is_searchable_text_fragment(text: &str) -> bool {
+ 277: fn detect_utf16_endianness(bytes: &[u8]) -> Option<bool> {
+ 306: fn nul_count_for_lane(bytes: &[u8], lane: usize) -> usize {
+ 315: fn ratio_at_least(count: usize, total: usize, numerator: usize, denominator: usize) -> bool {
+ 319: fn ratio_at_most(count: usize, total: usize, numerator: usize, denominator: usize) -> bool {
+ 323: fn decode_utf16_with_endian(bytes: &[u8], little_endian: bool) -> Option<String> {
+ 341: fn is_mostly_printable(bytes: &[u8]) -> bool {
+ 352: pub(crate) fn html_to_text_lossy(html: &str) -> String {
+ 403: fn is_html_entity_char(ch: char) -> bool {
+ 407: fn decode_html_entity(entity: &str) -> Option<String> {
+ 419: fn decode_numeric_html_entity(entity: &str) -> Option<char> {
+ 432: pub(crate) fn rtf_to_text_lossy(rtf: &str) -> String {
+ 505: mod profile_tests;
+ 507: fn pick_primary_representation(
+ 514: fn item_search_text(representations: &[ClipboardRepresentation]) -> String {
+ 521: fn search_fragment_for_representation(rep: &ClipboardRepresentation) -> Option<String> {
+ 532: fn preview_for_item(search_text: &str, representations: &[ClipboardRepresentation]) -> String {
+ 552: fn join_item_previews(items: &[ClipboardItem]) -> String {
+ 566: fn joined_search_text(items: &[ClipboardItem]) -> String {
+ 576: mod tests {
+ 585: fn html_is_stripped_reasonably() {
+ 591: fn html_decodes_numeric_entities() {
+ 597: fn html_preserves_bare_ampersands() {
+ 603: fn rtf_is_stripped_reasonably() {
+ 609: fn utf16_decoding_works() {
+ 618: fn embedded_nul_string_values_fall_back_to_decoded_raw_bytes() {
+ 640: fn apple_plain_text_capture_ignores_control_only_dynamic_representation() {
+ 681: fn utf16le_bom_decoding_works() {
+ 688: fn utf16be_decoding_works() {
+ 697: fn empty_snapshots_stay_structurally_empty() {
+ 707: fn generic_utf8_payloads_decode_without_becoming_searchable() {
+ 718: fn chromium_source_url_metadata_is_not_copied_url_content() {
+ 740: fn generic_utf16_payloads_decode_without_becoming_searchable() {
+ 754: fn binary_payloads_still_do_not_decode_lossily() {
+
+===== src/model/clipboard.rs (387 lines) =====
+   8: pub struct ClipboardSnapshot {
+  23: pub struct CaptureContext {
+  31: pub struct ClipboardItem {
+  43: pub struct ClipboardRepresentation {
+  52: impl Serialize for ClipboardRepresentation {
+  53: fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+  68: impl ClipboardItem {
+  70: pub(crate) fn new(
+  92: pub fn item_index(&self) -> usize {
+  97: pub fn primary_kind(&self) -> ClipboardKind {
+ 102: pub fn primary_uti(&self) -> Option<&str> {
+ 107: pub fn preview_text(&self) -> &str {
+ 112: pub fn search_text(&self) -> &str {
+ 117: pub fn total_bytes(&self) -> usize {
+ 122: pub fn representations(&self) -> &[ClipboardRepresentation] {
+ 126: pub(crate) fn set_representations(&mut self, representations: Vec<ClipboardRepresentation>) {
+ 135: impl ClipboardRepresentation {
+ 137: pub(crate) fn new(
+ 157: pub fn is_text(&self) -> bool {
+ 162: pub fn uti(&self) -> &str {
+ 167: pub fn kind(&self) -> ClipboardKind {
+ 172: pub fn byte_len(&self) -> usize {
+ 177: pub fn raw_sha256(&self) -> &str {
+ 182: pub fn text_value(&self) -> Option<&str> {
+ 187: pub fn raw_bytes(&self) -> &[u8] {
+ 192: impl CaptureContext {
+ 194: pub fn new(change_count: i64) -> Self {
+ 203: pub fn with_frontmost_app_name(mut self, name: impl Into<String>) -> Self {
+ 209: pub fn with_frontmost_app_bundle_id(mut self, bundle_id: impl Into<String>) -> Self {
+ 215: pub fn change_count(&self) -> i64 {
+ 220: pub fn frontmost_app_name(&self) -> Option<&str> {
+ 225: pub fn frontmost_app_bundle_id(&self) -> Option<&str> {
+ 229: pub(crate) fn into_parts(self) -> (i64, Option<String>, Option<String>) {
+ 238: impl ClipboardSnapshot {
+ 240: pub(crate) fn new_normalized(
+ 267: pub fn change_count(&self) -> i64 {
+ 272: pub fn frontmost_app_bundle_id(&self) -> Option<&str> {
+ 277: pub fn frontmost_app_name(&self) -> Option<&str> {
+ 282: pub fn fingerprint(&self) -> &str {
+ 287: pub fn snapshot_kind(&self) -> SnapshotKind {
+ 292: pub fn preview_text(&self) -> &str {
+ 297: pub fn search_text(&self) -> &str {
+ 302: pub fn item_count(&self) -> usize {
+ 307: pub fn total_bytes(&self) -> usize {
+ 312: pub fn items(&self) -> &[ClipboardItem] {
+ 318: mod tests {
+ 325: fn raw_bytes_are_omitted_from_representation_json() {
+ 342: fn constructors_derive_lengths_and_counts_from_nested_values() {
+ 375: fn capture_context_builder_records_frontmost_app_metadata() {
+
+===== src/model/kinds.rs (233 lines) =====
+   9: pub enum ClipboardKind {
+  23: impl ClipboardKind {
+  25: pub const fn as_str(self) -> &'static str {
+  42: pub const fn is_textual(self) -> bool {
+  56: pub const fn priority(self) -> u8 {
+  73: impl fmt::Display for ClipboardKind {
+  74: fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+  79: impl FromStr for ClipboardKind {
+  80: type Err = ParseDomainValueError;
+  82: fn from_str(value: &str) -> Result<Self, Self::Err> {
+ 102: pub enum SnapshotKind {
+ 117: impl SnapshotKind {
+ 119: pub const fn as_str(self) -> &'static str {
+ 137: impl fmt::Display for SnapshotKind {
+ 138: fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+ 143: impl From<ClipboardKind> for SnapshotKind {
+ 144: fn from(value: ClipboardKind) -> Self {
+ 161: impl FromStr for SnapshotKind {
+ 162: type Err = ParseDomainValueError;
+ 164: fn from_str(value: &str) -> Result<Self, Self::Err> {
+ 184: pub struct ParseDomainValueError {
+ 189: impl ParseDomainValueError {
+ 190: pub(crate) fn new(domain: &'static str, value: impl Into<String>) -> Self {
+ 198: impl fmt::Display for ParseDomainValueError {
+ 199: fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+ 204: impl Error for ParseDomainValueError {}
+ 207: mod tests {
+ 213: fn clipboard_kind_round_trips_through_strings() {
+ 223: fn snapshot_kind_parses_and_maps_from_clipboard_kind() {
+
+===== src/model/mod.rs (19 lines) =====
+   1: mod archive;
+   2: mod builders;
+   3: mod clipboard;
+   4: mod kinds;
+   5: mod text_projection;
+
+===== src/model/text_projection.rs (516 lines) =====
+  13: const TEXT_SUMMARY_LIMIT: usize = 320;
+  16: pub struct TextFragment {
+  25: pub struct FlattenedTextProjection {
+  39: struct BestTextCandidate {
+  45: impl TextFragment {
+  47: pub fn text(&self) -> &str {
+  52: pub fn uti(&self) -> &str {
+  57: pub fn kind(&self) -> ClipboardKind {
+  62: pub fn item_index(&self) -> usize {
+  67: pub fn representation_index(&self) -> usize {
+  72: impl FlattenedTextProjection {
+  74: pub fn from_items(items: &[ClipboardItem]) -> Self {
+ 178: pub fn with_ocr(mut self, ocr_text: Option<String>, ocr_status: Option<String>) -> Self {
+ 193: pub fn best_text(&self) -> &str {
+ 198: pub fn best_text_uti(&self) -> Option<&str> {
+ 203: pub fn text_fragments(&self) -> &[TextFragment] {
+ 208: pub fn urls(&self) -> &[String] {
+ 213: pub fn file_paths(&self) -> &[String] {
+ 218: pub fn html_text(&self) -> Option<&str> {
+ 223: pub fn rtf_text(&self) -> Option<&str> {
+ 228: pub fn text_summary(&self) -> &str {
+ 233: pub fn ocr_text(&self) -> Option<&str> {
+ 238: pub fn ocr_status(&self) -> Option<&str> {
+ 243: fn projected_fragment_text(kind: ClipboardKind, normalized_text: &str) -> String {
+ 251: fn normalize_nonempty_text(text: &str) -> Option<String> {
+ 257: fn normalize_nonempty_display_text(text: &str) -> Option<String> {
+ 273: fn normalize_line_whitespace(line: &str) -> String {
+ 288: fn push_distinct(values: &mut Vec<String>, seen: &mut HashSet<String>, candidate: String) {
+ 300: fn join_optional_fragments(fragments: &[String]) -> Option<String> {
+ 304: fn fragments_text_summary(fragments: &[TextFragment]) -> String {
+ 312: fn consider_best_candidate(current: &mut Option<BestTextCandidate>, candidate: BestTextCandidate) {
+ 319: fn best_text_priority(kind: ClipboardKind, text: &str) -> Option<u8> {
+ 335: fn is_origin_metadata_uti(uti: &str) -> bool {
+ 341: mod tests {
+ 347: fn projection_prefers_plain_text_and_collects_urls_and_paths() {
+ 382: fn projection_excludes_chromium_source_url_metadata_from_urls() {
+ 407: fn projection_decodes_localhost_file_urls_to_absolute_paths() {
+ 426: fn projection_decodes_localhost_file_urls_case_insensitively() {
+ 445: fn projection_extracts_html_and_rtf_plain_text() {
+ 471: fn projection_dedupes_text_fragments_preserving_first_provenance() {
+ 499: fn projection_preserves_plain_text_line_breaks_for_display_text() {
+
+===== src/ocr/macos.rs (89 lines) =====
+  12: pub(crate) struct VisionOcrEngine;
+  14: impl OcrEngine for VisionOcrEngine {
+  15: fn engine_name(&self) -> &'static str {
+  19: fn recognition_level(&self) -> &'static str {
+  23: fn recognize_text(&self, image_bytes: &[u8]) -> Result<String> {
+  28: fn recognize_text_with_vision(image_bytes: &[u8]) -> Result<String> {
+  70: mod tests {
+  76: fn vision_ocr_smoke_test_accepts_png_bytes() -> anyhow::Result<()> {
+
+===== src/ocr.rs (186 lines) =====
+   6: mod macos;
+   8: pub(crate) trait OcrEngine {
+   9: fn engine_name(&self) -> &'static str;
+  10: fn recognition_level(&self) -> &'static str;
+  11: fn recognize_text(&self, image_bytes: &[u8]) -> Result<String>;
+  15: pub(crate) fn default_engine() -> macos::VisionOcrEngine {
+  20: pub(crate) fn default_engine() -> UnsupportedOcrEngine {
+  25: pub(crate) struct UnsupportedOcrEngine;
+  28: impl OcrEngine for UnsupportedOcrEngine {
+  29: fn engine_name(&self) -> &'static str {
+  33: fn recognition_level(&self) -> &'static str {
+  37: fn recognize_text(&self, _image_bytes: &[u8]) -> Result<String> {
+  42: pub(crate) fn run_ocr_jobs(
+  93: mod tests {
+  98: struct FakeOcrEngine;
+ 100: impl OcrEngine for FakeOcrEngine {
+ 101: fn engine_name(&self) -> &'static str {
+ 105: fn recognition_level(&self) -> &'static str {
+ 109: fn recognize_text(&self, _image_bytes: &[u8]) -> anyhow::Result<String> {
+ 114: struct FailingOcrEngine;
+ 116: impl OcrEngine for FailingOcrEngine {
+ 117: fn engine_name(&self) -> &'static str {
+ 121: fn recognition_level(&self) -> &'static str {
+ 125: fn recognize_text(&self, _image_bytes: &[u8]) -> anyhow::Result<String> {
+ 130: fn image_snapshot(change_count: i64, bytes: Vec<u8>) -> crate::model::ClipboardSnapshot {
+ 141: fn run_ocr_jobs_processes_pending_images() -> anyhow::Result<()> {
+ 156: fn run_ocr_jobs_respects_limit_snapshot_and_retry_failed() -> anyhow::Result<()> {
+
+===== src/platform/macos.rs (365 lines) =====
+  14: struct OriginApp {
+  19: pub fn current_change_count() -> Result<i64> {
+  26: pub fn capture_snapshot() -> Result<ClipboardSnapshot> {
+  63: pub(crate) fn restore_items(items: &[ClipboardItem]) -> Result<RestoreReport> {
+  95: pub(crate) fn build_restore_plan(items: &[ClipboardItem]) -> Vec<RestorePlanItem> {
+ 115: fn current_frontmost_app() -> (Option<String>, Option<String>) {
+ 126: fn infer_origin_app_from_items(
+ 154: fn is_chromium_origin_metadata_uti(uti: &str) -> bool {
+ 159: fn is_chromium_browser_bundle_id(bundle_id: &str) -> bool {
+ 173: fn read_item(item_index: usize, item: &NSPasteboardItem) -> ClipboardItem {
+ 192: fn build_pasteboard_item(item: &RestorePlanItem) -> Result<objc2::rc::Retained<NSPasteboardItem>> {
+ 210: fn representation_bytes(raw_data: Option<Vec<u8>>, string_value: Option<&str>) -> Vec<u8> {
+ 219: mod tests {
+ 228: fn raw_string_bytes_fill_in_when_pasteboard_data_is_missing() {
+ 235: fn textual_payloads_are_decoded_when_only_raw_bytes_exist() {
+ 249: fn binary_payloads_stay_binary_when_no_string_value_is_available() {
+ 259: fn restore_plan_preserves_representation_set() {
+ 287: fn chromium_source_metadata_preserves_frontmost_chrome_origin() {
+ 313: fn chromium_source_metadata_preserves_frontmost_edge_origin() {
+ 342: fn chromium_source_metadata_uses_generic_origin_when_codex_is_frontmost() {
+
+===== src/platform/mod.rs (140 lines) =====
+   2: mod macos;
+   4: mod unsupported;
+   8: pub(crate) struct RestorePlanRepresentation {
+  15: pub(crate) struct RestorePlanItem {
+  21: pub(crate) struct RestoreReport {
+  42: impl RestorePlanRepresentation {
+  44: pub(crate) fn new(uti: String, bytes: Vec<u8>) -> Self {
+  49: pub(crate) fn uti(&self) -> &str {
+  54: pub(crate) fn bytes(&self) -> &[u8] {
+  60: impl RestorePlanItem {
+  62: pub(crate) fn new(item_index: usize, representations: Vec<RestorePlanRepresentation>) -> Self {
+  70: pub(crate) fn item_index(&self) -> usize {
+  75: pub(crate) fn representations(&self) -> &[RestorePlanRepresentation] {
+  80: impl RestoreReport {
+  83: pub(crate) fn new(item_count: usize, representation_count: usize, total_bytes: usize) -> Self {
+  92: pub(crate) fn item_count(&self) -> usize {
+  97: pub(crate) fn representation_count(&self) -> usize {
+ 102: pub(crate) fn total_bytes(&self) -> usize {
+ 108: mod tests {
+ 110: fn capture_snapshot_entrypoint_is_exposed() {
+ 118: fn current_change_count_entrypoint_is_exposed() {
+ 125: fn restore_entrypoints_are_exposed() {
+
+===== src/platform/unsupported.rs (16 lines) =====
+   6: pub fn current_change_count() -> Result<i64> {
+  10: pub fn capture_snapshot() -> Result<ClipboardSnapshot> {
+  14: pub(crate) fn restore_items(_items: &[ClipboardItem]) -> Result<RestoreReport> {
+
+===== src/sensitive.rs (414 lines) =====
+   3: const CONTEXT_CUES: &[&str] = &[
+  20: pub(crate) fn should_skip_snapshot_for_api_key_filter(snapshot: &ClipboardSnapshot) -> bool {
+  29: fn text_looks_like_api_key(text: &str) -> bool {
+  33: fn has_strong_api_key_signature(text: &str) -> bool {
+  37: fn has_contextual_token_match(text: &str) -> bool {
+  67: fn contains_context_cue(text: &str) -> bool {
+  73: fn contains_ascii_case_insensitive(haystack: &str, needle: &str) -> bool {
+  89: fn ascii_eq_ignore_case(left: &[u8], right: &[u8]) -> bool {
+  95: fn matches_strong_api_key_signature(token: &str) -> bool {
+ 105: fn matches_openai_key(token: &str) -> bool {
+ 115: fn matches_anthropic_key(token: &str) -> bool {
+ 122: fn matches_github_key(token: &str) -> bool {
+ 123: const SHORT_PREFIXES: &[&str] = &["ghp_", "gho_", "ghu_", "ghs_", "ghr_"];
+ 132: fn matches_google_api_key(token: &str) -> bool {
+ 139: fn matches_aws_access_key_id(token: &str) -> bool {
+ 147: fn matches_slack_token(token: &str) -> bool {
+ 154: fn matches_stripe_key(token: &str) -> bool {
+ 163: fn is_contextual_secret_candidate(token: &str) -> bool {
+ 185: fn token_candidates(text: &str) -> impl Iterator<Item = &str> {
+ 190: fn token_chars_are_safe(token: &str) -> bool {
+ 196: fn class_count(token: &str) -> usize {
+ 221: mod tests {
+ 229: fn text_snapshot(text: &str) -> crate::model::ClipboardSnapshot {
+ 246: fn detects_openai_style_keys() {
+ 252: fn detects_anthropic_style_keys() {
+ 258: fn detects_github_pat_tokens() {
+ 264: fn detects_google_api_keys() {
+ 270: fn detects_aws_access_key_ids() {
+ 276: fn detects_slack_tokens() {
+ 289: fn detects_stripe_keys() {
+ 296: fn detects_contextual_generic_tokens() {
+ 302: fn ignores_random_base64_without_context() {
+ 308: fn ignores_git_shas_and_uuids() {
+ 316: fn ignores_normal_shell_commands() {
+ 322: fn ignores_empty_search_text() {
+ 329: fn profile_contextual_api_key_filter_scan() {
+ 346: fn profile_contextual_api_key_filter_no_match_scan() {
+ 359: fn median_duration(runs: usize, mut f: impl FnMut()) -> Duration {
+ 370: fn large_contextual_filter_text(line_count: usize, include_secret: bool) -> String {
+ 384: fn has_contextual_token_match_collect_lines_for_profile(text: &str) -> bool {
+ 410: fn contains_context_cue_collect_lowercase_for_profile(text: &str) -> bool {

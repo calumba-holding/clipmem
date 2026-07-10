@@ -1,0 +1,3 @@
+## cargo test --all-targets
+bash: line 14: cargo: command not found
+EXIT=127

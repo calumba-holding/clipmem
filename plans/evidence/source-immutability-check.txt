@@ -1,0 +1,3 @@
+Fresh extraction root: /mnt/data/clipmem-reextract.bCwuks/clipmem-main
+Audited source root: /mnt/data/clipmem-audit/source/clipmem-main
+RESULT: exact recursive match; audited source tree was not modified.

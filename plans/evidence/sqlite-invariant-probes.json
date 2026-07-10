@@ -1,0 +1,46 @@
+{
+  "app_filter_matches_first_app": true,
+  "cache_counts": {
+    "event_filter_cache": 1,
+    "literal_cache": 1,
+    "projection_cache": 1,
+    "snapshot_stats": 1,
+    "snapshots_fts": 1,
+    "snapshots_literal_fts": 1
+  },
+  "event_filter_cache_apps": [
+    "first app",
+    "second app"
+  ],
+  "event_filter_cache_bundles": [
+    "com.example.one",
+    "com.example.two"
+  ],
+  "foreign_key_check_after_orphan": [],
+  "image_only_matches_has_text": true,
+  "item_representation_foreign_keys": [
+    {
+      "from": "snapshot_id",
+      "id": 0,
+      "match": "NONE",
+      "on_delete": "CASCADE",
+      "on_update": "NO ACTION",
+      "seq": 0,
+      "table": "snapshots",
+      "to": "id"
+    }
+  ],
+  "literal_haystack": "[image \u00b7 12 bytes]\u001f[image \u00b7 12 bytes]\u001f\u001f\u001f\u001fsecond app\u001fcom.example.two",
+  "literal_haystack_contains_first_app": false,
+  "literal_haystack_contains_second_app": true,
+  "orphan_join_visible_to_item_loader_shape": 0,
+  "orphan_representation_insert": "allowed",
+  "restore_suppression": {
+    "events_after_first_insert": 2,
+    "events_after_second_insert": 3,
+    "events_before": 2,
+    "marker_after_first_insert": 0
+  },
+  "schema_reapply": "ok",
+  "sqlite_version": "3.46.1"
+}

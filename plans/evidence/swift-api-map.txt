@@ -1,0 +1,868 @@
+### macos/ClipmemMenuBar/ClipmemMenuBar/App/AppCommands.swift
+4:enum WindowID: String {
+8:    var title: String {
+16:enum PreferenceKey {
+30:extension UserDefaults {
+31:    var clipmemDefaultHours: Int {
+36:    var clipmemDefaultMode: QueryMode {
+41:    var clipmemHotkeyEnabled: Bool {
+48:    var clipmemLaunchAtLoginEnabled: Bool {
+56:enum LaunchAtLoginDefaultAction: Equatable {
+61:enum LaunchAtLoginDefaultConfigurator {
+85:enum WindowActivation {
+86:    @MainActor
+92:    @MainActor
+98:    @MainActor
+109:    @MainActor
+### macos/ClipmemMenuBar/ClipmemMenuBar/App/ClipmemMenuBarApp.swift
+5:struct ClipmemMenuBarApp: App {
+6:    @Environment(\.openWindow) private var openWindow
+7:    @AppStorage(PreferenceKey.hotkeyEnabled) private var hotkeyEnabled = true
+8:    @State private var appModel = AppModel()
+10:    var body: some Scene {
+54:    @MainActor
+62:private struct ClipmemMenuBarLabel: View {
+63:    let healthState: HealthState
+64:    let isUpdateAvailable: Bool
+66:    var body: some View {
+95:private struct MenuBarHealthBadge: View {
+96:    let symbol: String
+97:    let tone: MenuBarBadgeTone
+99:    var body: some View {
+112:private struct WindowFrameLimiter: ViewModifier {
+113:    let maxVisibleWidthInset: CGFloat
+114:    let maxVisibleHeightInset: CGFloat
+116:    func body(content: Content) -> some View {
+121:private struct WindowFrameLimiterView: NSViewRepresentable {
+122:    let widthInset: CGFloat
+123:    let heightInset: CGFloat
+125:    func makeCoordinator() -> Coordinator {
+129:    func makeNSView(context: Context) -> NSView {
+137:    func updateNSView(_ nsView: NSView, context: Context) {
+143:    @MainActor
+### macos/ClipmemMenuBar/ClipmemMenuBar/Hotkey/HotKeyManager.swift
+4:@MainActor
+5:final class HotKeyManager {
+10:    func registerDefault(action: @escaping @MainActor () -> Void) -> String? {
+63:    func unregister() {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Logging/AppLoggers.swift
+3:enum AppLoggers {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Models/AppTypes.swift
+4:enum QueryMode: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
+11:    var id: String { rawValue }
+13:    var title: String {
+23:    var symbol: String {
+33:    var historyCompatibleMode: QueryMode {
+38:enum HealthState: String, Sendable {
+50:    var title: String {
+65:    var symbol: String {
+80:    var tint: Color {
+90:    var recoveryGuidance: String? {
+104:    var menuBarBadgeSymbol: String? {
+129:    var menuBarBadgeTone: MenuBarBadgeTone? {
+145:enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
+153:    var id: String { rawValue }
+155:    var title: String {
+166:    var symbol: String {
+178:enum MenuBarBadgeTone: Equatable, Sendable {
+184:    var tint: Color {
+194:enum RetrievalKind: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
+205:    var id: String { rawValue }
+207:    var title: String {
+224:enum SearchStyle: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
+228:    var id: String { rawValue }
+230:    var title: String {
+237:    var queryMode: QueryMode {
+245:enum HistoryResultScope: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
+249:    var id: String { rawValue }
+251:    var title: String {
+258:    var help: String {
+265:    var queryMode: QueryMode {
+280:enum DisplayMode: String, CaseIterable, Identifiable, Codable, Hashable, Sendable {
+285:    var id: String { rawValue }
+287:    var title: String {
+295:    var symbol: String {
+303:    func queryMode(searchStyle: SearchStyle) -> QueryMode {
+325:struct RetrievalFilterState: Equatable, Sendable {
+326:    var hours: Int
+327:    var appName = ""
+328:    var bundleID = ""
+329:    var kind: RetrievalKind?
+330:    var hasText = false
+331:    var hasURL = false
+332:    var hasFile = false
+333:    var hasImage = false
+334:    var hasPDF = false
+336:    var activeAdvancedFilterCount: Int {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Models/ClipmemModels.swift
+4:enum SnapshotKind: String, Decodable, Hashable, Sendable {
+18:    var displayTitle: String {
+36:enum ClipboardRepresentationKind: String, Decodable, Hashable, Sendable {
+50:enum ServiceProvider: String, Decodable, Equatable, Sendable {
+55:enum ServiceState: String, Decodable, Equatable, Sendable {
+62:enum RecallMatchConfidence: String, Decodable, Equatable, Sendable {
+68:struct ProviderStatus: Decodable, Equatable, Sendable {
+69:    var provider: ServiceProvider
+70:    var label: String
+71:    var state: ServiceState
+72:    var installed: Bool
+73:    var loaded: Bool
+74:    var running: Bool
+75:    var pid: Int?
+76:    var plistPath: String?
+77:    var configuredBinaryPath: String?
+78:    var runningCommand: String?
+79:    var runningBinaryPath: String?
+80:    var stdoutLogPath: String?
+81:    var stderrLogPath: String?
+84:struct ServiceStatusReport: Decodable, Equatable, Sendable {
+85:    var binaryPath: String
+86:    var dbPath: String
+87:    var preferredProvider: ServiceProvider
+88:    var preferredProviderReason: String
+89:    var conflict: Bool
+90:    var homebrew: ProviderStatus
+91:    var launchagent: ProviderStatus
+92:    var dbExists: Bool
+93:    var dbSizeBytes: Int?
+94:    var recentCaptureAt: String?
+95:    var recentCaptureWithinLastHour: Bool?
+96:    var paused: Bool?
+97:    var apiKeyFilterEnabled: Bool?
+98:    var retentionSeconds: UInt64?
+99:    var retention: String?
+100:    var ignoredBundleIdCount: Int?
+101:    var revision: ArchiveRevision?
+102:    var stale: Bool
+103:    var dbError: String?
+104:    var watcherBinaryMismatch: Bool
+105:    var watcherBinaryMismatchNote: String?
+106:    var notes: [String]
+108:    var health: HealthState {
+122:    var logPaths: [String] {
+127:    var watcherBinaryPath: String? {
+150:struct ArchiveRevision: Decodable, Equatable, Sendable {
+151:    var revision: UInt64
+152:    var archiveContentRevision: UInt64
+153:    var settingsRevision: UInt64
+154:    var ocrRevision: UInt64
+155:    var storageRevision: UInt64
+156:    var serviceRevision: UInt64
+157:    var appPreferencesRevision: UInt64
+158:    var lastChangeKind: String
+159:    var updatedAt: String
+162:struct DoctorReport: Decodable, Equatable, Sendable {
+163:    var dbPath: String?
+164:    var sqliteVersion: String?
+165:    var journalMode: String?
+166:    var fts5CompileOptionPresent: Bool?
+167:    var fts5CreateVirtualTableOk: Bool?
+168:    var compileOptions: [String]?
+171:struct SettingsReport: Decodable, Equatable, Sendable {
+172:    var paused: Bool
+173:    var apiKeyFilterEnabled: Bool
+174:    var ocrEnabled: Bool
+175:    var retentionSeconds: UInt64?
+176:    var retention: String
+177:    var ignoredBundleIds: [String]
+180:struct ListEnvelope: Decodable, Equatable, Sendable {
+181:    var schemaVersion: Int?
+182:    var command: String
+183:    var generatedAt: String?
+184:    var appliedFilters: [String: JSONValue]?
+185:    var truncated: Bool
+186:    var nextCursor: String?
+187:    var results: [ClipmemItem]
+190:struct RecallEnvelope: Decodable, Equatable, Sendable {
+191:    var schemaVersion: Int?
+192:    var command: String
+193:    var generatedAt: String?
+194:    var query: String?
+195:    var bestCandidate: ClipmemItem
+196:    var alternatives: [ClipmemItem]
+197:    var bestMatchConfidence: RecallMatchConfidence
+198:    var bestMatchScore: Double?
+199:    var whySelected: String?
+200:    var quotedText: String?
+203:struct GetEnvelope: Decodable, Equatable, Sendable {
+204:    var schemaVersion: Int?
+205:    var command: String
+206:    var generatedAt: String?
+207:    var snapshot: SnapshotDetails
+210:struct ClipmemItem: Decodable, Identifiable, Hashable, Sendable {
+211:    var snapshotId: Int
+212:    var eventId: Int?
+213:    var sha256: String?
+214:    var kind: SnapshotKind
+215:    var observedAt: String?
+216:    var firstSeenAt: String?
+217:    var lastSeenAt: String?
+218:    var appName: String?
+219:    var appBundleId: String?
+220:    var bestText: String?
+221:    var bestTextUti: String?
+222:    var textFragments: [TextFragment]?
+223:    var urls: [String]?
+224:    var filePaths: [String]?
+225:    var htmlText: String?
+226:    var rtfText: String?
+227:    var textSummary: String?
+228:    var ocrText: String?
+229:    var ocrStatus: String?
+230:    var previewText: String?
+231:    var itemCount: Int?
+232:    var totalBytes: Int?
+233:    var captureCount: Int?
+234:    var score: Double?
+235:    var whyMatched: String?
+236:    var matchedFields: [String]?
+237:    var snippet: String?
+238:    var changeCount: Int?
+240:    var id: String { "\(eventId ?? snapshotId)-\(snapshotId)" }
+242:    var displayText: String {
+247:    var appHint: String? {
+252:    var hasText: Bool {
+256:    var copyablePlainText: String? {
+263:struct TextFragment: Decodable, Hashable, Sendable {
+264:    var itemIndex: Int
+265:    var uti: String
+266:    var kind: ClipboardRepresentationKind
+267:    var text: String
+270:struct SnapshotDetails: Decodable, Equatable, Sendable {
+271:    var snapshotId: Int
+272:    var sha256: String
+273:    var snapshotKind: SnapshotKind
+274:    var bestText: String?
+275:    var bestTextUti: String?
+276:    var textFragments: [TextFragment]?
+277:    var urls: [String]
+278:    var filePaths: [String]
+279:    var htmlText: String?
+280:    var rtfText: String?
+281:    var textSummary: String?
+282:    var ocrText: String?
+283:    var ocrStatus: String?
+284:    var previewText: String?
+285:    var searchText: String?
+286:    var itemCount: Int
+287:    var totalBytes: Int
+288:    var createdAt: String?
+289:    var captureCount: Int
+290:    var firstObservedAt: String?
+291:    var lastObservedAt: String?
+292:    var lastFrontmostAppName: String?
+293:    var lastFrontmostAppBundleId: String?
+294:    var recentEvents: [CaptureEvent]
+295:    var items: [ClipboardItemDetail]
+297:    var imagePreviewRepresentation: ImagePreviewRepresentation? {
+312:    var copyableDetailText: String? {
+319:    var shouldHideImagePlaceholderText: Bool {
+330:struct ImagePreviewRepresentation: Equatable, Sendable {
+331:    var itemIndex: Int
+332:    var uti: String
+333:    var fileExtension: String
+336:struct CaptureEvent: Decodable, Equatable, Identifiable, Sendable {
+337:    var eventId: Int
+338:    var observedAt: String
+339:    var changeCount: Int?
+340:    var frontmostAppName: String?
+341:    var frontmostAppBundleId: String?
+343:    var id: Int { eventId }
+346:struct ClipboardItemDetail: Decodable, Equatable, Identifiable, Sendable {
+347:    var itemIndex: Int
+348:    var primaryKind: ClipboardRepresentationKind
+349:    var primaryUti: String?
+350:    var previewText: String?
+351:    var searchText: String?
+352:    var totalBytes: Int
+353:    var representations: [ClipboardRepresentation]
+355:    var id: Int { itemIndex }
+358:struct ClipboardRepresentation: Decodable, Equatable, Identifiable, Sendable {
+359:    var uti: String
+360:    var kind: ClipboardRepresentationKind
+361:    var isText: Bool
+362:    var byteLen: Int
+363:    var rawSha256: String?
+364:    var textValue: String?
+366:    var id: String { uti }
+368:    var isPreviewableImage: Bool {
+378:    var previewRank: ImagePreviewRank {
+404:    var previewFileExtension: String {
+421:enum ImagePreviewRank: Int, Comparable, Sendable {
+437:struct RestoreOutput: Decodable, Equatable, Sendable {
+438:    var snapshotId: Int
+439:    var itemCount: Int
+440:    var representationCount: Int
+441:    var totalBytes: Int
+444:struct ExportOutput: Decodable, Equatable, Sendable {
+445:    var snapshotId: Int
+446:    var itemIndex: Int
+447:    var uti: String
+448:    var byteCount: Int
+449:    var rawSha256: String
+450:    var out: String
+453:struct ForgetOutput: Decodable, Equatable, Sendable {
+454:    var snapshotId: Int
+455:    var itemCount: Int
+456:    var representationCount: Int
+457:    var captureEventCount: Int
+458:    var totalBytes: Int
+461:struct PurgeOutput: Decodable, Equatable, Sendable {
+462:    var olderThanSeconds: UInt64
+463:    var dryRun: Bool
+464:    var snapshotCount: Int
+465:    var itemCount: Int
+466:    var representationCount: Int
+467:    var captureEventCount: Int
+468:    var totalBytes: Int
+### macos/ClipmemMenuBar/ClipmemMenuBar/Models/UpdateStatus.swift
+3:struct AppVersion: Comparable, Equatable {
+41:struct UpdateCheckResult: Equatable {
+42:    let latestVersion: String
+43:    let releaseURL: URL
+44:    let checkedAt: Date
+47:enum InstallOrigin: Equatable {
+51:    var prefersHomebrewUpgrade: Bool {
+68:struct UpdateStatus: Equatable {
+69:    var currentVersion: String
+70:    var latestVersion: String?
+71:    var releaseURL: URL?
+72:    var lastCheckedAt: Date?
+73:    var isChecking = false
+74:    var errorMessage: String?
+75:    var installOrigin: InstallOrigin
+77:    var isUpdateAvailable: Bool {
+87:    var shouldShowHomebrewCommand: Bool {
+91:    func shouldCheck(now: Date = Date(), interval: TimeInterval = UpdateChecker.checkInterval) -> Bool {
+142:    func storeCache(defaults: UserDefaults = .standard) {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Services/ClipmemClient/BinaryResolver.swift
+3:struct BinaryResolver: Sendable {
+6:    var environment: [String: String]
+7:    var userOverride: String?
+8:    var repoRoot: String?
+9:    var fileExists: Exists
+23:    func resolve() -> String? {
+27:    func candidates() -> [String] {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Services/ClipmemClient/ClipmemClient.swift
+3:enum ClipmemClientError: Error, LocalizedError, Equatable, Sendable {
+13:    var errorDescription: String? {
+28:    var recoverySuggestion: String? {
+44:struct UserError: Equatable, Sendable {
+45:    let message: String
+46:    let recovery: String?
+59:struct ClipmemClientConfiguration: Sendable {
+60:    var binaryOverride: String?
+61:    var databaseOverride: String?
+73:struct ClipmemClient: Sendable {
+74:    var configuration: ClipmemClientConfiguration
+75:    var runner: CommandRunner
+82:    func serviceStatus() async throws -> ServiceStatusReport {
+86:    func serviceRevision() async throws -> ArchiveRevision {
+90:    func doctor() async throws -> DoctorReport {
+94:    func settings() async throws -> SettingsReport {
+98:    func recent(limit: Int, cursor: String?, filters: RetrievalFilterState) async throws -> ListEnvelope {
+102:    func timeline(limit: Int, cursor: String?, filters: RetrievalFilterState) async throws -> ListEnvelope {
+106:    func search(query: String, limit: Int, cursor: String?, filters: RetrievalFilterState) async throws -> ListEnvelope {
+110:    func recall(query: String?, limit: Int, filters: RetrievalFilterState) async throws -> RecallEnvelope {
+114:    func get(snapshotID: Int) async throws -> GetEnvelope {
+118:    func restore(snapshotID: Int) async throws -> RestoreOutput {
+122:    func forget(snapshotID: Int) async throws -> ForgetOutput {
+126:    func purge(olderThan: String, dryRun: Bool) async throws -> PurgeOutput {
+130:    func storageCompact(dryRun: Bool) async throws -> StorageCompactOutput {
+134:    func storageOptimizeImages(dryRun: Bool, limit: Int?) async throws -> ImageOptimizationOutput {
+138:    func storageOptimizeImagesWithProgress(
+163:    func export(snapshotID: Int, itemIndex: Int, uti: String, destination: String, force: Bool) async throws -> ExportOutput {
+167:    func runAction(_ command: ClipmemCommand) async throws {
+171:    func resolvedBinaryPath() -> String? {
+175:    func binaryCandidates() -> [String] {
+254:private final class LockedBox<Value>: @unchecked Sendable {
+258:    func set(_ value: Value) {
+264:    func value() -> Value? {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Services/ClipmemClient/ClipmemCommand.swift
+3:struct ClipmemCommand: Equatable, Sendable {
+4:    var arguments: [String]
+6:    func withDatabase(_ databasePath: String?) -> ClipmemCommand {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Services/ClipmemClient/CommandRunner.swift
+3:struct CommandResult: Sendable {
+4:    var exitCode: Int32
+5:    var stdout: Data
+6:    var stderr: Data
+8:    var stdoutText: String {
+12:    var stderrText: String {
+17:struct CommandRunner: Sendable {
+24:    func run(executable: String, arguments: [String]) async throws -> CommandResult {
+28:    func run(executable: String, arguments: [String], timeout: Duration?) async throws -> CommandResult {
+94:    func runStreaming(
+199:private final class RunningProcess: @unchecked Sendable {
+203:    func set(_ process: Process) {
+209:    func terminate() {
+216:    func clear() {
+223:private final class CancellationState: @unchecked Sendable {
+227:    func cancel() {
+233:    func checkCancellation() throws {
+243:private final class PipeHandles: @unchecked Sendable {
+247:    func set(_ fileHandles: [FileHandle]) {
+253:    func close() {
+263:    func clear() {
+270:private final class PipeReader: @unchecked Sendable {
+280:    func start() {
+290:    func wait() -> Data {
+298:    func close() {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Services/LoginItemController.swift
+4:enum LoginItemStatus: Equatable {
+10:    var message: String? {
+24:enum LoginItemController {
+38:    @MainActor
+54:    @MainActor
+### macos/ClipmemMenuBar/ClipmemMenuBar/Services/UpdateChecker.swift
+3:struct UpdateChecker {
+14:    func latestStableRelease(now: Date = Date()) async throws -> UpdateCheckResult? {
+37:enum UpdateCheckError: LocalizedError, Equatable {
+40:    var errorDescription: String? {
+48:struct GitHubReleaseResponse: Decodable, Equatable {
+49:    let tagName: String
+50:    let htmlURL: URL
+51:    let prerelease: Bool
+52:    let draft: Bool
+61:    func stableResult(checkedAt: Date) -> UpdateCheckResult? {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Utilities/ConfirmationAlertPresenter.swift
+3:enum MenuBarConfirmation {
+8:    var title: String {
+19:    var message: String {
+30:    var confirmButtonTitle: String {
+41:    var cancelButtonTitle: String {
+45:    var alertStyle: NSAlert.Style {
+55:@MainActor
+56:struct ConfirmationAlertPresenter {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Utilities/PasteboardActions.swift
+5:enum LinkPresentationBadge: String, Equatable, Sendable {
+12:enum LinkTargetResolution: Equatable, Sendable {
+17:    var badge: LinkPresentationBadge? {
+29:enum LinkTargetResolver {
+117:enum PasteboardActions {
+118:    @MainActor
+125:    @MainActor
+131:    @MainActor
+137:    @MainActor
+138:    @discardableResult
+153:struct ExportDestination {
+154:    @MainActor
+### macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift
+7:struct HistoryOpenRequest: Equatable, Sendable {
+8:    var id: Int
+9:    var mode: QueryMode
+10:    var query: String
+11:    var focusedSnapshotID: Int?
+14:struct SettingsOpenRequest: Equatable, Sendable {
+15:    var id: Int
+16:    var tab: SettingsTab
+19:@MainActor
+21:final class AppModel {
+22:    var serviceStatus: ServiceStatusReport?
+23:    var doctorReport: DoctorReport?
+24:    var settingsReport: SettingsReport?
+25:    var recentPreview: [ClipmemItem] = []
+26:    var clipboardHistoryRevision = 0
+27:    var lastError: UserError?
+28:    var actionMessage: String?
+29:    var hotkeyMessage: String?
+30:    var hotkeyEnabled = UserDefaults.standard.clipmemHotkeyEnabled
+31:    var launchAtLoginEnabled = UserDefaults.standard.clipmemLaunchAtLoginEnabled
+32:    var launchAtLoginStatus = LoginItemController.status()
+33:    var launchAtLoginError: UserError?
+34:    var defaultRecentHours = UserDefaults.standard.clipmemDefaultHours
+35:    var defaultQueryMode = UserDefaults.standard.clipmemDefaultMode
+36:    var isRefreshing = false
+37:    var isRunningAction = false
+38:    var imageOptimizationProgress: ImageOptimizationProgressState?
+39:    var updateStatus = UpdateStatus.load()
+40:    var pendingHistoryOpenRequest: HistoryOpenRequest?
+41:    var pendingSettingsOpenRequest: SettingsOpenRequest?
+43:    @ObservationIgnored private let hotKeyManager = HotKeyManager()
+44:    @ObservationIgnored private let updateChecker = UpdateChecker()
+45:    @ObservationIgnored private let loadRecentPreview: @MainActor () async throws -> [ClipmemItem]
+46:    @ObservationIgnored private var historyOpenRequestID = 0
+47:    @ObservationIgnored private var settingsOpenRequestID = 0
+48:    @ObservationIgnored private var pasteboardMonitor: PasteboardChangeMonitor?
+49:    @ObservationIgnored private var appRefreshNotificationMonitor: AppRefreshNotificationMonitor?
+50:    @ObservationIgnored private var revisionMonitorTask: Task<Void, Never>?
+51:    @ObservationIgnored private var observedRevision: ArchiveRevision?
+52:    @ObservationIgnored private var revisionRefreshInFlight = false
+53:    @ObservationIgnored private var configurationGeneration = 0
+54:    @ObservationIgnored private var recentRefreshCoordinator: RecentPreviewRefreshCoordinator?
+55:    @ObservationIgnored private var recentPreviewRefreshedAt: Date?
+56:    @ObservationIgnored private var openQuickRecallAction: (@MainActor () -> Void)?
+57:    @ObservationIgnored private var lastResolvedBinaryPath = UserDefaults.standard.string(forKey: PreferenceKey.binaryPathOverride)
+58:    @ObservationIgnored private var lastResolvedDatabasePath = UserDefaults.standard.string(forKey: PreferenceKey.databasePathOverride)
+67:    var healthState: HealthState {
+74:    var client: ClipmemClient {
+78:    func start() async {
+93:    func refreshAll() async {
+103:    func refreshStatus() async {
+114:    func refreshDoctor() async {
+123:    func refreshSettings() async {
+131:    @discardableResult
+132:    func refreshRecentPreview() async -> Bool {
+145:    func refreshRecentPreviewIfStale(maxAge: TimeInterval) async {
+152:    func runSetup() async {
+158:    func serviceAction(_ action: String) async {
+164:    func compactDatabase() async {
+182:    func optimizeImages() async {
+261:    func previewPurge(olderThan: String) async -> PurgeOutput? {
+281:    func purge(olderThan: String) async -> PurgeOutput? {
+319:    @discardableResult
+320:    func runAction(_ command: ClipmemCommand, successMessage: String? = nil) async -> Bool {
+336:    func restore(_ item: ClipmemItem) async {
+340:    func restore(snapshotID: Int, successMessage: String = "Restored to clipboard") async {
+352:    func copySnapshotToPasteboard(snapshotID: Int) async {
+356:    func copyPlainTextToPasteboard(_ text: String) {
+363:    @discardableResult
+364:    func forget(_ item: ClipmemItem) async -> Bool {
+367:    @discardableResult
+368:    func forget(snapshotID: Int) async -> Bool {
+380:    func openLogsFolder() {
+386:    func checkForUpdatesIfNeeded() async {
+391:    func checkForUpdates(force: Bool = true, manual: Bool = true) async {
+408:    func copyUpgradeCommand() {
+413:    func copyAgentContextCommand() {
+418:    func copyAgentSkillInstallCommand() {
+423:    func copyAgentOpenClawDoctorCommand() {
+428:    func copyAgentHermesDoctorCommand() {
+433:    func copyAgentPrintSkillCommand() {
+438:    func copyAgentCapabilityMapCommand() {
+456:    func openUpdateRelease() {
+461:    func requestHistorySearch(query: String) {
+467:    func requestHistoryFocus(snapshotID: Int, mode: QueryMode, query: String) {
+479:    func requestSettingsTab(_ tab: SettingsTab) {
+484:    func configureHotkey(enabled: Bool, openQuickRecall: @escaping @MainActor () -> Void) {
+494:    func unregisterHotkey() {
+499:    func setLaunchAtLoginEnabled(_ enabled: Bool) {
+744:final class AppRefreshNotificationMonitor: @unchecked Sendable {
+759:    func start() {
+779:    func stop() {
+792:@MainActor
+793:final class PasteboardChangeMonitor {
+816:    func start() {
+829:    func stop() {
+834:    func pollOnce() {
+845:    func markCurrentChangeHandled() {
+850:@MainActor
+851:final class RecentPreviewRefreshCoordinator {
+875:    func schedule() {
+889:    func refreshNow() async {
+### macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/HistoryModel.swift
+8:@MainActor
+10:final class HistoryModel {
+11:    var searchStyle: SearchStyle
+12:    var resultScope: HistoryResultScope
+13:    var query = ""
+14:    var filters = RetrievalFilterState.defaultValue
+15:    var results: [ClipmemItem] = []
+16:    var selectedID: Int?
+17:    var selectedRowID: String?
+18:    var selectedDetail: SnapshotDetails?
+19:    var nextCursor: String?
+20:    var isLoading = false
+21:    var isLoadingDetail = false
+22:    var error: UserError?
+24:    @ObservationIgnored private let appModel: AppModel
+25:    @ObservationIgnored private let pageLoader: HistoryPageLoader?
+26:    @ObservationIgnored private let detailLoader: HistoryDetailLoader
+27:    @ObservationIgnored private var loadGeneration = 0
+28:    @ObservationIgnored private var detailGeneration = 0
+29:    @ObservationIgnored private var loadedPageKey: HistoryPageKey?
+48:    var selectedItem: ClipmemItem? {
+56:    var mode: QueryMode {
+60:    var displaysCopyEvents: Bool {
+64:    func reload(selecting snapshotID: Int? = nil) async {
+76:    func loadMore() async {
+82:    func refreshForExternalHistoryChange() async {
+169:    func loadSelectedDetail() async {
+195:    func restoreSelected() async {
+200:    func forgetSelected() async {
+209:    func selectRow(id rowID: String?) {
+260:private struct HistoryRequest: Equatable, Sendable {
+261:    var generation: Int
+262:    var mode: QueryMode
+263:    var query: String
+264:    var filters: RetrievalFilterState
+265:    var cursor: String?
+267:    var pageKey: HistoryPageKey {
+272:private struct HistoryPageKey: Equatable, Sendable {
+273:    var mode: QueryMode
+274:    var query: String
+275:    var filters: RetrievalFilterState
+### macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/QuickRecallModel.swift
+4:@MainActor
+6:final class QuickRecallModel {
+7:    var mode: QueryMode = .recall
+8:    var query = ""
+9:    var results: [ClipmemItem] = []
+10:    var selectedID: Int?
+11:    var isLoading = false
+12:    var error: UserError?
+14:    @ObservationIgnored private let appModel: AppModel
+15:    @ObservationIgnored private var searchTask: Task<Void, Never>?
+16:    @ObservationIgnored private let forgetItem: @MainActor (ClipmemItem) async -> Bool
+25:    var selectedItem: ClipmemItem? {
+30:    func queryChanged() {
+39:    func refresh() async {
+73:    func moveSelection(_ delta: Int) {
+80:    func restoreSelected() async {
+85:    func forgetSelected() async {
+90:    func forget(_ item: ClipmemItem) async {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Views/CommandClickableMarkdownText.swift
+4:struct CommandClickableMarkdownText: View {
+5:    let rendered: MarkdownRenderedText
+6:    var lineLimit: Int?
+7:    var truncationMode: Text.TruncationMode = .tail
+8:    var selectionEnabled = false
+10:    @ViewBuilder
+11:    var body: some View {
+29:    @ViewBuilder
+40:    func linkCommandClickMonitor(
+60:private struct LinkCommandClickMonitor: NSViewRepresentable {
+61:    let attributedString: AttributedString
+62:    let links: [MarkdownRenderedLink]
+63:    let lineLimit: Int?
+64:    let truncationMode: Text.TruncationMode
+65:    let onOpen: (LinkTargetResolution) -> Void
+67:    func makeNSView(context: Context) -> LinkCommandClickMonitorView {
+73:    func updateNSView(_ nsView: LinkCommandClickMonitorView, context: Context) {
+84:    func makeCoordinator() -> Coordinator {
+88:    @MainActor
+128:private final class LinkCommandClickMonitorView: NSView {
+153:    func actionableTarget(at point: NSPoint) -> LinkTargetResolution? {
+157:    func open(_ target: LinkTargetResolution) {
+192:    @MainActor
+332:enum MarkdownLinkHitTesting {
+396:    var nsLineBreakMode: NSLineBreakMode {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Views/DesignSystem.swift
+5:enum Spacing {
+17:enum DesignType {
+31:enum DesignRadius {
+40:enum DesignColor {
+83:struct MetadataBadgePresentation: Equatable {
+98:    let title: String
+99:    let symbol: String
+100:    let tintRole: TintRole
+147:enum DesignShadow {
+159:enum DesignIcon {
+168:enum DesignAnimation {
+185:struct CardStyle: ViewModifier {
+186:    @State private var isHovered = false
+188:    func body(content: Content) -> some View {
+203:struct BannerStyle: ViewModifier {
+204:    let tint: Color
+206:    func body(content: Content) -> some View {
+221:struct RowHighlightStyle: ViewModifier {
+222:    let selected: Bool
+223:    var animated = true
+224:    @State private var isHovered = false
+226:    func body(content: Content) -> some View {
+247:struct GlassOverlay: ViewModifier {
+248:    var cornerRadius: CGFloat = DesignRadius.lg
+250:    func body(content: Content) -> some View {
+257:struct PressableStyle: ViewModifier {
+258:    @GestureState private var isPressed = false
+260:    func body(content: Content) -> some View {
+275:extension View {
+276:    func cardStyle() -> some View {
+280:    func bannerStyle(tint: Color) -> some View {
+284:    func rowHighlightStyle(selected: Bool, animated: Bool = true) -> some View {
+288:    func glassOverlay(cornerRadius: CGFloat = DesignRadius.lg) -> some View {
+292:    func pressable() -> some View {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Views/DiagnosticsView.swift
+3:struct DiagnosticsView: View {
+4:    let appModel: AppModel
+6:    @State private var confirmUninstall = false
+8:    var body: some View {
+134:private struct DiagnosticsActionButton: View {
+135:    let title: String
+136:    let systemImage: String
+137:    let action: () -> Void
+145:    var body: some View {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Views/HistoryWindowView.swift
+3:struct HistoryWindowView: View {
+4:    let appModel: AppModel
+6:    @Environment(\.openWindow) private var openWindow
+7:    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+8:    @State private var history: HistoryModel
+9:    @SceneStorage("history.mode") private var storedMode = ""
+10:    @SceneStorage("history.searchStyle") private var storedSearchStyle = ""
+11:    @SceneStorage("history.resultScope") private var storedResultScope = ""
+12:    @SceneStorage("history.query") private var storedQuery = ""
+13:    @SceneStorage("history.selected") private var storedSelectedID = 0
+14:    @State private var handledHistoryOpenRequestID = 0
+21:    var body: some View {
+270:    @discardableResult
+293:    @MainActor
+### macos/ClipmemMenuBar/ClipmemMenuBar/Views/ItemActionButtons.swift
+4:struct ItemActionButtons: View {
+5:    let detail: SnapshotDetails
+6:    let appModel: AppModel
+8:    var body: some View {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Views/ManualPurgeSheet.swift
+3:struct ManualPurgeSheet: View {
+4:    let appModel: AppModel
+6:    @Environment(\.dismiss) private var dismiss
+7:    @State private var olderThan: String
+8:    @State private var preview: PurgeOutput?
+9:    @State private var previewedOlderThan: String?
+10:    @State private var localError: UserError?
+17:    var body: some View {
+71:    @ViewBuilder
+### macos/ClipmemMenuBar/ClipmemMenuBar/Views/MarkdownTextRenderer.swift
+3:enum MarkdownDisplayStyle {
+8:struct MarkdownRenderedText {
+9:    var attributed: AttributedString
+10:    var links: [MarkdownRenderedLink]
+12:    var visibleText: String {
+17:struct MarkdownRenderedLink: Equatable, Sendable {
+18:    var range: NSRange
+19:    var target: String
+20:    var badge: LinkPresentationBadge?
+23:enum MarkdownTextRenderer {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Views/MenuBarPanelView.swift
+4:struct MenuBarPanelView: View {
+5:    let appModel: AppModel
+7:    @Environment(\.openWindow) private var openWindow
+8:    @Environment(\.openSettings) private var openSettings
+9:    @State private var recentSearchQuery = ""
+10:    @State private var restoringItemID: Int?
+11:    @FocusState private var searchFocused: Bool
+13:    var body: some View {
+54:    @ViewBuilder
+129:    @ViewBuilder
+### macos/ClipmemMenuBar/ClipmemMenuBar/Views/QuickRecallWindowView.swift
+3:struct QuickRecallWindowView: View {
+4:    let appModel: AppModel
+6:    @Environment(\.dismiss) private var dismiss
+7:    @Environment(\.openWindow) private var openWindow
+8:    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+9:    @FocusState private var queryFocused: Bool
+10:    @State private var quick: QuickRecallModel
+11:    @State private var confirmForget = false
+12:    @State private var pendingForgetItem: ClipmemItem?
+13:    @State private var displayMode: DisplayMode = .search
+14:    @State private var searchStyle: SearchStyle = .smart
+21:    var body: some View {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Views/ResultRowView.swift
+3:struct ResultRowView: View {
+9:    let item: ClipmemItem
+10:    let selected: Bool
+11:    var presentation: Presentation = .uniqueSnapshot
+12:    var animatedHighlight = true
+13:    @State private var resolvedLinkBadge: ResolvedLinkBadge?
+15:    var body: some View {
+134:    @ViewBuilder
+146:private struct ResolvedLinkBadge {
+147:    let id: String
+148:    let badge: LinkPresentationBadge?
+151:private struct MetadataBadge: View {
+152:    let presentation: MetadataBadgePresentation
+153:    let selected: Bool
+155:    var body: some View {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Views/ScrollElasticityDisabler.swift
+4:struct ScrollElasticityDisabler: NSViewRepresentable {
+5:    func makeNSView(context: Context) -> ScrollElasticityDisablerView {
+9:    func updateNSView(_ nsView: ScrollElasticityDisablerView, context: Context) {
+14:final class ScrollElasticityDisablerView: NSView {
+25:    func disableElasticity() {
+48:extension View {
+49:    func disablesScrollElasticity() -> some View {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Views/SettingsView.swift
+3:struct ClipmemSettingsView: View {
+4:    let appModel: AppModel
+6:    @AppStorage(PreferenceKey.binaryPathOverride) private var binaryPathOverride = ""
+7:    @AppStorage(PreferenceKey.databasePathOverride) private var databasePathOverride = ""
+8:    @AppStorage(PreferenceKey.defaultRecentHours) private var defaultRecentHours = 24
+9:    @AppStorage(PreferenceKey.defaultQueryMode) private var defaultQueryMode = QueryMode.recent.rawValue
+10:    @AppStorage(PreferenceKey.hotkeyEnabled) private var hotkeyEnabled = true
+11:    @State private var selectedTab: SettingsTab = .general
+12:    @State private var handledSettingsOpenRequestID = 0
+13:    @State private var newIgnoredBundleID = ""
+14:    @State private var retentionValue = "forever"
+15:    @FocusState private var retentionFieldFocused: Bool
+16:    @State private var confirmRetention = false
+17:    @State private var confirmCompact = false
+18:    @State private var confirmCompressImages = false
+19:    @State private var showManualPurge = false
+21:    var body: some View {
+300:    @ViewBuilder
+444:private struct StorageActionRow: View {
+445:    let title: String
+446:    let detail: String
+447:    let systemImage: String
+448:    let buttonTitle: String
+449:    var role: ButtonRole?
+450:    var isRunning = false
+451:    var progress: ImageOptimizationProgressState?
+452:    let action: () -> Void
+454:    var body: some View {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Views/SharedViews.swift
+13:enum DisplayFormatters {
+126:struct StatusBadge: View {
+127:    let state: HealthState
+129:    var body: some View {
+139:struct EmptyStateView: View {
+140:    let title: String
+141:    let detail: String
+142:    let symbol: String
+143:    var compact: Bool = false
+145:    var body: some View {
+172:struct BannerContainer<Actions: View>: View {
+173:    let icon: String
+174:    let tint: Color
+175:    let title: String
+176:    var detail: String? = nil
+177:    var pulse: Bool = false
+178:    @ViewBuilder var actions: () -> Actions
+180:    var body: some View {
+209:struct HealthBanner: View {
+210:    let state: HealthState
+211:    var errorDetail: UserError? = nil
+212:    var isRunningAction = false
+213:    var actionLabel: String? = nil
+214:    var onAction: (() -> Void)? = nil
+216:    var body: some View {
+238:struct UpdateBanner: View {
+239:    let status: UpdateStatus
+240:    var onCopyCommand: (() -> Void)? = nil
+241:    var onOpenRelease: (() -> Void)? = nil
+243:    var body: some View {
+266:struct ErrorBanner: View {
+267:    let message: String
+268:    var recovery: String? = nil
+269:    var onRetry: (() -> Void)? = nil
+271:    var body: some View {
+288:struct ActionFeedbackOverlay: View {
+289:    let message: String?
+290:    var isSuccess: Bool = true
+291:    var transitionEdge: Edge = .top
+293:    var body: some View {
+315:struct FieldRow: View {
+316:    let title: String
+317:    let value: String?
+318:    var lineLimit: Int = 2
+319:    var showPlaceholder: Bool = false
+321:    var body: some View {
+348:struct FilterBar: View {
+349:    @Bindable var history: HistoryModel
+350:    @State private var showAdvanced = false
+357:    var body: some View {
+### macos/ClipmemMenuBar/ClipmemMenuBar/Views/SnapshotDetailView.swift
+4:struct SnapshotDetailView: View {
+5:    let detail: SnapshotDetails?
+6:    let fallback: ClipmemItem?
+7:    let appModel: AppModel
+8:    var isLoading: Bool = false
+9:    var onForgot: () async -> Void
+11:    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+12:    @State private var visibleSections = 0
+13:    @State private var advancedMetadataPresented = false
+14:    @State private var confirmForget = false
+15:    @State private var imagePreviewState: ImagePreviewState = .notAvailable
+17:    var body: some View {
+92:    @ViewBuilder
+126:    @ViewBuilder

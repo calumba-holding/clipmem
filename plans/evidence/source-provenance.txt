@@ -1,0 +1,9 @@
+Audit date: 2026-07-10
+Input archive: /mnt/data/clipmem.zip
+6ce43f7e4f58b2a2c7179b8380d0acbe520d114579afb624af135b1daa6b0f21  /mnt/data/clipmem.zip
+Extracted source root: clipmem-main
+Source version: 0.5.6
+Source files: 277
+Rust source lines: 41482
+Swift source lines: 9825
+Schema lines: 858

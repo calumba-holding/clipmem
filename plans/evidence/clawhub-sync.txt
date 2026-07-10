@@ -1,0 +1,2 @@
+error: required command not found: clawhub
+clawhub=1

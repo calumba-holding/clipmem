@@ -1,0 +1,627 @@
+=== capture/watch/runtime ===
+86:    if settings.paused() {
+91:        .bundle_id_is_ignored(snapshot.frontmost_app_bundle_id())
+98:        db.store_watched_capture_if_allowed(&snapshot),
+105:                if let Err(err) = db.enqueue_ocr_for_snapshot(snapshot_id) {
+151:                let report = crate::ocr::run_ocr_jobs(&mut worker_db, &engine, 1, None, false)?;
+230:        db.store_watched_capture_if_allowed(&snapshot),
+=== setup seed ===
+21:pub(crate) fn setup(db_path: &Path) -> Result<SetupReport> {
+27:    let seed_capture = seed_capture(db_path)?;
+32:        seed_capture,
+236:fn seed_capture(db_path: &Path) -> Result<SeedCaptureOutcome> {
+242:    let snapshot = capture_snapshot().context("setup clipboard read failed")?;
+244:        .store_capture_if_allowed(&snapshot)
+245:        .context("setup database write failed")?
+=== platform ===
+19:pub fn current_change_count() -> Result<i64> {
+29:        let change_count = pasteboard.changeCount() as i64;
+30:        let (frontmost_app_name, frontmost_app_bundle_id) = current_frontmost_app();
+42:            frontmost_app_name.as_deref(),
+43:            frontmost_app_bundle_id.as_deref(),
+45:        let mut capture = CaptureContext::new(change_count);
+48:                .with_frontmost_app_name(origin.name)
+49:                .with_frontmost_app_bundle_id(origin.bundle_id);
+50:        } else if let Some(name) = frontmost_app_name {
+51:            capture = capture.with_frontmost_app_name(name);
+52:            if let Some(bundle_id) = frontmost_app_bundle_id {
+53:                capture = capture.with_frontmost_app_bundle_id(bundle_id);
+55:        } else if let Some(bundle_id) = frontmost_app_bundle_id {
+56:            capture = capture.with_frontmost_app_bundle_id(bundle_id);
+63:pub(crate) fn restore_items(items: &[ClipboardItem]) -> Result<RestoreReport> {
+68:        pasteboard.clearContents();
+79:        let wrote = pasteboard.writeObjects(&array);
+115:fn current_frontmost_app() -> (Option<String>, Option<String>) {
+117:    if let Some(app) = workspace.frontmostApplication() {
+128:    frontmost_app_name: Option<&str>,
+129:    frontmost_app_bundle_id: Option<&str>,
+131:    let has_chromium_metadata = items.iter().any(|item| {
+134:            .any(|representation| is_chromium_origin_metadata_uti(representation.uti()))
+137:    if !has_chromium_metadata {
+141:    match frontmost_app_bundle_id {
+142:        Some(bundle_id) if is_chromium_browser_bundle_id(bundle_id) => Some(OriginApp {
+143:            name: frontmost_app_name.unwrap_or(bundle_id).to_string(),
+148:            bundle_id: "org.chromium.browser".to_string(),
+154:fn is_chromium_origin_metadata_uti(uti: &str) -> bool {
+156:    lower == "org.chromium.source-url" || lower == "org.chromium.source-title"
+159:fn is_chromium_browser_bundle_id(bundle_id: &str) -> bool {
+287:    fn chromium_source_metadata_preserves_frontmost_chrome_origin() {
+292:                    "org.chromium.source-url".to_string(),
+313:    fn chromium_source_metadata_preserves_frontmost_edge_origin() {
+318:                    "org.chromium.source-url".to_string(),
+342:    fn chromium_source_metadata_uses_generic_origin_when_codex_is_frontmost() {
+347:                    "org.chromium.source-url".to_string(),
+363:        assert_eq!(origin.bundle_id, "org.chromium.browser");
+=== db open/schema ===
+src/db/core.rs:5:use rusqlite::{Connection, OpenFlags};
+src/db/core.rs:7:use super::schema::{legacy_prerelease_schema_detected, prepare_schema};
+src/db/core.rs:24:    pub fn open_or_init(path: &Path) -> Result<Self> {
+src/db/core.rs:34:            OpenFlags::SQLITE_OPEN_READ_WRITE
+src/db/core.rs:35:                | OpenFlags::SQLITE_OPEN_CREATE
+src/db/core.rs:36:                | OpenFlags::SQLITE_OPEN_URI
+src/db/core.rs:37:                | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+src/db/core.rs:39:        prepare_connection(&mut conn)?;
+src/db/core.rs:58:    pub fn open_existing(path: &Path) -> Result<Self> {
+src/db/core.rs:61:            OpenFlags::SQLITE_OPEN_READ_WRITE
+src/db/core.rs:62:                | OpenFlags::SQLITE_OPEN_URI
+src/db/core.rs:63:                | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+src/db/core.rs:65:        prepare_connection(&mut conn)?;
+src/db/core.rs:106:                .execute_batch("VACUUM")
+src/db/core.rs:109:                .execute_batch("PRAGMA optimize")
+src/db/core.rs:143:        prepare_connection(&mut conn)?;
+src/db/core.rs:218:pub(in crate::db) fn open_connection(path: &Path, flags: OpenFlags) -> Result<Connection> {
+src/db/core.rs:224:pub(in crate::db) fn prepare_connection(conn: &mut Connection) -> Result<()> {
+src/db/core.rs:226:    Context::context(prepare_schema(conn), "prepare database schema")?;
+src/db/core.rs:250:    conn.busy_timeout(Duration::from_millis(1_500))
+src/db/schema.rs:16:pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {
+src/db/schema.rs:18:        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+src/db/schema.rs:21:    tx.execute_batch(SCHEMA).context("apply database schema")?;
+src/db/schema.rs:23:    let user_version: i64 = tx
+src/db/schema.rs:24:        .query_row("PRAGMA user_version", [], |row| row.get(0))
+src/db/schema.rs:25:        .context("read PRAGMA user_version")?;
+src/db/schema.rs:27:    validate_supported_user_version(&tx, user_version)?;
+src/db/schema.rs:28:    if user_version < CURRENT_SCHEMA_VERSION {
+src/db/schema.rs:29:        run_schema_migration_steps(&tx, user_version)?;
+src/db/schema.rs:30:        tx.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+src/db/schema.rs:31:            .context("set PRAGMA user_version")?;
+src/db/schema.rs:99:fn validate_supported_user_version(conn: &Connection, user_version: i64) -> Result<()> {
+src/db/schema.rs:100:    if user_version > CURRENT_SCHEMA_VERSION {
+src/db/schema.rs:102:            "database schema version {user_version} is newer than supported version {CURRENT_SCHEMA_VERSION}"
+src/db/schema.rs:105:    if user_version < 0 {
+src/db/schema.rs:106:        bail!("unsupported database schema version {user_version}");
+src/db/schema.rs:108:    if user_version > 0 && legacy_prerelease_schema_detected(conn)? {
+src/db/schema.rs:110:            "database at the current user_version uses an incompatible prerelease schema; move it aside and run `clipmem setup` to initialize a fresh archive"
+src/db/schema.rs:321:    conn.execute_batch(
+src/db/schema.rs:369:    conn.execute_batch(
+src/db/schema.rs:412:    conn.execute_batch(
+src/db/schema.rs:676:    conn.execute_batch(
+=== snapshot reads ===
+18:    pub fn find_snapshot(
+30:        details.set_items(self.load_snapshot_items(snapshot_id)?);
+35:    pub(crate) fn snapshot_projection(
+43:        let items = self.load_snapshot_items(snapshot_id)?;
+139:                FROM item_representations
+280:    fn load_snapshot_items(&self, snapshot_id: i64) -> Result<Vec<ClipboardItem>> {
+318:                FROM item_representations
+381:            let items = load_snapshot_items_n_plus_one_for_profile(&db, stored.snapshot_id())?;
+385:            let items = db.load_snapshot_items(stored.snapshot_id())?;
+442:    fn load_snapshot_items_n_plus_one_for_profile(
+482:                FROM item_representations
+=== OCR claim ===
+17:            .transaction_with_behavior(TransactionBehavior::Immediate)
+18:            .context("begin ocr enqueue transaction")?;
+24:        tx.commit().context("commit ocr enqueue transaction")?;
+28:    pub(crate) fn next_ocr_candidates(
+36:            .transaction_with_behavior(TransactionBehavior::Immediate)
+37:            .context("begin ocr candidate transaction")?;
+44:                    UPDATE ocr_results
+45:                    SET status = 'pending',
+73:                        WHERE o.status = 'pending'
+127:        tx.commit().context("commit ocr candidate transaction")?;
+131:    pub(crate) fn store_ocr_text(
+140:            .transaction_with_behavior(TransactionBehavior::Immediate)
+141:            .context("begin ocr result transaction")?;
+150:                UPDATE ocr_results
+167:        tx.commit().context("commit ocr result transaction")?;
+171:    pub(crate) fn store_ocr_failure(
+180:            .transaction_with_behavior(TransactionBehavior::Immediate)
+181:            .context("begin ocr failure transaction")?;
+185:                UPDATE ocr_results
+202:        tx.commit().context("commit ocr failure transaction")?;
+211:                        (SELECT COUNT(*) FROM ocr_results WHERE status = 'pending'),
+248:                        WHERE o.status = 'pending'
+341:            .transaction_with_behavior(TransactionBehavior::Immediate)
+342:            .context("begin ocr clear transaction")?;
+353:        tx.commit().context("commit ocr clear transaction")?;
+462:                          AND o.status = 'pending'
+=== capture suppression ===
+src/db/store/capture.rs:35:            .transaction_with_behavior(TransactionBehavior::Immediate)
+src/db/store/capture.rs:115:    pub(crate) fn store_capture_if_allowed(
+src/db/store/capture.rs:132:    pub(crate) fn store_watched_capture_if_allowed(
+src/db/store/capture.rs:136:        if self.consume_pending_restore(snapshot.fingerprint())? {
+src/db/store/capture.rs:142:        match self.store_capture_if_allowed(snapshot) {
+src/db/store/capture.rs:152:        self.delete_expired_pending_restores()?;
+src/db/store/capture.rs:155:                "INSERT INTO pending_restores (snapshot_sha256, created_at)
+src/db/store/capture.rs:167:                "DELETE FROM pending_restores WHERE snapshot_sha256 = ?1",
+src/db/store/capture.rs:174:    fn consume_pending_restore(&mut self, snapshot_sha256: &str) -> Result<bool> {
+src/db/store/capture.rs:177:            .transaction_with_behavior(TransactionBehavior::Immediate)
+src/db/store/capture.rs:179:        delete_expired_pending_restores(&tx)?;
+src/db/store/capture.rs:182:                "DELETE FROM pending_restores WHERE snapshot_sha256 = ?1",
+src/db/store/capture.rs:191:    fn delete_expired_pending_restores(&self) -> Result<()> {
+src/db/store/capture.rs:192:        delete_expired_pending_restores(&self.conn)
+src/db/store/capture.rs:200:fn delete_expired_pending_restores(conn: &rusqlite::Connection) -> Result<()> {
+src/db/store/capture.rs:203:        "DELETE FROM pending_restores
+src/db/schema.sql:105:CREATE TABLE IF NOT EXISTS pending_restores (
+src/db/schema.sql:156:CREATE INDEX IF NOT EXISTS idx_pending_restores_created_at
+src/db/schema.sql:157:    ON pending_restores(created_at);
+src/db/schema.sql:316:    DELETE FROM pending_restores
+src/db/schema.sql:318:    DELETE FROM pending_restores
+=== search merge/cursor ===
+src/db/read/search_results.rs:7:    let has_more = rows.len() > limit;
+src/db/read/search_results.rs:8:    if has_more {
+src/db/read/search_results.rs:9:        rows.truncate(limit);
+src/db/read/search_results.rs:12:    Page::new(rows, has_more)
+src/db/read/search_results.rs:15:pub(in crate::db) fn merge_scored_search_results(
+src/db/read/search_results.rs:17:    native: SearchResults,
+src/db/read/search_results.rs:18:    ocr: SearchResults,
+src/db/read/search_results.rs:22:    let mut rows = native.hits().to_vec();
+src/db/read/search_results.rs:27:    for hit in ocr.hits() {
+src/db/read/search_results.rs:58:    let has_more = native.has_more() || ocr.has_more() || rows.len() > limit;
+src/db/read/search_results.rs:60:        rows.truncate(limit);
+src/db/read/search_results.rs:62:    SearchResults::new(mode, rows, has_more)
+src/db/read/search_results.rs:69:    let has_more = rows.len() > limit;
+src/db/read/search_results.rs:70:    if has_more {
+src/db/read/search_results.rs:71:        rows.truncate(limit);
+src/db/read/search_results.rs:74:    Page::new(rows, has_more)
+src/db/read/search.rs:9:    file_path_literal_query, fts_query, literal_query, ocr_fts_query, ocr_literal_query,
+src/db/read/search.rs:16:use super::search_results::{merge_scored_search_results, paginate_rows};
+src/db/read/search.rs:72:    cursor_score: Option<f64>,
+src/db/read/search.rs:73:    cursor_last_seen_at: Option<&'a str>,
+src/db/read/search.rs:74:    cursor_snapshot_id: Option<i64>,
+src/db/read/search.rs:81:        cursor: Option<&'a SearchCursorState>,
+src/db/read/search.rs:97:            cursor_score: cursor.and_then(SearchCursorState::score),
+src/db/read/search.rs:98:            cursor_last_seen_at: cursor.map(SearchCursorState::last_seen_at),
+src/db/read/search.rs:99:            cursor_snapshot_id: cursor.map(SearchCursorState::snapshot_id),
+src/db/read/search.rs:116:            let has_more = page.has_more();
+src/db/read/search.rs:117:            SearchResults::new(mode, page.into_items(), has_more)
+src/db/read/search.rs:168:        cursor: Option<&SearchCursorState>,
+src/db/read/search.rs:174:            return self.search_literal_page(query, limit, filters, cursor);
+src/db/read/search.rs:177:        if let Some(cursor) = cursor {
+src/db/read/search.rs:178:            return match cursor.mode_used() {
+src/db/read/search.rs:179:                SearchMode::Fts => self.search_fts_page(query, limit, filters, Some(cursor)),
+src/db/read/search.rs:181:                    self.search_literal_page(query, limit, filters, Some(cursor))
+src/db/read/search.rs:183:                SearchMode::Auto => self.search_literal_page(query, limit, filters, Some(cursor)),
+src/db/read/search.rs:209:    /// Search stored snapshots with explicit FTS5 semantics.
+src/db/read/search.rs:228:        cursor: Option<&SearchCursorState>,
+src/db/read/search.rs:231:        let params = SearchExecutionParams::new(limit, filters, cursor)?;
+src/db/read/search.rs:263:                    ":cursor_score" : params.cursor_score,
+src/db/read/search.rs:264:                    ":cursor_last_seen_at" : params.cursor_last_seen_at,
+src/db/read/search.rs:265:                    ":cursor_snapshot_id" : params.cursor_snapshot_id,
+src/db/read/search.rs:272:        let native_hits = collect_search_results(rows, limit, SearchMode::Fts, "FTS")?;
+src/db/read/search.rs:273:        let ocr_hits = self.search_ocr_fts_hits(query, limit, filters, cursor)?;
+src/db/read/search.rs:274:        Ok(merge_scored_search_results(
+src/db/read/search.rs:276:            native_hits,
+src/db/read/search.rs:277:            ocr_hits,
+src/db/read/search.rs:283:    /// Search stored snapshots with literal `LIKE` matching semantics.
+src/db/read/search.rs:302:        cursor: Option<&SearchCursorState>,
+src/db/read/search.rs:305:        let params = SearchExecutionParams::new(limit, filters, cursor)?;
+src/db/read/search.rs:309:                self.search_file_path_literal_page(path_fragment, limit, filters, cursor)?;
+src/db/read/search.rs:310:            if cursor.is_some() || !results.hits().is_empty() {
+src/db/read/search.rs:312:                    .merge_literal_hits_with_ocr(results, &analysis, limit, filters, cursor);
+src/db/read/search.rs:377:                    ":cursor_score" : params.cursor_score,
+src/db/read/search.rs:378:                    ":cursor_last_seen_at" : params.cursor_last_seen_at,
+src/db/read/search.rs:379:                    ":cursor_snapshot_id" : params.cursor_snapshot_id,
+src/db/read/search.rs:386:        let native_hits = collect_search_results(rows, limit, SearchMode::Literal, "literal")?;
+src/db/read/search.rs:387:        self.merge_literal_hits_with_ocr(native_hits, &analysis, limit, filters, cursor)
+src/db/read/search.rs:390:    fn merge_literal_hits_with_ocr(
+src/db/read/search.rs:392:        native_hits: SearchResults,
+src/db/read/search.rs:396:        cursor: Option<&SearchCursorState>,
+src/db/read/search.rs:398:        let ocr_hits = self.search_ocr_literal_hits(analysis, limit, filters, cursor)?;
+src/db/read/search.rs:399:        Ok(merge_scored_search_results(
+src/db/read/search.rs:401:            native_hits,
+src/db/read/search.rs:402:            ocr_hits,
+src/db/read/search.rs:408:    fn search_ocr_fts_hits(
+src/db/read/search.rs:413:        cursor: Option<&SearchCursorState>,
+src/db/read/search.rs:415:        let params = SearchExecutionParams::new(limit, filters, cursor)?;
+src/db/read/search.rs:418:        let sql = ocr_fts_query(use_snapshot_event_cache, has_temporal_event_filters);
+src/db/read/search.rs:440:                    ":cursor_score" : params.cursor_score,
+src/db/read/search.rs:441:                    ":cursor_last_seen_at" : params.cursor_last_seen_at,
+src/db/read/search.rs:442:                    ":cursor_snapshot_id" : params.cursor_snapshot_id,
+src/db/read/search.rs:452:    fn search_ocr_literal_hits(
+src/db/read/search.rs:457:        cursor: Option<&SearchCursorState>,
+src/db/read/search.rs:459:        let params = SearchExecutionParams::new(limit, filters, cursor)?;
+src/db/read/search.rs:470:        let literal_match = ocr_literal_fts_match_query(analysis);
+src/db/read/search.rs:471:        let sql = ocr_literal_query(
+src/db/read/search.rs:501:                    ":cursor_score" : params.cursor_score,
+src/db/read/search.rs:502:                    ":cursor_last_seen_at" : params.cursor_last_seen_at,
+src/db/read/search.rs:503:                    ":cursor_snapshot_id" : params.cursor_snapshot_id,
+src/db/read/search.rs:518:        cursor: Option<&SearchCursorState>,
+src/db/read/search.rs:520:        let params = SearchExecutionParams::new(limit, filters, cursor)?;
+src/db/read/search.rs:528:        if cursor.is_none() && *filters == RetrievalFilters::default() {
+src/db/read/search.rs:562:                    ":cursor_score" : params.cursor_score,
+src/db/read/search.rs:563:                    ":cursor_last_seen_at" : params.cursor_last_seen_at,
+src/db/read/search.rs:564:                    ":cursor_snapshot_id" : params.cursor_snapshot_id,
+src/db/read/search.rs:603:fn ocr_literal_fts_match_query(analysis: &QueryAnalysis) -> Option<String> {
+src/cli/commands/retrieval/recall.rs:40:    pub(in crate::cli) alternatives: Vec<RecallCandidate>,
+src/cli/commands/retrieval/recall.rs:68:                .alternatives
+src/cli/commands/retrieval/recall.rs:98:                "prefer_recent": args.prefer_recent,
+src/cli/commands/retrieval/recall.rs:104:        alternatives: recall
+src/cli/commands/retrieval/recall.rs:105:            .alternatives
+src/cli/commands/retrieval/recall.rs:134:    let mut search_was_weak = false;
+src/cli/commands/retrieval/recall.rs:150:                    args.prefer_recent,
+src/cli/commands/retrieval/recall.rs:158:        search_was_weak = search_candidates
+src/cli/commands/retrieval/recall.rs:163:            if search_was_weak {
+src/cli/commands/retrieval/recall.rs:169:        if search_was_weak {
+src/cli/commands/retrieval/recall.rs:180:                        args.prefer_recent,
+src/cli/commands/retrieval/recall.rs:188:                .recent(args.limit, filters)?
+src/cli/commands/retrieval/recall.rs:195:                    build_recent_candidate(
+src/cli/commands/retrieval/recall.rs:199:                        args.prefer_recent,
+src/cli/commands/retrieval/recall.rs:206:            .recent(args.limit, filters)?
+src/cli/commands/retrieval/recall.rs:213:                build_recent_candidate(hit, index, args.prefer_app.as_deref(), args.prefer_recent),
+src/cli/commands/retrieval/recall.rs:229:    let alternatives = ranked
+src/cli/commands/retrieval/recall.rs:237:        search_was_weak,
+src/cli/commands/retrieval/recall.rs:238:        args.prefer_recent,
+src/cli/commands/retrieval/recall.rs:244:        alternatives,
+src/cli/commands/retrieval/recall.rs:270:    prefer_recent: bool,
+src/cli/commands/retrieval/recall.rs:273:        SearchMode::Fts => normalize_fts_score(hit.score()),
+src/cli/commands/retrieval/recall.rs:280:    if prefer_recent {
+src/cli/commands/retrieval/recall.rs:281:        sort_score += recent_index_boost(index) * 0.6;
+src/cli/commands/retrieval/recall.rs:296:pub(in crate::cli) fn build_recent_candidate(
+src/cli/commands/retrieval/recall.rs:300:    prefer_recent: bool,
+src/cli/commands/retrieval/recall.rs:308:    let mut normalized_score = 0.55 + recent_index_boost(index) + text_bonus;
+src/cli/commands/retrieval/recall.rs:309:    if prefer_recent {
+src/cli/commands/retrieval/recall.rs:370:pub(in crate::cli) fn normalize_fts_score(score: Option<f64>) -> f64 {
+src/cli/commands/retrieval/recall.rs:601:pub(in crate::cli) fn recent_index_boost(index: usize) -> f64 {
+src/cli/commands/retrieval/recall.rs:623:    search_was_weak: bool,
+src/cli/commands/retrieval/recall.rs:624:    prefer_recent: bool,
+src/cli/commands/retrieval/recall.rs:629:    match (query, best.source, search_was_weak) {
+src/cli/commands/retrieval/recall.rs:637:                "Selected the best available query match for \"{query}\" after weak search results were merged with recent candidates"
+src/cli/commands/retrieval/recall.rs:642:                "Fell back to recent clipboard items because query matches were weak".to_string(),
+src/cli/commands/retrieval/recall.rs:646:            parts.push("Selected the most likely useful recent clipboard item".to_string());
+src/cli/commands/retrieval/recall.rs:658:    if prefer_recent && matches!(best.source, RecallCandidateSource::Recent) {
+=== has text ===
+src/db/read/filter_sql.rs:185:        parameter: ":has_text",
+src/db/read/filter_sql.rs:277:             ({snapshot_alias}.preview_text IS NOT NULL AND {snapshot_alias}.preview_text != '')
+src/db/read/filter_sql.rs:282:                   AND soc.ocr_text != ''
+src/db/read/filter_sql.rs:296:    require_text_value: bool,
+src/db/read/filter_sql.rs:298:    let text_value_clause = if require_text_value {
+src/db/read/filter_sql.rs:299:        "\n                   AND ir.text_value IS NOT NULL AND ir.text_value != ''"
+src/db/read/filter_sql.rs:307:                   AND ir.kind IN ({}){text_value_clause}
+=== optimizer ===
+16:    recompute_snapshot_fingerprint, snapshot_fingerprint_with_replacement,
+30:    pub(in crate::db) raw_sha256: String,
+33:const IMAGE_OPTIMIZATION_BATCH_LIMIT: usize = 250;
+68:            logical_saved_bytes: 0,
+72:            filesystem_saved_bytes: 0,
+116:                (total_rows - report.scanned_rows).min(IMAGE_OPTIMIZATION_BATCH_LIMIT);
+256:    let saved_bytes = candidate.byte_len.saturating_sub(optimized.bytes.len());
+260:    report.logical_saved_bytes += saved_bytes;
+264:        replace_image_with_optimized_webp(conn, candidate, optimized)?;
+282:        mark_image_optimization_skipped(conn, candidate, reason)?;
+293:        report.filesystem_saved_bytes = initial.saturating_sub(final_bytes);
+328:                SELECT snapshot_id, item_index, uti, byte_len, raw_sha256, blob_value
+334:                LIMIT ?1
+335:                OFFSET ?2
+346:                raw_sha256: row.get(4)?,
+362:                SELECT snapshot_id, item_index, uti, byte_len, raw_sha256
+368:                LIMIT ?1
+421:    let rgba = image.to_rgba8();
+427:    let raw_sha256 = hash_bytes(&bytes);
+428:    Ok(OptimizedImage { bytes, raw_sha256 })
+458:    let saved = original_len - optimized_len;
+459:    saved >= IMAGE_OPTIMIZATION_MIN_ABSOLUTE_SAVINGS
+460:        && saved * IMAGE_OPTIMIZATION_MIN_RELATIVE_SAVINGS_DENOMINATOR
+464:pub(in crate::db) fn mark_image_optimization_skipped(
+471:            UPDATE item_representations
+520:    let fingerprint =
+521:        snapshot_fingerprint_with_replacement(conn, candidate, WEBP_UTI, &optimized.bytes)?;
+525:            params![fingerprint, candidate.snapshot_id],
+528:        .context("check optimized snapshot fingerprint conflict")?;
+532:pub(in crate::db) fn replace_image_with_optimized_webp(
+544:            UPDATE item_representations
+547:                raw_sha256 = ?6,
+553:                image_original_raw_sha256 = ?10,
+566:                &optimized.raw_sha256,
+570:                &candidate.raw_sha256
+579:    copy_ocr_result_for_optimized_image(&tx, &candidate.raw_sha256, &optimized.raw_sha256)?;
+582:    let fingerprint = recompute_snapshot_fingerprint(&tx, candidate.snapshot_id)?;
+585:        params![candidate.snapshot_id, fingerprint],
+587:    .context("update optimized snapshot fingerprint")?;
+611:                raw_sha256,
+632:            WHERE raw_sha256 = ?1
+678:                LIMIT 1
+=== export ===
+13:    render_export_human, render_forget_human, render_purge_human, render_restore_human,
+24:pub(in crate::cli) fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -> Result<()> {
+25:    let format = require_text_or_json(args.output.resolved()?, "export")?;
+28:    anyhow::Context::with_context(db.find_snapshot(args.snapshot_id, 1), || {
+29:        format!("export failed for snapshot {}", args.snapshot_id)
+39:        .find_representation_bytes(args.snapshot_id, args.item, &args.uti)?
+57:    let mut output = create_export_destination(&args.out, args.force)?;
+59:    anyhow::Context::with_context(output.write_all(representation.raw_bytes()), || {
+60:        format!("failed to write export file {}", args.out.display())
+72:        OutputFormat::Json => emit_json_or_text(true, &output, render_export_text)?,
+73:        OutputFormat::Human => print!("{}", render_export_human(&output)),
+74:        OutputFormat::Text => print!("{}", render_export_text(&output)),
+75:        _ => unreachable!("unsupported export format should be rejected earlier"),
+84:    let snapshot = anyhow::Context::with_context(db.find_snapshot(args.snapshot_id, 1), || {
+154:fn create_export_destination(path: &Path, force: bool) -> Result<File> {
+160:                    "export destination {} is a symbolic link; choose a regular file path instead",
+166:                    "export destination {} is not a regular file",
+170:            if !force {
+172:                    "export destination {} already exists (pass --force to replace it)",
+177:            std::fs::remove_file(path)
+190:                "export destination {} already exists (pass --force to replace it)",
+195:            Err(error).with_context(|| format!("failed to create export file {}", path.display()))
+207:fn render_export_text(output: &ExportOutput) -> String {
+209:        "exported snapshot={} item={} uti={} bytes={} sha256={} out={}\n",
+254:    use super::create_export_destination;
+257:    fn create_export_destination_rejects_existing_file_without_force() {
+258:        let path = temp_path("existing-export.bin");
+261:        let error = create_export_destination(&path, false).unwrap_err();
+270:    fn create_export_destination_replaces_existing_file_with_force() {
+271:        let path = temp_path("forced-export.bin");
+274:        let mut file = create_export_destination(&path, true).unwrap();
+275:        file.write_all(b"new").unwrap();
+284:    fn create_export_destination_rejects_directory() {
+285:        let path = temp_path("export-directory");
+288:        let error = create_export_destination(&path, true).unwrap_err();
+297:    fn create_export_destination_rejects_symlink() {
+298:        let target = temp_path("export-target.bin");
+299:        let link = temp_path("export-link.bin");
+303:        let error = create_export_destination(&link, true).unwrap_err();
+330:                let _ = std::fs::remove_file(path);
+=== representation schema ===
+    15	    snapshot_id   INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+    16	    item_index    INTEGER NOT NULL CHECK (item_index >= 0),
+    17	    primary_kind  TEXT NOT NULL,
+    18	    primary_uti   TEXT,
+    19	    preview_text  TEXT NOT NULL,
+    20	    search_text   TEXT NOT NULL,
+    21	    total_bytes   INTEGER NOT NULL CHECK (total_bytes >= 0),
+    22	    PRIMARY KEY (snapshot_id, item_index)
+    23	);
+    24	
+    25	CREATE TABLE IF NOT EXISTS item_representations (
+    26	    snapshot_id    INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+    27	    item_index     INTEGER NOT NULL CHECK (item_index >= 0),
+    28	    uti            TEXT NOT NULL,
+    29	    kind           TEXT NOT NULL,
+    30	    byte_len       INTEGER NOT NULL CHECK (byte_len >= 0),
+    31	    raw_sha256     TEXT NOT NULL,
+    32	    text_value     TEXT,
+    33	    blob_value     BLOB NOT NULL,
+    34	    image_compression_status TEXT NOT NULL DEFAULT 'uncompressed' CHECK (image_compression_status IN ('uncompressed', 'compressed', 'skipped')),
+    35	    image_compression_format TEXT,
+    36	    image_compressed_at TEXT,
+    37	    image_original_byte_len INTEGER,
+    38	    image_original_raw_sha256 TEXT,
+    39	    image_compression_reason TEXT,
+    40	    PRIMARY KEY (snapshot_id, item_index, uti)
+    41	);
+    42	
+    43	CREATE TABLE IF NOT EXISTS capture_events (
+    44	    id                     INTEGER PRIMARY KEY,
+    45	    snapshot_id            INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
+    46	    observed_at            TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    47	    change_count           INTEGER NOT NULL CHECK (change_count >= 0),
+    48	    frontmost_app_bundle_id TEXT,
+=== trigger/update literal cache ===
+   210	
+   211	CREATE TRIGGER IF NOT EXISTS snapshots_ai AFTER INSERT ON snapshots BEGIN
+   212	    INSERT INTO snapshots_fts(rowid, search_text, preview_text)
+   213	    VALUES (new.id, new.search_text, new.preview_text);
+   214	    INSERT INTO snapshot_literal_cache (snapshot_id, haystack)
+   215	    VALUES (
+   216	        new.id,
+   217	        lower(
+   218	            COALESCE(NULLIF(new.preview_text, ''), new.search_text, '') || char(31) ||
+   219	            COALESCE(new.preview_text, '') || char(31) ||
+   220	            COALESCE(new.search_text, '')
+   221	        )
+   222	    )
+   223	    ON CONFLICT(snapshot_id) DO UPDATE SET
+   224	        haystack = excluded.haystack;
+   225	END;
+   226	
+   227	CREATE TRIGGER IF NOT EXISTS snapshots_ad AFTER DELETE ON snapshots BEGIN
+   228	    INSERT INTO snapshots_fts(snapshots_fts, rowid, search_text, preview_text)
+   229	    VALUES ('delete', old.id, old.search_text, old.preview_text);
+   230	END;
+   231	
+   232	CREATE TRIGGER IF NOT EXISTS snapshots_au AFTER UPDATE ON snapshots BEGIN
+   233	    INSERT INTO snapshots_fts(snapshots_fts, rowid, search_text, preview_text)
+   234	    VALUES ('delete', old.id, old.search_text, old.preview_text);
+   235	    INSERT INTO snapshots_fts(rowid, search_text, preview_text)
+   236	    VALUES (new.id, new.search_text, new.preview_text);
+   237	    INSERT INTO snapshot_literal_cache (snapshot_id, haystack)
+   238	    VALUES (
+   239	        new.id,
+   240	        lower(
+   241	            COALESCE(NULLIF(new.preview_text, ''), new.search_text, '') || char(31) ||
+   242	            COALESCE(new.preview_text, '') || char(31) ||
+   243	            COALESCE(new.search_text, '')
+   244	        )
+   245	    )
+   246	    ON CONFLICT(snapshot_id) DO UPDATE SET
+   247	        haystack = excluded.haystack;
+   248	END;
+   249	
+   250	CREATE TRIGGER IF NOT EXISTS snapshot_literal_cache_ai
+   251	AFTER INSERT ON snapshot_literal_cache BEGIN
+   252	    INSERT INTO snapshots_literal_fts(rowid, haystack)
+   253	    VALUES (new.snapshot_id, new.haystack);
+   254	END;
+   255	
+   256	CREATE TRIGGER IF NOT EXISTS snapshot_literal_cache_au
+   257	AFTER UPDATE ON snapshot_literal_cache BEGIN
+   258	    DELETE FROM snapshots_literal_fts WHERE rowid = old.snapshot_id;
+   259	    INSERT INTO snapshots_literal_fts(rowid, haystack)
+   260	    VALUES (new.snapshot_id, new.haystack);
+   261	END;
+   262	
+   263	CREATE TRIGGER IF NOT EXISTS snapshot_literal_cache_ad
+   264	AFTER DELETE ON snapshot_literal_cache BEGIN
+   265	    DELETE FROM snapshots_literal_fts WHERE rowid = old.snapshot_id;
+   266	END;
+   267	
+   268	CREATE TRIGGER IF NOT EXISTS snapshot_projection_cache_ai
+   269	AFTER INSERT ON snapshot_projection_cache BEGIN
+   270	    INSERT INTO snapshot_file_url_fts(rowid, file_urls)
+   271	    VALUES (new.snapshot_id, new.file_urls);
+   272	END;
+   273	
+   274	CREATE TRIGGER IF NOT EXISTS snapshot_projection_cache_au
+   275	AFTER UPDATE ON snapshot_projection_cache BEGIN
+   276	    INSERT INTO snapshot_file_url_fts(snapshot_file_url_fts, rowid, file_urls)
+   277	    VALUES ('delete', old.snapshot_id, old.file_urls);
+   278	    INSERT INTO snapshot_file_url_fts(rowid, file_urls)
+   279	    VALUES (new.snapshot_id, new.file_urls);
+   280	END;
+   281	
+   282	CREATE TRIGGER IF NOT EXISTS snapshot_projection_cache_ad
+   283	AFTER DELETE ON snapshot_projection_cache BEGIN
+   284	    INSERT INTO snapshot_file_url_fts(snapshot_file_url_fts, rowid, file_urls)
+   285	    VALUES ('delete', old.snapshot_id, old.file_urls);
+   286	END;
+   287	
+   288	CREATE TRIGGER IF NOT EXISTS snapshot_ocr_cache_ai
+   289	AFTER INSERT ON snapshot_ocr_cache BEGIN
+   290	    INSERT INTO snapshot_ocr_fts(rowid, ocr_text)
+   291	    VALUES (new.snapshot_id, new.ocr_text);
+   292	    INSERT INTO snapshot_ocr_literal_fts(rowid, ocr_text)
+   293	    VALUES (new.snapshot_id, lower(new.ocr_text));
+   294	END;
+   295	
+   296	CREATE TRIGGER IF NOT EXISTS snapshot_ocr_cache_au
+   297	AFTER UPDATE ON snapshot_ocr_cache BEGIN
+   298	    INSERT INTO snapshot_ocr_fts(snapshot_ocr_fts, rowid, ocr_text)
+   299	    VALUES ('delete', old.snapshot_id, old.ocr_text);
+   300	    INSERT INTO snapshot_ocr_fts(rowid, ocr_text)
+   301	    VALUES (new.snapshot_id, new.ocr_text);
+   302	    DELETE FROM snapshot_ocr_literal_fts WHERE rowid = old.snapshot_id;
+   303	    INSERT INTO snapshot_ocr_literal_fts(rowid, ocr_text)
+   304	    VALUES (new.snapshot_id, lower(new.ocr_text));
+   305	END;
+   306	
+   307	CREATE TRIGGER IF NOT EXISTS snapshot_ocr_cache_ad
+   308	AFTER DELETE ON snapshot_ocr_cache BEGIN
+   309	    INSERT INTO snapshot_ocr_fts(snapshot_ocr_fts, rowid, ocr_text)
+   310	    VALUES ('delete', old.snapshot_id, old.ocr_text);
+   311	    DELETE FROM snapshot_ocr_literal_fts WHERE rowid = old.snapshot_id;
+   312	END;
+   313	
+   314	CREATE TRIGGER IF NOT EXISTS capture_events_restore_suppression_bi
+   315	BEFORE INSERT ON capture_events BEGIN
+=== app override DB open ===
+35:    pub(in crate::cli::commands) database_path_override: Option<String>,
+93:    let format = require_app_output_format(args.output.resolved()?, "app settings")?;
+103:    let format = require_app_output_format(args.output.resolved()?, "app settings")?;
+105:    let previous_paths = app_preference_revision_paths(db_path)?;
+107:    let paths = app_preference_revision_paths_after_mutation(db_path, previous_paths)?;
+108:    bump_app_preferences_revisions(&paths)?;
+118:    let format = require_app_output_format(args.output.resolved()?, "app settings")?;
+119:    let previous_paths = app_preference_revision_paths(db_path)?;
+121:    let paths = app_preference_revision_paths_after_mutation(db_path, previous_paths)?;
+122:    bump_app_preferences_revisions(&paths)?;
+140:    let format = require_app_output_format(args.output.resolved()?, "app launch-at-login")?;
+150:    let format = require_app_output_format(args.output.resolved()?, "app launch-at-login")?;
+151:    let previous_paths = app_preference_revision_paths(db_path)?;
+155:    let paths = app_preference_revision_paths_after_mutation(db_path, previous_paths)?;
+156:    bump_app_preferences_revisions(&paths)?;
+166:    let format = require_app_output_format(args.output.resolved()?, "app launch-at-login")?;
+167:    let previous_paths = app_preference_revision_paths(db_path)?;
+170:    let paths = app_preference_revision_paths_after_mutation(db_path, previous_paths)?;
+171:    bump_app_preferences_revisions(&paths)?;
+189:    let format = require_app_output_format(args.output.resolved()?, "app update-check")?;
+199:    let format = require_app_output_format(args.output.resolved()?, "app update-check")?;
+200:    let previous_paths = app_preference_revision_paths(db_path)?;
+217:    let paths = app_preference_revision_paths_after_mutation(db_path, previous_paths)?;
+218:    bump_app_preferences_revisions(&paths)?;
+228:    let format = require_app_output_format(args.output.resolved()?, "app update-check")?;
+229:    let previous_paths = app_preference_revision_paths(db_path)?;
+233:    let paths = app_preference_revision_paths_after_mutation(db_path, previous_paths)?;
+234:    bump_app_preferences_revisions(&paths)?;
+244:    let format = require_app_output_format(args.output.resolved()?, "app quit")?;
+263:        database_path_override: read_string(AppPreferenceKey::DatabasePathOverride)?,
+555:        AppPreferenceKey::DatabasePathOverride => "databasePathOverride",
+582:fn app_preference_revision_paths(db_path: &Path) -> Result<Vec<PathBuf>> {
+594:fn app_preference_revision_paths_after_mutation(
+598:    for path in app_preference_revision_paths(db_path)? {
+610:fn bump_app_preferences_revisions(paths: &[PathBuf]) -> Result<()> {
+612:        Database::open_or_init(path)?
+613:            .bump_app_preferences_revision()
+615:            .with_context(|| format!("record app preference revision in {}", path.display()))?;
+623:        "binary_path_override={}\ndatabase_path_override={}\ndefault_recent_hours={}\ndefault_query_mode={}\nhotkey_enabled={}\n",
+625:        output.database_path_override.as_deref().unwrap_or(""),
+=== Swift polling/process ===
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:50:    @ObservationIgnored private var revisionMonitorTask: Task<Void, Never>?
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:58:    @ObservationIgnored private var lastResolvedDatabasePath = UserDefaults.standard.string(forKey: PreferenceKey.databasePathOverride)
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:81:        await refreshAll()
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:89:        revisionMonitorTask?.cancel()
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:93:    func refreshAll() async {
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:97:        async let statusTask: Void = refreshStatus()
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:98:        async let settingsTask: Void = refreshSettings()
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:99:        async let recentTask: Bool = refreshRecentPreview()
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:100:        _ = await (statusTask, settingsTask, recentTask)
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:140:            recentPreview = []
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:154:            await refreshAll()
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:160:            await refreshAll()
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:444:        let databasePath = UserDefaults.standard.string(forKey: PreferenceKey.databasePathOverride)?
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:523:            Task {
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:524:                try? await Task.sleep(for: duration)
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:544:        guard defaults.bool(forKey: PreferenceKey.didInstallSelfIgnore) == false else { return }
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:547:            defaults.set(true, forKey: PreferenceKey.didInstallSelfIgnore)
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:576:        guard revisionMonitorTask == nil else { return }
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:577:        revisionMonitorTask = Task { [weak self] in
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:578:            while Task.isCancelled == false {
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:579:                try? await Task.sleep(for: .seconds(2))
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:580:                guard Task.isCancelled == false else { return }
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:589:            Task { await self?.handleAppRefreshNotification() }
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:608:            || lastResolvedDatabasePath != defaults.string(forKey: PreferenceKey.databasePathOverride) {
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:615:            let next = try await client.serviceRevision()
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:643:        let serviceChanged = next.serviceRevision != previous.serviceRevision
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:692:        let nextDatabasePath = defaults.string(forKey: PreferenceKey.databasePathOverride)
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:710:            await refreshAll()
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:769:                Task { @MainActor in
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:799:    private var task: Task<Void, Never>?
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:819:        task = Task { [weak self] in
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:820:            while Task.isCancelled == false {
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:822:                try? await Task.sleep(for: self.pollInterval)
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:823:                guard Task.isCancelled == false else { return }
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:857:    private var pendingTask: Task<Void, Never>?
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:863:        sleep: @escaping @MainActor (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:872:        pendingTask?.cancel()
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:876:        pendingTask?.cancel()
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:877:        pendingTask = Task { [weak self] in
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:884:            guard Task.isCancelled == false else { return }
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:890:        pendingTask?.cancel()
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift:891:        pendingTask = nil
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/HistoryModel.swift:27:    @ObservationIgnored private var loadGeneration = 0
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/HistoryModel.swift:65:        loadGeneration += 1
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/HistoryModel.swift:66:        let generation = loadGeneration
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/HistoryModel.swift:78:        loadGeneration += 1
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/HistoryModel.swift:79:        await loadMore(generation: loadGeneration)
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/HistoryModel.swift:82:    func refreshForExternalHistoryChange() async {
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/HistoryModel.swift:83:        loadGeneration += 1
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/HistoryModel.swift:84:        let generation = loadGeneration
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/HistoryModel.swift:97:            if generation == loadGeneration {
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/HistoryModel.swift:138:            if generation == loadGeneration {
+macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/HistoryModel.swift:243:        request.generation == loadGeneration
+macos/ClipmemMenuBar/ClipmemMenuBar/Views/SnapshotDetailView.swift:56:        .task(id: detail?.snapshotId) {
+macos/ClipmemMenuBar/ClipmemMenuBar/Views/SnapshotDetailView.swift:66:                Task {
+macos/ClipmemMenuBar/ClipmemMenuBar/Views/SnapshotDetailView.swift:84:            try? await Task.sleep(for: .milliseconds(100))
+macos/ClipmemMenuBar/ClipmemMenuBar/Views/SnapshotDetailView.swift:85:            guard !Task.isCancelled else { return }
+macos/ClipmemMenuBar/ClipmemMenuBar/Views/SnapshotDetailView.swift:195:        Task { await appModel.copySnapshotToPasteboard(snapshotID: detail.snapshotId) }
+macos/ClipmemMenuBar/ClipmemMenuBar/Views/SnapshotDetailView.swift:209:                Task { await appModel.restore(snapshotID: detail.snapshotId) }
+macos/ClipmemMenuBar/ClipmemMenuBar/Views/SnapshotDetailView.swift:238:            _ = try await appModel.client.export(
+macos/ClipmemMenuBar/ClipmemMenuBar/Services/ClipmemClient/CommandRunner.swift:32:        return try await withTaskCancellationHandler {
+macos/ClipmemMenuBar/ClipmemMenuBar/Services/ClipmemClient/CommandRunner.swift:33:            let commandTask = Task.detached(priority: .userInitiated) {
+macos/ClipmemMenuBar/ClipmemMenuBar/Services/ClipmemClient/CommandRunner.swift:77:                let timeoutTask = Task {
+macos/ClipmemMenuBar/ClipmemMenuBar/Services/ClipmemClient/CommandRunner.swift:78:                    try? await Task.sleep(for: timeout)
+macos/ClipmemMenuBar/ClipmemMenuBar/Services/ClipmemClient/CommandRunner.swift:79:                    if !Task.isCancelled {
+macos/ClipmemMenuBar/ClipmemMenuBar/Services/ClipmemClient/CommandRunner.swift:84:                defer { timeoutTask.cancel() }
+macos/ClipmemMenuBar/ClipmemMenuBar/Services/ClipmemClient/CommandRunner.swift:85:                return try await commandTask.value
+macos/ClipmemMenuBar/ClipmemMenuBar/Services/ClipmemClient/CommandRunner.swift:87:            return try await commandTask.value
+macos/ClipmemMenuBar/ClipmemMenuBar/Services/ClipmemClient/CommandRunner.swift:103:        return try await withTaskCancellationHandler {
+macos/ClipmemMenuBar/ClipmemMenuBar/Services/ClipmemClient/CommandRunner.swift:104:            try await Task.detached(priority: .userInitiated) {

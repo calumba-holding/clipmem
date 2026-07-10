@@ -1,0 +1,3 @@
+## cargo fmt --check
+bash: line 9: cargo: command not found
+EXIT=127
