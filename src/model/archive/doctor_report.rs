@@ -1,4 +1,23 @@
+use serde::Serialize;
+
 use super::DoctorReport;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DoctorIntegrityReport {
+    orphan_representation_count: usize,
+    foreign_key_violation_count: usize,
+    projection_mismatch_count: usize,
+}
+
+impl DoctorIntegrityReport {
+    pub(crate) fn new(orphans: usize, foreign_keys: usize, projections: usize) -> Self {
+        Self {
+            orphan_representation_count: orphans,
+            foreign_key_violation_count: foreign_keys,
+            projection_mismatch_count: projections,
+        }
+    }
+}
 
 impl DoctorReport {
     #[must_use]
@@ -9,6 +28,7 @@ impl DoctorReport {
         fts5_compile_option_present: bool,
         fts5_create_virtual_table_ok: bool,
         compile_options: Vec<String>,
+        integrity: DoctorIntegrityReport,
     ) -> Self {
         Self {
             db_path,
@@ -17,6 +37,7 @@ impl DoctorReport {
             fts5_compile_option_present,
             fts5_create_virtual_table_ok,
             compile_options,
+            integrity,
         }
     }
 
@@ -48,5 +69,20 @@ impl DoctorReport {
     #[must_use]
     pub fn compile_options(&self) -> &[String] {
         &self.compile_options
+    }
+
+    #[must_use]
+    pub fn orphan_representation_count(&self) -> usize {
+        self.integrity.orphan_representation_count
+    }
+
+    #[must_use]
+    pub fn foreign_key_violation_count(&self) -> usize {
+        self.integrity.foreign_key_violation_count
+    }
+
+    #[must_use]
+    pub fn projection_mismatch_count(&self) -> usize {
+        self.integrity.projection_mismatch_count
     }
 }

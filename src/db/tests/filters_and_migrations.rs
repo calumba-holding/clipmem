@@ -2,6 +2,7 @@ use super::*;
 use rusqlite::params;
 
 mod archive_revision_migration;
+mod integrity_migration;
 mod purge_and_escaping;
 
 #[test]
@@ -107,7 +108,7 @@ fn migration_backfills_unified_search_documents_from_supported_versions() -> Res
         }
         let db = Database::open_or_init_and_migrate(&path)?;
         let count: i64 = db.conn.query_row(
-            "SELECT COUNT(*) FROM snapshot_search_documents WHERE builder_version = 1",
+            "SELECT COUNT(*) FROM snapshot_search_documents WHERE builder_version = 2",
             [],
             |row| row.get(0),
         )?;

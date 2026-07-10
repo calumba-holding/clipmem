@@ -372,6 +372,21 @@ pub(in crate::cli) fn render_doctor_text(report: &DoctorReport) -> String {
         "fts5 temp table creation works: {}",
         report.fts5_create_virtual_table_ok()
     );
+    let _ = writeln!(
+        out,
+        "orphan representations: {}",
+        report.orphan_representation_count()
+    );
+    let _ = writeln!(
+        out,
+        "foreign key violations: {}",
+        report.foreign_key_violation_count()
+    );
+    let _ = writeln!(
+        out,
+        "projection mismatches: {}",
+        report.projection_mismatch_count()
+    );
 
     if !report.compile_options().is_empty() {
         out.push('\n');

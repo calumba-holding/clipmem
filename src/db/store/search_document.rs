@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use rusqlite::Connection;
 
-pub(in crate::db) const SNAPSHOT_DOCUMENT_BUILDER_VERSION: i64 = 1;
+pub(in crate::db) const SNAPSHOT_DOCUMENT_BUILDER_VERSION: i64 = 2;
 
 pub(in crate::db) fn rebuild_snapshot_search_document(
     conn: &Connection,

@@ -5,6 +5,7 @@ use super::kinds::SnapshotKind;
 use super::text_projection::{FlattenedTextProjection, TextFragment};
 
 mod doctor_report;
+pub use doctor_report::DoctorIntegrityReport;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CaptureStoreResult {
@@ -272,6 +273,7 @@ pub struct DoctorReport {
     fts5_compile_option_present: bool,
     fts5_create_virtual_table_ok: bool,
     compile_options: Vec<String>,
+    integrity: DoctorIntegrityReport,
 }
 
 impl CaptureStoreResult {
