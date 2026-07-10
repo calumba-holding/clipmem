@@ -1,12 +1,38 @@
 use anyhow::{Context, Result};
 use rusqlite::Connection;
+use std::collections::BTreeMap;
 
-pub(in crate::db) const SNAPSHOT_DOCUMENT_BUILDER_VERSION: i64 = 2;
+use crate::model::{build_item, build_representation, FlattenedTextProjection};
+
+pub(in crate::db) const SNAPSHOT_DOCUMENT_BUILDER_VERSION: i64 = 3;
+
+pub(in crate::db) fn needs_builder_v3_migration(version: i64) -> bool {
+    version <= 20
+}
 
 pub(in crate::db) fn rebuild_snapshot_search_document(
     conn: &Connection,
     snapshot_id: i64,
 ) -> Result<()> {
+    let projection = load_text_projection(conn, snapshot_id)?;
+    let mut native_text = projection
+        .text_fragments()
+        .iter()
+        .map(|fragment| fragment.text())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    if native_text.is_empty() {
+        native_text = conn
+            .query_row(
+                "SELECT CASE WHEN snapshot_kind IN ('plain_text','html','json','xml','rtf') \
+                 THEN search_text ELSE '' END FROM snapshots WHERE id = ?1",
+                [snapshot_id],
+                |row| row.get(0),
+            )
+            .context("load legacy canonical text fallback")?;
+    }
+    let has_native_text = !native_text.trim().is_empty();
+    let projected_urls = projection.urls().join("\n");
     conn.execute(
         r"
         INSERT INTO snapshot_search_documents (
@@ -18,21 +44,16 @@ pub(in crate::db) fn rebuild_snapshot_search_document(
         SELECT
             s.id,
             ?2,
-            COALESCE(s.search_text, ''),
+            ?3,
             COALESCE(s.preview_text, ''),
             COALESCE(soc.ocr_text, ''),
-            COALESCE(sp.urls, ''),
+            CASE WHEN COALESCE(sp.urls, '') != '' THEN sp.urls ELSE ?5 END,
             COALESCE(sp.file_urls, ''),
             COALESCE(se.app_names_lower, ''),
             COALESCE(se.bundle_ids_lower, ''),
-            EXISTS (
-                SELECT 1 FROM item_representations ir
-                WHERE ir.snapshot_id = s.id
-                  AND ir.kind IN ('plain_text', 'html', 'json', 'xml', 'rtf')
-                  AND ir.text_value IS NOT NULL AND trim(ir.text_value) != ''
-            ),
+            ?4,
             COALESCE(soc.ocr_text, '') != '',
-            COALESCE(sp.urls, '') != '',
+            (COALESCE(sp.urls, '') != '' OR ?5 != ''),
             COALESCE(sp.file_urls, '') != '',
             EXISTS (SELECT 1 FROM item_representations ir WHERE ir.snapshot_id = s.id AND ir.kind = 'image'),
             EXISTS (SELECT 1 FROM item_representations ir WHERE ir.snapshot_id = s.id AND ir.kind = 'pdf'),
@@ -62,7 +83,13 @@ pub(in crate::db) fn rebuild_snapshot_search_document(
             last_observed_at = excluded.last_observed_at,
             last_event_id = excluded.last_event_id
         ",
-        (snapshot_id, SNAPSHOT_DOCUMENT_BUILDER_VERSION),
+        (
+            snapshot_id,
+            SNAPSHOT_DOCUMENT_BUILDER_VERSION,
+            native_text,
+            has_native_text,
+            projected_urls,
+        ),
     )
     .context("build snapshot search document")?;
 
@@ -104,6 +131,37 @@ pub(in crate::db) fn rebuild_snapshot_search_document(
     )
     .context("insert snapshot literal FTS row")?;
     Ok(())
+}
+
+fn load_text_projection(conn: &Connection, snapshot_id: i64) -> Result<FlattenedTextProjection> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT item_index, uti, text_value FROM item_representations \
+             WHERE snapshot_id = ?1 AND text_value IS NOT NULL ORDER BY item_index, uti",
+        )
+        .context("prepare canonical text projection representations")?;
+    let rows = stmt
+        .query_map([snapshot_id], |row| {
+            Ok((
+                row.get::<_, i64>(0)? as usize,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })
+        .context("query canonical text projection representations")?;
+    let mut grouped = BTreeMap::<usize, Vec<_>>::new();
+    for row in rows {
+        let (item_index, uti, text) = row.context("read canonical projection representation")?;
+        grouped
+            .entry(item_index)
+            .or_default()
+            .push(build_representation(uti, Some(text), Vec::new()));
+    }
+    let items = grouped
+        .into_iter()
+        .map(|(index, representations)| build_item(index, representations))
+        .collect::<Vec<_>>();
+    Ok(FlattenedTextProjection::from_items(&items))
 }
 
 pub(in crate::db) fn rebuild_all_snapshot_search_documents(conn: &Connection) -> Result<()> {

@@ -161,6 +161,8 @@ pub(in crate::cli) struct TextProjectionOutput {
     pub(in crate::cli) text_summary: String,
     pub(in crate::cli) ocr_text: Option<String>,
     pub(in crate::cli) ocr_status: Option<String>,
+    pub(in crate::cli) text_projection_version: u32,
+    pub(in crate::cli) text_projection_diagnostics: Vec<crate::model::ProjectionDiagnostic>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -250,6 +252,8 @@ impl TextProjectionOutput {
             text_summary: projection.text_summary().to_string(),
             ocr_text: projection.ocr_text().map(ToOwned::to_owned),
             ocr_status: projection.ocr_status().map(ToOwned::to_owned),
+            text_projection_version: projection.projection_version(),
+            text_projection_diagnostics: projection.diagnostics().to_vec(),
         }
     }
 }

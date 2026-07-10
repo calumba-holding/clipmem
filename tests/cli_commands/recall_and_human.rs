@@ -539,11 +539,11 @@ fn get_json_exposes_html_and_rtf_plain_text_projections() -> Result<()> {
     assert!(rtf_output.status.success());
     assert_eq!(
         rtf_payload["snapshot"]["rtf_text"].as_str(),
-        Some("hello world")
+        Some("hello\nworld")
     );
     assert_eq!(
         rtf_payload["snapshot"]["best_text"].as_str(),
-        Some("hello world")
+        Some("hello\nworld")
     );
 
     cleanup_db(&path);

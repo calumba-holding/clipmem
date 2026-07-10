@@ -108,7 +108,7 @@ fn migration_backfills_unified_search_documents_from_supported_versions() -> Res
         }
         let db = Database::open_or_init_and_migrate(&path)?;
         let count: i64 = db.conn.query_row(
-            "SELECT COUNT(*) FROM snapshot_search_documents WHERE builder_version = 2",
+            "SELECT COUNT(*) FROM snapshot_search_documents WHERE builder_version = 3",
             [],
             |row| row.get(0),
         )?;
