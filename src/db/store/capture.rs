@@ -128,8 +128,8 @@ impl Database {
         let operation_id: String = self
             .conn
             .query_row(
-                "INSERT INTO restore_operations (operation_id, snapshot_id, snapshot_sha256, state)
-             VALUES (lower(hex(randomblob(16))), ?1, ?2, 'preparing')
+                "INSERT INTO restore_operations (operation_id, snapshot_id, snapshot_sha256, state, expires_at)
+             VALUES (lower(hex(randomblob(16))), ?1, ?2, 'preparing', datetime('now', '+5 seconds'))
              RETURNING operation_id",
                 params![snapshot_id, snapshot_sha256],
                 |row| row.get(0),
@@ -139,10 +139,13 @@ impl Database {
     }
 
     pub(crate) fn mark_restore_written(&self, operation_id: &str, change_count: i64) -> Result<()> {
-        self.conn.execute(
-            "UPDATE restore_operations SET state = 'written', result_change_count = ?2 WHERE operation_id = ?1",
-            params![operation_id, change_count],
-        ).context("mark restore operation written")?;
+        self.conn
+            .execute(
+                "UPDATE restore_operations SET state = 'written', result_change_count = ?2,
+                 expires_at = datetime('now', '+30 seconds') WHERE operation_id = ?1",
+                params![operation_id, change_count],
+            )
+            .context("mark restore operation written")?;
         Ok(())
     }
 
