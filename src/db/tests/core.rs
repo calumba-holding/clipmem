@@ -414,6 +414,59 @@ fn failed_ocr_results_do_not_enter_search() -> Result<()> {
 }
 
 #[test]
+fn new_snapshot_with_cached_ready_ocr_is_searchable_in_same_capture() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    db.set_ocr_enabled(true)?;
+
+    let image_bytes = b"cached-ocr-image".to_vec();
+    let first = CaptureApplicationService::new(&mut db).capture(
+        &image_snapshot(1, vec![("public.png", image_bytes.clone())]),
+        CaptureMode::Watch,
+    )?;
+    assert!(matches!(first, CaptureOutcome::Stored { .. }));
+
+    // Mark the shared image hash as OCR-ready between captures.
+    db.conn.execute(
+        "UPDATE ocr_results SET status = 'ready', text_value = 'zanzibar receipt total'",
+        [],
+    )?;
+
+    // A different snapshot reusing the same representation hash must pick up
+    // the cached OCR text in its search document within the capture itself.
+    let second = CaptureApplicationService::new(&mut db).capture(
+        &image_snapshot(
+            2,
+            vec![
+                ("public.png", image_bytes),
+                ("public.utf8-plain-text", b"with a caption".to_vec()),
+            ],
+        ),
+        CaptureMode::Watch,
+    )?;
+    let snapshot_id = match second {
+        CaptureOutcome::Stored { ref store, .. } => store.snapshot_id(),
+        other => panic!("expected stored capture, got {other:?}"),
+    };
+
+    let (ocr_text, has_ocr): (String, bool) = db.conn.query_row(
+        "SELECT ocr_text, has_ocr_text FROM snapshot_search_documents WHERE snapshot_id = ?1",
+        [snapshot_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    assert!(ocr_text.contains("zanzibar receipt total"));
+    assert!(has_ocr);
+    // Snapshot 1 only picks the text up via the worker's by-hash rebuild,
+    // which this test bypasses; the new snapshot must match immediately.
+    let hits = db.search_auto("zanzibar", 10, &unfiltered())?;
+    assert!(hits
+        .hits()
+        .iter()
+        .any(|hit| hit.snapshot_id() == snapshot_id));
+
+    Ok(())
+}
+
+#[test]
 fn next_ocr_candidates_prunes_orphan_pending_rows() -> Result<()> {
     let mut db = Database::open_in_memory()?;
     db.conn.execute(
