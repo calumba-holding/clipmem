@@ -482,5 +482,6 @@ pub(in crate::db) fn rebuild_snapshot_ocr_cache(
         [snapshot_id],
     )
     .context("rebuild snapshot ocr cache")?;
+    super::search_document::rebuild_snapshot_search_document(tx, snapshot_id)?;
     Ok(())
 }

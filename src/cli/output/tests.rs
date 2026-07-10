@@ -96,6 +96,7 @@ pub(in crate::cli) fn render_list_text_includes_search_mode_match_score_urls_and
         }),
         truncated: false,
         next_cursor: None,
+        score_semantics: None,
         results: vec![ListRow::Snapshot(SnapshotListRow {
             snapshot_id: 42,
             event_id: 77,
@@ -120,6 +121,7 @@ pub(in crate::cli) fn render_list_text_includes_search_mode_match_score_urls_and
             score: Some(0.125),
             why_matched: Some("⟦git⟧ clone".to_string()),
             matched_fields: vec!["best_text".to_string(), "search_text".to_string()],
+            match_evidence: None,
         })],
     });
 
@@ -300,6 +302,7 @@ pub(in crate::cli) fn render_timeline_list_text_reports_event_history() {
         applied_filters: json!({}),
         truncated: false,
         next_cursor: None,
+        score_semantics: None,
         results: vec![ListRow::Timeline(TimelineListRow {
             event_id: 21,
             snapshot_id: 7,
@@ -353,6 +356,7 @@ pub(in crate::cli) fn markdown_and_toon_render_envelopes() {
         score: Some(0.3),
         why_matched: Some("git status".to_string()),
         matched_fields: vec!["best_text".to_string(), "search_text".to_string()],
+        match_evidence: None,
     });
     let row_json = serde_json::to_value(&row).expect("serialize snapshot row");
     assert_eq!(row_json["best_text_uti"], "public.utf8-plain-text");
@@ -383,6 +387,7 @@ pub(in crate::cli) fn markdown_and_toon_render_envelopes() {
         }),
         truncated: false,
         next_cursor: None,
+        score_semantics: None,
         results: vec![row],
     };
     let markdown = render_list_markdown(&envelope);
@@ -486,6 +491,7 @@ pub(in crate::cli) fn recall_markdown_and_toon_render_best_match_and_alternative
             score: Some(0.1),
             why_matched: Some("git status".to_string()),
             matched_fields: vec!["best_text".to_string(), "search_text".to_string()],
+            match_evidence: None,
             snippet: "quoted snippet".to_string(),
         },
         alternatives: vec![RecallOutputRow {
@@ -512,12 +518,14 @@ pub(in crate::cli) fn recall_markdown_and_toon_render_best_match_and_alternative
             score: None,
             why_matched: None,
             matched_fields: Vec::new(),
+            match_evidence: None,
             snippet: String::new(),
         }],
         best_match_confidence: RecallMatchConfidence::High,
         best_match_score: Some(0.91),
         why_selected: "Selected the strongest search match".to_string(),
         quoted_text: Some("git status".to_string()),
+        score_semantics: "evidence_v1",
     };
 
     let markdown = render_recall_markdown(&envelope);
@@ -546,6 +554,7 @@ pub(in crate::cli) fn timeline_toon_uses_scalar_projection_display_text_fallback
         applied_filters: json!({ "hours": 24 }),
         truncated: false,
         next_cursor: None,
+        score_semantics: None,
         results: vec![ListRow::Timeline(TimelineListRow {
             event_id: 9,
             snapshot_id: 3,
@@ -651,6 +660,7 @@ fn large_list_envelope(row_count: usize) -> ListEnvelope {
                 score: Some(0.42),
                 why_matched: Some("Exact text match".to_string()),
                 matched_fields: vec!["best_text".to_string(), "search_text".to_string()],
+                match_evidence: None,
             })
         })
         .collect();
@@ -667,6 +677,7 @@ fn large_list_envelope(row_count: usize) -> ListEnvelope {
         }),
         truncated: false,
         next_cursor: None,
+        score_semantics: None,
         results,
     }
 }

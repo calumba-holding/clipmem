@@ -11,6 +11,64 @@ pub struct CaptureStoreResult {
     inserted_new_snapshot: bool,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct MatchEvidence {
+    matched_fields: Vec<String>,
+    exact_phrase: bool,
+    term_coverage: Option<f64>,
+    snippet_source: Option<String>,
+    snippet_text: Option<String>,
+    query_classification: String,
+    match_quality: Option<f64>,
+}
+
+impl MatchEvidence {
+    #[must_use]
+    pub(crate) fn new(
+        matched_fields: Vec<String>,
+        exact_phrase: bool,
+        term_coverage: Option<f64>,
+        snippet_source: Option<String>,
+        snippet_text: Option<String>,
+        query_classification: &str,
+        match_quality: Option<f64>,
+    ) -> Self {
+        Self {
+            matched_fields,
+            exact_phrase,
+            term_coverage,
+            snippet_source,
+            snippet_text,
+            query_classification: query_classification.to_string(),
+            match_quality,
+        }
+    }
+
+    #[must_use]
+    pub fn matched_fields(&self) -> &[String] {
+        &self.matched_fields
+    }
+    #[must_use]
+    pub fn exact_phrase(&self) -> bool {
+        self.exact_phrase
+    }
+    #[must_use]
+    pub fn term_coverage(&self) -> Option<f64> {
+        self.term_coverage
+    }
+    #[must_use]
+    pub fn match_quality(&self) -> Option<f64> {
+        self.match_quality
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SearchOrderKey {
+    pub(crate) primary: f64,
+    pub(crate) secondary: f64,
+    pub(crate) exact_phrase: bool,
+}
+
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize)]
 pub struct SearchHit {
@@ -32,6 +90,9 @@ pub struct SearchHit {
     total_bytes: usize,
     item_count: usize,
     score: Option<f64>,
+    match_evidence: Option<MatchEvidence>,
+    #[serde(skip)]
+    search_order_key: Option<SearchOrderKey>,
 }
 
 #[derive(Debug, Clone)]
@@ -54,6 +115,8 @@ pub(crate) struct SearchHitParts {
     pub(crate) total_bytes: usize,
     pub(crate) item_count: usize,
     pub(crate) score: Option<f64>,
+    pub(crate) match_evidence: Option<MatchEvidence>,
+    pub(crate) search_order_key: Option<SearchOrderKey>,
 }
 
 #[cfg(test)]
@@ -79,6 +142,8 @@ impl SearchHitParts {
             total_bytes: 0,
             item_count: 1,
             score: None,
+            match_evidence: None,
+            search_order_key: None,
         }
     }
 
@@ -255,7 +320,19 @@ impl SearchHit {
             total_bytes: parts.total_bytes,
             item_count: parts.item_count,
             score: parts.score,
+            match_evidence: parts.match_evidence,
+            search_order_key: parts.search_order_key,
         }
+    }
+
+    pub(crate) fn with_search_evidence(
+        mut self,
+        evidence: MatchEvidence,
+        order_key: SearchOrderKey,
+    ) -> Self {
+        self.match_evidence = Some(evidence);
+        self.search_order_key = Some(order_key);
+        self
     }
 
     #[must_use]
@@ -346,6 +423,23 @@ impl SearchHit {
     #[must_use]
     pub fn score(&self) -> Option<f64> {
         self.score
+    }
+
+    #[must_use]
+    pub fn match_evidence(&self) -> Option<&MatchEvidence> {
+        self.match_evidence.as_ref()
+    }
+
+    #[must_use]
+    pub fn match_quality(&self) -> Option<f64> {
+        self.match_evidence
+            .as_ref()
+            .and_then(MatchEvidence::match_quality)
+    }
+
+    #[must_use]
+    pub(crate) fn search_order_key(&self) -> Option<SearchOrderKey> {
+        self.search_order_key
     }
 }
 

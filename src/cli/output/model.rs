@@ -4,7 +4,7 @@ use serde_json::Value;
 use crate::db::SnapshotMetadata;
 use crate::db::{CaptureSkipReason, StatsReport};
 use crate::model::{CaptureStoreResult, ClipboardSnapshot};
-use crate::model::{FlattenedTextProjection, SearchHit, TextFragment, TimelineEvent};
+use crate::model::{FlattenedTextProjection, MatchEvidence, SearchHit, TextFragment, TimelineEvent};
 
 use super::row_text::{best_text_from_hit, truncate_for_display};
 
@@ -78,6 +78,8 @@ pub(in crate::cli) struct ListEnvelope {
     pub(in crate::cli) truncated: bool,
     pub(in crate::cli) next_cursor: Option<String>,
     pub(in crate::cli) results: Vec<ListRow>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::cli) score_semantics: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -104,6 +106,7 @@ pub(in crate::cli) enum RecallMatchConfidence {
     High,
     Medium,
     Low,
+    QueryMatch,
 }
 
 impl RecallMatchConfidence {
@@ -124,6 +127,7 @@ impl RecallMatchConfidence {
             Self::High => "high",
             Self::Medium => "medium",
             Self::Low => "low",
+            Self::QueryMatch => "query_match",
         }
     }
 }
@@ -141,6 +145,7 @@ pub(in crate::cli) struct RecallEnvelope {
     pub(in crate::cli) best_match_score: Option<f64>,
     pub(in crate::cli) why_selected: String,
     pub(in crate::cli) quoted_text: Option<String>,
+    pub(in crate::cli) score_semantics: &'static str,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -177,6 +182,7 @@ pub(in crate::cli) struct SnapshotListRow {
     pub(in crate::cli) score: Option<f64>,
     pub(in crate::cli) why_matched: Option<String>,
     pub(in crate::cli) matched_fields: Vec<String>,
+    pub(in crate::cli) match_evidence: Option<Box<MatchEvidence>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -225,6 +231,7 @@ pub(in crate::cli) struct RecallOutputRow {
     pub(in crate::cli) score: Option<f64>,
     pub(in crate::cli) why_matched: Option<String>,
     pub(in crate::cli) matched_fields: Vec<String>,
+    pub(in crate::cli) match_evidence: Option<Box<MatchEvidence>>,
     pub(in crate::cli) snippet: String,
 }
 
@@ -274,6 +281,7 @@ impl SnapshotListRow {
             score: hit.score(),
             why_matched,
             matched_fields: hit.matched_fields().to_vec(),
+            match_evidence: hit.match_evidence().cloned().map(Box::new),
         }
     }
 }
@@ -388,6 +396,7 @@ impl RecallOutputRow {
             score: hit.score(),
             why_matched,
             matched_fields: hit.matched_fields().to_vec(),
+            match_evidence: hit.match_evidence().cloned().map(Box::new),
             snippet,
         }
     }

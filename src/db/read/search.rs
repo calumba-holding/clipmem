@@ -1,59 +1,18 @@
 use anyhow::{Context, Result};
-use rusqlite::{named_params, params, Error as SqlError, Result as SqlResult};
+use rusqlite::{named_params, params, Error as SqlError, Result as SqlResult, Row};
 
 use super::filter_sql::{
     app_like_pattern, can_use_snapshot_event_cache, effective_since_param, escape_like_pattern,
-    has_temporal_event_filters, requires_matching_events,
+    has_temporal_event_filters,
 };
-use super::queries::{
-    file_path_literal_query, fts_query, literal_query, ocr_fts_query, ocr_literal_query,
-};
-use super::query_analysis::{
-    analyze_query, is_invalid_fts_query, is_simple_fts_query, literal_fts_match_query,
-    QueryAnalysis,
-};
-use super::row_mapping::{map_scored_search_hit_row, map_search_hit_row};
-use super::search_results::{merge_scored_search_results, paginate_rows};
+use super::queries::{unified_fts_query, unified_literal_query};
+use super::query_analysis::{analyze_query, is_invalid_fts_query, is_simple_fts_query};
+use super::row_mapping::map_search_hit_row;
+use super::search_results::paginate_rows;
 use crate::db::core::clamp_result_limit;
 use crate::db::sqlite_helpers::{collect_rows, usize_to_i64};
 use crate::db::types::{Database, RetrievalFilters, SearchCursorState, SearchMode, SearchResults};
-use crate::model::SearchHit;
-
-pub(in crate::db) const FAST_FILE_PATH_LITERAL_QUERY: &str = r"
-    SELECT
-        s.id AS snapshot_id,
-        ss.last_event_id AS event_id,
-        s.sha256 AS sha256,
-        s.snapshot_kind AS snapshot_kind,
-        s.preview_text AS preview_text,
-        s.search_text AS search_text,
-        'Path fragment match in file paths' AS why_matched,
-        'file_paths' AS matched_fields,
-        ss.capture_count AS capture_count,
-        ss.first_observed_at AS first_observed_at,
-        ss.last_observed_at AS last_observed_at,
-        ss.last_frontmost_app_name AS last_frontmost_app_name,
-        ss.last_frontmost_app_bundle_id AS last_frontmost_app_bundle_id,
-        COALESCE(sp.urls, '') AS urls,
-        COALESCE(sp.file_urls, '') AS file_urls,
-        s.total_bytes AS total_bytes,
-        s.item_count AS item_count,
-        (
-            1.12 +
-            CASE
-                WHEN datetime(ss.last_observed_at) >= datetime('now', '-24 hours') THEN 0.05
-                WHEN datetime(ss.last_observed_at) >= datetime('now', '-7 days') THEN 0.02
-                ELSE 0
-            END
-        ) AS score
-    FROM snapshot_file_url_fts
-    JOIN snapshots s ON s.id = snapshot_file_url_fts.rowid
-    JOIN snapshot_stats ss ON ss.snapshot_id = snapshot_file_url_fts.rowid
-    JOIN snapshot_projection_cache sp ON sp.snapshot_id = snapshot_file_url_fts.rowid
-    WHERE snapshot_file_url_fts MATCH :literal_match
-    ORDER BY score DESC, ss.last_observed_at DESC, s.id DESC
-    LIMIT :limit
-";
+use crate::model::{MatchEvidence, SearchHit, SearchOrderKey};
 
 struct SearchExecutionParams<'a> {
     fetch_limit: i64,
@@ -69,9 +28,11 @@ struct SearchExecutionParams<'a> {
     has_pdf: bool,
     min_bytes: Option<i64>,
     max_bytes: Option<i64>,
-    cursor_score: Option<f64>,
     cursor_last_seen_at: Option<&'a str>,
     cursor_snapshot_id: Option<i64>,
+    cursor_primary: Option<f64>,
+    cursor_secondary: Option<f64>,
+    cursor_exact: bool,
 }
 
 impl<'a> SearchExecutionParams<'a> {
@@ -94,9 +55,11 @@ impl<'a> SearchExecutionParams<'a> {
             has_pdf: filters.has_pdf(),
             min_bytes: filters.min_bytes().map(usize_to_i64).transpose()?,
             max_bytes: filters.max_bytes().map(usize_to_i64).transpose()?,
-            cursor_score: cursor.and_then(SearchCursorState::score),
             cursor_last_seen_at: cursor.map(SearchCursorState::last_seen_at),
             cursor_snapshot_id: cursor.map(SearchCursorState::snapshot_id),
+            cursor_primary: cursor.and_then(SearchCursorState::order_primary),
+            cursor_secondary: cursor.and_then(SearchCursorState::order_secondary),
+            cursor_exact: cursor.is_some_and(SearchCursorState::exact_phrase),
         })
     }
 }
@@ -117,6 +80,93 @@ where
             SearchResults::new(mode, page.into_items(), has_more)
         })
         .with_context(|| format!("collect {context} search rows"))
+}
+
+fn map_unified_search_hit_row(
+    row: &Row<'_>,
+    query: &str,
+    simple_query: bool,
+) -> SqlResult<SearchHit> {
+    let hit = map_search_hit_row(row, true)?;
+    let exact_phrase = row.get::<_, i64>("exact_phrase_match")? != 0;
+    let primary = row.get("order_primary")?;
+    let secondary = row.get("order_secondary")?;
+    let documents = [
+        row.get::<_, String>("evidence_native_text")?,
+        row.get::<_, String>("evidence_preview_text")?,
+        row.get::<_, String>("evidence_ocr_text")?,
+        row.get::<_, String>("evidence_url_text")?,
+        row.get::<_, String>("evidence_file_path_text")?,
+        row.get::<_, String>("evidence_app_names")?,
+        row.get::<_, String>("evidence_app_bundle_ids")?,
+    ];
+    let terms = normalized_query_terms(query);
+    let (term_coverage, quality) = if simple_query && !terms.is_empty() {
+        let (coverage, quality) = evidence_match_quality(&terms, &documents, exact_phrase);
+        (Some(coverage), Some(quality))
+    } else {
+        (None, None)
+    };
+    let snippet_source = hit.matched_fields().first().cloned();
+    let snippet_text = hit.why_matched().map(ToOwned::to_owned);
+    let evidence = MatchEvidence::new(
+        hit.matched_fields().to_vec(),
+        exact_phrase,
+        term_coverage,
+        snippet_source,
+        snippet_text,
+        if simple_query {
+            "simple_lexical"
+        } else {
+            "complex_fts"
+        },
+        quality,
+    );
+    Ok(hit.with_search_evidence(
+        evidence,
+        SearchOrderKey {
+            primary,
+            secondary,
+            exact_phrase,
+        },
+    ))
+}
+
+pub(in crate::db) fn evidence_match_quality(
+    terms: &[String],
+    documents: &[String],
+    exact_phrase: bool,
+) -> (f64, f64) {
+    let terms_in_one_field = documents.iter().any(|document| {
+        let lower = document.to_lowercase();
+        terms.iter().all(|term| lower.contains(term))
+    });
+    let combined = documents.join("\n").to_lowercase();
+    let matched = terms
+        .iter()
+        .filter(|term| combined.contains(term.as_str()))
+        .count();
+    let coverage = matched as f64 / terms.len() as f64;
+    let quality = if exact_phrase {
+        0.96
+    } else if terms_in_one_field {
+        0.86
+    } else if coverage == 1.0 {
+        0.80
+    } else if coverage >= 0.60 {
+        0.68
+    } else {
+        0.50
+    };
+    (coverage, quality)
+}
+
+fn normalized_query_terms(query: &str) -> Vec<String> {
+    query
+        .split(|character: char| !character.is_alphanumeric())
+        .map(str::to_lowercase)
+        .filter(|term| !term.is_empty())
+        .collect()
 }
 
 impl Database {
@@ -229,14 +279,12 @@ impl Database {
     ) -> Result<SearchResults> {
         let limit = clamp_result_limit(limit);
         let params = SearchExecutionParams::new(limit, filters, cursor)?;
-        let analysis = analyze_query(query);
         let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
         let has_temporal_event_filters = has_temporal_event_filters(filters);
-        let sql = fts_query(
-            use_snapshot_event_cache,
-            has_temporal_event_filters,
-            is_simple_fts_query(&analysis),
-        );
+        let analysis = analyze_query(query);
+        let sql = unified_fts_query(use_snapshot_event_cache, has_temporal_event_filters);
+        let phrase = analysis.literal_search_lower();
+        let phrase_like = format!("%{}%", escape_like_pattern(&phrase));
 
         let mut stmt = self
             .conn
@@ -246,8 +294,8 @@ impl Database {
             .query_map(
                 named_params! {
                     ":query" : query,
-                    ":query_lower" : analysis.lower.as_str(),
-                    ":exact_phrase_lower" : analysis.exact_phrase.as_deref(),
+                    ":phrase_lower" : phrase.as_ref(),
+                    ":phrase_like" : phrase_like.as_str(),
                     ":since" : params.since.as_deref(),
                     ":until" : params.until,
                     ":app_like" : params.app_like.as_deref(),
@@ -260,24 +308,17 @@ impl Database {
                     ":has_pdf" : params.has_pdf,
                     ":min_bytes" : params.min_bytes,
                     ":max_bytes" : params.max_bytes,
-                    ":cursor_score" : params.cursor_score,
+                    ":cursor_primary" : params.cursor_primary,
+                    ":cursor_exact" : params.cursor_exact,
                     ":cursor_last_seen_at" : params.cursor_last_seen_at,
                     ":cursor_snapshot_id" : params.cursor_snapshot_id,
                     ":limit" : params.fetch_limit,
                 },
-                |row| map_search_hit_row(row, true),
+                |row| map_unified_search_hit_row(row, query, is_simple_fts_query(&analysis)),
             )
             .context("execute FTS search query")?;
 
-        let native_hits = collect_search_results(rows, limit, SearchMode::Fts, "FTS")?;
-        let ocr_hits = self.search_ocr_fts_hits(query, limit, filters, cursor)?;
-        Ok(merge_scored_search_results(
-            SearchMode::Fts,
-            native_hits,
-            ocr_hits,
-            limit,
-            true,
-        ))
+        collect_search_results(rows, limit, SearchMode::Fts, "unified FTS")
     }
 
     /// Search stored snapshots with literal `LIKE` matching semantics.
@@ -304,42 +345,24 @@ impl Database {
         let limit = clamp_result_limit(limit);
         let params = SearchExecutionParams::new(limit, filters, cursor)?;
         let analysis = analyze_query(query);
-        if let Some(path_fragment) = analysis.path_fragment.as_deref() {
-            let results =
-                self.search_file_path_literal_page(path_fragment, limit, filters, cursor)?;
-            if cursor.is_some() || !results.hits().is_empty() {
-                return self
-                    .merge_literal_hits_with_ocr(results, &analysis, limit, filters, cursor);
-            }
-        }
         let literal_search_lower = analysis.literal_search_lower();
         let literal_search_like = escape_like_pattern(&literal_search_lower);
-        let loose_literal_like = literal_search_lower
-            .split_whitespace()
-            .filter(|term| !term.is_empty())
-            .map(escape_like_pattern)
-            .collect::<Vec<_>>()
-            .join("%");
-        let exact_phrase_like = analysis
-            .exact_phrase
-            .as_ref()
-            .map(|phrase| escape_like_pattern(&phrase.to_ascii_lowercase()));
+        let loose_literal_like = if analysis.path_fragment.is_some() {
+            escape_like_pattern(analysis.path_fragment.as_deref().unwrap_or_default())
+        } else {
+            literal_search_lower
+                .split_whitespace()
+                .filter(|term| !term.is_empty())
+                .map(escape_like_pattern)
+                .collect::<Vec<_>>()
+                .join("%")
+        };
         let like = format!("%{literal_search_like}%");
         let loose_like = format!("%{loose_literal_like}%");
-        let file_url_like = format!("%{}%", literal_search_like.replace(' ', "%20"));
-        let include_matching_events = requires_matching_events(filters);
         let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
-        let literal_match = if literal_search_lower.contains(char::is_whitespace)
-            || literal_search_lower.contains('.')
-        {
-            None
-        } else {
-            literal_fts_match_query(&analysis)
-        };
-        let sql = literal_query(
-            include_matching_events,
+        let sql = unified_literal_query(
             use_snapshot_event_cache,
-            literal_match.is_some(),
+            has_temporal_event_filters(filters),
         );
 
         let mut stmt = self
@@ -347,21 +370,13 @@ impl Database {
             .prepare(&sql)
             .context("prepare literal search query")?;
         let prefix_like = format!("{literal_search_like}%");
-        let path_fragment_like = analysis
-            .path_fragment
-            .as_ref()
-            .map(|value| format!("%{}%", escape_like_pattern(value)));
         let rows = stmt
             .query_map(
                 named_params! {
                     ":query_lower" : literal_search_lower.as_ref(),
                     ":like" : like,
                     ":loose_like" : loose_like.as_str(),
-                    ":file_url_like" : file_url_like.as_str(),
                     ":prefix_like" : prefix_like.as_str(),
-                    ":literal_match" : literal_match.as_deref(),
-                    ":path_fragment_like" : path_fragment_like.as_deref(),
-                    ":exact_phrase_lower" : exact_phrase_like.as_deref(),
                     ":since" : params.since.as_deref(),
                     ":until" : params.until,
                     ":app_like" : params.app_like.as_deref(),
@@ -374,236 +389,16 @@ impl Database {
                     ":has_pdf" : params.has_pdf,
                     ":min_bytes" : params.min_bytes,
                     ":max_bytes" : params.max_bytes,
-                    ":cursor_score" : params.cursor_score,
+                    ":cursor_primary" : params.cursor_primary,
+                    ":cursor_secondary" : params.cursor_secondary,
                     ":cursor_last_seen_at" : params.cursor_last_seen_at,
                     ":cursor_snapshot_id" : params.cursor_snapshot_id,
                     ":limit" : params.fetch_limit,
                 },
-                map_scored_search_hit_row,
+                |row| map_unified_search_hit_row(row, query, true),
             )
             .context("execute literal search query")?;
 
-        let native_hits = collect_search_results(rows, limit, SearchMode::Literal, "literal")?;
-        self.merge_literal_hits_with_ocr(native_hits, &analysis, limit, filters, cursor)
-    }
-
-    fn merge_literal_hits_with_ocr(
-        &self,
-        native_hits: SearchResults,
-        analysis: &QueryAnalysis,
-        limit: usize,
-        filters: &RetrievalFilters,
-        cursor: Option<&SearchCursorState>,
-    ) -> Result<SearchResults> {
-        let ocr_hits = self.search_ocr_literal_hits(analysis, limit, filters, cursor)?;
-        Ok(merge_scored_search_results(
-            SearchMode::Literal,
-            native_hits,
-            ocr_hits,
-            limit,
-            false,
-        ))
-    }
-
-    fn search_ocr_fts_hits(
-        &self,
-        query: &str,
-        limit: usize,
-        filters: &RetrievalFilters,
-        cursor: Option<&SearchCursorState>,
-    ) -> Result<SearchResults> {
-        let params = SearchExecutionParams::new(limit, filters, cursor)?;
-        let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
-        let has_temporal_event_filters = has_temporal_event_filters(filters);
-        let sql = ocr_fts_query(use_snapshot_event_cache, has_temporal_event_filters);
-
-        let mut stmt = self
-            .conn
-            .prepare(&sql)
-            .context("prepare OCR FTS search query")?;
-        let rows = stmt
-            .query_map(
-                named_params! {
-                    ":query" : query,
-                    ":since" : params.since.as_deref(),
-                    ":until" : params.until,
-                    ":app_like" : params.app_like.as_deref(),
-                    ":bundle_id" : params.bundle_id.as_deref(),
-                    ":kind" : params.kind,
-                    ":has_text" : params.has_text,
-                    ":has_url" : params.has_url,
-                    ":has_file_url" : params.has_file_url,
-                    ":has_image" : params.has_image,
-                    ":has_pdf" : params.has_pdf,
-                    ":min_bytes" : params.min_bytes,
-                    ":max_bytes" : params.max_bytes,
-                    ":cursor_score" : params.cursor_score,
-                    ":cursor_last_seen_at" : params.cursor_last_seen_at,
-                    ":cursor_snapshot_id" : params.cursor_snapshot_id,
-                    ":limit" : params.fetch_limit,
-                },
-                |row| map_search_hit_row(row, true),
-            )
-            .context("execute OCR FTS search query")?;
-
-        collect_search_results(rows, limit, SearchMode::Fts, "OCR FTS")
-    }
-
-    fn search_ocr_literal_hits(
-        &self,
-        analysis: &QueryAnalysis,
-        limit: usize,
-        filters: &RetrievalFilters,
-        cursor: Option<&SearchCursorState>,
-    ) -> Result<SearchResults> {
-        let params = SearchExecutionParams::new(limit, filters, cursor)?;
-        let literal_search_lower = analysis.literal_search_lower();
-        let literal_search_like = escape_like_pattern(&literal_search_lower);
-        let exact_phrase_like = analysis
-            .exact_phrase
-            .as_ref()
-            .map(|phrase| escape_like_pattern(&phrase.to_ascii_lowercase()));
-        let like = format!("%{literal_search_like}%");
-        let prefix_like = format!("{literal_search_like}%");
-        let include_matching_events = requires_matching_events(filters);
-        let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
-        let literal_match = ocr_literal_fts_match_query(analysis);
-        let sql = ocr_literal_query(
-            include_matching_events,
-            use_snapshot_event_cache,
-            literal_match.is_some(),
-        );
-
-        let mut stmt = self
-            .conn
-            .prepare(&sql)
-            .context("prepare OCR literal search query")?;
-        let rows = stmt
-            .query_map(
-                named_params! {
-                    ":query_lower" : literal_search_lower.as_ref(),
-                    ":like" : like,
-                    ":prefix_like" : prefix_like.as_str(),
-                    ":literal_match" : literal_match.as_deref(),
-                    ":exact_phrase_lower" : exact_phrase_like.as_deref(),
-                    ":since" : params.since.as_deref(),
-                    ":until" : params.until,
-                    ":app_like" : params.app_like.as_deref(),
-                    ":bundle_id" : params.bundle_id.as_deref(),
-                    ":kind" : params.kind,
-                    ":has_text" : params.has_text,
-                    ":has_url" : params.has_url,
-                    ":has_file_url" : params.has_file_url,
-                    ":has_image" : params.has_image,
-                    ":has_pdf" : params.has_pdf,
-                    ":min_bytes" : params.min_bytes,
-                    ":max_bytes" : params.max_bytes,
-                    ":cursor_score" : params.cursor_score,
-                    ":cursor_last_seen_at" : params.cursor_last_seen_at,
-                    ":cursor_snapshot_id" : params.cursor_snapshot_id,
-                    ":limit" : params.fetch_limit,
-                },
-                map_scored_search_hit_row,
-            )
-            .context("execute OCR literal search query")?;
-
-        collect_search_results(rows, limit, SearchMode::Literal, "OCR literal")
-    }
-
-    fn search_file_path_literal_page(
-        &self,
-        path_fragment: &str,
-        limit: usize,
-        filters: &RetrievalFilters,
-        cursor: Option<&SearchCursorState>,
-    ) -> Result<SearchResults> {
-        let params = SearchExecutionParams::new(limit, filters, cursor)?;
-        let include_matching_events = requires_matching_events(filters);
-        let use_snapshot_event_cache = can_use_snapshot_event_cache(filters);
-        let literal_match = if path_fragment.chars().count() >= 3 {
-            Some(format!("\"{}\"", path_fragment.replace('"', "\"\"")))
-        } else {
-            None
-        };
-        if cursor.is_none() && *filters == RetrievalFilters::default() {
-            if let Some(literal_match) = literal_match.as_deref() {
-                return self.search_unfiltered_file_path_literal_page(literal_match, limit);
-            }
-        }
-        let sql = file_path_literal_query(
-            include_matching_events,
-            use_snapshot_event_cache,
-            literal_match.is_some(),
-        );
-        let path_like = format!("%{}%", escape_like_pattern(path_fragment));
-
-        let mut stmt = self
-            .conn
-            .prepare(&sql)
-            .context("prepare file-path literal search query")?;
-        let rows = stmt
-            .query_map(
-                named_params! {
-                    ":literal_match" : literal_match.as_deref(),
-                    ":path_fragment" : path_fragment,
-                    ":path_like" : path_like.as_str(),
-                    ":since" : params.since.as_deref(),
-                    ":until" : params.until,
-                    ":app_like" : params.app_like.as_deref(),
-                    ":bundle_id" : params.bundle_id.as_deref(),
-                    ":kind" : params.kind,
-                    ":has_text" : params.has_text,
-                    ":has_url" : params.has_url,
-                    ":has_file_url" : params.has_file_url,
-                    ":has_image" : params.has_image,
-                    ":has_pdf" : params.has_pdf,
-                    ":min_bytes" : params.min_bytes,
-                    ":max_bytes" : params.max_bytes,
-                    ":cursor_score" : params.cursor_score,
-                    ":cursor_last_seen_at" : params.cursor_last_seen_at,
-                    ":cursor_snapshot_id" : params.cursor_snapshot_id,
-                    ":limit" : params.fetch_limit,
-                },
-                map_scored_search_hit_row,
-            )
-            .context("execute file-path literal search query")?;
-
-        collect_search_results(rows, limit, SearchMode::Literal, "file-path literal")
-    }
-
-    fn search_unfiltered_file_path_literal_page(
-        &self,
-        literal_match: &str,
-        limit: usize,
-    ) -> Result<SearchResults> {
-        let fetch_limit = usize_to_i64(limit.saturating_add(1))?;
-        let mut stmt = self
-            .conn
-            .prepare(FAST_FILE_PATH_LITERAL_QUERY)
-            .context("prepare unfiltered file-path literal search query")?;
-        let rows = stmt
-            .query_map(
-                named_params! {
-                    ":literal_match" : literal_match,
-                    ":limit" : fetch_limit,
-                },
-                map_scored_search_hit_row,
-            )
-            .context("execute unfiltered file-path literal search query")?;
-
-        collect_search_results(
-            rows,
-            limit,
-            SearchMode::Literal,
-            "unfiltered file-path literal",
-        )
-    }
-}
-
-fn ocr_literal_fts_match_query(analysis: &QueryAnalysis) -> Option<String> {
-    if analysis.path_fragment.is_some() {
-        None
-    } else {
-        literal_fts_match_query(analysis)
+        collect_search_results(rows, limit, SearchMode::Literal, "unified literal")
     }
 }

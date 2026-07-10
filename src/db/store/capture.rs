@@ -6,6 +6,7 @@ use super::rebuild::{
     insert_item, rebuild_snapshot_projection_cache_for_snapshot, set_representation_cache_deferred,
 };
 use super::revision::bump_revision_tx;
+use super::search_document::rebuild_snapshot_search_document;
 use crate::db::sqlite_helpers::usize_to_i64;
 use crate::db::types::{ArchiveChangeKind, CaptureMode, CaptureOutcome, Database};
 use crate::model::{CaptureStoreResult, ClipboardSnapshot};
@@ -224,6 +225,8 @@ fn store_capture_tx(
     )
     .context("insert capture event row")?;
     let event_id = tx.last_insert_rowid();
+
+    rebuild_snapshot_search_document(tx, snapshot_id)?;
 
     bump_revision_tx(tx, &[ArchiveChangeKind::ArchiveContent])?;
     Ok(CaptureStoreResult::new(

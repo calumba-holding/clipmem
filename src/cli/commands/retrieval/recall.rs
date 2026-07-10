@@ -29,7 +29,7 @@ pub(in crate::cli) enum RecallCandidateSource {
 pub(in crate::cli) struct RecallCandidate {
     pub(in crate::cli) hit: SearchHit,
     pub(in crate::cli) source: RecallCandidateSource,
-    pub(in crate::cli) normalized_score: f64,
+    pub(in crate::cli) match_quality: Option<f64>,
     pub(in crate::cli) sort_score: f64,
     pub(in crate::cli) app_preferred: bool,
 }
@@ -75,8 +75,11 @@ fn build_recall_envelope(
         .cloned()
         .unwrap_or_default();
     let best_candidate = RecallOutputRow::from_hit(&recall.best.hit, args.full, &best_projection);
-    let best_match_score = Some(recall.best.normalized_score);
-    let confidence = RecallMatchConfidence::from_normalized_score(recall.best.normalized_score);
+    let best_match_score = recall.best.match_quality;
+    let confidence = best_match_score.map_or(
+        RecallMatchConfidence::QueryMatch,
+        RecallMatchConfidence::from_normalized_score,
+    );
     let quoted_text = args
         .quote
         .then(|| best_candidate.best_text.clone())
@@ -116,6 +119,7 @@ fn build_recall_envelope(
         best_match_score,
         why_selected: recall.why_selected.clone(),
         quoted_text,
+        score_semantics: "evidence_v1",
     })
 }
 
@@ -155,9 +159,11 @@ pub(in crate::cli) fn compute_recall(
         let threshold = args
             .min_score
             .unwrap_or(default_recall_threshold(results.mode_used()));
-        search_was_weak = search_candidates
-            .first()
-            .is_none_or(|candidate| candidate.normalized_score < threshold);
+        search_was_weak = search_candidates.iter().all(|candidate| {
+            candidate
+                .match_quality
+                .is_none_or(|quality| quality < threshold)
+        });
 
         for mut candidate in search_candidates {
             if search_was_weak {
@@ -167,23 +173,6 @@ pub(in crate::cli) fn compute_recall(
         }
 
         if search_was_weak {
-            for expanded_query in expanded_recall_queries(query) {
-                let expanded_results =
-                    run_search_query(db, &expanded_query, args.search_mode(), args.limit, filters)?;
-                for (index, hit) in expanded_results.hits().iter().enumerate() {
-                    let mut candidate = build_search_candidate(
-                        hit,
-                        &expanded_query,
-                        expanded_results.mode_used(),
-                        index,
-                        args.prefer_app.as_deref(),
-                        args.prefer_recent,
-                    );
-                    candidate.sort_score *= 0.95;
-                    upsert_recall_candidate(&mut merged, candidate);
-                }
-            }
-
             for (index, hit) in db
                 .recent(args.limit, filters)?
                 .into_hits()
@@ -263,31 +252,26 @@ pub(in crate::cli) fn run_search_query(
 
 pub(in crate::cli) fn build_search_candidate(
     hit: &SearchHit,
-    query: &str,
-    mode_used: SearchMode,
+    _query: &str,
+    _mode_used: SearchMode,
     index: usize,
     prefer_app: Option<&str>,
     prefer_recent: bool,
 ) -> RecallCandidate {
-    let normalized_score = match mode_used {
-        SearchMode::Fts => normalize_fts_score(hit.score()),
-        SearchMode::Literal | SearchMode::Auto => literal_match_score(hit, query),
-    };
+    let match_quality = hit.match_quality();
+    let normalized_score = match_quality.unwrap_or(0.50);
     let app_preferred = matches_preferred_app(hit, prefer_app);
     let mut sort_score = normalized_score;
     sort_score += app_preference_boost(app_preferred);
-    sort_score += search_match_field_bonus(hit);
     if prefer_recent {
         sort_score += recent_index_boost(index) * 0.6;
     }
-    sort_score += command_specificity_bonus(hit.preview_text(), query);
-    sort_score -= term_stuffing_penalty(hit.preview_text(), query);
     sort_score += search_rank_bonus(index);
 
     RecallCandidate {
         hit: hit.clone(),
         source: RecallCandidateSource::Search,
-        normalized_score,
+        match_quality,
         sort_score,
         app_preferred,
     }
@@ -315,7 +299,7 @@ pub(in crate::cli) fn build_recent_candidate(
     RecallCandidate {
         hit,
         source: RecallCandidateSource::Recent,
-        normalized_score,
+        match_quality: Some(normalized_score),
         sort_score: normalized_score,
         app_preferred,
     }
@@ -367,40 +351,13 @@ pub(in crate::cli) fn default_recall_threshold(mode_used: SearchMode) -> f64 {
     }
 }
 
-pub(in crate::cli) fn normalize_fts_score(score: Option<f64>) -> f64 {
-    score
-        .map(|value| 1.0 / (1.0 + value.max(0.0)))
-        .unwrap_or(0.0)
-}
-
+#[cfg(test)]
 pub(in crate::cli) fn expanded_recall_queries(query: &str) -> Vec<String> {
-    let lower = query.to_ascii_lowercase();
-    let mut expanded = Vec::new();
-
-    if contains_any(&lower, &["disk", "permission", "access"]) {
-        expanded.push("full disk access permission".to_string());
-    }
-    if contains_any(&lower, &["watcher", "service"]) {
-        expanded.push("watcher service launch agent".to_string());
-        if contains_any(&lower, &["start", "command", "run", "load"]) {
-            expanded.push("launchctl bootstrap".to_string());
-        }
-    }
-    if lower.contains("half off") || (lower.contains("half") && lower.contains("deal")) {
-        expanded.push("50% off".to_string());
-        expanded.push("discount pricing".to_string());
-    }
-    if lower.contains("remote") {
-        expanded.push("ssh remote host".to_string());
-        if lower.contains("pytest") {
-            expanded.push("ssh pytest".to_string());
-            expanded.push("ssh pytest test".to_string());
-        }
-    }
-
-    expanded
+    let _ = query;
+    Vec::new()
 }
 
+#[cfg(test)]
 pub(in crate::cli) fn term_stuffing_penalty(value: &str, query: &str) -> f64 {
     let terms = query
         .split_whitespace()
@@ -428,6 +385,7 @@ pub(in crate::cli) fn term_stuffing_penalty(value: &str, query: &str) -> f64 {
     }
 }
 
+#[cfg(test)]
 pub(in crate::cli) fn command_specificity_bonus(value: &str, query: &str) -> f64 {
     let query = query.to_ascii_lowercase();
     let value = value.to_ascii_lowercase();
@@ -468,12 +426,14 @@ pub(in crate::cli) fn command_specificity_bonus(value: &str, query: &str) -> f64
     bonus
 }
 
+#[cfg(test)]
 pub(in crate::cli) fn contains_any(value: &str, needles: &[&str]) -> bool {
     needles
         .iter()
         .any(|needle| contains_ascii_case_insensitive(value, needle))
 }
 
+#[cfg(test)]
 pub(in crate::cli) fn literal_match_score(hit: &SearchHit, query: &str) -> f64 {
     let query = query.trim().to_ascii_lowercase();
     if query.is_empty() {
@@ -526,28 +486,6 @@ pub(in crate::cli) fn literal_match_score(hit: &SearchHit, query: &str) -> f64 {
     (0.55 + best_overlap * 0.25).clamp(0.0, 0.82)
 }
 
-pub(in crate::cli) fn search_match_field_bonus(hit: &SearchHit) -> f64 {
-    let mut bonus = 0.0;
-    if hit.matched_fields().iter().any(|field| field == "urls") {
-        bonus += 0.06;
-    }
-    if hit
-        .matched_fields()
-        .iter()
-        .any(|field| field == "file_paths" || field == "app_bundle_id")
-    {
-        bonus += 0.05;
-    }
-    if hit
-        .matched_fields()
-        .iter()
-        .any(|field| field == "best_text")
-    {
-        bonus += 0.03;
-    }
-    bonus
-}
-
 pub(in crate::cli) fn matches_preferred_app(hit: &SearchHit, prefer_app: Option<&str>) -> bool {
     let Some(prefer_app) = prefer_app.map(str::trim).filter(|value| !value.is_empty()) else {
         return false;
@@ -561,6 +499,7 @@ pub(in crate::cli) fn matches_preferred_app(hit: &SearchHit, prefer_app: Option<
             .unwrap_or(false)
 }
 
+#[cfg(test)]
 pub(in crate::cli) fn starts_with_ascii_case_insensitive(value: &str, prefix: &str) -> bool {
     let value = value.as_bytes();
     let prefix = prefix.as_bytes();
@@ -610,10 +549,11 @@ pub(in crate::cli) fn recent_index_boost(index: usize) -> f64 {
 
 pub(in crate::cli) fn search_rank_bonus(index: usize) -> f64 {
     match index {
-        0 => 0.1,
-        1 => 0.06,
-        2 => 0.04,
-        _ => 0.02,
+        0 => 0.05,
+        1 => 0.04,
+        2 => 0.03,
+        3..=9 => 0.02,
+        _ => 0.0,
     }
 }
 
@@ -667,18 +607,10 @@ mod ranking_tests {
     use super::{command_specificity_bonus, expanded_recall_queries, term_stuffing_penalty};
 
     #[test]
-    fn recall_expansion_uses_generic_clipboard_aliases() {
-        assert!(expanded_recall_queries("half off launch deal")
-            .iter()
-            .any(|query| query == "50% off"));
-        assert!(expanded_recall_queries("remote tomojax pytest")
-            .iter()
-            .any(|query| query == "ssh pytest"));
-        assert!(
-            expanded_recall_queries("clipboard watcher needs disk permission")
-                .iter()
-                .any(|query| query == "full disk access permission")
-        );
+    fn recall_does_not_apply_unvalidated_product_expansions() {
+        assert!(expanded_recall_queries("half off launch deal").is_empty());
+        assert!(expanded_recall_queries("remote tomojax pytest").is_empty());
+        assert!(expanded_recall_queries("clipboard watcher needs disk permission").is_empty());
     }
 
     #[test]

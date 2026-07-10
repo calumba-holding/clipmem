@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::db::{Database, RetrievalFilters, SearchMode, SearchResults};
+use crate::db::{Database, RetrievalFilters, SearchCursorState, SearchMode, SearchResults};
 use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
 
 use super::queries::fts_query;
@@ -8,6 +8,26 @@ use super::query_analysis::{
     analyze_query, invalid_fts_message, is_simple_fts_query, literal_fts_match_query,
 };
 use crate::file_url::normalize_file_path;
+
+#[test]
+fn evidence_v1_quality_tiers_are_explicit_and_bm25_independent() {
+    let terms = vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()];
+    let quality = |documents: &[&str], exact| {
+        super::search::evidence_match_quality(
+            &terms,
+            &documents
+                .iter()
+                .map(|value| (*value).to_string())
+                .collect::<Vec<_>>(),
+            exact,
+        )
+    };
+    assert_eq!(quality(&["alpha beta gamma"], true), (1.0, 0.96));
+    assert_eq!(quality(&["alpha xx beta yy gamma"], false), (1.0, 0.86));
+    assert_eq!(quality(&["alpha", "beta", "gamma"], false), (1.0, 0.80));
+    assert_eq!(quality(&["alpha", "beta"], false), (2.0 / 3.0, 0.68));
+    assert_eq!(quality(&["alpha"], false), (1.0 / 3.0, 0.50));
+}
 
 pub(in crate::db) fn fake_snapshot(
     change_count: i64,
@@ -67,6 +87,177 @@ pub(in crate::db) fn unfiltered() -> RetrievalFilters {
 }
 
 #[test]
+fn unified_fts_preserves_real_bm25_order_and_evidence_quality() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    db.store_capture(&fake_snapshot(1, "needle needle needle exact phrase"))?;
+    db.store_capture(&fake_snapshot(2, "needle elsewhere"))?;
+
+    let results = db.search_fts("needle", 10, &unfiltered())?;
+    let scores = results
+        .hits()
+        .iter()
+        .map(|hit| hit.score().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(scores.len(), 2);
+    assert!(scores.iter().all(|score| score.is_sign_negative()));
+    assert_ne!(
+        scores[0], scores[1],
+        "real bm25 ranks must not collapse to one score"
+    );
+    assert!(results
+        .hits()
+        .iter()
+        .all(|hit| hit.match_quality() == Some(0.96)));
+    Ok(())
+}
+
+#[test]
+fn complex_explicit_fts_uses_nullable_match_quality() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    db.store_capture(&fake_snapshot(1, "git status"))?;
+    let results = db.search_fts("\"git\" AND status", 10, &unfiltered())?;
+    assert_eq!(results.hits().len(), 1);
+    assert_eq!(results.hits()[0].match_quality(), None);
+    Ok(())
+}
+
+#[test]
+fn unified_search_unions_native_ocr_url_provenance_without_duplicates() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let snapshot = build_snapshot(
+        CaptureContext::new(1).with_frontmost_app_name("Evidence App"),
+        vec![build_item(
+            0,
+            vec![
+                build_representation(
+                    "public.utf8-plain-text".to_string(),
+                    None,
+                    b"uniontoken native".to_vec(),
+                ),
+                build_representation(
+                    "public.url".to_string(),
+                    Some("https://uniontoken.example".to_string()),
+                    b"https://uniontoken.example".to_vec(),
+                ),
+                build_representation(
+                    "public.png".to_string(),
+                    None,
+                    b"unique-image-uniontoken".to_vec(),
+                ),
+            ],
+        )],
+    );
+    let stored = db.store_capture(&snapshot)?;
+    db.enqueue_ocr_for_snapshot(stored.snapshot_id())?;
+    let candidate = db.next_ocr_candidates(1, None, false)?.remove(0);
+    db.store_ocr_text(candidate.raw_sha256(), "test", "fast", "uniontoken ocr")?;
+
+    let results = db.search_fts("uniontoken", 10, &unfiltered())?;
+    assert_eq!(results.hits().len(), 1);
+    let fields = results.hits()[0].matched_fields();
+    assert!(fields.iter().any(|field| field == "native_text"));
+    assert!(fields.iter().any(|field| field == "ocr_text"));
+    assert!(fields.iter().any(|field| field == "urls"));
+    Ok(())
+}
+
+#[test]
+fn unified_search_pagination_is_a_slice_of_one_total_order() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    for index in 0..105 {
+        db.store_capture(&fake_snapshot(index + 1, &format!("pagetoken row {index}")))?;
+    }
+    let all = db.search_fts("pagetoken", 200, &unfiltered())?;
+    let expected = all
+        .hits()
+        .iter()
+        .map(|hit| hit.snapshot_id())
+        .collect::<Vec<_>>();
+
+    let mut actual = Vec::new();
+    let mut cursor = None;
+    loop {
+        let page = db.search_fts_page("pagetoken", 11, &unfiltered(), cursor.as_ref())?;
+        actual.extend(page.hits().iter().map(|hit| hit.snapshot_id()));
+        if !page.has_more() {
+            break;
+        }
+        let last = page.hits().last().unwrap();
+        let key = last.search_order_key().unwrap();
+        cursor = Some(SearchCursorState::new(
+            SearchMode::Fts,
+            last.last_observed_at().to_string(),
+            last.snapshot_id(),
+            Some(key.primary),
+            Some(key.secondary),
+            key.exact_phrase,
+        ));
+    }
+    assert_eq!(actual, expected);
+    let unique = actual
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(unique.len(), actual.len());
+    Ok(())
+}
+
+#[test]
+fn historical_app_names_are_searchable_and_placeholder_images_are_not_text() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let first = build_snapshot(
+        CaptureContext::new(1).with_frontmost_app_name("Historical Quartz"),
+        vec![build_item(
+            0,
+            vec![build_representation(
+                "public.utf8-plain-text".to_string(),
+                None,
+                b"ordinary text".to_vec(),
+            )],
+        )],
+    );
+    let second = build_snapshot(
+        CaptureContext::new(2).with_frontmost_app_name("Current App"),
+        vec![build_item(
+            0,
+            vec![build_representation(
+                "public.utf8-plain-text".to_string(),
+                None,
+                b"ordinary text".to_vec(),
+            )],
+        )],
+    );
+    db.store_capture(&first)?;
+    db.store_capture(&second)?;
+    let app_results = db.search_fts("Quartz", 10, &unfiltered())?;
+    assert_eq!(app_results.hits().len(), 1);
+    assert!(app_results.hits()[0]
+        .matched_fields()
+        .iter()
+        .any(|field| field == "historical_app"));
+
+    let image = db.store_capture(&fake_image_snapshot(3, b"placeholder-only-image".to_vec()))?;
+    let with_text = RetrievalFilters {
+        has_text: true,
+        ..RetrievalFilters::default()
+    };
+    let recent = db.recent(10, &with_text)?;
+    assert!(recent
+        .hits()
+        .iter()
+        .all(|hit| hit.snapshot_kind() != crate::model::SnapshotKind::Image));
+    db.enqueue_ocr_for_snapshot(image.snapshot_id())?;
+    let candidate = db.next_ocr_candidates(1, None, false)?.remove(0);
+    db.store_ocr_text(candidate.raw_sha256(), "test", "fast", "now factual text")?;
+    let recent = db.recent(10, &with_text)?;
+    assert!(recent
+        .hits()
+        .iter()
+        .any(|hit| hit.snapshot_id() == image.snapshot_id()));
+    Ok(())
+}
+
+#[test]
 pub(in crate::db) fn like_special_characters_skip_fts_mode() {
     assert!(analyze_query("50%").literal_preferred);
     assert!(analyze_query("config_test").literal_preferred);
@@ -93,7 +284,7 @@ pub(in crate::db) fn query_analysis_preserves_exact_phrase_without_forcing_liter
 pub(in crate::db) fn simple_fts_query_skips_per_row_phrase_scoring() {
     assert!(is_simple_fts_query(&analyze_query("git")));
     assert!(!is_simple_fts_query(&analyze_query("\"git clone\"")));
-    assert!(!is_simple_fts_query(&analyze_query("git clone")));
+    assert!(is_simple_fts_query(&analyze_query("git clone")));
     assert!(!is_simple_fts_query(&analyze_query("com.apple.Terminal")));
 
     let simple_sql = fts_query(false, false, true);

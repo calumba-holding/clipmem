@@ -84,6 +84,7 @@ pub(in crate::cli) fn search(db_path: &Path, args: &SearchArgs) -> Result<()> {
                 ListRow::from_hit(hit, true, &projection)
             })
             .collect(),
+        score_semantics: Some("evidence_v1"),
     };
     emit_list_output(format, &envelope)
 }
@@ -138,6 +139,7 @@ pub(in crate::cli) fn recent(db_path: &Path, args: &RecentArgs) -> Result<()> {
                 ListRow::from_hit(hit, false, &projection)
             })
             .collect(),
+        score_semantics: None,
     };
     emit_list_output(format, &envelope)
 }
@@ -194,6 +196,7 @@ pub(in crate::cli) fn timeline(db_path: &Path, args: &TimelineArgs) -> Result<()
                 ListRow::from_timeline_event(event, &projection)
             })
             .collect(),
+        score_semantics: None,
     };
     emit_list_output(format, &envelope)
 }

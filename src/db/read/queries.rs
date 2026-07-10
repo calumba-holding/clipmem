@@ -4,6 +4,47 @@ use super::filter_sql::{
 };
 use crate::db::types::TimelineSort;
 
+pub(in crate::db) fn unified_fts_query(use_event_cache: bool, temporal: bool) -> String {
+    format!(
+        r"
+WITH candidates AS (
+ SELECT ssd.snapshot_id,
+  bm25(snapshot_search_documents_fts,4.0,2.0,3.0,1.8,2.2,1.2,1.4) raw_rank,
+  CASE WHEN :phrase_lower != '' AND (lower(ssd.native_text) LIKE :phrase_like ESCAPE '\' OR lower(ssd.preview_text) LIKE :phrase_like ESCAPE '\' OR lower(ssd.ocr_text) LIKE :phrase_like ESCAPE '\' OR lower(ssd.url_text) LIKE :phrase_like ESCAPE '\' OR lower(ssd.file_path_text) LIKE :phrase_like ESCAPE '\' OR lower(ssd.historical_app_names) LIKE :phrase_like ESCAPE '\' OR lower(ssd.historical_app_bundle_ids) LIKE :phrase_like ESCAPE '\') THEN 1 ELSE 0 END exact_phrase_match,
+  trim(CASE WHEN instr(highlight(snapshot_search_documents_fts,0,'⟦','⟧'),'⟦')>0 THEN 'native_text'||char(30)||'best_text'||char(30)||'search_text'||char(30) ELSE '' END || CASE WHEN instr(highlight(snapshot_search_documents_fts,1,'⟦','⟧'),'⟦')>0 THEN 'preview_text'||char(30)||'best_text'||char(30) ELSE '' END || CASE WHEN instr(highlight(snapshot_search_documents_fts,2,'⟦','⟧'),'⟦')>0 THEN 'ocr_text'||char(30) ELSE '' END || CASE WHEN instr(highlight(snapshot_search_documents_fts,3,'⟦','⟧'),'⟦')>0 THEN 'urls'||char(30) ELSE '' END || CASE WHEN instr(highlight(snapshot_search_documents_fts,4,'⟦','⟧'),'⟦')>0 THEN 'file_paths'||char(30) ELSE '' END || CASE WHEN instr(highlight(snapshot_search_documents_fts,5,'⟦','⟧'),'⟦')>0 THEN 'historical_app'||char(30)||'app_name'||char(30) ELSE '' END || CASE WHEN instr(highlight(snapshot_search_documents_fts,6,'⟦','⟧'),'⟦')>0 THEN 'historical_app_bundle_id'||char(30)||'app_bundle_id'||char(30) ELSE '' END,char(30)) matched_fields,
+  COALESCE(CASE WHEN :phrase_lower != '' AND lower(ssd.native_text) LIKE :phrase_like ESCAPE '\' THEN 'Exact phrase match in best text' WHEN :phrase_lower != '' AND lower(ssd.ocr_text) LIKE :phrase_like ESCAPE '\' THEN 'Exact phrase match in OCR text' END,NULLIF(snippet(snapshot_search_documents_fts,0,'⟦','⟧',' … ',24),''),NULLIF(snippet(snapshot_search_documents_fts,2,'⟦','⟧',' … ',24),''),NULLIF(snippet(snapshot_search_documents_fts,4,'⟦','⟧',' … ',24),''),NULLIF(snippet(snapshot_search_documents_fts,3,'⟦','⟧',' … ',24),''),NULLIF(snippet(snapshot_search_documents_fts,5,'⟦','⟧',' … ',24),''),ssd.preview_text) why_matched
+ FROM snapshot_search_documents_fts JOIN snapshot_search_documents ssd ON ssd.snapshot_id=snapshot_search_documents_fts.rowid JOIN snapshots s ON s.id=ssd.snapshot_id LEFT JOIN snapshot_event_filter_cache se ON se.snapshot_id=s.id
+ WHERE snapshot_search_documents_fts MATCH :query AND {snapshot_filter} AND {event_filter}
+)
+SELECT s.id snapshot_id,ss.last_event_id event_id,s.sha256,s.snapshot_kind,COALESCE(NULLIF(s.preview_text,''),NULLIF(ssd.ocr_text,''),'') preview_text,s.search_text,c.why_matched,c.matched_fields,ss.capture_count,ss.first_observed_at,ss.last_observed_at,ss.last_frontmost_app_name,ss.last_frontmost_app_bundle_id,ssd.url_text urls,ssd.file_path_text file_urls,s.total_bytes,s.item_count,c.raw_rank score,c.raw_rank order_primary,0.0 order_secondary,c.exact_phrase_match,ssd.native_text evidence_native_text,ssd.preview_text evidence_preview_text,ssd.ocr_text evidence_ocr_text,ssd.url_text evidence_url_text,ssd.file_path_text evidence_file_path_text,ssd.historical_app_names evidence_app_names,ssd.historical_app_bundle_ids evidence_app_bundle_ids
+FROM candidates c JOIN snapshot_search_documents ssd ON ssd.snapshot_id=c.snapshot_id JOIN snapshots s ON s.id=c.snapshot_id JOIN snapshot_stats ss ON ss.snapshot_id=c.snapshot_id
+WHERE (:cursor_primary IS NULL OR c.raw_rank>:cursor_primary OR (c.raw_rank=:cursor_primary AND c.exact_phrase_match<:cursor_exact) OR (c.raw_rank=:cursor_primary AND c.exact_phrase_match=:cursor_exact AND (ss.last_observed_at<:cursor_last_seen_at OR (ss.last_observed_at=:cursor_last_seen_at AND s.id<:cursor_snapshot_id))))
+ORDER BY c.raw_rank ASC,c.exact_phrase_match DESC,ss.last_observed_at DESC,s.id DESC LIMIT :limit",
+        snapshot_filter = snapshot_filter_clause("s", "s.id"),
+        event_filter = event_filter_where_clause("s.id", "se", use_event_cache, temporal)
+    )
+}
+
+pub(in crate::db) fn unified_literal_query(use_event_cache: bool, temporal: bool) -> String {
+    format!(
+        r"
+WITH candidates AS (
+ SELECT ssd.snapshot_id,
+  CASE WHEN lower(ssd.native_text)=:query_lower OR lower(ssd.preview_text)=:query_lower OR lower(ssd.ocr_text)=:query_lower OR lower(ssd.url_text)=:query_lower OR lower(ssd.file_path_text)=:query_lower THEN 5 WHEN lower(ssd.native_text) LIKE :prefix_like ESCAPE '\' OR lower(ssd.preview_text) LIKE :prefix_like ESCAPE '\' OR lower(ssd.ocr_text) LIKE :prefix_like ESCAPE '\' THEN 4 WHEN lower(ssd.native_text) LIKE :like ESCAPE '\' OR lower(ssd.preview_text) LIKE :like ESCAPE '\' OR lower(ssd.ocr_text) LIKE :like ESCAPE '\' OR lower(ssd.url_text) LIKE :like ESCAPE '\' OR lower(ssd.file_path_text) LIKE :like ESCAPE '\' OR lower(ssd.file_path_text) LIKE :loose_like ESCAPE '\' OR lower(ssd.historical_app_names) LIKE :like ESCAPE '\' OR lower(ssd.historical_app_bundle_ids) LIKE :like ESCAPE '\' THEN 3 ELSE 1 END match_tier,
+  (CASE WHEN lower(ssd.native_text) LIKE :like ESCAPE '\' THEN 1 ELSE 0 END+CASE WHEN lower(ssd.preview_text) LIKE :like ESCAPE '\' THEN 1 ELSE 0 END+CASE WHEN lower(ssd.ocr_text) LIKE :like ESCAPE '\' THEN 1 ELSE 0 END+CASE WHEN lower(ssd.url_text) LIKE :like ESCAPE '\' THEN 1 ELSE 0 END+CASE WHEN lower(ssd.file_path_text) LIKE :like ESCAPE '\' OR lower(ssd.file_path_text) LIKE :loose_like ESCAPE '\' THEN 1 ELSE 0 END+CASE WHEN lower(ssd.historical_app_names) LIKE :like ESCAPE '\' THEN 1 ELSE 0 END+CASE WHEN lower(ssd.historical_app_bundle_ids) LIKE :like ESCAPE '\' THEN 1 ELSE 0 END) detail_score,
+  trim(CASE WHEN lower(ssd.native_text) LIKE :like ESCAPE '\' THEN 'native_text'||char(30)||'best_text'||char(30)||'search_text'||char(30) ELSE '' END||CASE WHEN lower(ssd.preview_text) LIKE :like ESCAPE '\' THEN 'preview_text'||char(30)||'best_text'||char(30) ELSE '' END||CASE WHEN lower(ssd.ocr_text) LIKE :like ESCAPE '\' THEN 'ocr_text'||char(30) ELSE '' END||CASE WHEN lower(ssd.url_text) LIKE :like ESCAPE '\' THEN 'urls'||char(30) ELSE '' END||CASE WHEN lower(ssd.file_path_text) LIKE :like ESCAPE '\' OR lower(ssd.file_path_text) LIKE :loose_like ESCAPE '\' THEN 'file_paths'||char(30) ELSE '' END||CASE WHEN lower(ssd.historical_app_names) LIKE :like ESCAPE '\' THEN 'historical_app'||char(30)||'app_name'||char(30) ELSE '' END||CASE WHEN lower(ssd.historical_app_bundle_ids) LIKE :like ESCAPE '\' THEN 'historical_app_bundle_id'||char(30)||'app_bundle_id'||char(30) ELSE '' END,char(30)) matched_fields
+ FROM snapshot_search_documents ssd JOIN snapshots s ON s.id=ssd.snapshot_id LEFT JOIN snapshot_event_filter_cache se ON se.snapshot_id=s.id
+ WHERE (lower(ssd.native_text||char(31)||ssd.preview_text||char(31)||ssd.ocr_text||char(31)||ssd.url_text||char(31)||ssd.file_path_text||char(31)||ssd.historical_app_names||char(31)||ssd.historical_app_bundle_ids) LIKE :loose_like ESCAPE '\' OR lower(ssd.native_text||char(31)||ssd.preview_text||char(31)||ssd.ocr_text||char(31)||ssd.url_text||char(31)||ssd.file_path_text||char(31)||ssd.historical_app_names||char(31)||ssd.historical_app_bundle_ids) LIKE :like ESCAPE '\') AND {snapshot_filter} AND {event_filter}
+)
+SELECT s.id snapshot_id,ss.last_event_id event_id,s.sha256,s.snapshot_kind,COALESCE(NULLIF(s.preview_text,''),NULLIF(ssd.ocr_text,''),'') preview_text,s.search_text,CASE WHEN lower(ssd.url_text)=:query_lower THEN 'Exact URL match' WHEN lower(ssd.file_path_text) LIKE :loose_like ESCAPE '\' THEN 'Path fragment match in file paths' WHEN lower(ssd.historical_app_bundle_ids) LIKE :like ESCAPE '\' THEN 'Bundle ID match' WHEN lower(ssd.historical_app_names) LIKE :like ESCAPE '\' THEN 'App name match' WHEN c.match_tier=5 THEN 'Exact text match in best text' WHEN c.match_tier=4 THEN 'Prefix match in best text' WHEN c.match_tier=3 THEN 'Phrase match in best text' ELSE 'Query term match' END why_matched,c.matched_fields,ss.capture_count,ss.first_observed_at,ss.last_observed_at,ss.last_frontmost_app_name,ss.last_frontmost_app_bundle_id,ssd.url_text urls,ssd.file_path_text file_urls,s.total_bytes,s.item_count,(c.match_tier+c.detail_score/100.0) score,CAST(c.match_tier AS REAL) order_primary,CAST(c.detail_score AS REAL) order_secondary,CASE WHEN c.match_tier>=3 THEN 1 ELSE 0 END exact_phrase_match,ssd.native_text evidence_native_text,ssd.preview_text evidence_preview_text,ssd.ocr_text evidence_ocr_text,ssd.url_text evidence_url_text,ssd.file_path_text evidence_file_path_text,ssd.historical_app_names evidence_app_names,ssd.historical_app_bundle_ids evidence_app_bundle_ids
+FROM candidates c JOIN snapshot_search_documents ssd ON ssd.snapshot_id=c.snapshot_id JOIN snapshots s ON s.id=c.snapshot_id JOIN snapshot_stats ss ON ss.snapshot_id=c.snapshot_id
+WHERE (:cursor_primary IS NULL OR c.match_tier<:cursor_primary OR (c.match_tier=:cursor_primary AND c.detail_score<:cursor_secondary) OR (c.match_tier=:cursor_primary AND c.detail_score=:cursor_secondary AND (ss.last_observed_at<:cursor_last_seen_at OR (ss.last_observed_at=:cursor_last_seen_at AND s.id<:cursor_snapshot_id))))
+ORDER BY c.match_tier DESC,c.detail_score DESC,ss.last_observed_at DESC,s.id DESC LIMIT :limit",
+        snapshot_filter = snapshot_filter_clause("s", "s.id"),
+        event_filter = event_filter_where_clause("s.id", "se", use_event_cache, temporal)
+    )
+}
+
 pub(in crate::db) fn recent_query(
     include_matching_events: bool,
     use_snapshot_event_cache: bool,
@@ -133,6 +174,7 @@ pub(in crate::db) fn timeline_query(sort: TimelineSort) -> String {
     )
 }
 
+#[allow(dead_code)]
 pub(in crate::db) fn literal_query(
     include_matching_events: bool,
     use_snapshot_event_cache: bool,
@@ -304,6 +346,7 @@ pub(in crate::db) fn literal_query(
     )
 }
 
+#[allow(dead_code)]
 pub(in crate::db) fn file_path_literal_query(
     include_matching_events: bool,
     use_snapshot_event_cache: bool,
@@ -429,6 +472,7 @@ pub(in crate::db) fn file_path_literal_query(
     )
 }
 
+#[allow(dead_code)]
 pub(in crate::db) fn fts_query(
     use_snapshot_event_cache: bool,
     has_temporal_event_filters: bool,
@@ -578,6 +622,7 @@ pub(in crate::db) fn fts_query(
     )
 }
 
+#[allow(dead_code)]
 pub(in crate::db) fn ocr_fts_query(
     use_snapshot_event_cache: bool,
     has_temporal_event_filters: bool,
@@ -636,6 +681,7 @@ pub(in crate::db) fn ocr_fts_query(
     )
 }
 
+#[allow(dead_code)]
 pub(in crate::db) fn ocr_literal_query(
     include_matching_events: bool,
     use_snapshot_event_cache: bool,

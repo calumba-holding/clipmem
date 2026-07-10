@@ -784,6 +784,39 @@ fn seed_ocr_text(path: &Path, snapshot_id: i64, text: &str) -> Result<()> {
              updated_at = excluded.updated_at",
         (snapshot_id, text),
     )?;
+    conn.execute(
+        "UPDATE snapshot_search_documents
+         SET ocr_text = ?2, has_ocr_text = 1
+         WHERE snapshot_id = ?1",
+        (snapshot_id, text),
+    )?;
+    conn.execute(
+        "DELETE FROM snapshot_search_documents_fts WHERE rowid = ?1",
+        [snapshot_id],
+    )?;
+    conn.execute(
+        "INSERT INTO snapshot_search_documents_fts (
+            rowid, native_text, preview_text, ocr_text, url_text,
+            file_path_text, historical_app_names, historical_app_bundle_ids
+         )
+         SELECT snapshot_id, native_text, preview_text, ocr_text, url_text,
+                file_path_text, historical_app_names, historical_app_bundle_ids
+         FROM snapshot_search_documents WHERE snapshot_id = ?1",
+        [snapshot_id],
+    )?;
+    conn.execute(
+        "DELETE FROM snapshot_search_documents_literal_fts WHERE rowid = ?1",
+        [snapshot_id],
+    )?;
+    conn.execute(
+        "INSERT INTO snapshot_search_documents_literal_fts (rowid, haystack)
+         SELECT snapshot_id, lower(
+            native_text || char(31) || preview_text || char(31) || ocr_text ||
+            char(31) || url_text || char(31) || file_path_text || char(31) ||
+            historical_app_names || char(31) || historical_app_bundle_ids
+         ) FROM snapshot_search_documents WHERE snapshot_id = ?1",
+        [snapshot_id],
+    )?;
     Ok(())
 }
 

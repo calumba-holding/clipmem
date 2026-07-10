@@ -106,9 +106,10 @@ clipmem search --mode fts "\"launchctl\" AND bootstrap"
 ## OCR text
 
 When OCR is enabled or backfilled, completed OCR text participates in
-default `search` and `recall` results. OCR matches report
-`matched_fields = ["ocr_text"]` in JSON output and include a
-`why_matched` explanation that names OCR text.
+default `search` and `recall` results. A snapshot appears once even if
+native text, OCR, URLs, paths, or app metadata all match. The
+`matched_fields` and `match_evidence` fields report the full provenance
+set instead of selecting one winning source.
 
 Use these commands to control and inspect OCR:
 
@@ -168,8 +169,10 @@ explicitly targeted snapshot.
 - `--has-text`, `--has-url`, `--has-file-url`, `--has-image`,
   `--has-pdf` — presence flags with additive AND semantics
 
-`--has-text` includes snapshots whose only searchable text comes from
-ready OCR text.
+`--has-text` includes snapshots with native searchable text or ready
+OCR text. Display placeholders for images, binary values, and empty
+items don't count as text. URLs and file URLs use their separate
+presence flags and content kinds.
 
 ### Size
 
@@ -192,6 +195,11 @@ Cursors are opaque and tied to the active query, mode, and filters.
 Changing any of those while paginating rejects the cursor. When a
 response includes `"truncated": true` and a non-null `next_cursor`,
 there are more rows.
+
+Search cursors also carry a cursor schema version and every final
+ordering key. A cursor from an older search implementation fails with
+an instruction to rerun without `--cursor`; it never resumes against a
+different ordering contract.
 
 ## Search modes
 

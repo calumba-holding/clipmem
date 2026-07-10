@@ -130,6 +130,11 @@ const MIGRATION_STEPS: &[MigrationStep] = &[
         applies_to: source_version_through_5,
         run: rebuild_snapshot_file_url_fts,
     },
+    MigrationStep {
+        name: "build unified snapshot search documents",
+        applies_to: source_version_through_18,
+        run: super::store::search_document::rebuild_all_snapshot_search_documents,
+    },
 ];
 
 fn source_version_before_restore_operations(version: i64) -> bool {
@@ -187,6 +192,10 @@ fn source_version_through_3(version: i64) -> bool {
 
 fn source_version_through_5(version: i64) -> bool {
     version <= 5
+}
+
+fn source_version_through_18(version: i64) -> bool {
+    version <= 18
 }
 
 fn source_version_needs_literal_cache_rebuild(version: i64) -> bool {

@@ -268,14 +268,13 @@ fn snapshot_predicate_sql(
 
 fn presence_predicate_sql(
     predicate: &PresencePredicateSql,
-    snapshot_alias: &str,
+    _snapshot_alias: &str,
     snapshot_id_expr: &str,
 ) -> String {
     match predicate {
         PresencePredicateSql::SearchableText => format!(
             "(
-             ({snapshot_alias}.preview_text IS NOT NULL AND {snapshot_alias}.preview_text != '')
-             OR {}
+             {}
              OR EXISTS (
                  SELECT 1 FROM snapshot_ocr_cache soc
                  WHERE soc.snapshot_id = {snapshot_id_expr}

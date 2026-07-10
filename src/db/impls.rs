@@ -197,26 +197,25 @@ impl SearchCursorState {
     #[must_use]
     pub(crate) fn new(
         mode_used: SearchMode,
-        score: Option<f64>,
         last_seen_at: String,
         snapshot_id: i64,
+        order_primary: Option<f64>,
+        order_secondary: Option<f64>,
+        exact_phrase: bool,
     ) -> Self {
         Self {
             mode_used,
-            score,
             last_seen_at,
             snapshot_id,
+            order_primary,
+            order_secondary,
+            exact_phrase,
         }
     }
 
     #[must_use]
     pub(crate) fn mode_used(&self) -> SearchMode {
         self.mode_used
-    }
-
-    #[must_use]
-    pub(crate) fn score(&self) -> Option<f64> {
-        self.score
     }
 
     #[must_use]
@@ -227,6 +226,19 @@ impl SearchCursorState {
     #[must_use]
     pub(crate) fn snapshot_id(&self) -> i64 {
         self.snapshot_id
+    }
+
+    #[must_use]
+    pub(crate) fn order_primary(&self) -> Option<f64> {
+        self.order_primary
+    }
+    #[must_use]
+    pub(crate) fn order_secondary(&self) -> Option<f64> {
+        self.order_secondary
+    }
+    #[must_use]
+    pub(crate) fn exact_phrase(&self) -> bool {
+        self.exact_phrase
     }
 }
 

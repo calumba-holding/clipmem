@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::cli::errors::invalid_args_error;
 use crate::db::{
@@ -10,6 +11,7 @@ use crate::model::{SearchHit, TimelineEvent};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(in crate::cli) struct SearchCursorToken {
+    pub(in crate::cli) version: u32,
     pub(in crate::cli) command: String,
     pub(in crate::cli) query: String,
     pub(in crate::cli) requested_mode: SearchMode,
@@ -18,6 +20,11 @@ pub(in crate::cli) struct SearchCursorToken {
     pub(in crate::cli) last_seen_at: String,
     pub(in crate::cli) snapshot_id: i64,
     pub(in crate::cli) score: Option<f64>,
+    pub(in crate::cli) query_hash: String,
+    pub(in crate::cli) filter_hash: String,
+    pub(in crate::cli) order_primary: Option<f64>,
+    pub(in crate::cli) order_secondary: Option<f64>,
+    pub(in crate::cli) exact_phrase: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,19 +50,26 @@ pub(in crate::cli) fn parse_search_cursor(
     requested_mode: SearchMode,
     filters: &RetrievalFilters,
 ) -> Result<SearchCursorState> {
-    let token: SearchCursorToken = decode_cursor(encoded)?;
+    let value: serde_json::Value = decode_cursor(encoded)?;
+    if value.get("version").and_then(serde_json::Value::as_u64) != Some(2) {
+        return Err(invalid_args_error(
+            "cursor version no longer supported; rerun without cursor",
+        ));
+    }
+    let token: SearchCursorToken = serde_json::from_value(value)
+        .map_err(|error| anyhow!("invalid cursor payload: {error}"))?;
     if token.command != "search" {
         return Err(invalid_args_error(format!(
             "cursor is for command `{}` but was used with `search`",
             token.command
         )));
     }
-    if token.query != query || token.requested_mode != requested_mode {
+    if token.query_hash != stable_hash(&query) || token.requested_mode != requested_mode {
         return Err(invalid_args_error(
             "cursor does not match the active search query or mode",
         ));
     }
-    if token.filters != *filters {
+    if token.filter_hash != stable_hash(filters) {
         return Err(invalid_args_error(
             "cursor does not match the active search filters",
         ));
@@ -70,9 +84,11 @@ pub(in crate::cli) fn parse_search_cursor(
 
     Ok(SearchCursorState::new(
         token.mode_used,
-        token.score,
         token.last_seen_at,
         token.snapshot_id,
+        token.order_primary,
+        token.order_secondary,
+        token.exact_phrase,
     ))
 }
 
@@ -128,6 +144,7 @@ pub(in crate::cli) fn encode_search_cursor(
     hit: &SearchHit,
 ) -> Result<String> {
     encode_cursor(&SearchCursorToken {
+        version: 2,
         command: "search".to_string(),
         query: query.to_string(),
         requested_mode,
@@ -136,7 +153,23 @@ pub(in crate::cli) fn encode_search_cursor(
         last_seen_at: hit.last_observed_at().to_string(),
         snapshot_id: hit.snapshot_id(),
         score: hit.score(),
+        query_hash: stable_hash(&query),
+        filter_hash: stable_hash(filters),
+        order_primary: hit
+            .search_order_key()
+            .map(|key| key.primary)
+            .or(hit.score()),
+        order_secondary: hit
+            .search_order_key()
+            .map(|key| key.secondary)
+            .or(Some(0.0)),
+        exact_phrase: hit.search_order_key().is_some_and(|key| key.exact_phrase),
     })
+}
+
+fn stable_hash(value: &impl Serialize) -> String {
+    let bytes = serde_json::to_vec(value).expect("cursor hash input should serialize");
+    hex::encode(Sha256::digest(bytes))
 }
 
 pub(in crate::cli) fn encode_recent_cursor(
@@ -199,7 +232,7 @@ mod tests {
         let cursor = parse_search_cursor(&encoded, "git", SearchMode::Auto, &filters).unwrap();
 
         assert_eq!(cursor.mode_used(), SearchMode::Fts);
-        assert_eq!(cursor.score(), Some(0.75));
+        assert_eq!(cursor.order_primary(), Some(0.75));
         assert_eq!(cursor.last_seen_at(), "2026-04-16T10:00:00Z");
         assert_eq!(cursor.snapshot_id(), 42);
     }
@@ -208,6 +241,7 @@ mod tests {
     fn search_cursor_rejects_wrong_command() {
         let filters = RetrievalFilters::default();
         let encoded = encode_cursor(&SearchCursorToken {
+            version: 2,
             command: "recent".to_string(),
             query: "git".to_string(),
             requested_mode: SearchMode::Auto,
@@ -216,6 +250,11 @@ mod tests {
             last_seen_at: "2026-04-16T10:00:00Z".to_string(),
             snapshot_id: 42,
             score: Some(0.75),
+            query_hash: String::new(),
+            filter_hash: String::new(),
+            order_primary: Some(0.75),
+            order_secondary: Some(0.0),
+            exact_phrase: false,
         })
         .unwrap();
 
@@ -224,6 +263,32 @@ mod tests {
         assert!(error
             .to_string()
             .contains("cursor is for command `recent` but was used with `search`"));
+    }
+
+    #[test]
+    fn search_cursor_rejects_legacy_versions_with_actionable_guidance() {
+        let filters = RetrievalFilters::default();
+        let encoded = encode_cursor(&serde_json::json!({
+            "command": "search",
+            "query": "git",
+            "requested_mode": "Auto",
+            "mode_used": "Fts",
+            "filters": filters,
+            "last_seen_at": "2026-04-16T10:00:00Z",
+            "snapshot_id": 42,
+            "score": -0.5
+        }))
+        .unwrap();
+        let error = parse_search_cursor(
+            &encoded,
+            "git",
+            SearchMode::Auto,
+            &RetrievalFilters::default(),
+        )
+        .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("cursor version no longer supported; rerun without cursor"));
     }
 
     #[test]
@@ -282,6 +347,7 @@ mod tests {
     fn recent_cursor_rejects_wrong_command() {
         let filters = RetrievalFilters::default();
         let encoded = encode_cursor(&SearchCursorToken {
+            version: 2,
             command: "search".to_string(),
             query: "git".to_string(),
             requested_mode: SearchMode::Auto,
@@ -290,6 +356,11 @@ mod tests {
             last_seen_at: "2026-04-16T10:00:00Z".to_string(),
             snapshot_id: 42,
             score: Some(0.75),
+            query_hash: String::new(),
+            filter_hash: String::new(),
+            order_primary: Some(0.75),
+            order_secondary: Some(0.0),
+            exact_phrase: false,
         })
         .unwrap();
 
