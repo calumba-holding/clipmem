@@ -670,10 +670,10 @@ pub(super) struct StorageArgs {
 pub(super) enum StorageCommand {
     /// Reclaim SQLite database and WAL disk space.
     Compact(StorageCompactArgs),
-    /// List image rows eligible for optimization without rewriting bytes.
     ImageCandidates(StorageImageCandidatesArgs),
-    /// Convert eligible archived images to lossless WebP.
     OptimizeImages(StorageOptimizeImagesArgs),
+    BuildPreviews(StorageOptimizeImagesArgs),
+    PreviewStatus(OutputArgs),
 }
 
 #[derive(Debug, Args)]
