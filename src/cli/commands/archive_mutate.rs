@@ -1,5 +1,7 @@
 use std::fs::{File, OpenOptions};
+use std::io::Write as _;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{anyhow, Context, Result};
 
@@ -19,16 +21,12 @@ use crate::cli::schema::{ExportArgs, ForgetArgs, PurgeArgs, RestoreArgs};
 use super::mutation_support::require_text_or_json;
 use super::notify::notify_app_refresh;
 use super::retrieval_support::normalize_retrieval_filters;
-use super::runtime::open_existing_db;
+use super::runtime::{open_read_only_db, open_read_write_db};
 
 pub(in crate::cli) fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -> Result<()> {
     let format = require_text_or_json(args.output.resolved()?, "export")?;
     let filters = normalize_retrieval_filters(&args.filters)?;
-    let db = open_existing_db(db_path)?;
-    anyhow::Context::with_context(db.find_snapshot(args.snapshot_id, 1), || {
-        format!("export failed for snapshot {}", args.snapshot_id)
-    })?
-    .ok_or_else(|| not_found_error(format!("snapshot {} was not found", args.snapshot_id)))?;
+    let db = open_read_only_db(db_path)?;
     if !db.snapshot_matches_filters(args.snapshot_id, &filters)? {
         return Err(anyhow!(
             "snapshot {} does not satisfy the active filters",
@@ -36,7 +34,7 @@ pub(in crate::cli) fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -
         ));
     }
     let representation = db
-        .find_representation_bytes(args.snapshot_id, args.item, &args.uti)?
+        .read_representation_payload(args.snapshot_id, args.item, &args.uti)?
         .ok_or_else(|| {
             not_found_error(format!(
                 "representation not found for snapshot {} item {} uti {}",
@@ -54,18 +52,14 @@ pub(in crate::cli) fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -
         })?;
     }
 
-    let mut output = create_export_destination(&args.out, args.force)?;
-    use std::io::Write as _;
-    anyhow::Context::with_context(output.write_all(representation.raw_bytes()), || {
-        format!("failed to write export file {}", args.out.display())
-    })?;
+    atomic_write_export(&args.out, args.force, representation.bytes())?;
 
     let output = ExportOutput {
         snapshot_id: args.snapshot_id,
         item_index: args.item,
         uti: args.uti.clone(),
-        byte_count: representation.byte_len(),
-        raw_sha256: representation.raw_sha256().to_string(),
+        byte_count: representation.manifest().byte_len(),
+        raw_sha256: representation.manifest().raw_sha256().to_string(),
         out: args.out.display().to_string(),
     };
     match format {
@@ -80,17 +74,17 @@ pub(in crate::cli) fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -
 
 pub(in crate::cli) fn restore_snapshot(db_path: &Path, args: &RestoreArgs) -> Result<()> {
     let format = require_text_or_json(args.output.resolved()?, "restore")?;
-    let db = open_existing_db(db_path)?;
-    let snapshot = anyhow::Context::with_context(db.find_snapshot(args.snapshot_id, 1), || {
+    let db = open_read_write_db(db_path)?;
+    let payload = anyhow::Context::with_context(db.load_restore_payload(args.snapshot_id), || {
         format!("restore failed for snapshot {}", args.snapshot_id)
     })?
     .ok_or_else(|| not_found_error(format!("snapshot {} was not found", args.snapshot_id)))?;
-    db.register_pending_restore(snapshot.sha256())
+    db.register_pending_restore(payload.snapshot_sha256())
         .context("register pending restore")?;
-    let report = match restore_items(snapshot.items()) {
+    let report = match restore_items(payload.items()) {
         Ok(report) => report,
         Err(err) => {
-            if let Err(clear_err) = db.clear_pending_restore(snapshot.sha256()) {
+            if let Err(clear_err) = db.clear_pending_restore(payload.snapshot_sha256()) {
                 eprintln!("pending restore cleanup failed: {clear_err:#}");
             }
             return Err(err).context("restore failed");
@@ -115,7 +109,7 @@ pub(in crate::cli) fn restore_snapshot(db_path: &Path, args: &RestoreArgs) -> Re
 
 pub(in crate::cli) fn forget_snapshot(db_path: &Path, args: &ForgetArgs) -> Result<()> {
     let format = require_text_or_json(args.output.resolved()?, "forget")?;
-    let mut db = open_existing_db(db_path)?;
+    let mut db = open_read_write_db(db_path)?;
     let report = anyhow::Context::with_context(db.forget_snapshot(args.snapshot_id), || {
         format!("forget failed for snapshot {}", args.snapshot_id)
     })?
@@ -133,7 +127,7 @@ pub(in crate::cli) fn forget_snapshot(db_path: &Path, args: &ForgetArgs) -> Resu
 
 pub(in crate::cli) fn purge_snapshots(db_path: &Path, args: &PurgeArgs) -> Result<()> {
     let format = require_text_or_json(args.output.resolved()?, "purge")?;
-    let mut db = open_existing_db(db_path)?;
+    let mut db = open_read_write_db(db_path)?;
     let report = anyhow::Context::with_context(
         db.purge_snapshots_older_than(args.older_than.seconds(), args.dry_run),
         || format!("purge failed for duration {}", args.older_than.raw()),
@@ -151,7 +145,9 @@ pub(in crate::cli) fn purge_snapshots(db_path: &Path, args: &PurgeArgs) -> Resul
     Ok(())
 }
 
-fn create_export_destination(path: &Path, force: bool) -> Result<File> {
+static EXPORT_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+fn validate_export_destination(path: &Path, force: bool) -> Result<()> {
     match std::fs::symlink_metadata(path) {
         Ok(metadata) => {
             let file_type = metadata.file_type();
@@ -173,9 +169,6 @@ fn create_export_destination(path: &Path, force: bool) -> Result<File> {
                     path.display()
                 )));
             }
-
-            std::fs::remove_file(path)
-                .with_context(|| format!("failed to replace {}", path.display()))?;
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => {
@@ -183,18 +176,116 @@ fn create_export_destination(path: &Path, force: bool) -> Result<File> {
         }
     }
 
-    match OpenOptions::new().write(true).create_new(true).open(path) {
-        Ok(file) => Ok(file),
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            Err(invalid_args_error(format!(
-                "export destination {} already exists (pass --force to replace it)",
+    Ok(())
+}
+
+fn atomic_write_export(path: &Path, force: bool, bytes: &[u8]) -> Result<()> {
+    validate_export_destination(path, force)?;
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("export");
+    let (temp_path, mut temp_file) = (0..100)
+        .find_map(|_| {
+            let sequence = EXPORT_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+            let candidate = parent.join(format!(
+                ".{file_name}.clipmem-{}-{sequence}.tmp",
+                std::process::id()
+            ));
+            match OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&candidate)
+            {
+                Ok(file) => Some(Ok((candidate, file))),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => None,
+                Err(error) => Some(Err(error)),
+            }
+        })
+        .transpose()
+        .with_context(|| {
+            format!(
+                "failed to create temporary export beside {}",
                 path.display()
-            )))
-        }
-        Err(error) => {
-            Err(error).with_context(|| format!("failed to create export file {}", path.display()))
+            )
+        })?
+        .ok_or_else(|| {
+            anyhow!(
+                "failed to allocate a unique temporary export file beside {}",
+                path.display()
+            )
+        })?;
+    let mut cleanup = TempExportGuard {
+        path: temp_path,
+        armed: true,
+    };
+
+    temp_file
+        .write_all(bytes)
+        .with_context(|| format!("failed to write temporary export for {}", path.display()))?;
+    temp_file
+        .flush()
+        .with_context(|| format!("failed to flush temporary export for {}", path.display()))?;
+    temp_file
+        .sync_all()
+        .with_context(|| format!("failed to sync temporary export for {}", path.display()))?;
+    drop(temp_file);
+    set_export_permissions(&cleanup.path)?;
+
+    if force {
+        std::fs::rename(&cleanup.path, path)
+            .with_context(|| format!("failed to atomically replace {}", path.display()))?;
+    } else {
+        match std::fs::hard_link(&cleanup.path, path) {
+            Ok(()) => std::fs::remove_file(&cleanup.path).with_context(|| {
+                format!("failed to remove temporary export for {}", path.display())
+            })?,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                return Err(invalid_args_error(format!(
+                    "export destination {} already exists (pass --force to replace it)",
+                    path.display()
+                )));
+            }
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("failed to publish export {}", path.display()));
+            }
         }
     }
+    cleanup.armed = false;
+    File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .with_context(|| format!("failed to sync export directory {}", parent.display()))?;
+    Ok(())
+}
+
+struct TempExportGuard {
+    path: std::path::PathBuf,
+    armed: bool,
+}
+
+impl Drop for TempExportGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+#[cfg(unix)]
+fn set_export_permissions(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("failed to set export permissions on {}", path.display()))
+}
+
+#[cfg(not(unix))]
+fn set_export_permissions(_path: &Path) -> Result<()> {
+    Ok(())
 }
 
 fn render_restore_text(output: &RestoreOutput) -> String {
@@ -247,18 +338,19 @@ fn render_purge_text(report: &PurgeReport) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write as _;
     use std::path::PathBuf;
+    use std::sync::{Arc, Barrier};
+    use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::create_export_destination;
+    use super::atomic_write_export;
 
     #[test]
     fn create_export_destination_rejects_existing_file_without_force() {
         let path = temp_path("existing-export.bin");
         std::fs::write(&path, b"old").unwrap();
 
-        let error = create_export_destination(&path, false).unwrap_err();
+        let error = atomic_write_export(&path, false, b"new").unwrap_err();
 
         assert!(error.to_string().contains("already exists"));
         assert_eq!(std::fs::read(&path).unwrap(), b"old");
@@ -271,9 +363,7 @@ mod tests {
         let path = temp_path("forced-export.bin");
         std::fs::write(&path, b"old").unwrap();
 
-        let mut file = create_export_destination(&path, true).unwrap();
-        file.write_all(b"new").unwrap();
-        drop(file);
+        atomic_write_export(&path, true, b"new").unwrap();
 
         assert_eq!(std::fs::read(&path).unwrap(), b"new");
 
@@ -285,7 +375,7 @@ mod tests {
         let path = temp_path("export-directory");
         std::fs::create_dir_all(&path).unwrap();
 
-        let error = create_export_destination(&path, true).unwrap_err();
+        let error = atomic_write_export(&path, true, b"new").unwrap_err();
 
         assert!(error.to_string().contains("not a regular file"));
 
@@ -300,13 +390,50 @@ mod tests {
         std::fs::write(&target, b"target").unwrap();
         std::os::unix::fs::symlink(&target, &link).unwrap();
 
-        let error = create_export_destination(&link, true).unwrap_err();
+        let error = atomic_write_export(&link, true, b"new").unwrap_err();
 
         assert!(error.to_string().contains("symbolic link"));
         assert_eq!(std::fs::read(&target).unwrap(), b"target");
 
         cleanup_path(&link);
         cleanup_path(&target);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_export_write_failure_preserves_existing_target() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let path = temp_path("failed-force-export.bin");
+        std::fs::write(&path, b"old").unwrap();
+        let parent = path.parent().unwrap();
+        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let result = atomic_write_export(&path, true, b"new");
+        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"old");
+        cleanup_path(&path);
+    }
+
+    #[test]
+    fn non_force_export_race_publishes_exactly_one_complete_file() {
+        let path = temp_path("racing-export.bin");
+        let barrier = Arc::new(Barrier::new(3));
+        let handles = [b"first".as_slice(), b"second".as_slice()].map(|bytes| {
+            let path = path.clone();
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                barrier.wait();
+                atomic_write_export(&path, false, bytes)
+            })
+        });
+        barrier.wait();
+        let results = handles.map(|handle| handle.join().unwrap());
+        assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(bytes == b"first" || bytes == b"second");
+        cleanup_path(&path);
     }
 
     fn temp_path(name: &str) -> PathBuf {

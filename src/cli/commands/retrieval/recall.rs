@@ -17,7 +17,7 @@ use crate::cli::schema::RecallArgs;
 use super::super::retrieval_support::{
     load_snapshot_projections, merge_applied_filters, normalize_retrieval_filters,
 };
-use super::super::runtime::open_existing_db;
+use super::super::runtime::open_read_only_db;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::cli) enum RecallCandidateSource {
@@ -45,7 +45,7 @@ pub(in crate::cli) struct RecallComputation {
 pub(in crate::cli) fn recall(db_path: &Path, args: &RecallArgs) -> Result<()> {
     let format = args.output.resolved()?;
     let filters = normalize_retrieval_filters(&args.filters)?;
-    let db = open_existing_db(db_path)?;
+    let db = open_read_only_db(db_path)?;
     let recall = anyhow::Context::context(
         compute_recall(&db, args, &filters),
         "recall failed; if this is unexpected, run `clipmem service status` and `clipmem doctor`",

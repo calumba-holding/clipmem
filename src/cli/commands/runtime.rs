@@ -144,7 +144,7 @@ pub(in crate::cli) fn start_ocr_worker(db_path: PathBuf) {
     thread::spawn(move || {
         let _worker_registration = worker_registration;
         let run = || -> Result<()> {
-            let mut worker_db = Database::open_or_init(&db_path)?;
+            let mut worker_db = Database::open_or_init_and_migrate(&db_path)?;
             let engine = crate::ocr::default_engine();
             let mut processed = 0usize;
             loop {
@@ -251,14 +251,19 @@ where
     Ok(payload)
 }
 
-pub(in crate::cli) fn open_existing_db(path: &Path) -> Result<Database> {
-    if !path.is_file() {
-        return Err(db_error(format!(
-            "database does not exist at {}. Run `clipmem setup` to initialize capture.",
-            path.display()
-        )));
-    }
-    match Database::open_existing(path) {
+pub(in crate::cli) fn open_read_only_db(path: &Path) -> Result<Database> {
+    map_current_open(path, Database::open_read_only_current(path))
+}
+
+pub(in crate::cli) fn open_read_write_db(path: &Path) -> Result<Database> {
+    map_current_open(path, Database::open_read_write_current(path))
+}
+
+fn map_current_open(
+    path: &Path,
+    result: std::result::Result<Database, crate::db::DatabaseOpenError>,
+) -> Result<Database> {
+    match result {
         Ok(db) => {
             if let Err(error) = db.ensure_supported_schema_shape() {
                 if error
@@ -274,23 +279,34 @@ pub(in crate::cli) fn open_existing_db(path: &Path) -> Result<Database> {
             Ok(db)
         }
         Err(error) => {
-            if error
-                .chain()
-                .any(|cause| cause.to_string().contains("incompatible prerelease schema"))
-            {
-                Err(db_error(format!(
-                    "incompatible prerelease schema detected at {}. Move the database aside and run `clipmem setup`.",
+            match error {
+                crate::db::DatabaseOpenError::Missing(_) => Err(db_error(format!(
+                    "database does not exist at {}. Run `clipmem setup` to initialize capture.",
                     path.display()
-                )))
-            } else {
-                Err(error).with_context(|| format!("failed to open database at {}", path.display()))
+                ))),
+                crate::db::DatabaseOpenError::MigrationRequired { found, supported } => {
+                    Err(db_error(format!(
+                        "database schema version {found} requires migration to version {supported}. Run `clipmem setup` to migrate the archive."
+                    )))
+                }
+                crate::db::DatabaseOpenError::NewerSchema { found, supported } => {
+                    Err(db_error(format!(
+                        "database schema version {found} is newer than this clipmem build supports ({supported}); upgrade clipmem before opening it"
+                    )))
+                }
+                crate::db::DatabaseOpenError::NotArchive(_) => Err(db_error(format!(
+                    "database at {} is not a clipmem archive",
+                    path.display()
+                ))),
+                other => Err(anyhow::Error::from(other))
+                    .with_context(|| format!("failed to open database at {}", path.display())),
             }
         }
     }
 }
 
 pub(in crate::cli) fn open_or_init_db(path: &Path) -> Result<Database> {
-    anyhow::Context::with_context(Database::open_or_init(path), || {
+    anyhow::Context::with_context(Database::open_or_init_and_migrate(path), || {
         format!("failed to open database at {}", path.display())
     })
 }

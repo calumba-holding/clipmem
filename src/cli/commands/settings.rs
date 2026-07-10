@@ -15,7 +15,7 @@ use crate::cli::schema::{
 
 use super::mutation_support::require_text_or_json;
 use super::notify::notify_app_refresh;
-use super::runtime::open_or_init_db;
+use super::runtime::{open_or_init_db, open_read_only_db};
 
 pub(in crate::cli) fn settings(db_path: &Path, args: &SettingsArgs) -> Result<()> {
     match &args.command {
@@ -31,7 +31,7 @@ pub(in crate::cli) fn settings(db_path: &Path, args: &SettingsArgs) -> Result<()
 
 fn settings_show(db_path: &Path, args: &SettingsShowArgs) -> Result<()> {
     let format = require_text_or_json(args.output.resolved()?, "settings show")?;
-    let db = open_or_init_db(db_path)?;
+    let db = open_read_only_db(db_path)?;
     let view = settings_view(db.capture_policy()?);
     emit_settings_view_output(format, &view)
 }
@@ -112,7 +112,7 @@ fn settings_ignore_remove(db_path: &Path, args: &SettingsIgnoreBundleArgs) -> Re
 
 fn settings_ignore_list(db_path: &Path, args: &SettingsIgnoreListArgs) -> Result<()> {
     let format = require_text_or_json(args.output.resolved()?, "settings ignore list")?;
-    let db = open_or_init_db(db_path)?;
+    let db = open_read_only_db(db_path)?;
     let output = SettingsIgnoreListOutput {
         ignored_bundle_ids: db.list_ignored_bundle_ids()?,
     };

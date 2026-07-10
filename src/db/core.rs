@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use rusqlite::{Connection, OpenFlags};
 
-use super::schema::{legacy_prerelease_schema_detected, prepare_schema};
+use super::schema::{legacy_prerelease_schema_detected, prepare_schema, CURRENT_SCHEMA_VERSION};
 use super::sqlite_helpers::row_usize;
 use super::store::revision::bump_revision;
 use super::types::{
@@ -21,7 +21,7 @@ impl Database {
     ///
     /// Returns an error if the parent directory cannot be created, the database cannot be opened,
     /// or the connection cannot be configured and bootstrapped.
-    pub fn open_or_init(path: &Path) -> Result<Self> {
+    pub fn open_or_init_and_migrate(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
             Context::with_context(std::fs::create_dir_all(parent), || {
                 format!("failed to create {}", parent.display())
@@ -46,33 +46,57 @@ impl Database {
         })
     }
 
-    /// Open an existing archive database without creating parent directories or schema state.
+    /// Open a current clipmem archive through a truly read-only SQLite connection.
     ///
-    /// This method also hardens parent-directory, database-file, and SQLite sidecar permissions
-    /// after opening.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database file does not already exist, cannot be opened, or the
-    /// connection cannot be configured.
-    pub fn open_existing(path: &Path) -> Result<Self> {
-        let mut conn = open_connection(
-            path,
-            OpenFlags::SQLITE_OPEN_READ_WRITE
-                | OpenFlags::SQLITE_OPEN_URI
-                | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        )?;
-        prepare_connection(&mut conn)?;
-        if let Some(parent) = path.parent() {
-            harden_path_permissions(parent, 0o700)?;
-        }
-        harden_path_permissions(path, 0o600)?;
-        harden_existing_sqlite_sidecar_permissions(path)?;
-
+    /// This path never prepares or migrates schema and never changes filesystem permissions.
+    pub fn open_read_only_current(
+        path: &Path,
+    ) -> std::result::Result<Self, super::types::DatabaseOpenError> {
+        ensure_existing_file(path)?;
+        let conn = open_current_read_only_connection(path)?;
+        configure_current_connection(&conn, true)?;
+        validate_current_archive(&conn, path)?;
         Ok(Self {
             conn,
             path: path.to_path_buf(),
         })
+    }
+
+    /// Open a current clipmem archive for mutation without creating or migrating schema.
+    pub fn open_read_write_current(
+        path: &Path,
+    ) -> std::result::Result<Self, super::types::DatabaseOpenError> {
+        ensure_existing_file(path)?;
+        let conn = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_WRITE
+                | OpenFlags::SQLITE_OPEN_URI
+                | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .map_err(super::types::DatabaseOpenError::Sqlite)?;
+        configure_current_connection(&conn, false)?;
+        validate_current_archive(&conn, path)?;
+        Ok(Self {
+            conn,
+            path: path.to_path_buf(),
+        })
+    }
+
+    /// Compatibility wrapper retaining the historical create-and-migrate behavior.
+    pub fn open_or_init(path: &Path) -> Result<Self> {
+        Self::open_or_init_and_migrate(path)
+    }
+
+    /// Deprecated compatibility wrapper for a read-write current-schema open.
+    ///
+    /// This method does not create, migrate, run DDL, or change filesystem permissions.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed current-schema open error wrapped in `anyhow::Error`.
+    #[deprecated(note = "use open_read_only_current or open_read_write_current")]
+    pub fn open_existing(path: &Path) -> Result<Self> {
+        Self::open_read_write_current(path).map_err(anyhow::Error::from)
     }
 
     pub(crate) fn ensure_supported_schema_shape(&self) -> Result<()> {
@@ -146,6 +170,152 @@ impl Database {
             path: PathBuf::from(":memory:"),
         })
     }
+}
+
+fn open_current_read_only_connection(
+    path: &Path,
+) -> std::result::Result<Connection, super::types::DatabaseOpenError> {
+    let flags = OpenFlags::SQLITE_OPEN_READ_ONLY
+        | OpenFlags::SQLITE_OPEN_URI
+        | OpenFlags::SQLITE_OPEN_NO_MUTEX;
+    let wal_exists = sidecar_path(path, "-wal").exists();
+    let shm_exists = sidecar_path(path, "-shm").exists();
+    if wal_exists || shm_exists {
+        return Connection::open_with_flags(path, flags)
+            .map_err(super::types::DatabaseOpenError::Sqlite);
+    }
+
+    // A clean, checkpointed WAL database does not need sidecars. immutable=1 prevents SQLite
+    // from recreating empty -wal/-shm files for a routine read. Live-WAL archives deliberately
+    // use the normal read-only path above so committed frames remain visible.
+    let absolute = path
+        .canonicalize()
+        .map_err(super::types::DatabaseOpenError::Io)?;
+    let uri = format!("file:{}?immutable=1", encode_sqlite_uri_path(&absolute));
+    Connection::open_with_flags(uri, flags).map_err(super::types::DatabaseOpenError::Sqlite)
+}
+
+fn encode_sqlite_uri_path(path: &Path) -> String {
+    path.to_string_lossy()
+        .replace('%', "%25")
+        .replace('?', "%3F")
+        .replace('#', "%23")
+        .replace(' ', "%20")
+}
+
+const CLIPMEM_APPLICATION_ID: i64 = 1_129_137_485;
+
+fn ensure_existing_file(path: &Path) -> std::result::Result<(), super::types::DatabaseOpenError> {
+    match std::fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() => Ok(()),
+        Ok(_) => Err(super::types::DatabaseOpenError::Missing(path.to_path_buf())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Err(super::types::DatabaseOpenError::Missing(path.to_path_buf()))
+        }
+        Err(error) => Err(super::types::DatabaseOpenError::Io(error)),
+    }
+}
+
+fn configure_current_connection(
+    conn: &Connection,
+    read_only: bool,
+) -> std::result::Result<(), super::types::DatabaseOpenError> {
+    conn.busy_timeout(if read_only {
+        Duration::from_millis(250)
+    } else {
+        Duration::from_millis(1_500)
+    })
+    .map_err(super::types::DatabaseOpenError::Sqlite)?;
+    conn.execute_batch(if read_only {
+        // The READ_ONLY open flag protects the main archive while TEMP remains available to
+        // doctor/stats queries that legitimately create connection-local working tables.
+        "PRAGMA foreign_keys = ON; PRAGMA temp_store = MEMORY;"
+    } else {
+        "PRAGMA foreign_keys = ON; PRAGMA temp_store = MEMORY; PRAGMA synchronous = NORMAL;"
+    })
+    .map_err(super::types::DatabaseOpenError::Sqlite)
+}
+
+fn validate_current_archive(
+    conn: &Connection,
+    path: &Path,
+) -> std::result::Result<(), super::types::DatabaseOpenError> {
+    use super::types::DatabaseOpenError;
+
+    let core_table_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name IN ('snapshots', 'snapshot_items', 'item_representations', 'capture_events')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(DatabaseOpenError::Sqlite)?;
+    if core_table_count != 4 {
+        return Err(DatabaseOpenError::NotArchive(path.to_path_buf()));
+    }
+    if legacy_prerelease_schema_detected(conn)
+        .map_err(|error| DatabaseOpenError::InvalidSchema(error.to_string()))?
+    {
+        return Err(DatabaseOpenError::InvalidSchema(
+            "incompatible prerelease schema; move it aside and run `clipmem setup`".to_string(),
+        ));
+    }
+
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(DatabaseOpenError::Sqlite)?;
+    if version < CURRENT_SCHEMA_VERSION {
+        return Err(DatabaseOpenError::MigrationRequired {
+            found: version,
+            supported: CURRENT_SCHEMA_VERSION,
+        });
+    }
+    if version > CURRENT_SCHEMA_VERSION {
+        return Err(DatabaseOpenError::NewerSchema {
+            found: version,
+            supported: CURRENT_SCHEMA_VERSION,
+        });
+    }
+
+    let application_id: i64 = conn
+        .query_row("PRAGMA application_id", [], |row| row.get(0))
+        .map_err(DatabaseOpenError::Sqlite)?;
+    if application_id != CLIPMEM_APPLICATION_ID {
+        return Err(DatabaseOpenError::NotArchive(path.to_path_buf()));
+    }
+
+    let metadata = conn.query_row(
+        "SELECT archive_magic, archive_uuid, projection_version FROM archive_metadata WHERE id = 1",
+        [],
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        },
+    );
+    match metadata {
+        Ok((magic, uuid, projection_version))
+            if magic == "clipmem-archive" && uuid.len() == 32 && projection_version >= 0 => {}
+        Ok(_) => {
+            return Err(DatabaseOpenError::InvalidSchema(
+                "invalid archive metadata row".to_string(),
+            ))
+        }
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            return Err(DatabaseOpenError::InvalidSchema(
+                "archive metadata row is missing".to_string(),
+            ));
+        }
+        Err(error) => return Err(DatabaseOpenError::Sqlite(error)),
+    }
+
+    conn.prepare("SELECT item_index, primary_kind FROM snapshot_items LIMIT 0")
+        .and_then(|_| {
+            conn.prepare("SELECT uti, kind, byte_len, raw_sha256 FROM item_representations LIMIT 0")
+        })
+        .map_err(|error| DatabaseOpenError::InvalidSchema(error.to_string()))?;
+    Ok(())
 }
 
 impl StorageFileSizes {

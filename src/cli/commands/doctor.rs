@@ -7,10 +7,10 @@ use crate::cli::output::render_doctor_text;
 use crate::cli::presentation::emit_json_or_text;
 use crate::cli::schema::DoctorArgs;
 
-use super::runtime::open_existing_db;
+use super::runtime::open_read_only_db;
 
 pub(in crate::cli) fn doctor(db_path: &Path, args: &DoctorArgs) -> Result<()> {
-    let db = open_existing_db(db_path)?;
+    let db = open_read_only_db(db_path)?;
     let report = db.doctor().context("doctor diagnostics failed")?;
     if args.human {
         print!("{}", render_doctor_human(&report));

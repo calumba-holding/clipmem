@@ -1,11 +1,10 @@
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::db::SnapshotMetadata;
 use crate::db::{CaptureSkipReason, StatsReport};
 use crate::model::{CaptureStoreResult, ClipboardSnapshot};
-use crate::model::{
-    FlattenedTextProjection, SearchHit, SnapshotDetails, TextFragment, TimelineEvent,
-};
+use crate::model::{FlattenedTextProjection, SearchHit, TextFragment, TimelineEvent};
 
 use super::row_text::{best_text_from_hit, truncate_for_display};
 
@@ -84,7 +83,7 @@ pub(in crate::cli) struct GetEnvelope {
     pub(in crate::cli) command: &'static str,
     pub(in crate::cli) generated_at: String,
     pub(in crate::cli) applied_filters: Value,
-    pub(in crate::cli) snapshot: SnapshotDetails,
+    pub(in crate::cli) snapshot: SnapshotMetadata,
 }
 
 #[derive(Debug, Clone, Serialize)]

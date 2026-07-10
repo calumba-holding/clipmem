@@ -238,7 +238,7 @@ fn seed_capture(db_path: &Path) -> Result<SeedCaptureOutcome> {
         return Ok(SeedCaptureOutcome::NotAttempted);
     }
 
-    let mut db = Database::open_or_init(db_path)?;
+    let mut db = Database::open_or_init_and_migrate(db_path)?;
     let snapshot = capture_snapshot().context("setup clipboard read failed")?;
     match db
         .store_capture_if_allowed(&snapshot)
@@ -250,7 +250,7 @@ fn seed_capture(db_path: &Path) -> Result<SeedCaptureOutcome> {
 }
 
 pub(super) fn bump_service_revision(db_path: &Path) {
-    if let Ok(db) = Database::open_existing(db_path) {
+    if let Ok(db) = Database::open_read_write_current(db_path) {
         let _ = db.bump_service_revision();
     }
 }

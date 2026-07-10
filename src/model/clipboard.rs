@@ -89,6 +89,27 @@ impl ClipboardItem {
     }
 
     #[must_use]
+    pub(crate) fn from_manifest(
+        item_index: usize,
+        primary_kind: ClipboardKind,
+        primary_uti: Option<String>,
+        preview_text: String,
+        search_text: String,
+        total_bytes: usize,
+        representations: Vec<ClipboardRepresentation>,
+    ) -> Self {
+        Self {
+            item_index,
+            primary_kind,
+            primary_uti,
+            preview_text,
+            search_text,
+            total_bytes,
+            representations,
+        }
+    }
+
+    #[must_use]
     pub fn item_index(&self) -> usize {
         self.item_index
     }
@@ -150,6 +171,24 @@ impl ClipboardRepresentation {
             raw_sha256,
             text_value,
             raw_bytes,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn from_manifest(
+        uti: String,
+        kind: ClipboardKind,
+        byte_len: usize,
+        raw_sha256: String,
+        text_value: Option<String>,
+    ) -> Self {
+        Self {
+            uti,
+            kind,
+            byte_len,
+            raw_sha256,
+            text_value,
+            raw_bytes: Vec::new(),
         }
     }
 

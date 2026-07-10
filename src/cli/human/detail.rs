@@ -6,7 +6,7 @@ use crate::cli::human::{
 };
 use crate::cli::output::GetEnvelope;
 use crate::cli::service::ServiceProviderStatus;
-use crate::model::SnapshotDetails;
+use crate::db::SnapshotMetadata;
 
 pub(in crate::cli) fn render_get_human(envelope: &GetEnvelope) -> String {
     let theme = HumanTheme::detect();
@@ -90,7 +90,7 @@ pub(in crate::cli) fn render_get_human(envelope: &GetEnvelope) -> String {
 pub(in crate::cli) fn push_snapshot_items(
     out: &mut String,
     theme: &HumanTheme,
-    snapshot: &SnapshotDetails,
+    snapshot: &SnapshotMetadata,
 ) {
     out.push('\n');
     let _ = writeln!(out, "{}", theme.section("Items"));
@@ -141,7 +141,7 @@ pub(in crate::cli) fn push_snapshot_items(
     }
 }
 
-pub(in crate::cli) fn push_recent_events(out: &mut String, snapshot: &SnapshotDetails) {
+pub(in crate::cli) fn push_recent_events(out: &mut String, snapshot: &SnapshotMetadata) {
     out.push('\n');
     out.push_str("Recent Events\n");
     if snapshot.recent_events().is_empty() {

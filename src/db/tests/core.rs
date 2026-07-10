@@ -39,6 +39,100 @@ fn open_existing_does_not_create_missing_database_paths() {
     assert!(!path.exists());
 }
 
+#[test]
+fn current_open_modes_return_typed_schema_and_identity_errors() -> Result<()> {
+    let missing = temp_db_path("typed-open-missing");
+    assert!(matches!(
+        Database::open_read_only_current(&missing),
+        Err(crate::db::DatabaseOpenError::Missing(_))
+    ));
+
+    let unrelated = temp_db_path("typed-open-not-archive");
+    std::fs::create_dir_all(unrelated.parent().expect("path has parent"))?;
+    rusqlite::Connection::open(&unrelated)?.execute("CREATE TABLE unrelated (id INTEGER)", [])?;
+    assert!(matches!(
+        Database::open_read_only_current(&unrelated),
+        Err(crate::db::DatabaseOpenError::NotArchive(_))
+    ));
+    cleanup_db(&unrelated);
+
+    let migration = temp_db_path("typed-open-migration");
+    drop(Database::open_or_init_and_migrate(&migration)?);
+    rusqlite::Connection::open(&migration)?.pragma_update(None, "user_version", 18)?;
+    assert!(matches!(
+        Database::open_read_only_current(&migration),
+        Err(crate::db::DatabaseOpenError::MigrationRequired {
+            found: 18,
+            supported: CURRENT_SCHEMA_VERSION
+        })
+    ));
+    cleanup_db(&migration);
+
+    let newer = temp_db_path("typed-open-newer");
+    drop(Database::open_or_init_and_migrate(&newer)?);
+    rusqlite::Connection::open(&newer)?.pragma_update(
+        None,
+        "user_version",
+        CURRENT_SCHEMA_VERSION + 1,
+    )?;
+    assert!(matches!(
+        Database::open_read_write_current(&newer),
+        Err(crate::db::DatabaseOpenError::NewerSchema { .. })
+    ));
+    cleanup_db(&newer);
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn read_only_current_does_not_chmod_or_create_sqlite_sidecars() -> Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let path = temp_db_path("read-only-no-filesystem-writes");
+    drop(Database::open_or_init_and_migrate(&path)?);
+    for suffix in ["-wal", "-shm"] {
+        let _ = std::fs::remove_file(sidecar_path(&path, suffix));
+    }
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640))?;
+    let before = std::fs::metadata(&path)?.permissions().mode() & 0o777;
+
+    let db = Database::open_read_only_current(&path)?;
+    let _: i64 = db
+        .conn
+        .query_row("SELECT COUNT(*) FROM snapshots", [], |row| row.get(0))?;
+    drop(db);
+
+    assert_eq!(
+        std::fs::metadata(&path)?.permissions().mode() & 0o777,
+        before
+    );
+    assert!(!sidecar_path(&path, "-wal").exists());
+    assert!(!sidecar_path(&path, "-shm").exists());
+    cleanup_db(&path);
+    Ok(())
+}
+
+#[test]
+fn read_only_current_reads_committed_wal_state_while_writer_remains_open() -> Result<()> {
+    let path = temp_db_path("read-only-live-wal");
+    drop(Database::open_or_init_and_migrate(&path)?);
+    let mut writer = Database::open_read_write_current(&path)?;
+    writer.conn.pragma_update(None, "wal_autocheckpoint", 0)?;
+    let stored = writer.store_capture(&fake_snapshot(1, "visible from wal"))?;
+    assert!(sidecar_path(&path, "-wal").exists());
+
+    let reader = Database::open_read_only_current(&path)?;
+    let metadata = reader
+        .find_snapshot_metadata(stored.snapshot_id(), 1)?
+        .context("reader should observe committed WAL content")?;
+    assert_eq!(metadata.best_text(), "visible from wal");
+
+    drop(reader);
+    drop(writer);
+    cleanup_db(&path);
+    Ok(())
+}
+
 #[cfg(unix)]
 #[test]
 fn hardening_sqlite_sidecars_applies_private_file_permissions() -> Result<()> {

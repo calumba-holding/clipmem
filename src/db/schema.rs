@@ -10,7 +10,7 @@ use crate::model::{
 use super::sqlite_helpers::{collect_rows, row_enum};
 
 pub(super) const SCHEMA: &str = include_str!("schema.sql");
-pub(super) const CURRENT_SCHEMA_VERSION: i64 = 18;
+pub(super) const CURRENT_SCHEMA_VERSION: i64 = 19;
 const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
 
 pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {

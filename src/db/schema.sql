@@ -1,4 +1,15 @@
 PRAGMA foreign_keys = ON;
+PRAGMA application_id = 1129137485;
+
+CREATE TABLE IF NOT EXISTS archive_metadata (
+    id               INTEGER PRIMARY KEY CHECK (id = 1),
+    archive_magic    TEXT NOT NULL CHECK (archive_magic = 'clipmem-archive'),
+    archive_uuid     TEXT NOT NULL CHECK (length(archive_uuid) = 32),
+    projection_version INTEGER NOT NULL DEFAULT 1 CHECK (projection_version >= 0)
+);
+
+INSERT OR IGNORE INTO archive_metadata (id, archive_magic, archive_uuid, projection_version)
+VALUES (1, 'clipmem-archive', lower(hex(randomblob(16))), 1);
 
 CREATE TABLE IF NOT EXISTS snapshots (
     id            INTEGER PRIMARY KEY,

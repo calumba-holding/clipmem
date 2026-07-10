@@ -1,8 +1,10 @@
+#![allow(deprecated)]
+
 mod support;
 
 pub(in crate::db::tests) use self::support::*;
 pub(in crate::db::tests) use super::{
-    storage_file_sizes, CaptureSkipReason, CaptureStoreOutcome, TimelineCursorState,
+    sidecar_path, storage_file_sizes, CaptureSkipReason, CaptureStoreOutcome, TimelineCursorState,
 };
 
 mod core;

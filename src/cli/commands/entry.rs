@@ -88,7 +88,7 @@ pub(in crate::cli) fn service(db_path: &Path, args: &ServiceArgs) -> Result<()> 
 
 pub(in crate::cli) fn service_revision(db_path: &Path, args: &ServiceRevisionArgs) -> Result<()> {
     let format = require_text_or_json(args.output.resolved()?, "service revision")?;
-    let db = super::runtime::open_existing_db(db_path)?;
+    let db = super::runtime::open_read_only_db(db_path)?;
     let revision = db.archive_revision()?;
     emit_json_or_text(
         matches!(format, super::super::formats::OutputFormat::Json),
