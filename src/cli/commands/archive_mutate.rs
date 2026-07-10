@@ -4,7 +4,7 @@ use std::path::Path;
 use anyhow::{anyhow, Context, Result};
 
 use crate::db::{PurgeReport, SnapshotDeletionReport};
-use crate::platform::restore_items;
+use crate::platform::restore_items_registered;
 
 use crate::cli::display::format_duration_compact;
 use crate::cli::errors::{invalid_args_error, not_found_error};
@@ -85,22 +85,32 @@ pub(in crate::cli) fn restore_snapshot(db_path: &Path, args: &RestoreArgs) -> Re
         format!("restore failed for snapshot {}", args.snapshot_id)
     })?
     .ok_or_else(|| not_found_error(format!("snapshot {} was not found", args.snapshot_id)))?;
-    db.register_pending_restore(snapshot.sha256())
-        .context("register pending restore")?;
-    let report = match restore_items(snapshot.items()) {
+    let mut operation_id = None;
+    let report = match restore_items_registered(snapshot.items(), || {
+        operation_id = Some(db.begin_restore_operation(args.snapshot_id, snapshot.sha256())?);
+        Ok(())
+    }) {
         Ok(report) => report,
         Err(err) => {
-            if let Err(clear_err) = db.clear_pending_restore(snapshot.sha256()) {
-                eprintln!("pending restore cleanup failed: {clear_err:#}");
+            if let Some(operation_id) = operation_id.as_deref() {
+                if let Err(mark_err) = db.mark_restore_failed(operation_id, &format!("{err:#}")) {
+                    eprintln!("restore operation failure recording failed: {mark_err:#}");
+                }
             }
             return Err(err).context("restore failed");
         }
     };
+    let operation_id = operation_id.expect("restore registration runs before pasteboard write");
+    db.mark_restore_written(&operation_id, report.change_count())
+        .context("clipboard restored but suppression registration is incomplete")?;
     let output = RestoreOutput {
         snapshot_id: args.snapshot_id,
         item_count: report.item_count(),
         representation_count: report.representation_count(),
         total_bytes: report.total_bytes(),
+        operation_id,
+        change_count: report.change_count(),
+        rollback_available: report.rollback_available(),
     };
     match format {
         OutputFormat::Json => emit_json_or_text(true, &output, render_restore_text)?,

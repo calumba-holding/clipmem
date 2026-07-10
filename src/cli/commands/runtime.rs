@@ -9,7 +9,8 @@ use anyhow::{Context, Result};
 use crate::app::{
     format_watch_capture_line, mark_change_handled, should_skip_initial_change, WatchState,
 };
-use crate::db::{CaptureSkipReason, CaptureStoreOutcome, Database};
+use crate::capture_service::CaptureApplicationService;
+use crate::db::{CaptureMode, CaptureOutcome, CaptureSkipReason, Database};
 use crate::model::ClipboardSnapshot;
 use crate::platform::{capture_snapshot, current_change_count};
 
@@ -80,33 +81,18 @@ where
         return Ok(());
     }
 
-    let settings = db
-        .capture_settings()
-        .context("load capture settings failed")?;
-    if settings.paused() {
-        mark_change_handled(snapshot.change_count(), state);
-        return Ok(());
-    }
-    if db
-        .bundle_id_is_ignored(snapshot.frontmost_app_bundle_id())
-        .context("load ignored bundle ids failed")?
-    {
-        mark_change_handled(snapshot.change_count(), state);
-        return Ok(());
-    }
-    let outcome = anyhow::Context::context(
-        db.store_watched_capture_if_allowed(&snapshot),
-        "database write failed",
-    )?;
+    let outcome = CaptureApplicationService::new(db).capture(&snapshot, CaptureMode::Watch)?;
     match outcome {
-        CaptureStoreOutcome::Stored(result) => {
-            if settings.ocr_enabled() {
-                let snapshot_id = result.snapshot_id();
-                if let Err(err) = db.enqueue_ocr_for_snapshot(snapshot_id) {
-                    eprintln!("ocr enqueue failed for snapshot {snapshot_id}: {err:#}");
-                } else {
-                    start_ocr_worker(db.path().to_path_buf());
-                }
+        CaptureOutcome::Stored {
+            store: result,
+            enqueue_ocr,
+        }
+        | CaptureOutcome::ObservedExisting {
+            store: result,
+            enqueue_ocr,
+        } => {
+            if enqueue_ocr {
+                start_ocr_worker(db.path().to_path_buf());
             }
             mark_change_handled(snapshot.change_count(), state);
             db.apply_retention_policy()
@@ -116,8 +102,9 @@ where
                 println!("{}", format_watch_capture_line(&snapshot, &result));
             }
         }
-        CaptureStoreOutcome::Skipped(reason) => {
+        other => {
             mark_change_handled(snapshot.change_count(), state);
+            let reason = capture_outcome_skip_reason(&other);
             if !args.quiet {
                 println!(
                     "skipped capture reason={} kind={} bytes={} source={}",
@@ -134,6 +121,25 @@ where
     }
 
     Ok(())
+}
+
+fn capture_outcome_skip_reason(outcome: &CaptureOutcome) -> CaptureSkipReason {
+    match outcome {
+        CaptureOutcome::SuppressedRestore { operation_id } => {
+            let _ = operation_id;
+            CaptureSkipReason::RestoredSnapshot
+        }
+        CaptureOutcome::SkippedPaused => CaptureSkipReason::Paused,
+        CaptureOutcome::SkippedIgnoredApp { bundle_id } => {
+            let _ = bundle_id;
+            CaptureSkipReason::IgnoredApp
+        }
+        CaptureOutcome::SkippedSensitive => CaptureSkipReason::ApiKeyFilter,
+        CaptureOutcome::TransientPlatformChange => CaptureSkipReason::TransientPlatformChange,
+        CaptureOutcome::Stored { .. } | CaptureOutcome::ObservedExisting { .. } => {
+            unreachable!("stored outcomes do not have skip reasons")
+        }
+    }
 }
 
 pub(in crate::cli) fn start_ocr_worker(db_path: PathBuf) {
@@ -226,27 +232,30 @@ where
     CaptureFn: FnOnce() -> Result<ClipboardSnapshot>,
 {
     let snapshot = capture_snapshot_fn()?;
-    let payload = match anyhow::Context::context(
-        db.store_watched_capture_if_allowed(&snapshot),
-        "capture-once database write failed",
-    )? {
-        CaptureStoreOutcome::Stored(store) => {
-            db.apply_retention_policy()
-                .context("apply retention policy failed")?;
-            notify_app_refresh();
-            CaptureOnceOutput::Stored(CaptureOnceStoredOutput { store, snapshot })
-        }
-        CaptureStoreOutcome::Skipped(reason) => {
-            CaptureOnceOutput::Skipped(CaptureOnceSkippedOutput {
-                status: "skipped",
-                reason,
-                kind: snapshot.snapshot_kind().as_str().to_string(),
-                total_bytes: snapshot.total_bytes(),
-                frontmost_app_name: snapshot.frontmost_app_name().map(str::to_string),
-                frontmost_app_bundle_id: snapshot.frontmost_app_bundle_id().map(str::to_string),
-            })
-        }
-    };
+    let payload =
+        match CaptureApplicationService::new(db).capture(&snapshot, CaptureMode::Manual)? {
+            CaptureOutcome::Stored { store, enqueue_ocr }
+            | CaptureOutcome::ObservedExisting { store, enqueue_ocr } => {
+                if enqueue_ocr {
+                    start_ocr_worker(db.path().to_path_buf());
+                }
+                db.apply_retention_policy()
+                    .context("apply retention policy failed")?;
+                notify_app_refresh();
+                CaptureOnceOutput::Stored(CaptureOnceStoredOutput { store, snapshot })
+            }
+            outcome => {
+                let reason = capture_outcome_skip_reason(&outcome);
+                CaptureOnceOutput::Skipped(CaptureOnceSkippedOutput {
+                    status: "skipped",
+                    reason,
+                    kind: snapshot.snapshot_kind().as_str().to_string(),
+                    total_bytes: snapshot.total_bytes(),
+                    frontmost_app_name: snapshot.frontmost_app_name().map(str::to_string),
+                    frontmost_app_bundle_id: snapshot.frontmost_app_bundle_id().map(str::to_string),
+                })
+            }
+        };
 
     Ok(payload)
 }
@@ -342,7 +351,8 @@ mod tests {
         let snapshot = db
             .find_snapshot(stored.snapshot_id(), 1)?
             .expect("stored snapshot should exist");
-        db.register_pending_restore(snapshot.sha256())?;
+        let operation = db.begin_restore_operation(stored.snapshot_id(), snapshot.sha256())?;
+        db.mark_restore_written(&operation, 2)?;
 
         let payload = capture_once_payload(&mut db, || Ok(fake_snapshot(2, "restored text")))?;
 

@@ -3,12 +3,24 @@ use serde::Serialize;
 
 use super::kinds::{ClipboardKind, SnapshotKind};
 
+type CaptureContextParts = (
+    i64,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize)]
 pub struct ClipboardSnapshot {
     change_count: i64,
     frontmost_app_bundle_id: Option<String>,
     frontmost_app_name: Option<String>,
+    content_origin_bundle_id: Option<String>,
+    content_origin_name: Option<String>,
+    content_origin_kind: Option<String>,
     fingerprint: String,
     snapshot_kind: SnapshotKind,
     preview_text: String,
@@ -24,6 +36,9 @@ pub struct CaptureContext {
     change_count: i64,
     frontmost_app_bundle_id: Option<String>,
     frontmost_app_name: Option<String>,
+    content_origin_bundle_id: Option<String>,
+    content_origin_name: Option<String>,
+    content_origin_kind: Option<String>,
 }
 
 #[non_exhaustive]
@@ -196,6 +211,9 @@ impl CaptureContext {
             change_count,
             frontmost_app_bundle_id: None,
             frontmost_app_name: None,
+            content_origin_bundle_id: None,
+            content_origin_name: None,
+            content_origin_kind: None,
         }
     }
 
@@ -208,6 +226,19 @@ impl CaptureContext {
     #[must_use]
     pub fn with_frontmost_app_bundle_id(mut self, bundle_id: impl Into<String>) -> Self {
         self.frontmost_app_bundle_id = Some(bundle_id.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_content_origin(
+        mut self,
+        name: impl Into<String>,
+        bundle_id: impl Into<String>,
+        kind: impl Into<String>,
+    ) -> Self {
+        self.content_origin_name = Some(name.into());
+        self.content_origin_bundle_id = Some(bundle_id.into());
+        self.content_origin_kind = Some(kind.into());
         self
     }
 
@@ -226,11 +257,14 @@ impl CaptureContext {
         self.frontmost_app_bundle_id.as_deref()
     }
 
-    pub(crate) fn into_parts(self) -> (i64, Option<String>, Option<String>) {
+    pub(crate) fn into_parts(self) -> CaptureContextParts {
         (
             self.change_count,
             self.frontmost_app_bundle_id,
             self.frontmost_app_name,
+            self.content_origin_bundle_id,
+            self.content_origin_name,
+            self.content_origin_kind,
         )
     }
 }
@@ -245,7 +279,14 @@ impl ClipboardSnapshot {
         search_text: String,
         items: Vec<ClipboardItem>,
     ) -> Self {
-        let (change_count, frontmost_app_bundle_id, frontmost_app_name) = capture.into_parts();
+        let (
+            change_count,
+            frontmost_app_bundle_id,
+            frontmost_app_name,
+            content_origin_bundle_id,
+            content_origin_name,
+            content_origin_kind,
+        ) = capture.into_parts();
         let item_count = items.len();
         let total_bytes = items.iter().map(ClipboardItem::total_bytes).sum();
 
@@ -253,6 +294,9 @@ impl ClipboardSnapshot {
             change_count,
             frontmost_app_bundle_id,
             frontmost_app_name,
+            content_origin_bundle_id,
+            content_origin_name,
+            content_origin_kind,
             fingerprint,
             snapshot_kind,
             preview_text,
@@ -276,6 +320,21 @@ impl ClipboardSnapshot {
     #[must_use]
     pub fn frontmost_app_name(&self) -> Option<&str> {
         self.frontmost_app_name.as_deref()
+    }
+
+    #[must_use]
+    pub fn content_origin_bundle_id(&self) -> Option<&str> {
+        self.content_origin_bundle_id.as_deref()
+    }
+
+    #[must_use]
+    pub fn content_origin_name(&self) -> Option<&str> {
+        self.content_origin_name.as_deref()
+    }
+
+    #[must_use]
+    pub fn content_origin_kind(&self) -> Option<&str> {
+        self.content_origin_kind.as_deref()
     }
 
     #[must_use]

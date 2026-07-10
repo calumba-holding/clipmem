@@ -730,6 +730,11 @@ fn schema_version_13_adds_pending_restore_backstop() -> Result<()> {
             image_compression_reason TEXT,
             PRIMARY KEY (snapshot_id, item_index, uti)
         );
+        CREATE TABLE pending_restores (
+            snapshot_sha256 TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        INSERT INTO pending_restores (snapshot_sha256) VALUES ('legacy');
         PRAGMA user_version = 12;
     ",
     )?;
@@ -749,10 +754,22 @@ fn schema_version_13_adds_pending_restore_backstop() -> Result<()> {
         [],
         |row| row.get::<_, i64>(0).map(|value| value != 0),
     )?;
+    let restore_operations_exists: bool = db.conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'restore_operations')",
+        [],
+        |row| row.get::<_, i64>(0).map(|value| value != 0),
+    )?;
+    let legacy_pending_count: i64 =
+        db.conn
+            .query_row("SELECT COUNT(*) FROM pending_restores", [], |row| {
+                row.get(0)
+            })?;
 
     assert_eq!(version, CURRENT_SCHEMA_VERSION);
     assert!(table_exists);
-    assert!(trigger_exists);
+    assert!(!trigger_exists);
+    assert!(restore_operations_exists);
+    assert_eq!(legacy_pending_count, 0);
 
     cleanup_db(&path);
     Ok(())

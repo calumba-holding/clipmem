@@ -11,6 +11,7 @@ use crate::db::types::{
 use super::revision::bump_revision_tx;
 
 impl Database {
+    #[allow(dead_code)]
     pub(crate) fn enqueue_ocr_for_snapshot(&mut self, snapshot_id: i64) -> Result<usize> {
         let tx = self
             .conn

@@ -435,8 +435,11 @@ mod tests {
             .expect("snapshot should exist")
             .sha256()
             .to_string();
-        db.register_pending_restore(&sha256)
-            .expect("pending restore should register");
+        let operation = db
+            .begin_restore_operation(stored.snapshot_id(), &sha256)
+            .expect("restore operation should register");
+        db.mark_restore_written(&operation, 2)
+            .expect("restore operation should record generation");
         let args = WatchArgs {
             interval_ms: 350,
             quiet: true,

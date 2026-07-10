@@ -46,7 +46,10 @@ CREATE TABLE IF NOT EXISTS capture_events (
     observed_at            TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     change_count           INTEGER NOT NULL CHECK (change_count >= 0),
     frontmost_app_bundle_id TEXT,
-    frontmost_app_name     TEXT
+    frontmost_app_name     TEXT,
+    content_origin_bundle_id TEXT,
+    content_origin_name     TEXT,
+    content_origin_kind     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS snapshot_stats (
@@ -107,6 +110,18 @@ CREATE TABLE IF NOT EXISTS pending_restores (
     created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS restore_operations (
+    operation_id        TEXT PRIMARY KEY,
+    snapshot_id         INTEGER REFERENCES snapshots(id) ON DELETE SET NULL,
+    snapshot_sha256     TEXT NOT NULL,
+    state               TEXT NOT NULL CHECK (state IN ('preparing', 'written', 'expired', 'failed')),
+    result_change_count INTEGER CHECK (result_change_count IS NULL OR result_change_count >= 0),
+    writer_instance_id  TEXT,
+    created_at          TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at          TEXT NOT NULL DEFAULT (datetime('now', '+30 seconds')),
+    failure             TEXT
+);
+
 CREATE TABLE IF NOT EXISTS ocr_results (
     raw_sha256        TEXT PRIMARY KEY,
     status            TEXT NOT NULL CHECK (status IN ('pending', 'ready', 'failed', 'skipped')),
@@ -155,6 +170,9 @@ CREATE INDEX IF NOT EXISTS idx_snapshot_stats_capture_count
 
 CREATE INDEX IF NOT EXISTS idx_pending_restores_created_at
     ON pending_restores(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_restore_operations_suppression
+    ON restore_operations(snapshot_sha256, state, result_change_count, expires_at);
 
 CREATE INDEX IF NOT EXISTS idx_snapshot_items_snapshot_id
     ON snapshot_items(snapshot_id, item_index);
@@ -311,15 +329,7 @@ AFTER DELETE ON snapshot_ocr_cache BEGIN
     DELETE FROM snapshot_ocr_literal_fts WHERE rowid = old.snapshot_id;
 END;
 
-CREATE TRIGGER IF NOT EXISTS capture_events_restore_suppression_bi
-BEFORE INSERT ON capture_events BEGIN
-    DELETE FROM pending_restores
-    WHERE datetime(created_at) < datetime('now', '-30 seconds');
-    DELETE FROM pending_restores
-    WHERE snapshot_sha256 = (SELECT sha256 FROM snapshots WHERE id = new.snapshot_id)
-      AND datetime(created_at) >= datetime('now', '-30 seconds');
-    SELECT CASE WHEN changes() > 0 THEN RAISE(IGNORE) END;
-END;
+DROP TRIGGER IF EXISTS capture_events_restore_suppression_bi;
 
 DROP TRIGGER IF EXISTS capture_events_ai;
 CREATE TRIGGER capture_events_ai AFTER INSERT ON capture_events BEGIN

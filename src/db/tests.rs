@@ -1,9 +1,7 @@
 mod support;
 
 pub(in crate::db::tests) use self::support::*;
-pub(in crate::db::tests) use super::{
-    storage_file_sizes, CaptureSkipReason, CaptureStoreOutcome, TimelineCursorState,
-};
+pub(in crate::db::tests) use super::{storage_file_sizes, TimelineCursorState};
 
 mod core;
 mod filters_and_migrations;

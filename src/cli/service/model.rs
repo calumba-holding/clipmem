@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::db::{ArchiveRevision, CaptureSkipReason};
+use crate::db::ArchiveRevision;
 
 pub(in crate::cli) const DIRECT_LABEL: &str = "io.openclaw.clipmem.watch";
 pub(in crate::cli) const HOMEBREW_LABEL: &str = "homebrew.mxcl.clipmem";
@@ -99,8 +99,6 @@ pub(in crate::cli) struct SetupReport {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(in crate::cli) enum SeedCaptureOutcome {
-    Stored,
-    Skipped(CaptureSkipReason),
     NotAttempted,
 }
 

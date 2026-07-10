@@ -1,5 +1,6 @@
 use super::*;
-use rusqlite::params;
+use crate::capture_service::CaptureApplicationService;
+use crate::db::{CaptureMode, CaptureOutcome};
 
 #[test]
 fn duplicate_snapshots_share_content_row() -> Result<()> {
@@ -391,15 +392,12 @@ fn store_capture_if_allowed_skips_api_key_like_snapshots_when_enabled() -> Resul
     let mut db = Database::open_in_memory()?;
     db.set_api_key_filter_enabled(true)?;
 
-    let outcome = db.store_capture_if_allowed(&fake_snapshot(
-        1,
-        "Authorization: Bearer 8JfA-2mQpV_4tLz9XnR6cH0wKdS7yBu3",
-    ))?;
+    let outcome = CaptureApplicationService::new(&mut db).capture(
+        &fake_snapshot(1, "Authorization: Bearer 8JfA-2mQpV_4tLz9XnR6cH0wKdS7yBu3"),
+        CaptureMode::Manual,
+    )?;
 
-    assert!(matches!(
-        outcome,
-        super::CaptureStoreOutcome::Skipped(super::CaptureSkipReason::ApiKeyFilter)
-    ));
+    assert!(matches!(outcome, CaptureOutcome::SkippedSensitive));
     assert!(db.recent(10, &unfiltered())?.hits().is_empty());
     Ok(())
 }
@@ -408,12 +406,12 @@ fn store_capture_if_allowed_skips_api_key_like_snapshots_when_enabled() -> Resul
 fn store_capture_if_allowed_stores_sensitive_text_when_filter_is_disabled() -> Result<()> {
     let mut db = Database::open_in_memory()?;
 
-    let outcome = db.store_capture_if_allowed(&fake_snapshot(
-        1,
-        "Authorization: Bearer 8JfA-2mQpV_4tLz9XnR6cH0wKdS7yBu3",
-    ))?;
+    let outcome = CaptureApplicationService::new(&mut db).capture(
+        &fake_snapshot(1, "Authorization: Bearer 8JfA-2mQpV_4tLz9XnR6cH0wKdS7yBu3"),
+        CaptureMode::Manual,
+    )?;
 
-    assert!(matches!(outcome, super::CaptureStoreOutcome::Stored(_)));
+    assert!(matches!(outcome, CaptureOutcome::Stored { .. }));
     assert_eq!(db.recent(10, &unfiltered())?.hits().len(), 1);
     Ok(())
 }
@@ -451,25 +449,30 @@ fn timeline_exposes_public_events_and_pagination_state() -> Result<()> {
 }
 
 #[test]
-fn watched_capture_skips_pending_restored_snapshot_once() -> Result<()> {
+fn written_restore_suppresses_only_its_exact_generation() -> Result<()> {
     let mut db = Database::open_in_memory()?;
     let stored = db.store_capture(&fake_snapshot(1, "git status"))?;
 
-    db.register_pending_restore(db.find_snapshot(stored.snapshot_id(), 1)?.unwrap().sha256())?;
-    let outcome = db.store_watched_capture_if_allowed(&fake_snapshot(2, "git status"))?;
+    let sha = db
+        .find_snapshot(stored.snapshot_id(), 1)?
+        .unwrap()
+        .sha256()
+        .to_string();
+    let operation = db.begin_restore_operation(stored.snapshot_id(), &sha)?;
+    db.mark_restore_written(&operation, 2)?;
+    let outcome = CaptureApplicationService::new(&mut db)
+        .capture(&fake_snapshot(2, "git status"), CaptureMode::Watch)?;
 
-    assert!(matches!(
-        outcome,
-        super::CaptureStoreOutcome::Skipped(super::CaptureSkipReason::RestoredSnapshot)
-    ));
+    assert!(matches!(outcome, CaptureOutcome::SuppressedRestore { .. }));
     let event_count: i64 = db
         .conn
         .query_row("SELECT COUNT(*) FROM capture_events", [], |row| row.get(0))?;
     assert_eq!(event_count, 1);
 
-    let outcome = db.store_watched_capture_if_allowed(&fake_snapshot(3, "git status"))?;
+    let outcome = CaptureApplicationService::new(&mut db)
+        .capture(&fake_snapshot(3, "git status"), CaptureMode::Watch)?;
 
-    assert!(matches!(outcome, super::CaptureStoreOutcome::Stored(_)));
+    assert!(matches!(outcome, CaptureOutcome::ObservedExisting { .. }));
     let event_count: i64 = db
         .conn
         .query_row("SELECT COUNT(*) FROM capture_events", [], |row| row.get(0))?;
@@ -478,82 +481,7 @@ fn watched_capture_skips_pending_restored_snapshot_once() -> Result<()> {
 }
 
 #[test]
-fn pending_restore_trigger_suppresses_direct_capture_event_once() -> Result<()> {
-    let mut db = Database::open_in_memory()?;
-    let stored = db.store_capture(&fake_snapshot(1, "git status"))?;
-    let snapshot = db
-        .find_snapshot(stored.snapshot_id(), 1)?
-        .expect("stored snapshot should exist");
-
-    db.register_pending_restore(snapshot.sha256())?;
-    let inserted = db.conn.execute(
-        "INSERT INTO capture_events (snapshot_id, change_count) VALUES (?1, ?2)",
-        params![stored.snapshot_id(), 2_i64],
-    )?;
-
-    assert_eq!(inserted, 0);
-    let event_count: i64 = db
-        .conn
-        .query_row("SELECT COUNT(*) FROM capture_events", [], |row| row.get(0))?;
-    let pending_count: i64 =
-        db.conn
-            .query_row("SELECT COUNT(*) FROM pending_restores", [], |row| {
-                row.get(0)
-            })?;
-    let capture_count: i64 = db.conn.query_row(
-        "SELECT capture_count FROM snapshot_stats WHERE snapshot_id = ?1",
-        [stored.snapshot_id()],
-        |row| row.get(0),
-    )?;
-
-    assert_eq!(event_count, 1);
-    assert_eq!(pending_count, 0);
-    assert_eq!(capture_count, 1);
-
-    let inserted = db.conn.execute(
-        "INSERT INTO capture_events (snapshot_id, change_count) VALUES (?1, ?2)",
-        params![stored.snapshot_id(), 3_i64],
-    )?;
-    let event_count: i64 = db
-        .conn
-        .query_row("SELECT COUNT(*) FROM capture_events", [], |row| row.get(0))?;
-    let capture_count: i64 = db.conn.query_row(
-        "SELECT capture_count FROM snapshot_stats WHERE snapshot_id = ?1",
-        [stored.snapshot_id()],
-        |row| row.get(0),
-    )?;
-
-    assert_eq!(inserted, 1);
-    assert_eq!(event_count, 2);
-    assert_eq!(capture_count, 2);
-    Ok(())
-}
-
-#[test]
-fn store_capture_reports_restore_trigger_suppression_without_stale_event_id() -> Result<()> {
-    let mut db = Database::open_in_memory()?;
-    let stored = db.store_capture(&fake_snapshot(1, "git status"))?;
-    let snapshot = db
-        .find_snapshot(stored.snapshot_id(), 1)?
-        .expect("stored snapshot should exist");
-
-    db.register_pending_restore(snapshot.sha256())?;
-    let err = db
-        .store_capture(&fake_snapshot(2, "git status"))
-        .expect_err("trigger suppression should not return a stale event id");
-
-    assert!(err
-        .to_string()
-        .contains("capture event suppressed by pending restore marker"));
-    let event_count: i64 = db
-        .conn
-        .query_row("SELECT COUNT(*) FROM capture_events", [], |row| row.get(0))?;
-    assert_eq!(event_count, 1);
-    Ok(())
-}
-
-#[test]
-fn expired_pending_restore_does_not_suppress_capture() -> Result<()> {
+fn expired_restore_operation_does_not_suppress_capture() -> Result<()> {
     let mut db = Database::open_in_memory()?;
     let stored = db.store_capture(&fake_snapshot(1, "git status"))?;
     let sha256 = db
@@ -561,56 +489,23 @@ fn expired_pending_restore_does_not_suppress_capture() -> Result<()> {
         .unwrap()
         .sha256()
         .to_string();
-    db.register_pending_restore(&sha256)?;
+    let operation = db.begin_restore_operation(stored.snapshot_id(), &sha256)?;
+    db.mark_restore_written(&operation, 2)?;
     db.conn.execute(
-        "UPDATE pending_restores SET created_at = datetime('now', '-31 seconds') WHERE snapshot_sha256 = ?1",
-        [&sha256],
+        "UPDATE restore_operations SET expires_at = datetime('now', '-1 second') WHERE operation_id = ?1",
+        [&operation],
     )?;
 
-    let outcome = db.store_watched_capture_if_allowed(&fake_snapshot(2, "git status"))?;
+    let outcome = CaptureApplicationService::new(&mut db)
+        .capture(&fake_snapshot(2, "git status"), CaptureMode::Watch)?;
 
-    assert!(matches!(outcome, super::CaptureStoreOutcome::Stored(_)));
-    let pending_count: i64 =
-        db.conn
-            .query_row("SELECT COUNT(*) FROM pending_restores", [], |row| {
-                row.get(0)
-            })?;
-    assert_eq!(pending_count, 0);
-    Ok(())
-}
-
-#[test]
-fn expired_pending_restore_trigger_allows_direct_capture_event() -> Result<()> {
-    let mut db = Database::open_in_memory()?;
-    let stored = db.store_capture(&fake_snapshot(1, "git status"))?;
-    let sha256 = db
-        .find_snapshot(stored.snapshot_id(), 1)?
-        .unwrap()
-        .sha256()
-        .to_string();
-    db.register_pending_restore(&sha256)?;
-    db.conn.execute(
-        "UPDATE pending_restores SET created_at = datetime('now', '-31 seconds') WHERE snapshot_sha256 = ?1",
-        [&sha256],
+    assert!(matches!(outcome, CaptureOutcome::ObservedExisting { .. }));
+    let state: String = db.conn.query_row(
+        "SELECT state FROM restore_operations WHERE operation_id = ?1",
+        [&operation],
+        |row| row.get(0),
     )?;
-
-    let inserted = db.conn.execute(
-        "INSERT INTO capture_events (snapshot_id, change_count) VALUES (?1, ?2)",
-        params![stored.snapshot_id(), 2_i64],
-    )?;
-
-    let event_count: i64 = db
-        .conn
-        .query_row("SELECT COUNT(*) FROM capture_events", [], |row| row.get(0))?;
-    let pending_count: i64 =
-        db.conn
-            .query_row("SELECT COUNT(*) FROM pending_restores", [], |row| {
-                row.get(0)
-            })?;
-
-    assert_eq!(inserted, 1);
-    assert_eq!(event_count, 2);
-    assert_eq!(pending_count, 0);
+    assert_eq!(state, "expired");
     Ok(())
 }
 
