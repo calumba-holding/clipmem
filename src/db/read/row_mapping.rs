@@ -33,11 +33,9 @@ pub(in crate::db) fn map_search_hit_row(
         total_bytes: row_usize_named(row, "total_bytes")?,
         item_count: row_usize_named(row, "item_count")?,
         score: if has_score { row.get("score")? } else { None },
+        match_evidence: None,
+        search_order_key: None,
     }))
-}
-
-pub(in crate::db) fn map_scored_search_hit_row(row: &Row<'_>) -> rusqlite::Result<SearchHit> {
-    map_search_hit_row(row, true)
 }
 
 pub(in crate::db) fn map_timeline_event_row(row: &Row<'_>) -> rusqlite::Result<TimelineEvent> {

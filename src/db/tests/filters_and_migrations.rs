@@ -200,9 +200,40 @@ fn search_underscore_literal_returns_only_exact_matches() -> Result<()> {
 fn search_propagates_non_syntax_fts_failures() -> Result<()> {
     let mut db = Database::open_in_memory()?;
     db.store_capture(&fake_snapshot(1, "git clone https://example.com/repo"))?;
-    db.conn.execute_batch("DROP TABLE snapshots_fts;")?;
+    db.conn
+        .execute_batch("DROP TABLE snapshot_search_documents_fts;")?;
 
     assert!(db.search_auto("git", 10, &unfiltered()).is_err());
+    Ok(())
+}
+
+#[test]
+fn migration_backfills_unified_search_documents_from_supported_versions() -> Result<()> {
+    for source_version in [0_i64, 11, 13, 18] {
+        let path = temp_db_path(&format!("unified-search-v{source_version}"));
+        {
+            let mut db = Database::open_or_init(&path)?;
+            db.store_capture(&fake_snapshot(1, "migration search token"))?;
+        }
+        {
+            let conn = rusqlite::Connection::open(&path)?;
+            conn.execute("DELETE FROM snapshot_search_documents", [])?;
+            conn.pragma_update(None, "user_version", source_version)?;
+        }
+        let db = Database::open_existing(&path)?;
+        let count: i64 = db.conn.query_row(
+            "SELECT COUNT(*) FROM snapshot_search_documents WHERE builder_version = 1",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(count, 1, "source version {source_version} should backfill");
+        assert_eq!(
+            db.search_fts("migration", 10, &unfiltered())?.hits().len(),
+            1
+        );
+        drop(db);
+        cleanup_db(&path);
+    }
     Ok(())
 }
 

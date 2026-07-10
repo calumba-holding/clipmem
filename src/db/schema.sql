@@ -126,6 +126,28 @@ CREATE TABLE IF NOT EXISTS snapshot_ocr_cache (
     updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Builder-owned retrieval nucleus. Plan 4 may rename this table, but must keep the
+-- one-row-per-snapshot and builder-version contract rather than creating another projection.
+CREATE TABLE IF NOT EXISTS snapshot_search_documents (
+    snapshot_id                 INTEGER PRIMARY KEY REFERENCES snapshots(id) ON DELETE CASCADE,
+    builder_version             INTEGER NOT NULL,
+    native_text                 TEXT NOT NULL DEFAULT '',
+    preview_text                TEXT NOT NULL DEFAULT '',
+    ocr_text                    TEXT NOT NULL DEFAULT '',
+    url_text                    TEXT NOT NULL DEFAULT '',
+    file_path_text              TEXT NOT NULL DEFAULT '',
+    historical_app_names        TEXT NOT NULL DEFAULT '',
+    historical_app_bundle_ids   TEXT NOT NULL DEFAULT '',
+    has_native_text             INTEGER NOT NULL DEFAULT 0 CHECK (has_native_text IN (0, 1)),
+    has_ocr_text                INTEGER NOT NULL DEFAULT 0 CHECK (has_ocr_text IN (0, 1)),
+    has_url                     INTEGER NOT NULL DEFAULT 0 CHECK (has_url IN (0, 1)),
+    has_file_url                INTEGER NOT NULL DEFAULT 0 CHECK (has_file_url IN (0, 1)),
+    has_image                   INTEGER NOT NULL DEFAULT 0 CHECK (has_image IN (0, 1)),
+    has_pdf                     INTEGER NOT NULL DEFAULT 0 CHECK (has_pdf IN (0, 1)),
+    last_observed_at            TEXT NOT NULL,
+    last_event_id               INTEGER NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_capture_events_snapshot_id
     ON capture_events(snapshot_id);
 
@@ -205,6 +227,22 @@ CREATE VIRTUAL TABLE IF NOT EXISTS snapshot_ocr_fts USING fts5(
 
 CREATE VIRTUAL TABLE IF NOT EXISTS snapshot_ocr_literal_fts USING fts5(
     ocr_text,
+    tokenize='trigram'
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS snapshot_search_documents_fts USING fts5(
+    native_text,
+    preview_text,
+    ocr_text,
+    url_text,
+    file_path_text,
+    historical_app_names,
+    historical_app_bundle_ids,
+    tokenize='unicode61'
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS snapshot_search_documents_literal_fts USING fts5(
+    haystack,
     tokenize='trigram'
 );
 

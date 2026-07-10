@@ -250,7 +250,10 @@ struct ClipmemItem: Decodable, Identifiable, Hashable, Sendable {
     }
 
     var hasText: Bool {
-        bestText?.isEmpty == false || previewText?.isEmpty == false || textSummary?.isEmpty == false || ocrText?.isEmpty == false
+        textFragments?.contains(where: { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }) == true
+            || htmlText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            || rtfText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            || ocrText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
     }
 
     var copyablePlainText: String? {

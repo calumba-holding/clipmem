@@ -504,9 +504,11 @@ pub(crate) struct RecentCursorState {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SearchCursorState {
     pub(in crate::db) mode_used: SearchMode,
-    pub(in crate::db) score: Option<f64>,
     pub(in crate::db) last_seen_at: String,
     pub(in crate::db) snapshot_id: i64,
+    pub(in crate::db) order_primary: Option<f64>,
+    pub(in crate::db) order_secondary: Option<f64>,
+    pub(in crate::db) exact_phrase: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

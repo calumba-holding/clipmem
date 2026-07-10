@@ -10,7 +10,7 @@ use crate::model::{
 use super::sqlite_helpers::{collect_rows, row_enum};
 
 pub(super) const SCHEMA: &str = include_str!("schema.sql");
-pub(super) const CURRENT_SCHEMA_VERSION: i64 = 18;
+pub(super) const CURRENT_SCHEMA_VERSION: i64 = 19;
 const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
 
 pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {
@@ -94,6 +94,11 @@ const MIGRATION_STEPS: &[MigrationStep] = &[
         applies_to: source_version_through_5,
         run: rebuild_snapshot_file_url_fts,
     },
+    MigrationStep {
+        name: "build unified snapshot search documents",
+        applies_to: source_version_through_18,
+        run: super::store::search_document::rebuild_all_snapshot_search_documents,
+    },
 ];
 
 fn validate_supported_user_version(conn: &Connection, user_version: i64) -> Result<()> {
@@ -141,6 +146,10 @@ fn source_version_through_3(version: i64) -> bool {
 
 fn source_version_through_5(version: i64) -> bool {
     version <= 5
+}
+
+fn source_version_through_18(version: i64) -> bool {
+    version <= 18
 }
 
 fn source_version_needs_literal_cache_rebuild(version: i64) -> bool {

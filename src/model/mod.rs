@@ -4,10 +4,11 @@ mod clipboard;
 mod kinds;
 mod text_projection;
 
-pub(crate) use archive::SearchHitParts;
 pub use archive::{
-    CaptureEvent, CaptureStoreResult, DoctorReport, SearchHit, SnapshotDetails, TimelineEvent,
+    CaptureEvent, CaptureStoreResult, DoctorReport, MatchEvidence, SearchHit, SnapshotDetails,
+    TimelineEvent,
 };
+pub(crate) use archive::{SearchHitParts, SearchOrderKey};
 pub use builders::{build_item, build_representation, build_snapshot};
 pub(crate) use builders::{
     decode_text_bytes_lossy, decode_text_bytes_strict, dedupe_text_fragments, hash_bytes,

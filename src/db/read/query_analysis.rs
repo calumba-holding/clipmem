@@ -29,7 +29,7 @@ pub(in crate::db) fn is_simple_fts_query(analysis: &QueryAnalysis) -> bool {
         && analysis
             .trimmed
             .chars()
-            .all(|ch| ch.is_ascii_alphanumeric())
+            .all(|ch| ch.is_alphanumeric() || ch.is_whitespace())
 }
 
 pub(in crate::db) fn analyze_query(query: &str) -> QueryAnalysis {
@@ -118,6 +118,7 @@ pub(in crate::db) fn invalid_fts_message(message: &str) -> bool {
         || message.contains("no such column:")
 }
 
+#[cfg(test)]
 pub(in crate::db) fn literal_fts_match_query(analysis: &QueryAnalysis) -> Option<String> {
     let candidate = analysis
         .path_fragment

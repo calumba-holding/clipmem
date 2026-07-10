@@ -28,6 +28,7 @@ pub(in crate::cli) fn render_confidence(confidence: &RecallMatchConfidence) -> &
         RecallMatchConfidence::High => "high",
         RecallMatchConfidence::Medium => "medium",
         RecallMatchConfidence::Low => "low",
+        RecallMatchConfidence::QueryMatch => "query_match",
     }
 }
 

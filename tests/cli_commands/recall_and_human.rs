@@ -394,7 +394,7 @@ fn recall_json_falls_back_to_recent_when_search_is_weak() -> Result<()> {
         "--format",
         "json",
         "--min-score",
-        "0.95",
+        "0.99",
         "--prefer-recent",
     ]);
     let payload: Value =
