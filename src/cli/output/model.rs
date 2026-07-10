@@ -4,7 +4,9 @@ use serde_json::Value;
 use crate::db::SnapshotMetadata;
 use crate::db::{CaptureSkipReason, StatsReport};
 use crate::model::{CaptureStoreResult, ClipboardSnapshot};
-use crate::model::{FlattenedTextProjection, MatchEvidence, SearchHit, TextFragment, TimelineEvent};
+use crate::model::{
+    FlattenedTextProjection, MatchEvidence, SearchHit, TextFragment, TimelineEvent,
+};
 
 use super::row_text::{best_text_from_hit, truncate_for_display};
 

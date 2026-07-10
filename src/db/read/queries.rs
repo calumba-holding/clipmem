@@ -4,6 +4,10 @@ use super::filter_sql::{
 };
 use crate::db::types::TimelineSort;
 
+mod matching_events;
+
+use matching_events::{matching_events_cte, matching_events_join};
+
 pub(in crate::db) fn unified_fts_query(use_event_cache: bool, temporal: bool) -> String {
     format!(
         r"
@@ -789,27 +793,4 @@ pub(in crate::db) fn ocr_literal_query(
             parameter_bindings_clause(&[":literal_match"]),
         snapshot_filter_clause = snapshot_filter_clause("s", "s.id"),
     )
-}
-
-pub(in crate::db) fn matching_events_cte(include_matching_events: bool) -> String {
-    if include_matching_events {
-        format!(
-            "WITH matching_events AS (
-                 SELECT DISTINCT ce.snapshot_id
-                 FROM capture_events ce
-                 WHERE {}
-             )",
-            event_filter_clause("ce")
-        )
-    } else {
-        String::new()
-    }
-}
-
-pub(in crate::db) fn matching_events_join(include_matching_events: bool) -> &'static str {
-    if include_matching_events {
-        "JOIN matching_events me ON me.snapshot_id = s.id"
-    } else {
-        ""
-    }
 }

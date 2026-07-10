@@ -5,8 +5,10 @@ use super::types::{
     ImageOptimizationCandidateSummary, OcrCandidate, OcrCandidateSummary, OcrResultRecord,
     OcrRunReport, OcrStatusReport, Page, PurgeReport, RecentCursorState, RecentResults,
     RetrievalFilters, RetrievalKind, SearchCursorState, SearchMode, SearchResults,
-    SnapshotDeletionReport, TimelineCursorState, TimelineResults, TimelineSort,
+    SnapshotDeletionReport, TimelineResults, TimelineSort,
 };
+
+mod timeline_cursor;
 
 impl ArchiveChangeKind {
     #[must_use]
@@ -822,25 +824,5 @@ impl OcrRunReport {
     #[must_use]
     pub(crate) fn remaining_pending(&self) -> usize {
         self.remaining_pending
-    }
-}
-
-impl TimelineCursorState {
-    #[must_use]
-    pub(crate) fn new(observed_at: String, event_id: i64) -> Self {
-        Self {
-            observed_at,
-            event_id,
-        }
-    }
-
-    #[must_use]
-    pub(crate) fn observed_at(&self) -> &str {
-        &self.observed_at
-    }
-
-    #[must_use]
-    pub(crate) fn event_id(&self) -> i64 {
-        self.event_id
     }
 }
