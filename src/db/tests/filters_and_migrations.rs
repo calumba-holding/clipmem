@@ -105,7 +105,7 @@ fn migration_backfills_unified_search_documents_from_supported_versions() -> Res
             conn.execute("DELETE FROM snapshot_search_documents", [])?;
             conn.pragma_update(None, "user_version", source_version)?;
         }
-        let db = Database::open_existing(&path)?;
+        let db = Database::open_or_init_and_migrate(&path)?;
         let count: i64 = db.conn.query_row(
             "SELECT COUNT(*) FROM snapshot_search_documents WHERE builder_version = 1",
             [],
