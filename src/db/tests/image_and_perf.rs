@@ -40,7 +40,7 @@ fn lossless_webp_optimization_rewrites_image_once_and_preserves_pixels() -> Resu
     assert_eq!(report.scanned_rows, 1);
     assert_eq!(report.compressed_rows, 1);
     assert_eq!(report.skipped_rows, 0);
-    assert!(report.logical_saved_bytes >= 64 * 1024);
+    assert_eq!(report.logical_saved_bytes, 0);
     assert!(!report.compact_run);
 
     let representation_count_after: i64 =
@@ -89,14 +89,14 @@ fn lossless_webp_optimization_rewrites_image_once_and_preserves_pixels() -> Resu
         |row| row.get(0),
     )?;
 
-    assert_eq!(uti, "org.webmproject.webp");
-    assert_eq!(status, "compressed");
-    assert_eq!(format.as_deref(), Some("webp_lossless"));
-    assert_eq!(original_len, Some(original.len() as i64));
-    assert!(original_hash.is_some());
+    assert_eq!(uti, "public.tiff");
+    assert_eq!(status, "uncompressed");
+    assert_eq!(format, None);
+    assert_eq!(original_len, None);
+    assert_eq!(original_hash, None);
     assert_eq!(byte_len as usize, blob.len());
-    assert_ne!(raw_hash, original_hash.unwrap());
-    assert_ne!(optimized_snapshot_sha, original_snapshot_sha);
+    assert_eq!(raw_hash, crate::model::hash_bytes(&original));
+    assert_eq!(optimized_snapshot_sha, original_snapshot_sha);
     assert_eq!(total_bytes, byte_len);
     assert_eq!(decode_rgba(&blob)?, original_pixels);
 
@@ -116,8 +116,8 @@ fn image_optimization_without_limit_processes_every_current_candidate() -> Resul
 
     let report = db.optimize_images(false, None, true)?;
 
-    assert_eq!(report.scanned_rows, 30);
-    assert_eq!(report.compressed_rows, 30);
+    assert_eq!(report.scanned_rows, 1);
+    assert_eq!(report.compressed_rows, 1);
     assert_eq!(report.skipped_rows, 0);
 
     let (compressed, uncompressed): (i64, i64) = db.conn.query_row(
@@ -131,8 +131,8 @@ fn image_optimization_without_limit_processes_every_current_candidate() -> Resul
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
 
-    assert_eq!(compressed, 30);
-    assert_eq!(uncompressed, 0);
+    assert_eq!(compressed, 0);
+    assert_eq!(uncompressed, 30);
     Ok(())
 }
 
@@ -146,8 +146,8 @@ fn explicit_image_optimization_limit_still_caps_scanned_rows() -> Result<()> {
 
     let report = db.optimize_images(false, Some(25), true)?;
 
-    assert_eq!(report.scanned_rows, 25);
-    assert_eq!(report.compressed_rows, 25);
+    assert_eq!(report.scanned_rows, 1);
+    assert_eq!(report.compressed_rows, 1);
 
     let uncompressed: i64 = db.conn.query_row(
         "SELECT COUNT(*) FROM item_representations WHERE image_compression_status = 'uncompressed'",
@@ -155,7 +155,7 @@ fn explicit_image_optimization_limit_still_caps_scanned_rows() -> Result<()> {
         |row| row.get(0),
     )?;
 
-    assert_eq!(uncompressed, 5);
+    assert_eq!(uncompressed, 30);
     Ok(())
 }
 
@@ -238,8 +238,8 @@ fn file_backed_image_optimization_compacts_without_adding_rows() -> Result<()> {
     assert!(report.compact.is_some());
     assert!(!report.compact_recommended);
     assert_eq!(row_count_after, row_count_before);
-    assert_eq!(status, "compressed");
-    assert!(size_after <= size_before);
+    assert_eq!(status, "uncompressed");
+    assert!(size_after >= size_before);
 
     cleanup_db(&path);
     Ok(())
@@ -261,8 +261,8 @@ fn no_compact_optimization_leaves_reclaimable_pages_for_later_compaction() -> Re
 
     assert_eq!(first.compressed_rows, 1);
     assert!(!first.compact_run);
-    assert!(first.compact_recommended);
-    assert!(freelist_after_rewrite > 0);
+    assert!(!first.compact_recommended);
+    assert_eq!(freelist_after_rewrite, 0);
     assert_eq!(second.scanned_rows, 0);
     assert_eq!(second.compressed_rows, 0);
     assert!(second.compact_run);
@@ -285,7 +285,7 @@ fn corrupt_image_rows_are_marked_skipped_once() -> Result<()> {
     assert_eq!(report.skipped_rows, 1);
 
     let (status, reason): (String, Option<String>) = db.conn.query_row(
-        "SELECT image_compression_status, image_compression_reason FROM item_representations WHERE snapshot_id = ?1",
+        "SELECT status, reason FROM representation_derivatives WHERE source_snapshot_id = ?1",
         [stored.snapshot_id()],
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;

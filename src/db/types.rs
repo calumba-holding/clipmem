@@ -106,6 +106,17 @@ pub struct RepresentationPayload {
     pub(in crate::db) bytes: Vec<u8>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepresentationDerivativePayload {
+    pub(in crate::db) source_raw_sha256: String,
+    pub(in crate::db) output_uti: String,
+    pub(in crate::db) encoder_version: i64,
+    pub(in crate::db) encoder_options_hash: String,
+    pub(in crate::db) width: usize,
+    pub(in crate::db) height: usize,
+    pub(in crate::db) bytes: Vec<u8>,
+}
+
 #[derive(Debug, Clone)]
 pub struct RestorePayloadPlan {
     pub(in crate::db) snapshot_sha256: String,
@@ -362,6 +373,13 @@ pub(crate) struct ImageOptimizationCandidateSummary {
     pub(in crate::db) uti: String,
     pub(in crate::db) byte_len: usize,
     pub(in crate::db) raw_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct ImagePreviewStatus {
+    pub(crate) ready: usize,
+    pub(crate) skipped: usize,
+    pub(crate) bytes: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

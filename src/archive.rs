@@ -1,7 +1,8 @@
 pub use crate::db::{
-    Database, DatabaseOpenError, RecentResults, RepresentationManifest, RepresentationPayload,
-    RestorePayloadPlan, RetrievalFilters, RetrievalKind, SearchMode, SearchResults,
-    SnapshotItemManifest, SnapshotMetadata, TimelineResults, TimelineSort,
+    Database, DatabaseOpenError, RecentResults, RepresentationDerivativePayload,
+    RepresentationManifest, RepresentationPayload, RestorePayloadPlan, RetrievalFilters,
+    RetrievalKind, SearchMode, SearchResults, SnapshotItemManifest, SnapshotMetadata,
+    TimelineResults, TimelineSort,
 };
 pub use crate::model::{
     CaptureEvent, CaptureStoreResult, DoctorReport, FlattenedTextProjection, SearchHit,

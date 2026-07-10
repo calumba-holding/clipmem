@@ -211,6 +211,37 @@ impl RepresentationManifest {
     }
 }
 
+impl super::RepresentationDerivativePayload {
+    #[must_use]
+    pub fn source_raw_sha256(&self) -> &str {
+        &self.source_raw_sha256
+    }
+    #[must_use]
+    pub fn output_uti(&self) -> &str {
+        &self.output_uti
+    }
+    #[must_use]
+    pub fn encoder_version(&self) -> i64 {
+        self.encoder_version
+    }
+    #[must_use]
+    pub fn encoder_options_hash(&self) -> &str {
+        &self.encoder_options_hash
+    }
+    #[must_use]
+    pub fn width(&self) -> usize {
+        self.width
+    }
+    #[must_use]
+    pub fn height(&self) -> usize {
+        self.height
+    }
+    #[must_use]
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
 impl SnapshotItemManifest {
     #[must_use]
     pub fn item_index(&self) -> usize {
