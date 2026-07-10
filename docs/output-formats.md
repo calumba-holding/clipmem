@@ -75,6 +75,7 @@ envelope:
   "command": "search",
   "generated_at": "2026-04-17T12:34:56Z",
   "applied_filters": { "hours": 24, "app": "safari" },
+  "score_semantics": "evidence_v1",
   "truncated": false,
   "next_cursor": null,
   "results": []
@@ -91,6 +92,9 @@ envelope:
 - `next_cursor` — opaque string to pass back as `--cursor` when
   `truncated` is `true`. `null` when there are no more rows.
 - `results` — array of flattened snapshot rows.
+- `score_semantics` — present on search responses. `"evidence_v1"`
+  means match quality comes from structured lexical evidence, not the
+  magnitude of the internal FTS rank.
 
 `recall` returns a ranked-answer envelope instead of a paginated list:
 
@@ -105,6 +109,7 @@ envelope:
   "alternatives": [],
   "best_match_confidence": "high",
   "best_match_score": 0.92,
+  "score_semantics": "evidence_v1",
   "why_selected": "strong literal match",
   "quoted_text": null
 }
@@ -115,8 +120,12 @@ envelope:
 - `best_candidate` — the top-ranked row
 - `alternatives` — lower-ranked candidate rows
 - `why_selected` — short explanation of why this candidate was picked
-- `best_match_confidence` — `"high"`, `"medium"`, or `"low"`
-- `best_match_score` — float in `[0.0, 1.0]`
+- `best_match_confidence` — `"high"`, `"medium"`, `"low"`, or
+  `"query_match"`. Complex explicit FTS queries use `"query_match"`
+  because term coverage isn't meaningful for that syntax.
+- `best_match_score` — evidence-derived float in `[0.0, 1.0]`, or
+  `null` for complex explicit FTS syntax.
+- `score_semantics` — currently `"evidence_v1"`.
 - `quoted_text` — present only when `--quote` is set and usable text
   exists
 
@@ -159,6 +168,9 @@ you don't have to walk the nested representation tree:
 
 - `why_matched` — short explanation of the match
 - `matched_fields` — which indexed fields matched
+- `match_evidence` — structured provenance, exact-phrase status, term
+  coverage when applicable, snippet source and text, query
+  classification, and evidence-derived match quality
 
 The full nested `items[].representations[]` structure is still
 available on `get` for deep inspection and export workflows.
