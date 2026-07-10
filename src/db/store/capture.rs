@@ -76,11 +76,14 @@ impl Database {
             .query_row(
                 "SELECT operation_id
                  FROM restore_operations
-                 WHERE snapshot_sha256 = ?1
-                   AND datetime(expires_at) >= datetime('now')
+                 WHERE datetime(expires_at) >= datetime('now')
                    AND (
+                       -- A preparing operation owns its registered generation
+                       -- outright: only the restore's own clear/write can be
+                       -- observed at that change count, including the cleared
+                       -- empty intermediate state.
                        (state = 'preparing' AND expected_change_count = ?2)
-                       OR (state = 'written' AND result_change_count = ?2)
+                       OR (state = 'written' AND snapshot_sha256 = ?1 AND result_change_count = ?2)
                    )
                  ORDER BY created_at DESC, operation_id DESC
                  LIMIT 1",

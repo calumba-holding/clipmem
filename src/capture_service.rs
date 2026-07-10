@@ -48,6 +48,43 @@ mod tests {
     }
 
     #[test]
+    fn preparing_operation_owns_its_generation_regardless_of_content() -> Result<()> {
+        let mut db = Database::open_in_memory()?;
+        let stored = db.store_capture(&snapshot(1, "com.example.app"))?;
+        let sha = db
+            .find_snapshot(stored.snapshot_id(), 1)?
+            .unwrap()
+            .sha256()
+            .to_string();
+        // Restore registered generation 7 but has not written yet.
+        db.begin_restore_operation(stored.snapshot_id(), &sha, 7)?;
+
+        // The cleared intermediate pasteboard (different content, same
+        // generation) must not be archived.
+        let intermediate = build_snapshot(
+            CaptureContext::new(7).with_frontmost_app_bundle_id("com.example.app"),
+            vec![build_item(
+                0,
+                vec![build_representation(
+                    "public.utf8-plain-text".into(),
+                    None,
+                    b"unrelated interleaved read".to_vec(),
+                )],
+            )],
+        );
+        let outcome =
+            CaptureApplicationService::new(&mut db).capture(&intermediate, CaptureMode::Watch)?;
+        assert!(matches!(outcome, CaptureOutcome::SuppressedRestore { .. }));
+
+        // A later generation is a legitimate user copy and must be stored,
+        // even with identical content.
+        let outcome = CaptureApplicationService::new(&mut db)
+            .capture(&snapshot(8, "com.example.app"), CaptureMode::Watch)?;
+        assert!(matches!(outcome, CaptureOutcome::ObservedExisting { .. }));
+        Ok(())
+    }
+
+    #[test]
     fn all_modes_enforce_pause_and_ignored_app_policy() -> Result<()> {
         for mode in [
             CaptureMode::Watch,
