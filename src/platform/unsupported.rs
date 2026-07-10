@@ -16,7 +16,7 @@ pub(crate) fn restore_items_registered<F>(
     _register: F,
 ) -> Result<RestoreReport>
 where
-    F: FnOnce(i64) -> Result<()>,
+    F: FnMut(i64) -> Result<()>,
 {
     anyhow::bail!("clipboard restore is only supported on macOS")
 }

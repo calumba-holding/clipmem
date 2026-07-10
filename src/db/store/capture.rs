@@ -87,11 +87,11 @@ impl Database {
                  FROM restore_operations
                  WHERE datetime(expires_at) >= datetime('now')
                    AND (
-                       -- A preparing operation owns its registered generation
-                       -- outright: only the restore's own clear/write can be
-                       -- observed at that change count, including the cleared
-                       -- empty intermediate state.
-                       (state = 'preparing' AND expected_change_count = ?2)
+                       -- A preparing or failed operation owns its registered
+                       -- generation outright: only the restore's own clear,
+                       -- write, or rollback can be observed at that change
+                       -- count, including the cleared empty intermediate state.
+                       (state IN ('preparing', 'failed') AND expected_change_count = ?2)
                        OR (state = 'written' AND snapshot_sha256 = ?1 AND result_change_count = ?2)
                    )
                  ORDER BY created_at DESC, operation_id DESC
@@ -149,6 +149,21 @@ impl Database {
             )
             .context("begin restore operation")?;
         Ok(operation_id)
+    }
+
+    pub(crate) fn reassign_restore_operation_generation(
+        &self,
+        operation_id: &str,
+        expected_change_count: i64,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE restore_operations SET expected_change_count = ?2,
+                 expires_at = datetime('now', '+5 seconds') WHERE operation_id = ?1",
+                params![operation_id, expected_change_count],
+            )
+            .context("reassign restore operation generation")?;
+        Ok(())
     }
 
     pub(crate) fn mark_restore_written(&self, operation_id: &str, change_count: i64) -> Result<()> {

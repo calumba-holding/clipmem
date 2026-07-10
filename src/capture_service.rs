@@ -85,6 +85,32 @@ mod tests {
     }
 
     #[test]
+    fn failed_restore_keeps_owning_its_rollback_generation() -> Result<()> {
+        let mut db = Database::open_in_memory()?;
+        let stored = db.store_capture(&snapshot(1, "com.example.app"))?;
+        let sha = db
+            .find_snapshot(stored.snapshot_id(), 1)?
+            .unwrap()
+            .sha256()
+            .to_string();
+        let operation = db.begin_restore_operation(stored.snapshot_id(), &sha, 7)?;
+        // Restore write failed; the rollback write claimed generation 9.
+        db.reassign_restore_operation_generation(&operation, 9)?;
+        db.mark_restore_failed(&operation, "write failed")?;
+
+        // The rollback content observed at its generation is not archived.
+        let outcome = CaptureApplicationService::new(&mut db)
+            .capture(&snapshot(9, "com.example.app"), CaptureMode::Watch)?;
+        assert!(matches!(outcome, CaptureOutcome::SuppressedRestore { .. }));
+
+        // The next real user copy is captured normally.
+        let outcome = CaptureApplicationService::new(&mut db)
+            .capture(&snapshot(10, "com.example.app"), CaptureMode::Watch)?;
+        assert!(matches!(outcome, CaptureOutcome::ObservedExisting { .. }));
+        Ok(())
+    }
+
+    #[test]
     fn ignored_content_origin_is_skipped_even_with_other_frontmost_app() -> Result<()> {
         let mut db = Database::open_in_memory()?;
         db.add_ignored_bundle_id("com.example.chromium-app")?;

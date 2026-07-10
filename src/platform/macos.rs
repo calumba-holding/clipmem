@@ -69,16 +69,15 @@ pub fn capture_snapshot() -> Result<ClipboardSnapshot> {
 
 pub(crate) fn restore_items_registered<F>(
     items: &[ClipboardItem],
-    register: F,
+    mut register: F,
 ) -> Result<RestoreReport>
 where
-    F: FnOnce(i64) -> Result<()>,
+    F: FnMut(i64) -> Result<()>,
 {
     let plan = build_restore_plan(items);
 
     autoreleasepool(|_| {
         let pasteboard = NSPasteboard::generalPasteboard();
-        let mut register = Some(register);
         let (change_count, rollback_available) = execute_restore_protocol(
             || prepare_pasteboard_items(&plan),
             || {
@@ -88,14 +87,13 @@ where
                 ))?))
             },
             |pasteboard_items| {
-                // clearContents opens the restored generation and returns its
-                // actual change count; item writes do not bump it again. An
-                // interleaved writer after this point moves the pasteboard to a
-                // newer generation, so suppression fails open to normal capture.
+                // clearContents opens a new generation (restore or rollback)
+                // and returns its actual change count; item writes do not bump
+                // it again. Every generation this protocol creates is
+                // registered for suppression; an interleaved external writer
+                // moves to a newer generation and fails open to capture.
                 let generation = pasteboard.clearContents() as i64;
-                if let Some(register) = register.take() {
-                    register(generation)?;
-                }
+                register(generation)?;
                 write_pasteboard_items(&pasteboard, pasteboard_items)
             },
         )?;
