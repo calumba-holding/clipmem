@@ -251,7 +251,8 @@ Examples:
   clipmem setup --db /tmp/clipmem.sqlite3
 
 Notes:
-  - `setup` performs one foreground capture, then starts background capture using Homebrew services or a direct LaunchAgent.
+  - `setup` initializes and migrates the archive, then starts background capture using Homebrew services or a direct LaunchAgent.
+  - Run `clipmem capture-once` when you explicitly want to archive the current clipboard state.
   - Re-running `setup` is safe and updates the managed service definition as needed.";
 
 pub(super) const SERVICE_AFTER_HELP: &str = "\
