@@ -32,7 +32,9 @@ pub(super) fn verify(conn: &Connection) -> Result<DoctorIntegrityReport> {
              OR d.has_file_url != (trim(d.file_path_text) != '')
              OR d.preview_text != COALESCE(s.preview_text,'')
              OR d.ocr_text != COALESCE(o.ocr_text,'')
-             OR (COALESCE(p.urls,'') != '' AND d.url_text != p.urls)
+             OR (COALESCE(p.urls,'') != ''
+                 AND d.url_text != p.urls
+                 AND substr(d.url_text, 1, length(p.urls) + 1) != (p.urls || char(10)))
              OR d.file_path_text != COALESCE(p.file_urls,'')
              OR d.historical_app_names != COALESCE(e.app_names_lower,'')
              OR d.historical_app_bundle_ids != COALESCE(e.bundle_ids_lower,'')
