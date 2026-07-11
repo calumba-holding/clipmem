@@ -42,6 +42,8 @@ fn text_projection_output(
         text_summary,
         ocr_text: None,
         ocr_status: None,
+        text_projection_version: 3,
+        text_projection_diagnostics: Vec::new(),
     }
 }
 

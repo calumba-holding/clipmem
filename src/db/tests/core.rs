@@ -1,6 +1,7 @@
 use super::*;
 use crate::capture_service::CaptureApplicationService;
 use crate::db::{CaptureMode, CaptureOutcome};
+use crate::model::{build_item, build_representation, build_snapshot, CaptureContext};
 
 #[test]
 fn doctor_invariants_count_missing_canonical_document() -> Result<()> {
@@ -19,6 +20,34 @@ fn doctor_invariants_count_missing_canonical_document() -> Result<()> {
             .context("integrity should be verified")?
             .projection_mismatch_count(),
         1
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_shadow_compare_accepts_builder_v3_rich_text_differences() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let html = r#"<p>Visible <strong>text</strong></p><a href="https://example.com/rich">link</a>"#;
+    let snapshot = build_snapshot(
+        CaptureContext::new(1),
+        vec![build_item(
+            0,
+            vec![build_representation(
+                "public.html".to_string(),
+                Some(html.to_string()),
+                html.as_bytes().to_vec(),
+            )],
+        )],
+    );
+    db.store_capture(&snapshot)?;
+
+    let verified = db.doctor_verifying_invariants()?;
+    assert_eq!(
+        verified
+            .integrity()
+            .context("integrity should be verified")?
+            .projection_mismatch_count(),
+        0
     );
     Ok(())
 }

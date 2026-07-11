@@ -25,10 +25,14 @@ pub(super) fn verify(conn: &Connection) -> Result<DoctorIntegrityReport> {
           LEFT JOIN snapshot_ocr_cache o ON o.snapshot_id=d.snapshot_id
           WHERE d.snapshot_id IS NULL
              OR ss.snapshot_id IS NULL
-             OR d.native_text != COALESCE(s.search_text,'')
+             OR d.builder_version != 3
+             OR d.has_native_text != (trim(d.native_text) != '')
+             OR d.has_ocr_text != (trim(d.ocr_text) != '')
+             OR d.has_url != (trim(d.url_text) != '')
+             OR d.has_file_url != (trim(d.file_path_text) != '')
              OR d.preview_text != COALESCE(s.preview_text,'')
              OR d.ocr_text != COALESCE(o.ocr_text,'')
-             OR d.url_text != COALESCE(p.urls,'')
+             OR (COALESCE(p.urls,'') != '' AND d.url_text != p.urls)
              OR d.file_path_text != COALESCE(p.file_urls,'')
              OR d.historical_app_names != COALESCE(e.app_names_lower,'')
              OR d.historical_app_bundle_ids != COALESCE(e.bundle_ids_lower,'')

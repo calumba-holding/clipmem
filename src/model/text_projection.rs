@@ -4,10 +4,12 @@ use serde::Serialize;
 
 use crate::file_url::projected_file_url_path;
 
-use super::builders::{
-    html_to_text_lossy, normalize_whitespace, rtf_to_text_lossy, truncate_chars,
-};
+use super::builders::{normalize_whitespace, truncate_chars};
 use super::clipboard::ClipboardItem;
+use super::content_projection::{
+    content_roles, project_html, project_rtf, CopyTextRole, DisplayRole, ProjectionDiagnostic,
+    TEXT_PROJECTION_VERSION,
+};
 use super::kinds::ClipboardKind;
 
 const TEXT_SUMMARY_LIMIT: usize = 320;
@@ -33,6 +35,8 @@ pub struct FlattenedTextProjection {
     text_summary: String,
     ocr_text: Option<String>,
     ocr_status: Option<String>,
+    projection_version: u32,
+    diagnostics: Vec<ProjectionDiagnostic>,
 }
 
 #[derive(Debug, Clone)]
@@ -83,13 +87,12 @@ impl FlattenedTextProjection {
         let mut rtf_fragments = Vec::new();
         let mut rtf_keys = HashSet::new();
         let mut best_candidate: Option<BestTextCandidate> = None;
+        let mut diagnostics = Vec::new();
 
         for item in items {
             for (representation_index, representation) in item.representations().iter().enumerate()
             {
-                if is_origin_metadata_uti(representation.uti()) {
-                    continue;
-                }
+                let roles = content_roles(representation.uti(), representation.kind());
 
                 let Some(text_value) = representation.text_value() else {
                     continue;
@@ -98,24 +101,34 @@ impl FlattenedTextProjection {
                 let Some(normalized_text) = normalize_nonempty_text(text_value) else {
                     continue;
                 };
-                let projected_text = projected_fragment_text(representation.kind(), text_value);
+                let projected = projected_fragment(representation.kind(), text_value);
+                diagnostics.extend(projected.diagnostics.iter().cloned());
+                let projected_text = projected.text;
                 let Some(fragment_text) = normalize_nonempty_display_text(&projected_text) else {
                     continue;
                 };
 
-                if let Some(priority) = best_text_priority(representation.kind(), &fragment_text) {
-                    consider_best_candidate(
-                        &mut best_candidate,
-                        BestTextCandidate {
-                            priority,
-                            text: fragment_text.clone(),
-                            uti: representation.uti().to_string(),
-                        },
-                    );
+                if roles.copy_text != CopyTextRole::Excluded {
+                    if let Some(priority) =
+                        best_text_priority(representation.kind(), &fragment_text)
+                    {
+                        consider_best_candidate(
+                            &mut best_candidate,
+                            BestTextCandidate {
+                                priority,
+                                text: fragment_text.clone(),
+                                uti: representation.uti().to_string(),
+                            },
+                        );
+                    }
                 }
 
                 let fragment_key = normalize_whitespace(&fragment_text).to_lowercase();
-                if fragment_keys.insert(fragment_key) {
+                if matches!(
+                    roles.display,
+                    DisplayRole::Primary | DisplayRole::Supplemental
+                ) && fragment_keys.insert(fragment_key)
+                {
                     fragments.push(TextFragment {
                         text: fragment_text.clone(),
                         uti: representation.uti().to_string(),
@@ -135,15 +148,26 @@ impl FlattenedTextProjection {
                         }
                     }
                     ClipboardKind::Html => {
-                        let plain = html_to_text_lossy(&normalized_text);
-                        if let Some(normalized_plain) = normalize_nonempty_text(&plain) {
-                            push_distinct(&mut html_fragments, &mut html_keys, normalized_plain);
+                        let plain = fragment_text.clone();
+                        if let Some(normalized_plain) = normalize_nonempty_display_text(&plain) {
+                            push_distinct_display(
+                                &mut html_fragments,
+                                &mut html_keys,
+                                normalized_plain,
+                            );
+                        }
+                        for url in projected.urls {
+                            push_distinct(&mut urls, &mut url_keys, url);
                         }
                     }
                     ClipboardKind::Rtf => {
-                        let plain = rtf_to_text_lossy(&normalized_text);
-                        if let Some(normalized_plain) = normalize_nonempty_text(&plain) {
-                            push_distinct(&mut rtf_fragments, &mut rtf_keys, normalized_plain);
+                        let plain = fragment_text;
+                        if let Some(normalized_plain) = normalize_nonempty_display_text(&plain) {
+                            push_distinct_display(
+                                &mut rtf_fragments,
+                                &mut rtf_keys,
+                                normalized_plain,
+                            );
                         }
                     }
                     _ => {}
@@ -171,6 +195,8 @@ impl FlattenedTextProjection {
             text_summary,
             ocr_text: None,
             ocr_status: None,
+            projection_version: TEXT_PROJECTION_VERSION,
+            diagnostics,
         }
     }
 
@@ -238,13 +264,26 @@ impl FlattenedTextProjection {
     pub fn ocr_status(&self) -> Option<&str> {
         self.ocr_status.as_deref()
     }
+
+    #[must_use]
+    pub fn projection_version(&self) -> u32 {
+        self.projection_version
+    }
+
+    #[must_use]
+    pub fn diagnostics(&self) -> &[ProjectionDiagnostic] {
+        &self.diagnostics
+    }
 }
 
-fn projected_fragment_text(kind: ClipboardKind, normalized_text: &str) -> String {
+fn projected_fragment(kind: ClipboardKind, normalized_text: &str) -> super::TextProjectionResult {
     match kind {
-        ClipboardKind::Html => html_to_text_lossy(normalized_text),
-        ClipboardKind::Rtf => rtf_to_text_lossy(normalized_text),
-        _ => normalized_text.to_string(),
+        ClipboardKind::Html => project_html(normalized_text),
+        ClipboardKind::Rtf => project_rtf(normalized_text),
+        _ => super::TextProjectionResult {
+            text: normalized_text.to_string(),
+            ..Default::default()
+        },
     }
 }
 
@@ -297,6 +336,13 @@ fn push_distinct(values: &mut Vec<String>, seen: &mut HashSet<String>, candidate
     }
 }
 
+fn push_distinct_display(values: &mut Vec<String>, seen: &mut HashSet<String>, candidate: String) {
+    let key = normalize_whitespace(&candidate).to_lowercase();
+    if !key.is_empty() && seen.insert(key) {
+        values.push(candidate);
+    }
+}
+
 fn join_optional_fragments(fragments: &[String]) -> Option<String> {
     (!fragments.is_empty()).then(|| fragments.join("\n\n"))
 }
@@ -330,11 +376,6 @@ fn best_text_priority(kind: ClipboardKind, text: &str) -> Option<u8> {
         _ if kind.is_textual() => 1,
         _ => return None,
     })
-}
-
-fn is_origin_metadata_uti(uti: &str) -> bool {
-    let lower = uti.to_ascii_lowercase();
-    lower == "org.chromium.source-url" || lower == "org.chromium.source-title"
 }
 
 #[cfg(test)]
@@ -375,7 +416,7 @@ mod tests {
             projection.file_paths(),
             &["/Users/test/Report Q2.txt".to_string()]
         );
-        assert_eq!(projection.text_fragments().len(), 3);
+        assert_eq!(projection.text_fragments().len(), 1);
     }
 
     #[test]
@@ -463,7 +504,7 @@ mod tests {
 
         assert_eq!(projection.best_text_uti(), Some("public.html"));
         assert_eq!(projection.html_text(), Some("Hello world"));
-        assert_eq!(projection.rtf_text(), Some("hello world"));
+        assert_eq!(projection.rtf_text(), Some("hello\nworld"));
         assert!(!projection.text_summary().is_empty());
     }
 

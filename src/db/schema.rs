@@ -13,7 +13,7 @@ mod integrity;
 mod source_provenance;
 
 pub(super) const SCHEMA: &str = include_str!("schema.sql");
-pub(super) const CURRENT_SCHEMA_VERSION: i64 = 22;
+pub(super) const CURRENT_SCHEMA_VERSION: i64 = 23;
 const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
 
 pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {
@@ -143,8 +143,8 @@ const MIGRATION_STEPS: &[MigrationStep] = &[
         run: rebuild_snapshot_file_url_fts,
     },
     MigrationStep {
-        name: "build unified snapshot search documents",
-        applies_to: source_version_through_19,
+        name: "rebuild canonical text projections with builder v3",
+        applies_to: super::store::search_document::needs_builder_v3_migration,
         run: super::store::search_document::rebuild_all_snapshot_search_documents,
     },
 ];

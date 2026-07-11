@@ -1,6 +1,7 @@
 use std::collections::{BTreeSet, HashSet};
 
 use super::clipboard::{CaptureContext, ClipboardItem, ClipboardRepresentation, ClipboardSnapshot};
+use super::content_projection::{content_roles, html_to_text_lossy, rtf_to_text_lossy, SearchRole};
 use super::kinds::{ClipboardKind, SnapshotKind};
 
 /// Build a normalized snapshot from captured clipboard items and capture metadata.
@@ -80,38 +81,37 @@ pub(crate) fn hash_bytes(bytes: &[u8]) -> String {
 pub(crate) fn classify_uti(uti: &str, text_value_present: bool) -> ClipboardKind {
     let lower = uti.to_ascii_lowercase();
 
-    if is_origin_metadata_uti(&lower) {
-        ClipboardKind::Binary
-    } else if is_file_url_uti(&lower) {
+    if let Some(kind) = known_uti_kind(&lower) {
+        return kind;
+    }
+
+    // Deterministic fallback for producer-defined UTIs. Exact public and legacy
+    // platform types above always win over these extension-style predicates.
+    if lower.starts_with("public.file-url") || lower.ends_with(".file-url") {
         ClipboardKind::FileUrl
-    } else if lower.contains("html") {
+    } else if lower.ends_with(".html") || lower.contains("-html") {
         ClipboardKind::Html
-    } else if lower.contains("rtf") {
+    } else if lower.ends_with(".rtf") || lower.ends_with(".rtfd") {
         ClipboardKind::Rtf
-    } else if lower.contains("json") {
+    } else if lower.ends_with(".json") {
         ClipboardKind::Json
-    } else if lower.contains("xml") || lower.contains("plist") {
+    } else if lower.ends_with(".xml") || lower.ends_with(".plist") {
         ClipboardKind::Xml
-    } else if lower.contains("pdf") {
+    } else if lower.ends_with(".pdf") {
         ClipboardKind::Pdf
-    } else if lower.contains("png")
+    } else if lower.ends_with(".png")
         || lower.contains("jpeg")
-        || lower.contains("jpg")
-        || lower.contains("tiff")
-        || lower.contains("gif")
-        || lower.contains("bmp")
-        || lower.contains("webp")
-        || lower.contains("image")
+        || lower.ends_with(".jpg")
+        || lower.ends_with(".tiff")
+        || lower.ends_with(".gif")
+        || lower.ends_with(".bmp")
+        || lower.ends_with(".webp")
+        || lower.starts_with("public.image")
     {
         ClipboardKind::Image
-    } else if is_url_uti(&lower) {
-        ClipboardKind::Url
-    } else if lower.contains("text")
-        || lower.contains("string")
-        || lower.contains("utf8")
-        || lower.contains("utf-8")
-        || lower.contains("plain-text")
-        || lower.contains("nsstringpboardtype")
+    } else if lower.ends_with(".text")
+        || lower.ends_with(".string")
+        || lower.ends_with(".plain-text")
         || text_value_present
     {
         ClipboardKind::PlainText
@@ -120,16 +120,27 @@ pub(crate) fn classify_uti(uti: &str, text_value_present: bool) -> ClipboardKind
     }
 }
 
-fn is_file_url_uti(lower: &str) -> bool {
-    lower.contains("file-url") || lower == "nsfilenamespboardtype"
-}
-
-fn is_url_uti(lower: &str) -> bool {
-    lower == "public.url" || lower == "nsurlpboardtype"
-}
-
-fn is_origin_metadata_uti(lower: &str) -> bool {
-    lower == "org.chromium.source-url" || lower == "org.chromium.source-title"
+fn known_uti_kind(lower: &str) -> Option<ClipboardKind> {
+    Some(match lower {
+        "org.chromium.source-url" | "org.chromium.source-title" => ClipboardKind::Binary,
+        "public.file-url" | "nsfilenamespboardtype" => ClipboardKind::FileUrl,
+        "public.url" | "nsurlpboardtype" => ClipboardKind::Url,
+        "public.html" | "nspboardtypehtml" => ClipboardKind::Html,
+        "public.rtf" | "public.rtfd" | "nsrtfpboardtype" | "nsrtfdpboardtype" => ClipboardKind::Rtf,
+        "public.json" => ClipboardKind::Json,
+        "public.xml" | "com.apple.property-list" => ClipboardKind::Xml,
+        "com.adobe.pdf" => ClipboardKind::Pdf,
+        "public.png" | "public.jpeg" | "public.tiff" | "com.compuserve.gif" | "public.webp" => {
+            ClipboardKind::Image
+        }
+        "public.text"
+        | "public.plain-text"
+        | "public.utf8-plain-text"
+        | "public.utf16-plain-text"
+        | "public.utf16-external-plain-text"
+        | "nsstringpboardtype" => ClipboardKind::PlainText,
+        _ => return None,
+    })
 }
 
 pub(crate) fn decode_text_bytes_strict(bytes: &[u8]) -> Option<String> {
@@ -349,157 +360,6 @@ fn is_mostly_printable(bytes: &[u8]) -> bool {
     ratio_at_least(printable, bytes.len(), 85, 100)
 }
 
-pub(crate) fn html_to_text_lossy(html: &str) -> String {
-    let mut out = String::with_capacity(html.len());
-    let mut in_tag = false;
-    let mut entity = String::new();
-    let mut in_entity = false;
-
-    for ch in html.chars() {
-        if in_tag {
-            if ch == '>' {
-                in_tag = false;
-                out.push(' ');
-            }
-            continue;
-        }
-
-        if in_entity {
-            if ch == ';' {
-                out.push_str(&decode_html_entity(&entity).unwrap_or_else(|| " ".to_string()));
-                entity.clear();
-                in_entity = false;
-                continue;
-            }
-            if entity.len() < 12 && is_html_entity_char(ch) {
-                entity.push(ch);
-                continue;
-            }
-
-            out.push('&');
-            out.push_str(&entity);
-            entity.clear();
-            in_entity = false;
-        }
-
-        match ch {
-            '<' => in_tag = true,
-            '&' => {
-                in_entity = true;
-                entity.clear();
-            }
-            _ => out.push(ch),
-        }
-    }
-
-    if in_entity {
-        out.push('&');
-        out.push_str(&entity);
-    }
-
-    normalize_whitespace(&out)
-}
-
-fn is_html_entity_char(ch: char) -> bool {
-    ch.is_ascii_alphanumeric() || ch == '#'
-}
-
-fn decode_html_entity(entity: &str) -> Option<String> {
-    match entity {
-        "amp" => Some("&".to_string()),
-        "lt" => Some("<".to_string()),
-        "gt" => Some(">".to_string()),
-        "quot" => Some("\"".to_string()),
-        "apos" => Some("'".to_string()),
-        "nbsp" => Some(" ".to_string()),
-        _ => decode_numeric_html_entity(entity).map(|ch| ch.to_string()),
-    }
-}
-
-fn decode_numeric_html_entity(entity: &str) -> Option<char> {
-    if let Some(hex) = entity
-        .strip_prefix("#x")
-        .or_else(|| entity.strip_prefix("#X"))
-    {
-        u32::from_str_radix(hex, 16).ok().and_then(char::from_u32)
-    } else if let Some(decimal) = entity.strip_prefix('#') {
-        decimal.parse::<u32>().ok().and_then(char::from_u32)
-    } else {
-        None
-    }
-}
-
-pub(crate) fn rtf_to_text_lossy(rtf: &str) -> String {
-    let mut out = String::with_capacity(rtf.len());
-    let mut chars = rtf.char_indices().peekable();
-
-    while let Some((_, ch)) = chars.next() {
-        match ch {
-            '{' | '}' => {
-                continue;
-            }
-            '\\' => {
-                let Some((escaped_index, escaped)) = chars.next() else {
-                    break;
-                };
-
-                match escaped {
-                    '\\' | '{' | '}' => {
-                        out.push(escaped);
-                    }
-                    '\'' => {
-                        let high = chars.next().and_then(|(_, hex)| hex.to_digit(16));
-                        let low = chars.next().and_then(|(_, hex)| hex.to_digit(16));
-                        if let (Some(high), Some(low)) = (high, low) {
-                            out.push(((high << 4) as u8 | low as u8) as char);
-                        }
-                    }
-                    c if c.is_ascii_alphabetic() => {
-                        let word_start = escaped_index;
-                        let mut word_end = escaped_index + escaped.len_utf8();
-                        while let Some(&(byte_index, next)) = chars.peek() {
-                            if !next.is_ascii_alphabetic() {
-                                break;
-                            }
-                            word_end = byte_index + next.len_utf8();
-                            chars.next();
-                        }
-                        let word = &rtf[word_start..word_end];
-
-                        if let Some(&(_, next)) = chars.peek() {
-                            if next == '-' || next.is_ascii_digit() {
-                                chars.next();
-                                while let Some(&(_, digit)) = chars.peek() {
-                                    if !digit.is_ascii_digit() {
-                                        break;
-                                    }
-                                    chars.next();
-                                }
-                            }
-                        }
-
-                        if let Some(&(_, ' ')) = chars.peek() {
-                            chars.next();
-                        }
-
-                        match word {
-                            "par" | "line" => out.push('\n'),
-                            "tab" => out.push('\t'),
-                            _ => {}
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            ch => {
-                out.push(ch);
-            }
-        }
-    }
-
-    normalize_whitespace(&out)
-}
-
 #[cfg(test)]
 #[path = "builders/profile_tests.rs"]
 mod profile_tests;
@@ -519,6 +379,9 @@ fn item_search_text(representations: &[ClipboardRepresentation]) -> String {
 }
 
 fn search_fragment_for_representation(rep: &ClipboardRepresentation) -> Option<String> {
+    if content_roles(rep.uti(), rep.kind()).search == SearchRole::Excluded {
+        return None;
+    }
     let text = rep.text_value()?;
 
     match rep.kind() {
@@ -575,11 +438,9 @@ fn joined_search_text(items: &[ClipboardItem]) -> String {
 #[cfg(test)]
 mod tests {
     use super::super::clipboard::CaptureContext;
+    use super::super::content_projection::{html_to_text_lossy, rtf_to_text_lossy};
     use super::super::kinds::{ClipboardKind, SnapshotKind};
-    use super::{
-        build_item, build_representation, build_snapshot, decode_text_bytes_lossy,
-        html_to_text_lossy, rtf_to_text_lossy,
-    };
+    use super::{build_item, build_representation, build_snapshot, decode_text_bytes_lossy};
 
     #[test]
     fn html_is_stripped_reasonably() {
@@ -602,7 +463,7 @@ mod tests {
     #[test]
     fn rtf_is_stripped_reasonably() {
         let rtf = r"{\rtf1\ansi hello\par world}";
-        assert_eq!(rtf_to_text_lossy(rtf), "hello world");
+        assert_eq!(rtf_to_text_lossy(rtf), "hello\nworld");
     }
 
     #[test]
