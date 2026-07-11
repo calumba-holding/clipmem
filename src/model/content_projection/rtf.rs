@@ -9,6 +9,7 @@ struct State {
     skip: bool,
     ignorable: bool,
     uc: usize,
+    code_page: u32,
 }
 
 pub fn project_rtf(input: &str) -> TextProjectionResult {
@@ -28,6 +29,7 @@ pub fn project_rtf(input: &str) -> TextProjectionResult {
         skip: false,
         ignorable: false,
         uc: 1,
+        code_page: 1252,
     }];
     let mut out = String::new();
     let mut i = 0usize;
@@ -112,7 +114,7 @@ pub fn project_rtf(input: &str) -> TextProjectionResult {
                             &mut diagnostics,
                             &mut pending_high_surrogate,
                         );
-                        out.push(char::from(value));
+                        out.push(decode_hex_byte(value, state.code_page, &mut diagnostics));
                     }
                     Control::Word(word, parameter) => {
                         if is_destination(word) || (state.ignorable && !is_known_control(word)) {
@@ -121,6 +123,14 @@ pub fn project_rtf(input: &str) -> TextProjectionResult {
                         if word == "uc" {
                             if let Some(n) = parameter {
                                 state.uc = n.max(0) as usize;
+                            }
+                        }
+                        if word == "ansi" {
+                            state.code_page = 1252;
+                        }
+                        if word == "ansicpg" {
+                            if let Some(n) = parameter {
+                                state.code_page = u32::try_from(n).unwrap_or(0);
                             }
                         }
                         if word == "u" && !state.skip {
@@ -181,6 +191,28 @@ pub fn project_rtf(input: &str) -> TextProjectionResult {
         urls: Vec::new(),
         diagnostics,
     }
+}
+
+const WINDOWS_1252_C1: [char; 32] = [
+    '\u{20ac}', '\u{fffd}', '\u{201a}', '\u{0192}', '\u{201e}', '\u{2026}', '\u{2020}', '\u{2021}',
+    '\u{02c6}', '\u{2030}', '\u{0160}', '\u{2039}', '\u{0152}', '\u{fffd}', '\u{017d}', '\u{fffd}',
+    '\u{fffd}', '\u{2018}', '\u{2019}', '\u{201c}', '\u{201d}', '\u{2022}', '\u{2013}', '\u{2014}',
+    '\u{02dc}', '\u{2122}', '\u{0161}', '\u{203a}', '\u{0153}', '\u{fffd}', '\u{017e}', '\u{0178}',
+];
+
+fn decode_hex_byte(byte: u8, code_page: u32, diagnostics: &mut Vec<ProjectionDiagnostic>) -> char {
+    if code_page != 1252 {
+        diagnostics.push(ProjectionDiagnostic::UnsupportedCharset);
+        return '\u{fffd}';
+    }
+    if !(0x80..=0x9f).contains(&byte) {
+        return char::from(byte);
+    }
+    let decoded = WINDOWS_1252_C1[usize::from(byte - 0x80)];
+    if decoded == '\u{fffd}' {
+        diagnostics.push(ProjectionDiagnostic::UnsupportedCharset);
+    }
+    decoded
 }
 
 fn push_unicode_unit(
@@ -310,6 +342,7 @@ fn is_known_control(word: &str) -> bool {
         word,
         "rtf"
             | "ansi"
+            | "ansicpg"
             | "mac"
             | "deff"
             | "par"
@@ -389,6 +422,32 @@ mod tests {
 
         assert_eq!(projected.text, "café 中文 — emoji 😀 é");
         assert!(projected.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn windows_1252_hex_escapes_decode_typographic_characters() {
+        let projected = project_rtf(r"{\rtf1\ansi\ansicpg1252 \'93\'94\'80}");
+
+        assert_eq!(projected.text, "“”€");
+        assert!(projected.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn ansi_defaults_to_windows_1252() {
+        let projected = project_rtf(r"{\rtf1\ansi \'93\'94\'80}");
+
+        assert_eq!(projected.text, "“”€");
+        assert!(projected.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn unsupported_code_page_replaces_hex_bytes_with_diagnostic() {
+        let projected = project_rtf(r"{\rtf1\ansi\ansicpg932 \'93}");
+
+        assert_eq!(projected.text, "�");
+        assert!(projected
+            .diagnostics
+            .contains(&ProjectionDiagnostic::UnsupportedCharset));
     }
 
     #[test]
