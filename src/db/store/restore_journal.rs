@@ -11,7 +11,10 @@ const JOURNAL_VERSION: &str = "clipmem-restore-journal-v1";
 const MARKER_VERSION: &str = "clipmem-restore-generation-v1";
 const RECOVERY_LIFETIME: Duration = Duration::from_secs(30);
 const MAX_MARKER_BYTES: u64 = 4 * 1_024;
-const MAX_STARTUP_CLEANUPS: usize = 256;
+const MAX_JOURNAL_BYTES: u64 = 64 * 1_024;
+const MAX_STARTUP_INSPECTIONS: usize = 256;
+const MAX_STARTUP_CLEANUPS: usize = 128;
+const MAX_TEMP_CREATE_ATTEMPTS: usize = 8;
 static NEXT_TEMPORARY_FILE: AtomicU64 = AtomicU64::new(0);
 
 pub(super) struct RestoreRecoveryJournal {
@@ -167,25 +170,87 @@ fn marker_path(directory: &Path, generation: i64) -> PathBuf {
 }
 
 fn atomic_persist(path: &Path, content: &[u8]) -> Result<()> {
-    let temporary = path.with_extension(format!(
-        "tmp-{}-{}",
-        std::process::id(),
-        NEXT_TEMPORARY_FILE.fetch_add(1, Ordering::Relaxed)
-    ));
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options
-        .open(&temporary)
-        .context("open restore recovery file")?;
+    let created_unix = now_unix()?;
+    let candidates = (0..MAX_TEMP_CREATE_ATTEMPTS).map(|_| {
+        path.with_extension(format!(
+            "tmp-{created_unix}-{}-{}",
+            std::process::id(),
+            NEXT_TEMPORARY_FILE.fetch_add(1, Ordering::Relaxed)
+        ))
+    });
+    atomic_persist_with(path, content, candidates, |temporary, destination| {
+        fs::rename(temporary, destination)
+    })
+}
+
+fn atomic_persist_with<I, Publish>(
+    path: &Path,
+    content: &[u8],
+    candidates: I,
+    publish: Publish,
+) -> Result<()>
+where
+    I: IntoIterator<Item = PathBuf>,
+    Publish: FnOnce(&Path, &Path) -> std::io::Result<()>,
+{
+    let (mut file, temporary) = create_temporary(candidates)?;
+    let mut guard = TemporaryFileGuard::new(temporary);
     file.write_all(content)?;
     file.sync_all().context("sync restore recovery file")?;
-    fs::rename(&temporary, path).context("publish restore recovery file")?;
+    publish(guard.path(), path).context("publish restore recovery file")?;
+    guard.disarm();
     sync_parent(path)
+}
+
+fn create_temporary<I>(candidates: I) -> Result<(fs::File, PathBuf)>
+where
+    I: IntoIterator<Item = PathBuf>,
+{
+    let mut last_collision = None;
+    for temporary in candidates {
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        match options.open(&temporary) {
+            Ok(file) => return Ok((file, temporary)),
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => last_collision = Some(error),
+            Err(error) => return Err(error).context("open restore recovery temp file"),
+        }
+    }
+    Err(last_collision
+        .unwrap_or_else(|| std::io::Error::other("no restore recovery temp candidates")))
+    .context("restore recovery temp names exhausted")
+}
+
+struct TemporaryFileGuard {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl TemporaryFileGuard {
+    fn new(path: PathBuf) -> Self {
+        Self { path, armed: true }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for TemporaryFileGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
 }
 
 fn read_regular_bounded(path: &Path, max_bytes: u64) -> std::io::Result<Option<String>> {
@@ -219,22 +284,35 @@ fn cleanup_recovery_directory(directory: &Path) {
     let Ok(entries) = fs::read_dir(directory) else {
         return;
     };
+    let paths = entries.map(|entry| entry.map(|value| value.path()));
+    let (_, cleaned) = cleanup_recovery_paths(paths, now);
+    if cleaned != 0 {
+        let _ = fs::File::open(directory).and_then(|file| file.sync_all());
+    }
+}
+
+fn cleanup_recovery_paths<I>(paths: I, now: u64) -> (usize, usize)
+where
+    I: IntoIterator<Item = std::io::Result<PathBuf>>,
+{
+    let mut inspected = 0;
     let mut cleaned = 0;
-    for entry in entries.flatten() {
+    for entry in paths.into_iter().take(MAX_STARTUP_INSPECTIONS) {
+        inspected += 1;
         if cleaned >= MAX_STARTUP_CLEANUPS {
             break;
         }
-        let path = entry.path();
-        if path.extension().and_then(|value| value.to_str()) != Some("marker") {
+        let Ok(path) = entry else {
             continue;
-        }
+        };
+        let Some(kind) = recovery_artifact_kind(&path) else {
+            continue;
+        };
         let remove = match fs::symlink_metadata(&path) {
-            Ok(metadata) if !metadata.file_type().is_file() => true,
-            Ok(metadata) if metadata.len() > MAX_MARKER_BYTES => true,
-            Ok(_) => fs::read_to_string(&path)
-                .ok()
-                .and_then(|content| parse_marker(&content))
-                .is_none_or(|marker| marker.expires_unix < now),
+            // Preserve symlinks and other non-files; removal must never follow
+            // or reinterpret an attacker-controlled path.
+            Ok(metadata) if !metadata.file_type().is_file() => false,
+            Ok(metadata) => artifact_is_stale(&path, kind, metadata.len(), now),
             Err(_) => false,
         };
         if remove {
@@ -244,9 +322,97 @@ fn cleanup_recovery_directory(directory: &Path) {
             }
         }
     }
-    if cleaned != 0 {
-        let _ = fs::File::open(directory).and_then(|file| file.sync_all());
+    (inspected, cleaned)
+}
+
+#[derive(Clone, Copy)]
+enum RecoveryArtifactKind {
+    Marker,
+    Journal,
+    Temporary { created_unix: u64 },
+}
+
+fn recovery_artifact_kind(path: &Path) -> Option<RecoveryArtifactKind> {
+    let name = path.file_name()?.to_str()?;
+    if let Some(generation) = name
+        .strip_prefix("generation-")
+        .and_then(|value| value.strip_suffix(".marker"))
+    {
+        return is_canonical_nonnegative_decimal(generation)
+            .then_some(RecoveryArtifactKind::Marker);
     }
+    if let Some(operation_id) = name.strip_suffix(".journal") {
+        return is_operation_id(operation_id).then_some(RecoveryArtifactKind::Journal);
+    }
+    let (stem, suffix) = name.rsplit_once(".tmp-")?;
+    if !is_owned_destination_stem(stem) {
+        return None;
+    }
+    let mut parts = suffix.split('-');
+    let created_unix = parts.next()?.parse().ok()?;
+    parts.next()?.parse::<u32>().ok()?;
+    parts.next()?.parse::<u64>().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some(RecoveryArtifactKind::Temporary { created_unix })
+}
+
+fn artifact_is_stale(path: &Path, kind: RecoveryArtifactKind, len: u64, now: u64) -> bool {
+    match kind {
+        RecoveryArtifactKind::Marker => {
+            len > MAX_MARKER_BYTES
+                || read_regular_bounded(path, MAX_MARKER_BYTES)
+                    .ok()
+                    .flatten()
+                    .and_then(|content| parse_marker(&content))
+                    .is_none_or(|marker| marker.expires_unix < now)
+        }
+        RecoveryArtifactKind::Journal => {
+            len > MAX_JOURNAL_BYTES
+                || read_regular_bounded(path, MAX_JOURNAL_BYTES)
+                    .ok()
+                    .flatten()
+                    .and_then(|content| journal_expiry(&content))
+                    .is_none_or(|expires| expires < now)
+        }
+        RecoveryArtifactKind::Temporary { created_unix } => {
+            created_unix.saturating_add(RECOVERY_LIFETIME.as_secs()) < now
+        }
+    }
+}
+
+fn journal_expiry(content: &str) -> Option<u64> {
+    let mut lines = content.lines();
+    if lines.next()? != JOURNAL_VERSION {
+        return None;
+    }
+    let operation_id = lines.next()?.strip_prefix("operation_id=")?;
+    if !is_operation_id(operation_id) {
+        return None;
+    }
+    lines.next()?.strip_prefix("expires_unix=")?.parse().ok()
+}
+
+fn is_owned_destination_stem(stem: &str) -> bool {
+    is_operation_id(stem)
+        || stem
+            .strip_prefix("generation-")
+            .is_some_and(is_canonical_nonnegative_decimal)
+}
+
+fn is_operation_id(value: &str) -> bool {
+    value.len() == 32
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn is_canonical_nonnegative_decimal(value: &str) -> bool {
+    !value.is_empty()
+        && value.bytes().all(|byte| byte.is_ascii_digit())
+        && (value == "0" || !value.starts_with('0'))
+        && value.parse::<i64>().is_ok()
 }
 
 fn remove_file_if_present(path: &Path) -> std::io::Result<()> {
@@ -405,6 +571,114 @@ mod tests {
             })
             .count();
         assert_eq!(markers_after_lookup, markers_after_startup);
+        Ok(())
+    }
+
+    #[test]
+    fn maintenance_inspection_bound_counts_ignored_artifacts() -> Result<()> {
+        let db_path = TestPath::new();
+        let directory = journal_directory(&db_path.0);
+        fs::create_dir_all(&directory)?;
+        let mut paths = Vec::new();
+        for index in 0..MAX_STARTUP_INSPECTIONS {
+            let path = directory.join(format!("unrelated-{index}.txt"));
+            fs::write(&path, b"unrelated")?;
+            paths.push(Ok(path));
+        }
+        let stale = marker_path(&directory, 99);
+        fs::write(&stale, b"malformed")?;
+        paths.push(Ok(stale.clone()));
+
+        let (inspected, cleaned) = cleanup_recovery_paths(paths, now_unix()?);
+
+        assert_eq!(inspected, MAX_STARTUP_INSPECTIONS);
+        assert_eq!(cleaned, 0);
+        assert!(stale.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn startup_cleanup_removes_owned_expired_journal_and_stale_temp_only() -> Result<()> {
+        let db_path = TestPath::new();
+        let directory = journal_directory(&db_path.0);
+        fs::create_dir_all(&directory)?;
+        let operation_id = "a".repeat(32);
+        let journal = directory.join(format!("{operation_id}.journal"));
+        fs::write(
+            &journal,
+            format!("{JOURNAL_VERSION}\noperation_id={operation_id}\nexpires_unix=0\n"),
+        )?;
+        let temporary = directory.join(format!("{operation_id}.tmp-0-123-0"));
+        fs::write(&temporary, b"partial")?;
+        let unrelated = directory.join("notes.tmp-0-123-0");
+        fs::write(&unrelated, b"keep")?;
+
+        cleanup_recovery_directory(&directory);
+
+        assert!(!journal.exists());
+        assert!(!temporary.exists());
+        assert!(unrelated.exists());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn startup_cleanup_preserves_symlinks_even_with_owned_names() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let db_path = TestPath::new();
+        let directory = journal_directory(&db_path.0);
+        fs::create_dir_all(&directory)?;
+        let target = directory.join("target");
+        fs::write(&target, b"unrelated")?;
+        let link = marker_path(&directory, 9);
+        symlink(&target, &link)?;
+
+        cleanup_recovery_directory(&directory);
+
+        assert!(fs::symlink_metadata(&link)?.file_type().is_symlink());
+        assert_eq!(fs::read(&target)?, b"unrelated");
+        Ok(())
+    }
+
+    #[test]
+    fn failed_publication_removes_create_new_temporary_file() -> Result<()> {
+        let db_path = TestPath::new();
+        let directory = journal_directory(&db_path.0);
+        fs::create_dir_all(&directory)?;
+        let destination = directory.join("destination.journal");
+        let temporary = directory.join("temporary");
+
+        atomic_persist_with(&destination, b"content", [temporary.clone()], |_, _| {
+            Err(std::io::Error::other("injected publish failure"))
+        })
+        .expect_err("injected publication failure is reported");
+
+        assert!(!temporary.exists());
+        assert!(!destination.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn stale_temporary_name_collision_retries_next_candidate() -> Result<()> {
+        let db_path = TestPath::new();
+        let directory = journal_directory(&db_path.0);
+        fs::create_dir_all(&directory)?;
+        let destination = directory.join("destination.journal");
+        let collision = directory.join("collision");
+        let retry = directory.join("retry");
+        fs::write(&collision, b"stale")?;
+
+        atomic_persist_with(
+            &destination,
+            b"published",
+            [collision.clone(), retry.clone()],
+            |temporary, destination| fs::rename(temporary, destination),
+        )?;
+
+        assert_eq!(fs::read(&collision)?, b"stale");
+        assert!(!retry.exists());
+        assert_eq!(fs::read(&destination)?, b"published");
         Ok(())
     }
 
