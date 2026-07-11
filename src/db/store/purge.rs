@@ -25,7 +25,8 @@ impl Database {
             .context("delete snapshot")?;
         delete_unreferenced_ocr_results(&tx)?;
         delete_unreferenced_background_jobs(&tx)?;
-        bump_revision_tx(&tx, &[ArchiveChangeKind::ArchiveContent])?;
+        let deleted_derivatives = delete_unreferenced_representation_derivatives(&tx)?;
+        bump_deletion_revisions(&tx, deleted_derivatives)?;
         tx.commit().context("commit forget transaction")?;
         Ok(report)
     }
@@ -58,7 +59,8 @@ impl Database {
             .context("delete expired snapshots")?;
             delete_unreferenced_ocr_results(&tx)?;
             delete_unreferenced_background_jobs(&tx)?;
-            bump_revision_tx(&tx, &[ArchiveChangeKind::ArchiveContent])?;
+            let deleted_derivatives = delete_unreferenced_representation_derivatives(&tx)?;
+            bump_deletion_revisions(&tx, deleted_derivatives)?;
         }
 
         tx.commit().context("commit purge transaction")?;
@@ -78,6 +80,38 @@ impl Database {
         retention_seconds
             .map(|seconds| self.purge_snapshots_older_than(seconds, false))
             .transpose()
+    }
+}
+
+fn delete_unreferenced_representation_derivatives(tx: &rusqlite::Transaction<'_>) -> Result<usize> {
+    tx.execute(
+        r"
+            DELETE FROM representation_derivatives
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM item_representations ir
+                WHERE ir.raw_sha256 = representation_derivatives.source_raw_sha256
+            )
+        ",
+        [],
+    )
+    .context("delete unreferenced representation derivatives")
+}
+
+fn bump_deletion_revisions(
+    tx: &rusqlite::Transaction<'_>,
+    deleted_derivatives: usize,
+) -> Result<()> {
+    if deleted_derivatives == 0 {
+        bump_revision_tx(tx, &[ArchiveChangeKind::ArchiveContent])
+    } else {
+        bump_revision_tx(
+            tx,
+            &[
+                ArchiveChangeKind::ArchiveContent,
+                ArchiveChangeKind::Storage,
+            ],
+        )
     }
 }
 
