@@ -79,9 +79,9 @@ user has not explicitly asked to proceed.
 | `ocr get` | text (`json` supported) | — | One OCR result by raw representation hash |
 | `ocr clear` | text (`json` supported) | — | Delete one OCR result and rebuild affected OCR cache |
 | `ocr run` | text (`json` supported) | — | Backfill OCR for stored image snapshots |
-| `capture-once` | — | — | Single clipboard capture (setup / ad-hoc) |
+| `capture-once` | — | — | Explicitly capture the current clipboard once |
 | `watch` | — | — | Background daemon; usually a LaunchAgent |
-| `setup` | — | — | Seed one capture and start background capture |
+| `setup` | — | — | Initialize the database and start background capture |
 | `service status` | text (or `--json`) | — | Background provider state + capture freshness |
 | `service providers` | text (`json` supported) | — | Service provider availability without mutation |
 | `service revision` | text (`json` supported) | — | Archive revision counters without provider probes |

@@ -94,7 +94,11 @@ fn setup_and_service_help_include_examples() {
         assert!(stdout.contains("Examples:"));
         if args == ["setup", "--help"] {
             assert!(stdout.contains("Initialize the database and start background capture"));
+            assert!(stdout.contains("setup` initializes and migrates the archive"));
+            assert!(stdout.contains("clipmem capture-once"));
             assert!(!stdout.contains("seed one capture"));
+            assert!(!stdout.contains("foreground capture"));
+            assert!(!stdout.contains("performs one"));
         }
         assert!(stderr_text(&output).is_empty());
     }
