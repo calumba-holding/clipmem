@@ -89,8 +89,13 @@ fn setup_and_service_help_include_examples() {
 
     for args in cases {
         let output = run_cli(&args);
+        let stdout = stdout_text(&output);
         assert_eq!(status_code(&output), 0, "help should succeed for {args:?}");
-        assert!(stdout_text(&output).contains("Examples:"));
+        assert!(stdout.contains("Examples:"));
+        if args == ["setup", "--help"] {
+            assert!(stdout.contains("Initialize the database and start background capture"));
+            assert!(!stdout.contains("seed one capture"));
+        }
         assert!(stderr_text(&output).is_empty());
     }
 }

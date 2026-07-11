@@ -82,7 +82,7 @@ pub(super) struct Cli {
 pub(super) enum Command {
     /// Manage agent-harness integrations.
     Agents(AgentsArgs),
-    /// Initialize the database, seed one capture, and start background capture.
+    /// Initialize the database and start background capture.
     Setup(SetupArgs),
     /// Manage the background clipmem watcher service.
     Service(ServiceArgs),
