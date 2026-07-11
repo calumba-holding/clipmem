@@ -12,7 +12,7 @@ versioning where practical.
 ## 0.6.0 - 2026-07-11
 
 Architecture release implementing the full ten-plan audit roadmap
-(`plans/`). The archive schema migrates from v18 to v23 automatically on
+(`plans/`). The archive schema migrates from v18 to v24 automatically on
 first open via `clipmem setup` or the managed service; all existing CLI
 JSON fields remain parseable, with new fields additive.
 

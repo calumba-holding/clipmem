@@ -158,7 +158,8 @@ pub(in crate::cli) fn restore_snapshot(db_path: &Path, args: &RestoreArgs) -> Re
     // Hold SQLite's write ownership across every pasteboard mutation. Watchers
     // may capture concurrently, but their policy transaction cannot observe a
     // restore-created generation until its exact suppression rows are committed.
-    let suppression = db.begin_restore_suppression(args.snapshot_id, payload.snapshot_sha256())?;
+    let mut suppression =
+        db.begin_restore_suppression(args.snapshot_id, payload.snapshot_sha256())?;
     let operation_id = suppression.operation_id().to_string();
     let report = match restore_items_registered(payload.items(), |change_count| {
         suppression.register_generation(change_count)
