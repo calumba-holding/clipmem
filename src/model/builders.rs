@@ -107,6 +107,8 @@ pub(crate) fn classify_uti(uti: &str, text_value_present: bool) -> ClipboardKind
         || lower.ends_with(".bmp")
         || lower.ends_with(".webp")
         || lower.starts_with("public.image")
+        || lower.ends_with(".image")
+        || lower.ends_with("-image")
     {
         ClipboardKind::Image
     } else if lower.ends_with(".text")
@@ -621,5 +623,14 @@ mod tests {
 
         assert_eq!(representation.kind(), ClipboardKind::Binary);
         assert_eq!(representation.text_value(), None);
+    }
+
+    #[test]
+    fn producer_defined_image_utis_keep_image_semantics() {
+        for uti in ["com.vendor.image", "public.svg-image"] {
+            let representation = build_representation(uti.to_string(), None, vec![0, 1, 2, 3]);
+
+            assert_eq!(representation.kind(), ClipboardKind::Image, "{uti}");
+        }
     }
 }
