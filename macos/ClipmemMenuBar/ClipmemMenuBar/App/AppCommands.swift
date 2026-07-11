@@ -13,6 +13,36 @@ enum WindowID: String {
     }
 }
 
+enum AppStartupMode: Equatable, Sendable {
+    case production
+    case testHost
+
+    static var current: AppStartupMode {
+        resolve(
+            environment: ProcessInfo.processInfo.environment,
+            xctestRuntimeLoaded: NSClassFromString("XCTestCase") != nil
+                || NSClassFromString("XCTest.XCTestCase") != nil
+        )
+    }
+
+    static func resolve(
+        environment: [String: String],
+        xctestRuntimeLoaded: Bool
+    ) -> AppStartupMode {
+        let testEnvironmentKeys = [
+            "XCTestConfigurationFilePath",
+            "XCTestBundlePath",
+            "XCInjectBundleInto",
+        ]
+        if xctestRuntimeLoaded || testEnvironmentKeys.contains(where: { environment[$0] != nil }) {
+            return .testHost
+        }
+        return .production
+    }
+
+    var allowsApplicationSideEffects: Bool { self == .production }
+}
+
 enum PreferenceKey {
     static let binaryPathOverride = "binaryPathOverride"
     static let databasePathOverride = "databasePathOverride"

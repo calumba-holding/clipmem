@@ -9,11 +9,14 @@ enum ClipmemClientError: Error, LocalizedError, Equatable, Sendable {
     case platformError(String)
     case commandFailed(Int32, String)
     case decodingFailed(String)
+    case testHostSideEffectsDisabled
 
     var errorDescription: String? {
         switch self {
         case .binaryNotFound:
             "clipmem binary was not found."
+        case .testHostSideEffectsDisabled:
+            "clipmem subprocess execution is disabled in the XCTest host."
         case .invalidArguments(let message),
              .notFound(let message),
              .unsupportedFormat(let message),
@@ -59,13 +62,15 @@ struct UserError: Equatable, Sendable {
 struct ClipmemClientConfiguration: Sendable {
     var binaryOverride: String?
     var databaseOverride: String?
+    var allowsSubprocessExecution = AppStartupMode.current.allowsApplicationSideEffects
 
     static var current: ClipmemClientConfiguration {
         let environment = ProcessInfo.processInfo.environment
         return ClipmemClientConfiguration(
             binaryOverride: UserDefaults.standard.string(forKey: PreferenceKey.binaryPathOverride),
             databaseOverride: environment["CLIPMEM_DB_PATH"]
-                ?? UserDefaults.standard.string(forKey: PreferenceKey.databasePathOverride)
+                ?? UserDefaults.standard.string(forKey: PreferenceKey.databasePathOverride),
+            allowsSubprocessExecution: AppStartupMode.current.allowsApplicationSideEffects
         )
     }
 }
@@ -194,6 +199,9 @@ struct ClipmemClient: Sendable {
     }
 
     private func run(_ command: ClipmemCommand, timeout: Duration? = nil) async throws -> CommandResult {
+        guard configuration.allowsSubprocessExecution else {
+            throw ClipmemClientError.testHostSideEffectsDisabled
+        }
         let resolver = BinaryResolver(userOverride: configuration.binaryOverride)
         guard let binary = resolver.resolve() else {
             throw ClipmemClientError.binaryNotFound(resolver.candidates())
@@ -214,6 +222,9 @@ struct ClipmemClient: Sendable {
         _ command: ClipmemCommand,
         onStdoutLine: @escaping @Sendable (String) async throws -> Void
     ) async throws {
+        guard configuration.allowsSubprocessExecution else {
+            throw ClipmemClientError.testHostSideEffectsDisabled
+        }
         let resolver = BinaryResolver(userOverride: configuration.binaryOverride)
         guard let binary = resolver.resolve() else {
             throw ClipmemClientError.binaryNotFound(resolver.candidates())

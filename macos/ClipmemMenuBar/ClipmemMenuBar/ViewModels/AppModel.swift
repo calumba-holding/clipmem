@@ -42,6 +42,7 @@ final class AppModel {
     var pendingSettingsOpenRequest: SettingsOpenRequest?
     @ObservationIgnored private let hotKeyManager = HotKeyManager()
     @ObservationIgnored private let updateChecker = UpdateChecker()
+    @ObservationIgnored private let startupMode: AppStartupMode
     @ObservationIgnored private let loadRecentPreview: @MainActor () async throws -> [ClipmemItem]
     @ObservationIgnored private var historyOpenRequestID = 0
     @ObservationIgnored private var settingsOpenRequestID = 0
@@ -56,40 +57,40 @@ final class AppModel {
     @ObservationIgnored private var openQuickRecallAction: (@MainActor () -> Void)?
     @ObservationIgnored private var lastResolvedBinaryPath = UserDefaults.standard.string(forKey: PreferenceKey.binaryPathOverride)
     @ObservationIgnored private var lastResolvedDatabasePath = UserDefaults.standard.string(forKey: PreferenceKey.databasePathOverride)
-
-    init(loadRecentPreview: (@MainActor () async throws -> [ClipmemItem])? = nil) {
+    init(startupMode: AppStartupMode = .current, loadRecentPreview: (@MainActor () async throws -> [ClipmemItem])? = nil) {
+        self.startupMode = startupMode
         self.loadRecentPreview = loadRecentPreview ?? {
             let envelope = try await ClipmemClient(configuration: .current).recent(limit: 40, cursor: nil, filters: .defaultValue)
             return envelope.results
         }
     }
-
     var healthState: HealthState {
         if client.resolvedBinaryPath() == nil {
             return .missingBinary
         }
         return serviceStatus?.health ?? .unknown
     }
-
     var client: ClipmemClient {
         ClipmemClient(configuration: .current)
     }
-
-    func start() async {
+    @discardableResult
+    func start() async -> Bool {
+        guard startupMode.allowsApplicationSideEffects, Task.isCancelled == false else { return false }
         configureDefaultLaunchAtLoginIfNeeded()
         await installSelfIgnoreIfNeeded()
+        guard Task.isCancelled == false else { return false }
         await refreshAll()
+        guard Task.isCancelled == false else { return false }
         startPasteboardMonitorIfNeeded()
         startAppRefreshNotificationMonitorIfNeeded()
         startRevisionMonitorIfNeeded()
         await checkForUpdatesIfNeeded()
+        return Task.isCancelled == false
     }
-
     deinit {
         revisionMonitorTask?.cancel()
         appRefreshNotificationMonitor?.stop()
     }
-
     func refreshAll() async {
         isRefreshing = true
         defer { isRefreshing = false }
@@ -99,7 +100,6 @@ final class AppModel {
         async let recentTask: Bool = refreshRecentPreview()
         _ = await (statusTask, settingsTask, recentTask)
     }
-
     func refreshStatus() async {
         do {
             let status = try await client.serviceStatus()

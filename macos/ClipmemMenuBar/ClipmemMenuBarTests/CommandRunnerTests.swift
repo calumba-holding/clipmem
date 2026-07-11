@@ -4,6 +4,25 @@ import Testing
 
 @Suite(.serialized)
 struct CommandRunnerTests {
+    @Test func testHostClientCannotSpawnAnyClipmemSubprocess() async throws {
+        let processStarted = LockedFlag()
+        let client = ClipmemClient(
+            configuration: ClipmemClientConfiguration(
+                binaryOverride: "/usr/bin/true",
+                databaseOverride: nil,
+                allowsSubprocessExecution: false
+            ),
+            runner: CommandRunner(processStarted: { processStarted.set() })
+        )
+
+        do {
+            try await client.runAction(.settingsIgnoreAdd("io.openclaw.clipmem.menubar"))
+            Issue.record("Expected XCTest-host subprocess execution to be rejected.")
+        } catch let error as ClipmemClientError {
+            #expect(error == .testHostSideEffectsDisabled)
+        }
+        #expect(processStarted.value == false)
+    }
     @Test func timeoutIsDistinctFromUserCancellation() async throws {
         do {
             _ = try await CommandRunner().run(
@@ -160,6 +179,19 @@ struct CommandRunnerTests {
             let values = strings
             lock.unlock()
             return values
+        }
+    }
+
+    private final class LockedFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var storedValue = false
+
+        var value: Bool {
+            lock.withLock { storedValue }
+        }
+
+        func set() {
+            lock.withLock { storedValue = true }
         }
     }
 }
