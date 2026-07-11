@@ -35,6 +35,7 @@ impl Database {
         snapshot: &ClipboardSnapshot,
         _mode: CaptureMode,
     ) -> Result<CaptureOutcome> {
+        let db_path = self.path.clone();
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -96,7 +97,11 @@ impl Database {
                 |row| row.get(0),
             )
             .optional()
-            .context("check restore suppression operations")?;
+            .context("check restore suppression operations")?
+            .or(super::restore_journal::operation_for_generation(
+                &db_path,
+                snapshot.change_count(),
+            )?);
         if let Some(operation_id) = suppressed_operation {
             tx.commit().context("commit restore suppression decision")?;
             return Ok(CaptureOutcome::SuppressedRestore { operation_id });
