@@ -14,6 +14,8 @@ use super::jobs::{
 };
 use super::revision::bump_revision_tx;
 
+const MAX_OCR_CLAIM_REFILL_ROUNDS: usize = 1_024;
+
 impl OcrCandidate {
     fn new(
         raw_sha256: String,
@@ -149,15 +151,25 @@ impl Database {
             bump_revision_tx(&tx, &[ArchiveChangeKind::Ocr])?;
         }
         tx.commit().context("commit ocr candidate transaction")?;
+        let requested = clamp_result_limit(limit);
         let owner = format!("ocr-{}", std::process::id());
-        let leases =
-            self.claim_ocr_jobs_for_snapshot(&owner, clamp_result_limit(limit), snapshot_id)?;
-        let mut candidates = Vec::with_capacity(leases.len());
-        for lease in leases {
-            if let Some(candidate) = load_ocr_candidate(&self.conn, lease.clone(), snapshot_id)? {
-                candidates.push(candidate);
-            } else {
-                self.skip_claimed_job(&lease, "source_missing")?;
+        let mut candidates = Vec::with_capacity(requested);
+        for _ in 0..MAX_OCR_CLAIM_REFILL_ROUNDS {
+            let remaining = requested.saturating_sub(candidates.len());
+            if remaining == 0 {
+                break;
+            }
+            let leases = self.claim_ocr_jobs_for_snapshot(&owner, remaining, snapshot_id)?;
+            if leases.is_empty() {
+                break;
+            }
+            for lease in leases {
+                if let Some(candidate) = load_ocr_candidate(&self.conn, lease.clone(), snapshot_id)?
+                {
+                    candidates.push(candidate);
+                } else {
+                    self.skip_claimed_job(&lease, "source_missing")?;
+                }
             }
         }
         Ok(candidates)
