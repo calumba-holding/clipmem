@@ -101,7 +101,7 @@ impl Database {
             .or(super::restore_journal::operation_for_generation(
                 &db_path,
                 snapshot.change_count(),
-            )?);
+            ));
         if let Some(operation_id) = suppressed_operation {
             tx.commit().context("commit restore suppression decision")?;
             return Ok(CaptureOutcome::SuppressedRestore { operation_id });
