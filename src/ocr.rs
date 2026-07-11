@@ -183,4 +183,57 @@ mod tests {
         assert_eq!(db.ocr_status_report()?.failed(), 0);
         Ok(())
     }
+
+    #[test]
+    fn scoped_ocr_claim_does_not_consume_unrelated_jobs_or_miss_target() -> anyhow::Result<()> {
+        let mut db = Database::open_in_memory()?;
+        let unrelated = db.store_capture(&image_snapshot(1, b"unrelated-image".to_vec()))?;
+        let target = db.store_capture(&image_snapshot(2, b"target-image".to_vec()))?;
+        db.enqueue_ocr_for_snapshot(unrelated.snapshot_id())?;
+        db.enqueue_ocr_for_snapshot(target.snapshot_id())?;
+
+        let target_hash: String = db.conn.query_row(
+            "SELECT raw_sha256 FROM item_representations WHERE snapshot_id = ?1",
+            [target.snapshot_id()],
+            |row| row.get(0),
+        )?;
+        let unrelated_hash: String = db.conn.query_row(
+            "SELECT raw_sha256 FROM item_representations WHERE snapshot_id = ?1",
+            [unrelated.snapshot_id()],
+            |row| row.get(0),
+        )?;
+
+        let candidates = db.next_ocr_candidates(1, Some(target.snapshot_id()), false)?;
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].raw_sha256(), target_hash);
+        let target_attempts: i64 = db.conn.query_row(
+            "SELECT attempts FROM jobs WHERE kind = 'ocr' AND dedupe_key = ?1",
+            [&target_hash],
+            |row| row.get(0),
+        )?;
+        let unrelated_attempts: i64 = db.conn.query_row(
+            "SELECT attempts FROM jobs WHERE kind = 'ocr' AND dedupe_key = ?1",
+            [&unrelated_hash],
+            |row| row.get(0),
+        )?;
+        assert_eq!(target_attempts, 1);
+        assert_eq!(unrelated_attempts, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn clearing_completed_ocr_makes_same_source_claimable_again() -> anyhow::Result<()> {
+        let mut db = Database::open_in_memory()?;
+        let stored = db.store_capture(&image_snapshot(1, b"repeat-image".to_vec()))?;
+        let first = db.next_ocr_candidates(1, Some(stored.snapshot_id()), false)?;
+        assert_eq!(first.len(), 1);
+        let hash = first[0].raw_sha256().to_string();
+        db.store_ocr_candidate_text(&first[0], "fake", "fast", "first result")?;
+
+        assert!(db.clear_ocr_result(&hash)?);
+        let second = db.next_ocr_candidates(1, Some(stored.snapshot_id()), false)?;
+        assert_eq!(second.len(), 1);
+        assert_eq!(second[0].raw_sha256(), hash);
+        Ok(())
+    }
 }

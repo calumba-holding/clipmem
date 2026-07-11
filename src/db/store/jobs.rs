@@ -75,9 +75,32 @@ impl Database {
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .context("begin durable job claim transaction")?;
-        let leases = claim_jobs_tx(&tx, kind, owner, limit, DEFAULT_LEASE_SECONDS)?;
+        let leases = claim_jobs_tx(&tx, kind, owner, limit, DEFAULT_LEASE_SECONDS, None)?;
         tx.commit()
             .context("commit durable job claim transaction")?;
+        Ok(leases)
+    }
+
+    pub(in crate::db) fn claim_ocr_jobs_for_snapshot(
+        &mut self,
+        owner: &str,
+        limit: usize,
+        snapshot_id: Option<i64>,
+    ) -> Result<Vec<JobLease>> {
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .context("begin scoped OCR job claim transaction")?;
+        let leases = claim_jobs_tx(
+            &tx,
+            OCR_JOB_KIND,
+            owner,
+            limit,
+            DEFAULT_LEASE_SECONDS,
+            snapshot_id,
+        )?;
+        tx.commit()
+            .context("commit scoped OCR job claim transaction")?;
         Ok(leases)
     }
 
@@ -248,6 +271,7 @@ fn claim_jobs_tx(
     owner: &str,
     limit: usize,
     lease_seconds: i64,
+    snapshot_id: Option<i64>,
 ) -> Result<Vec<JobLease>> {
     let mut stmt = tx
         .prepare(
@@ -256,6 +280,11 @@ fn claim_jobs_tx(
                 FROM jobs
                 WHERE kind = ?1
                   AND attempts < max_attempts
+                  AND (?3 IS NULL OR EXISTS (
+                      SELECT 1 FROM item_representations ir
+                      WHERE ir.raw_sha256 = jobs.dedupe_key
+                        AND ir.snapshot_id = ?3
+                  ))
                   AND (
                       (state = 'queued' AND not_before <= CURRENT_TIMESTAMP)
                       OR (state = 'leased' AND lease_until <= CURRENT_TIMESTAMP)
@@ -269,7 +298,8 @@ fn claim_jobs_tx(
         .query_map(
             params![
                 kind,
-                i64::try_from(limit).context("job claim limit exceeds SQLite range")?
+                i64::try_from(limit).context("job claim limit exceeds SQLite range")?,
+                snapshot_id
             ],
             |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
         )
@@ -395,14 +425,27 @@ pub(in crate::db) fn enqueue_image_optimization_jobs(
             IMAGE_OPTIMIZATION_JOB_KIND,
             &key,
             IMAGE_OPTIMIZATION_ALGORITHM_VERSION,
-            &format!(
-                r#"{{"source_raw_sha256":"{hash}","snapshot_id":{snapshot_id},"item_index":{item_index},"uti":"{uti}"}}"#
-            ),
+            &image_source_ref_json(&hash, snapshot_id, item_index, &uti)?,
             3,
         )?;
     }
     tx.commit()?;
     Ok(())
+}
+
+fn image_source_ref_json(
+    hash: &str,
+    snapshot_id: i64,
+    item_index: i64,
+    uti: &str,
+) -> Result<String> {
+    serde_json::to_string(&serde_json::json!({
+        "source_raw_sha256": hash,
+        "snapshot_id": snapshot_id,
+        "item_index": item_index,
+        "uti": uti,
+    }))
+    .context("serialize image job source reference")
 }
 
 pub(in crate::db) fn load_claimed_image_candidate(
@@ -444,7 +487,9 @@ mod tests {
 
     use anyhow::Result;
 
-    use super::{complete_job_tx, enqueue_job_tx, OCR_ALGORITHM_VERSION, OCR_JOB_KIND};
+    use super::{
+        complete_job_tx, enqueue_job_tx, image_source_ref_json, OCR_ALGORITHM_VERSION, OCR_JOB_KIND,
+    };
     use crate::db::Database;
 
     #[test]
@@ -499,6 +544,14 @@ mod tests {
         let _ = std::fs::remove_file(path.with_extension("sqlite3-wal"));
         let _ = std::fs::remove_file(path.with_extension("sqlite3-shm"));
         let _ = std::fs::remove_dir(directory);
+        Ok(())
+    }
+
+    #[test]
+    fn image_source_reference_escapes_arbitrary_uti_text() -> Result<()> {
+        let encoded = image_source_ref_json("hash", 1, 2, "public.\"odd\\uti\n")?;
+        let value: serde_json::Value = serde_json::from_str(&encoded)?;
+        assert_eq!(value["uti"], "public.\"odd\\uti\n");
         Ok(())
     }
 }
