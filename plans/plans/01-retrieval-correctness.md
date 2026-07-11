@@ -1,3 +1,11 @@
+---
+status: implemented
+created: 2026-07-10
+last-verified: 2026-07-11
+implemented-in: schema v23 merged implementation
+owners: []
+---
+
 # Plan 1 — Retrieval correctness
 
 **Priority:** P0  

@@ -1,8 +1,11 @@
 ---
 title: "feat: Show Command-Link Hover Cursor"
 type: feat
-status: completed
-date: 2026-04-28
+status: implemented
+created: 2026-04-28
+last-verified: 2026-07-11
+implemented-in: current repository state
+owners: []
 ---
 
 # feat: Show Command-Link Hover Cursor

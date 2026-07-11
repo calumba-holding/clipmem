@@ -47,6 +47,9 @@ jobs:
       - name: Check package and app versions
         run: python3 scripts/check_version_sync.py
 
+      - name: Check migration fixture freeze
+        run: python3 scripts/check_migration_matrix.py
+
       - name: Run tests
         run: cargo test
 
@@ -73,6 +76,29 @@ jobs:
 
       - name: Run tests
         run: cargo test
+
+  search-benchmark:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.88.0
+
+      - name: Run ignored retrieval benchmark
+        run: scripts/run_search_benchmark.sh artifacts/search-benchmark/report.json
+
+      - name: Upload reviewable benchmark report
+        uses: actions/upload-artifact@v6
+        with:
+          name: search-benchmark-${{ matrix.os }}
+          path: artifacts/search-benchmark/report.json
 
   menubar-app:
     runs-on: macos-15

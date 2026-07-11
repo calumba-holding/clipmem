@@ -16,6 +16,10 @@ The source archive had no `.git` directory, so this report identifies the input 
 6. [`05-existing-plan-disposition.md`](05-existing-plan-disposition.md) — keep, amend, supersede, or archive decisions for the existing plans.
 7. [`plans/00-roadmap.md`](plans/00-roadmap.md) — dependency-ordered handoff roadmap.
 
+Plan status follows the convention in
+[`docs/plans/README.md`](../docs/plans/README.md). Implementation changes must
+update lifecycle metadata and record proof or superseding follow-up scope.
+
 ## Implementation plans
 
 | Order | Plan | Priority | Purpose |

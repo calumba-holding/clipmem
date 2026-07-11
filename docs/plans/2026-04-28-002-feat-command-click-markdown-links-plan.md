@@ -1,8 +1,11 @@
 ---
 title: "feat: Command-click Markdown links in menu bar text"
 type: feat
-status: completed
-date: 2026-04-28
+status: implemented
+created: 2026-04-28
+last-verified: 2026-07-11
+implemented-in: current repository state
+owners: []
 ---
 
 # feat: Command-click Markdown links in menu bar text

@@ -74,6 +74,9 @@ Supporting tables:
 - `ocr_results` — OCR status and text keyed by representation
   `raw_sha256`
 - `snapshot_ocr_cache` — aggregated ready OCR text per snapshot
+- `snapshot_search_documents` — the versioned canonical retrieval document
+- `representation_derivatives` — disposable previews keyed by source hash
+- `jobs` — durable OCR and preview work with atomic claims and leases
 
 The agent-facing entity and CRUD contract is documented in
 [action parity](action-parity.md). In that contract, derived tables
@@ -81,15 +84,11 @@ such as `snapshot_stats`, projection caches, OCR caches, and FTS
 virtual tables are not independent user entities; they are maintained
 from source archive rows and verified through source-entity behavior.
 
-Cache maintenance is intentionally hybrid. Triggers maintain the
-steady-state derived tables: snapshot stats, event-filter cache,
-literal and FTS search indexes, OCR cache rows, and representation
-projection updates after ordinary representation changes. During
-`store_capture`, new snapshot representation inserts temporarily defer
-representation-derived trigger work. The capture transaction inserts
-all representations, rebuilds `snapshot_projection_cache` once for the
-new snapshot, then inserts the `capture_events` row so downstream
-event/search refresh work sees the complete representation projection.
+Application services own capture policy and projection refresh. The versioned
+canonical document builder produces retrieval state, while a reduced trigger
+set maintains rollback-compatible projections. `clipmem doctor
+--verify-invariants` performs a read-only shadow comparison between them; it
+reports mismatches and never repairs data.
 
 ## What gets indexed
 
@@ -97,7 +96,10 @@ Text, HTML, URLs, file URLs, RTF, JSON, and XML are indexed when a
 reasonable text form is available. These formats are searchable through
 `recall`, `search`, `recent`, and `timeline`.
 
-Images are stored as blobs. If OCR is enabled or backfilled, clipmem
+Images retain their exact captured source UTI, bytes, hash, and snapshot
+fingerprint. Optional lossless WebP previews live in
+`representation_derivatives` and may be rebuilt or deleted without changing
+source identity. If OCR is enabled or backfilled, clipmem
 also stores OCR text and status for image representations. Completed
 OCR text is searchable through `recall`, `search`, `recent`, and
 `timeline`. If an image-only snapshot has ready OCR text and no better
@@ -109,9 +111,9 @@ They appear in results with metadata (kind, size, app, time), but
 `best_text` is empty when no text projection exists. Use
 `clipmem export` to recover the raw binary payload.
 
-Phase 1 OCR doesn't store bounding boxes, confidence scores,
-thumbnails, compressed images, or language preferences. Image
-compression is not part of this phase.
+OCR doesn't store bounding boxes, confidence scores, or language preferences.
+Physical source eviction/compression remains gated on byte-for-byte
+reconstruction proof; preview generation does not evict source bytes.
 
 ## Polling behavior
 

@@ -41,17 +41,15 @@ full-disk encryption) for at-rest protection.
 ## Blob storage
 
 Blob payloads (images, PDFs, RTF, file URLs, and other clipboard
-representations) are stored in their raw form so `clipmem restore`
-can faithfully rehydrate them back onto the clipboard. Images and PDFs
-are stored as-is unless you explicitly run image optimization; image
-optimization converts eligible images to lossless WebP while
-preserving exact decoded pixels. PDFs are not optimized.
+representations) retain their captured bytes so `clipmem restore` can
+faithfully rehydrate them. Image preview generation stores a separate bounded
+lossless WebP derivative and never replaces the source image. PDFs are not
+previewed by this maintenance command.
 
-This means the database can grow if you frequently copy large binary
-content. Use `clipmem storage optimize-images` to reduce eligible image
-payloads and return freed SQLite pages to the filesystem. Use
-`clipmem storage compact` separately after purging history or when you
-want to reclaim existing free SQLite pages.
+This means the database can grow if you frequently copy large binary content.
+Use `clipmem storage optimize-images` to prepare efficient previews and
+`clipmem storage compact` after purging history when you want to reclaim free
+SQLite pages. Preview generation does not claim source-storage savings.
 
 ## Controlling what gets captured
 

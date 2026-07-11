@@ -139,6 +139,58 @@ fn purge_preserves_shared_derivative_and_removes_it_after_last_reference() -> Re
 }
 
 #[test]
+fn source_semantics_survive_preview_and_retention_maintenance() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let source = lossless_test_tiff()?;
+    let stored = db.store_capture(&image_with_distinguishing_text_snapshot(
+        1,
+        "source semantics",
+        &source,
+    ))?;
+    let before: Vec<(String, String, Vec<u8>)> = {
+        let mut statement = db.conn.prepare(
+            "SELECT uti, raw_sha256, blob_value FROM item_representations WHERE snapshot_id=?1 ORDER BY item_index, uti",
+        )?;
+        let rows = statement
+            .query_map([stored.snapshot_id()], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        rows
+    };
+    let fingerprint_before: String = db.conn.query_row(
+        "SELECT sha256 FROM snapshots WHERE id=?1",
+        [stored.snapshot_id()],
+        |row| row.get(0),
+    )?;
+
+    db.optimize_images(false, None, false)?;
+    db.set_retention_seconds(Some(30 * 24 * 60 * 60))?;
+    assert_eq!(db.apply_retention_policy()?.unwrap().snapshot_count(), 0);
+
+    let after: Vec<(String, String, Vec<u8>)> = {
+        let mut statement = db.conn.prepare(
+            "SELECT uti, raw_sha256, blob_value FROM item_representations WHERE snapshot_id=?1 ORDER BY item_index, uti",
+        )?;
+        let rows = statement
+            .query_map([stored.snapshot_id()], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        rows
+    };
+    let fingerprint_after: String = db.conn.query_row(
+        "SELECT sha256 FROM snapshots WHERE id=?1",
+        [stored.snapshot_id()],
+        |row| row.get(0),
+    )?;
+    assert_eq!(after, before);
+    assert_eq!(fingerprint_after, fingerprint_before);
+    assert_eq!(derivative_count(&db)?, 1);
+    Ok(())
+}
+
+#[test]
 fn lossless_webp_optimization_rewrites_image_once_and_preserves_pixels() -> Result<()> {
     let mut db = Database::open_in_memory()?;
     let original = lossless_test_tiff()?;
