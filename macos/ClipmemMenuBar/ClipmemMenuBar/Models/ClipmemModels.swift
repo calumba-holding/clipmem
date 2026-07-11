@@ -284,6 +284,7 @@ struct SnapshotDetails: Decodable, Equatable, Sendable {
     var ocrStatus: String?
     var previewText: String?
     var searchText: String?
+    var textProjectionVersion: Int? = nil
     var itemCount: Int
     var totalBytes: Int
     var createdAt: String?
@@ -303,6 +304,7 @@ struct SnapshotDetails: Decodable, Equatable, Sendable {
                 return ImagePreviewRepresentation(
                     itemIndex: item.itemIndex,
                     uti: representation.uti,
+                    sourceRawSha256: representation.rawSha256,
                     fileExtension: representation.previewFileExtension
                 )
             }
@@ -328,10 +330,18 @@ struct SnapshotDetails: Decodable, Equatable, Sendable {
     }
 }
 
-struct ImagePreviewRepresentation: Equatable, Sendable {
+struct ImagePreviewRepresentation: Equatable, Hashable, Sendable {
     var itemIndex: Int
     var uti: String
+    var sourceRawSha256: String? = nil
     var fileExtension: String
+}
+
+struct ImagePreviewDescriptor: Equatable, Hashable, Sendable {
+    var snapshotId: Int
+    var snapshotSha256: String
+    var textProjectionVersion: Int?
+    var representation: ImagePreviewRepresentation
 }
 
 struct CaptureEvent: Decodable, Equatable, Identifiable, Sendable {
@@ -449,6 +459,22 @@ struct ExportOutput: Decodable, Equatable, Sendable {
     var byteCount: Int
     var rawSha256: String
     var out: String
+}
+
+struct PreviewOutput: Decodable, Equatable, Sendable {
+    var snapshotId: Int
+    var itemIndex: Int
+    var sourceUti: String
+    var status: String
+    var available: Bool
+    var sourceRawSha256: String?
+    var outputUti: String?
+    var encoderVersion: Int?
+    var encoderOptionsHash: String?
+    var width: Int?
+    var height: Int?
+    var byteCount: Int?
+    var out: String?
 }
 
 struct ForgetOutput: Decodable, Equatable, Sendable {

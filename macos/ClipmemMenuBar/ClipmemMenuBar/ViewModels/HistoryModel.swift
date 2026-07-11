@@ -27,6 +27,8 @@ final class HistoryModel {
     @ObservationIgnored private var loadGeneration = 0
     @ObservationIgnored private var detailGeneration = 0
     @ObservationIgnored private var loadedPageKey: HistoryPageKey?
+    @ObservationIgnored private var pageTask: Task<HistoryPage, Error>?
+    @ObservationIgnored private var detailTask: Task<SnapshotDetails, Error>?
 
     init(
         mode: QueryMode = UserDefaults.standard.clipmemDefaultMode,
@@ -62,14 +64,15 @@ final class HistoryModel {
     }
 
     func reload(selecting snapshotID: Int? = nil) async {
+        pageTask?.cancel()
+        detailTask?.cancel()
         loadGeneration += 1
         let generation = loadGeneration
         nextCursor = nil
         loadedPageKey = nil
-        results = []
         selectedID = snapshotID
         selectedRowID = nil
-        selectedDetail = nil
+        if selectedDetail?.snapshotId != snapshotID { selectedDetail = nil }
         await loadMore(generation: generation)
     }
 
@@ -84,6 +87,8 @@ final class HistoryModel {
         let generation = loadGeneration
         let previousSelectedID = selectedID
         let previousSelectedRowID = selectedRowID
+        let previousSelectedIndex = results.firstIndex { $0.id == previousSelectedRowID }
+        let previousCount = results.count
         let request = HistoryRequest(
             generation: generation,
             mode: resolvedMode,
@@ -100,10 +105,24 @@ final class HistoryModel {
         }
 
         do {
-            let page = try await loadPage(request)
+            var page = try await loadPageOwned(request)
             guard isCurrent(request) else { return }
+            var cursor = page.nextCursor
+            while page.items.count < min(previousCount, 200), let nextCursor = cursor {
+                let continuation = HistoryRequest(
+                    generation: generation,
+                    mode: request.mode,
+                    query: request.query,
+                    filters: request.filters,
+                    cursor: nextCursor
+                )
+                let next = try await loadPageOwned(continuation)
+                guard isCurrent(request) else { return }
+                page.items.append(contentsOf: next.items)
+                cursor = next.nextCursor
+            }
             results = page.items
-            nextCursor = page.nextCursor
+            nextCursor = cursor
             loadedPageKey = request.pageKey
             if let previousSelectedRowID, results.contains(where: { $0.id == previousSelectedRowID }) {
                 selectedRowID = previousSelectedRowID
@@ -112,8 +131,9 @@ final class HistoryModel {
                 selectedID = previousSelectedID
                 selectedRowID = results.first { $0.snapshotId == previousSelectedID }?.id
             } else {
-                selectedID = results.first?.snapshotId
-                selectedRowID = results.first?.id
+                let adjacentIndex = min(previousSelectedIndex ?? 0, max(results.count - 1, 0))
+                selectedID = results.isEmpty ? nil : results[adjacentIndex].snapshotId
+                selectedRowID = results.isEmpty ? nil : results[adjacentIndex].id
                 selectedDetail = nil
             }
             error = nil
@@ -140,7 +160,7 @@ final class HistoryModel {
             }
         }
         do {
-            let page = try await loadPage(request)
+            let page = try await loadPageOwned(request)
             guard isCurrent(request) else { return }
             if request.cursor == nil {
                 results = page.items
@@ -167,6 +187,7 @@ final class HistoryModel {
     }
 
     func loadSelectedDetail() async {
+        detailTask?.cancel()
         detailGeneration += 1
         let generation = detailGeneration
         guard let selectedID else {
@@ -180,14 +201,15 @@ final class HistoryModel {
             }
         }
         do {
-            let detail = try await detailLoader(selectedID)
+            let task = Task { try await detailLoader(selectedID) }
+            detailTask = task
+            let detail = try await task.value
             guard generation == detailGeneration, self.selectedID == selectedID else { return }
             selectedDetail = detail
             error = nil
         } catch is CancellationError {
         } catch {
             guard generation == detailGeneration, self.selectedID == selectedID else { return }
-            selectedDetail = nil
             self.error = UserError(error)
         }
     }
@@ -199,10 +221,12 @@ final class HistoryModel {
 
     func forgetSelected() async {
         guard let selectedID else { return }
+        let selectedIndex = results.firstIndex { $0.snapshotId == selectedID } ?? 0
         guard await appModel.forget(snapshotID: selectedID) else { return }
         results.removeAll { $0.snapshotId == selectedID }
-        self.selectedID = results.first?.snapshotId
-        selectedRowID = results.first?.id
+        let adjacentIndex = min(selectedIndex, max(results.count - 1, 0))
+        self.selectedID = results.isEmpty ? nil : results[adjacentIndex].snapshotId
+        selectedRowID = results.isEmpty ? nil : results[adjacentIndex].id
         await loadSelectedDetail()
     }
 
@@ -237,6 +261,13 @@ final class HistoryModel {
         case .diagnostics:
             return ([], nil)
         }
+    }
+
+    private func loadPageOwned(_ request: HistoryRequest) async throws -> HistoryPage {
+        pageTask?.cancel()
+        let task = Task { try await loadPage(request) }
+        pageTask = task
+        return try await task.value
     }
 
     private func isCurrent(_ request: HistoryRequest) -> Bool {

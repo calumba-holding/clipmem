@@ -1,4 +1,14 @@
 import Foundation
+import Darwin
+
+struct CommandTimeoutError: Error, LocalizedError, Equatable, Sendable {
+    let commandCategory: String
+    let deadline: String
+
+    var errorDescription: String? {
+        "The \(commandCategory) command exceeded its \(deadline) deadline."
+    }
+}
 
 struct CommandResult: Sendable {
     var exitCode: Int32
@@ -28,6 +38,12 @@ struct CommandRunner: Sendable {
     func run(executable: String, arguments: [String], timeout: Duration?) async throws -> CommandResult {
         let runningProcess = RunningProcess()
         let cancellationState = CancellationState()
+        let timeoutError = timeout.map {
+            CommandTimeoutError(
+                commandCategory: URL(fileURLWithPath: executable).lastPathComponent,
+                deadline: String(describing: $0)
+            )
+        }
         let processStarted = processStarted
         return try await withTaskCancellationHandler {
             let commandTask = Task.detached(priority: .userInitiated) {
@@ -77,8 +93,8 @@ struct CommandRunner: Sendable {
                 let timeoutTask = Task {
                     try? await Task.sleep(for: timeout)
                     if !Task.isCancelled {
-                        cancellationState.cancel()
-                        runningProcess.terminate()
+                        cancellationState.timeout(timeoutError!)
+                        runningProcess.terminateAndEscalate()
                     }
                 }
                 defer { timeoutTask.cancel() }
@@ -87,7 +103,7 @@ struct CommandRunner: Sendable {
             return try await commandTask.value
         } onCancel: {
             cancellationState.cancel()
-            runningProcess.terminate()
+            runningProcess.terminateAndEscalate()
         }
     }
 
@@ -136,7 +152,7 @@ struct CommandRunner: Sendable {
                     try cancellationState.checkCancellation()
                     return CommandResult(exitCode: process.terminationStatus, stdout: stdoutData, stderr: stderrData)
                 } catch {
-                    process.terminate()
+                    runningProcess.terminateAndEscalate()
                     stdout.fileHandleForReading.closeFile()
                     stdout.fileHandleForWriting.closeFile()
                     stderr.fileHandleForReading.closeFile()
@@ -150,7 +166,7 @@ struct CommandRunner: Sendable {
             }.value
         } onCancel: {
             cancellationState.cancel()
-            runningProcess.terminate()
+            runningProcess.terminateAndEscalate()
             pipeHandles.close()
         }
     }
@@ -206,11 +222,18 @@ private final class RunningProcess: @unchecked Sendable {
         lock.unlock()
     }
 
-    func terminate() {
+    func terminateAndEscalate() {
         lock.lock()
         let process = process
         lock.unlock()
-        process?.terminate()
+        guard let process, process.isRunning else { return }
+        process.terminate()
+        let pid = process.processIdentifier
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + .milliseconds(500)) {
+            if process.isRunning {
+                kill(pid, SIGKILL)
+            }
+        }
     }
 
     func clear() {
@@ -222,21 +245,25 @@ private final class RunningProcess: @unchecked Sendable {
 
 private final class CancellationState: @unchecked Sendable {
     private let lock = NSLock()
-    private var cancelled = false
+    private var error: (any Error & Sendable)?
 
     func cancel() {
         lock.lock()
-        cancelled = true
+        if error == nil { error = CancellationError() }
+        lock.unlock()
+    }
+
+    func timeout(_ timeoutError: CommandTimeoutError) {
+        lock.lock()
+        if error == nil { error = timeoutError }
         lock.unlock()
     }
 
     func checkCancellation() throws {
         lock.lock()
-        let cancelled = cancelled
+        let error = error
         lock.unlock()
-        if cancelled {
-            throw CancellationError()
-        }
+        if let error { throw error }
     }
 }
 
@@ -272,6 +299,7 @@ private final class PipeReader: @unchecked Sendable {
     private let semaphore = DispatchSemaphore(value: 0)
     private let lock = NSLock()
     private var data = Data()
+    private var isClosed = false
 
     init(fileHandle: FileHandle) {
         self.fileHandle = fileHandle
@@ -296,7 +324,13 @@ private final class PipeReader: @unchecked Sendable {
     }
 
     func close() {
-        fileHandle.closeFile()
-        semaphore.signal()
+        lock.lock()
+        guard isClosed == false else {
+            lock.unlock()
+            return
+        }
+        isClosed = true
+        lock.unlock()
+        try? fileHandle.close()
     }
 }

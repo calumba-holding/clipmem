@@ -2,6 +2,20 @@ import Testing
 @testable import ClipmemMenuBar
 
 struct CommandConstructionTests {
+    @Test func previewUsesTargetedDerivativeArguments() {
+        let command = ClipmemCommand.preview(
+            snapshotID: 42,
+            itemIndex: 1,
+            uti: "public.tiff",
+            destination: "/tmp/preview.jpg",
+            force: true
+        )
+
+        #expect(command.arguments == [
+            "preview", "42", "1", "public.tiff", "--out", "/tmp/preview.jpg",
+            "--format", "json", "--force"
+        ])
+    }
     @Test func databaseOverrideIsPrepended() {
         let command = ClipmemCommand.recent(limit: 25, cursor: "abc", filters: .defaultValue)
             .withDatabase("/tmp/clipmem.sqlite3")

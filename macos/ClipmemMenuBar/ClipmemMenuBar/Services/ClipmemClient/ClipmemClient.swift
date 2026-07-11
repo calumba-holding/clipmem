@@ -164,6 +164,14 @@ struct ClipmemClient: Sendable {
         try await decode(ExportOutput.self, from: .export(snapshotID: snapshotID, itemIndex: itemIndex, uti: uti, destination: destination, force: force))
     }
 
+    func preview(snapshotID: Int, itemIndex: Int, uti: String, destination: String, force: Bool) async throws -> PreviewOutput {
+        try await decode(
+            PreviewOutput.self,
+            from: .preview(snapshotID: snapshotID, itemIndex: itemIndex, uti: uti, destination: destination, force: force),
+            timeout: .seconds(8)
+        )
+    }
+
     func runAction(_ command: ClipmemCommand) async throws {
         _ = try await run(command)
     }
