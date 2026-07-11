@@ -7,5 +7,6 @@ pub(in crate::db::tests) use super::{sidecar_path, storage_file_sizes, TimelineC
 
 mod core;
 mod filters_and_migrations;
+mod fts_lifecycle;
 mod image_and_perf;
 mod indexes_and_profiles;

@@ -367,6 +367,12 @@ CREATE VIRTUAL TABLE IF NOT EXISTS snapshot_search_documents_literal_fts USING f
     tokenize='trigram'
 );
 
+CREATE TRIGGER IF NOT EXISTS snapshot_search_documents_ad
+AFTER DELETE ON snapshot_search_documents BEGIN
+    DELETE FROM snapshot_search_documents_fts WHERE rowid = old.snapshot_id;
+    DELETE FROM snapshot_search_documents_literal_fts WHERE rowid = old.snapshot_id;
+END;
+
 CREATE TRIGGER IF NOT EXISTS snapshots_ai AFTER INSERT ON snapshots BEGIN
     INSERT INTO snapshots_fts(rowid, search_text, preview_text)
     VALUES (new.id, new.search_text, new.preview_text);
