@@ -4,6 +4,7 @@ use rusqlite::params;
 mod archive_revision_migration;
 mod integrity_migration;
 mod purge_and_escaping;
+mod text_projection_migration;
 mod url_projection;
 
 #[test]
