@@ -9,6 +9,12 @@ versioning where practical.
 
 ## Unreleased
 
+### Changed
+
+- Updated the ClawHub `clipboard-memory` skill package to 1.3.8 so setup
+  guidance no longer promises an implicit clipboard capture and directs
+  explicit current-clipboard capture through `clipmem capture-once`.
+
 ## 0.6.0 - 2026-07-11
 
 Architecture release implementing the full ten-plan audit roadmap
