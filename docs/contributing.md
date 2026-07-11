@@ -76,6 +76,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 python3 scripts/check_file_lengths.py
 python3 scripts/check_version_sync.py
 python3 scripts/check_migration_matrix.py
+python3 scripts/check_plans_manifest.py
 cargo test
 ```
 
@@ -96,6 +97,11 @@ schema bump, add the former current version to the manifest and its permanent
 upgrade case; the check fails if `CURRENT_SCHEMA_VERSION`, the manifest, and
 the supported-version test diverge. Generate fixture databases in tests and
 migrate copies so source fixtures are never modified.
+
+The plans bundle is covered by `plans/MANIFEST.sha256`. After changing or
+adding a bundled plan or evidence file, regenerate it with
+`python3 scripts/check_plans_manifest.py --write`; CI checks the canonical
+path order and every file hash.
 
 The retrieval benchmark stays ignored during normal `cargo test`. Run it and
 write the same reviewable JSON artifact as CI with:
