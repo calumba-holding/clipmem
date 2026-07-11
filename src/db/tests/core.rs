@@ -139,28 +139,44 @@ fn current_open_modes_return_typed_schema_and_identity_errors() -> Result<()> {
 fn read_only_current_does_not_chmod_or_create_sqlite_sidecars() -> Result<()> {
     use std::os::unix::fs::PermissionsExt as _;
 
-    let path = temp_db_path("read-only-no-filesystem-writes");
+    // Sidecar-free reads are guaranteed on read-only media, where the
+    // immutable fallback is genuinely sound; live writable archives keep
+    // SQLite's normal locking protocol instead.
+    // An isolated directory: this test makes the parent read-only, which
+    // must not affect concurrently running tests in the shared temp dir.
+    let shared = temp_db_path("read-only-no-filesystem-writes");
+    let parent = shared.with_extension("dir");
+    std::fs::create_dir_all(&parent)?;
+    let path = parent.join("archive.sqlite3");
     drop(Database::open_or_init_and_migrate(&path)?);
     for suffix in ["-wal", "-shm"] {
         let _ = std::fs::remove_file(sidecar_path(&path, suffix));
     }
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640))?;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o440))?;
     let before = std::fs::metadata(&path)?.permissions().mode() & 0o777;
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o555))?;
 
-    let db = Database::open_read_only_current(&path)?;
-    let _: i64 = db
-        .conn
-        .query_row("SELECT COUNT(*) FROM snapshots", [], |row| row.get(0))?;
-    drop(db);
+    let result = (|| -> Result<()> {
+        let db = Database::open_read_only_current(&path)?;
+        let _: i64 = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM snapshots", [], |row| row.get(0))?;
+        drop(db);
 
-    assert_eq!(
-        std::fs::metadata(&path)?.permissions().mode() & 0o777,
-        before
-    );
-    assert!(!sidecar_path(&path, "-wal").exists());
-    assert!(!sidecar_path(&path, "-shm").exists());
+        assert_eq!(
+            std::fs::metadata(&path)?.permissions().mode() & 0o777,
+            before
+        );
+        assert!(!sidecar_path(&path, "-wal").exists());
+        assert!(!sidecar_path(&path, "-shm").exists());
+        Ok(())
+    })();
+
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o755))?;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640))?;
     cleanup_db(&path);
-    Ok(())
+    let _ = std::fs::remove_dir(&parent);
+    result
 }
 
 #[test]

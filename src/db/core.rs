@@ -178,22 +178,29 @@ fn open_current_read_only_connection(
     let flags = OpenFlags::SQLITE_OPEN_READ_ONLY
         | OpenFlags::SQLITE_OPEN_URI
         | OpenFlags::SQLITE_OPEN_NO_MUTEX;
-    let wal_exists = sidecar_path(path, "-wal").exists();
-    let shm_exists = sidecar_path(path, "-shm").exists();
-    if wal_exists || shm_exists {
-        return Connection::open_with_flags(path, flags)
-            .map_err(super::types::DatabaseOpenError::Sqlite);
+    // The normal read-only open keeps SQLite's locking/change detection
+    // intact: a live archive can gain a writer at any moment, so immutable=1
+    // is only sound when the filesystem itself prevents modification. Probe
+    // WAL access up front; it only fails where sidecars cannot be created
+    // (read-only media), which is exactly the immutable=1 contract.
+    match Connection::open_with_flags(path, flags) {
+        Ok(conn) => {
+            let probe: std::result::Result<i64, _> =
+                conn.query_row("PRAGMA schema_version", [], |row| row.get(0));
+            if probe.is_ok() {
+                return Ok(conn);
+            }
+        }
+        Err(_) => {}
     }
 
-    // A clean, checkpointed WAL database does not need sidecars. immutable=1 prevents SQLite
-    // from recreating empty -wal/-shm files for a routine read. Live-WAL archives deliberately
-    // use the normal read-only path above so committed frames remain visible.
     let absolute = path
         .canonicalize()
         .map_err(super::types::DatabaseOpenError::Io)?;
-    // URI encoding requires a UTF-8 path; Unix paths need not be UTF-8, so
-    // fall back to the plain read-only open (which accepts raw path bytes)
-    // rather than opening a lossy re-encoding of a different file name.
+    // URI encoding requires a UTF-8 path; Unix paths need not be UTF-8. A
+    // non-UTF-8 path on read-only media cannot use the URI fallback, so
+    // surface the plain open's failure rather than opening a lossy
+    // re-encoding of a different file name.
     let Some(encoded) = encode_sqlite_uri_path(&absolute) else {
         return Connection::open_with_flags(path, flags)
             .map_err(super::types::DatabaseOpenError::Sqlite);
