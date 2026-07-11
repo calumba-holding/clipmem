@@ -17,6 +17,8 @@ mod help_and_stats;
 mod hermes_agents;
 #[path = "cli_commands/pagination_and_exports.rs"]
 mod pagination_and_exports;
+#[path = "cli_commands/preview.rs"]
+mod preview;
 #[path = "cli_commands/recall_and_human.rs"]
 mod recall_and_human;
 #[path = "cli_commands/search_and_retrieval.rs"]

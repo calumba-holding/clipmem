@@ -14,9 +14,9 @@ use crate::cli::formats::OutputFormat;
 use crate::cli::human::{
     render_export_human, render_forget_human, render_purge_human, render_restore_human,
 };
-use crate::cli::output::{ExportOutput, RestoreOutput};
+use crate::cli::output::{ExportOutput, PreviewOutput, RestoreOutput};
 use crate::cli::presentation::emit_json_or_text;
-use crate::cli::schema::{ExportArgs, ForgetArgs, PurgeArgs, RestoreArgs};
+use crate::cli::schema::{ExportArgs, ForgetArgs, PreviewArgs, PurgeArgs, RestoreArgs};
 
 use super::mutation_support::require_text_or_json;
 use super::notify::notify_app_refresh;
@@ -70,6 +70,82 @@ pub(in crate::cli) fn export_snapshot_bytes(db_path: &Path, args: &ExportArgs) -
     }
 
     Ok(())
+}
+
+pub(in crate::cli) fn preview_snapshot_bytes(db_path: &Path, args: &PreviewArgs) -> Result<()> {
+    let format = require_text_or_json(args.output.resolved()?, "preview")?;
+    let db = open_read_only_db(db_path)?;
+    let preview = db.read_representation_preview(args.snapshot_id, args.item, &args.uti)?;
+
+    let output = if let Some(preview) = preview {
+        if let Some(parent) = args
+            .out
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create {}", parent.display()))?;
+        }
+        atomic_write_export(&args.out, args.force, preview.bytes())?;
+        PreviewOutput {
+            snapshot_id: args.snapshot_id,
+            item_index: args.item,
+            source_uti: args.uti.clone(),
+            status: "ready",
+            available: true,
+            source_raw_sha256: Some(preview.source_raw_sha256().to_string()),
+            output_uti: Some(preview.output_uti().to_string()),
+            encoder_version: Some(preview.encoder_version()),
+            encoder_options_hash: Some(preview.encoder_options_hash().to_string()),
+            width: Some(preview.width()),
+            height: Some(preview.height()),
+            byte_count: Some(preview.bytes().len()),
+            out: Some(args.out.display().to_string()),
+        }
+    } else {
+        PreviewOutput {
+            snapshot_id: args.snapshot_id,
+            item_index: args.item,
+            source_uti: args.uti.clone(),
+            status: "unavailable",
+            available: false,
+            source_raw_sha256: None,
+            output_uti: None,
+            encoder_version: None,
+            encoder_options_hash: None,
+            width: None,
+            height: None,
+            byte_count: None,
+            out: None,
+        }
+    };
+
+    emit_json_or_text(
+        matches!(format, OutputFormat::Json),
+        &output,
+        render_preview_text,
+    )
+}
+
+fn render_preview_text(output: &PreviewOutput) -> String {
+    if output.available {
+        format!(
+            "preview snapshot={} item={} source_uti={} status=ready output_uti={} bytes={} dimensions={}x{} out={}\n",
+            output.snapshot_id,
+            output.item_index,
+            output.source_uti,
+            output.output_uti.as_deref().unwrap_or("unknown"),
+            output.byte_count.unwrap_or_default(),
+            output.width.unwrap_or_default(),
+            output.height.unwrap_or_default(),
+            output.out.as_deref().unwrap_or("unknown")
+        )
+    } else {
+        format!(
+            "preview snapshot={} item={} source_uti={} status=unavailable available=false\n",
+            output.snapshot_id, output.item_index, output.source_uti
+        )
+    }
 }
 
 pub(in crate::cli) fn restore_snapshot(db_path: &Path, args: &RestoreArgs) -> Result<()> {

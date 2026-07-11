@@ -117,6 +117,9 @@ pub(super) fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
             validate_value(args.output.resolved())?;
             validate_value(args.filters.normalized())?;
         }
+        Command::Preview(args) => {
+            validate_value(args.output.resolved())?;
+        }
         Command::Restore(args) => {
             validate_value(args.output.resolved())?;
         }
