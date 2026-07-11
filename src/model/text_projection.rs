@@ -218,6 +218,28 @@ impl FlattenedTextProjection {
     }
 
     #[must_use]
+    pub fn with_native_text_fallback(mut self, native_text: Option<String>) -> Self {
+        if !self.text_fragments.is_empty() {
+            return self;
+        }
+        let Some(text) = native_text.and_then(|text| normalize_nonempty_display_text(&text)) else {
+            return self;
+        };
+        let uti = "com.clipmem.search-document.native-text".to_string();
+        self.best_text = text.clone();
+        self.best_text_uti = Some(uti.clone());
+        self.text_summary = truncate_chars(&text, TEXT_SUMMARY_LIMIT);
+        self.text_fragments.push(TextFragment {
+            text,
+            uti,
+            kind: ClipboardKind::PlainText,
+            item_index: 0,
+            representation_index: 0,
+        });
+        self
+    }
+
+    #[must_use]
     pub fn best_text(&self) -> &str {
         &self.best_text
     }

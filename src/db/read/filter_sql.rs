@@ -130,15 +130,6 @@ enum PresencePredicateSql {
 }
 
 const TEXT_RETRIEVAL_KINDS: &[&str] = &["plain_text", "html", "json", "xml", "rtf"];
-const TEXT_PRESENCE_KINDS: &[&str] = &[
-    "plain_text",
-    "url",
-    "file_url",
-    "html",
-    "json",
-    "xml",
-    "rtf",
-];
 const OTHER_SNAPSHOT_KINDS: &[&str] = &["mixed", "empty"];
 
 const RETRIEVAL_KIND_PREDICATES: &[RetrievalKindPredicate] = &[
@@ -273,15 +264,11 @@ fn presence_predicate_sql(
 ) -> String {
     match predicate {
         PresencePredicateSql::SearchableText => format!(
-            "(
-             {}
-             OR EXISTS (
-                 SELECT 1 FROM snapshot_ocr_cache soc
-                 WHERE soc.snapshot_id = {snapshot_id_expr}
-                   AND soc.ocr_text != ''
-             )
-         )",
-            representation_kind_exists_clause(snapshot_id_expr, TEXT_PRESENCE_KINDS, true)
+            "EXISTS (
+                 SELECT 1 FROM snapshot_search_documents ssd
+                 WHERE ssd.snapshot_id = {snapshot_id_expr}
+                   AND (ssd.has_native_text = 1 OR ssd.has_ocr_text = 1)
+             )"
         ),
         PresencePredicateSql::RepresentationKinds(kinds) => {
             representation_kind_exists_clause(snapshot_id_expr, kinds, false)

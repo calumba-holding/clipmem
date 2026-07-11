@@ -48,6 +48,19 @@ fn v23_rebuild_indexes_blob_backed_producer_text_uti() -> Result<()> {
             .len(),
         1
     );
+    let metadata = db
+        .find_snapshot_metadata(1, 1)?
+        .context("migrated snapshot metadata should exist")?;
+    assert_eq!(metadata.best_text(), String::from_utf8_lossy(csv));
+    assert_eq!(metadata.text_fragments().len(), 1);
+
+    let documents = db.find_snapshot_documents(&[1])?;
+    let list_projection = documents.get(&1).context("list projection should exist")?;
+    assert_eq!(list_projection.best_text(), String::from_utf8_lossy(csv));
+    assert_eq!(list_projection.text_fragments().len(), 1);
+
+    let with_text = RetrievalFilters::default().requiring_text();
+    assert_eq!(db.recent(10, &with_text)?.hits().len(), 1);
 
     drop(db);
     cleanup_db(&path);
