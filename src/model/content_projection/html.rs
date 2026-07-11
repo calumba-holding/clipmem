@@ -50,22 +50,17 @@ pub fn project_html(input: &str) -> TextProjectionResult {
     let mut out = String::new();
     let mut urls = Vec::new();
     let mut seen_urls = HashSet::new();
-    let mut hidden_depth = 0usize;
     let mut tags = 0usize;
     let mut cursor = 0usize;
 
     while cursor < input.len() && tags < MAX_TAGS {
         let rest = &input[cursor..];
         let Some(relative) = rest.find('<') else {
-            if hidden_depth == 0 {
-                push_decoded_text(&mut out, rest);
-            }
+            push_decoded_text(&mut out, rest);
             cursor = input.len();
             break;
         };
-        if hidden_depth == 0 {
-            push_decoded_text(&mut out, &rest[..relative]);
-        }
+        push_decoded_text(&mut out, &rest[..relative]);
         cursor += relative;
 
         if input[cursor..].starts_with("<!--") {
@@ -80,9 +75,7 @@ pub fn project_html(input: &str) -> TextProjectionResult {
 
         let Some(end) = find_tag_end(&input[cursor + 1..]) else {
             diagnostics.push(ProjectionDiagnostic::MalformedMarkup);
-            if hidden_depth == 0 {
-                push_decoded_text(&mut out, "<");
-            }
+            push_decoded_text(&mut out, "<");
             cursor += 1;
             continue;
         };
@@ -94,28 +87,54 @@ pub fn project_html(input: &str) -> TextProjectionResult {
             continue;
         }
         let hidden = HIDDEN.contains(&tag.name.as_str());
-        if tag.closing && hidden {
-            hidden_depth = hidden_depth.saturating_sub(1);
+        if hidden && !tag.closing && !tag.self_closing {
+            let Some(after_close) = find_raw_text_close(input, cursor, &tag.name) else {
+                diagnostics.push(ProjectionDiagnostic::MalformedMarkup);
+                cursor = input.len();
+                break;
+            };
+            cursor = after_close;
+            tags += 1;
+            continue;
         }
-        if hidden_depth == 0 {
-            if BLOCKS.contains(&tag.name.as_str()) {
-                push_boundary(&mut out);
-            }
-            for value in tag.urls {
-                let decoded = decode_entities(&value).trim().to_string();
-                if !decoded.is_empty() && seen_urls.insert(decoded.to_ascii_lowercase()) {
-                    urls.push(decoded);
-                }
-            }
+        if BLOCKS.contains(&tag.name.as_str()) {
+            push_boundary(&mut out);
         }
-        if !tag.closing && !tag.self_closing && hidden {
-            hidden_depth = hidden_depth.saturating_add(1);
+        for value in tag.urls {
+            let decoded = decode_entities(&value).trim().to_string();
+            if !decoded.is_empty() && seen_urls.insert(decoded.to_ascii_lowercase()) {
+                urls.push(decoded);
+            }
         }
     }
     if tags == MAX_TAGS && cursor < input.len() {
         diagnostics.push(ProjectionDiagnostic::InputTruncated);
     }
     finish(out, urls, diagnostics)
+}
+
+fn find_raw_text_close(input: &str, start: usize, name: &str) -> Option<usize> {
+    let rest = &input[start..];
+    for (relative, _) in rest.match_indices("</") {
+        let name_start = start + relative + 2;
+        let Some(candidate) = input.get(name_start..name_start + name.len()) else {
+            continue;
+        };
+        if !candidate.eq_ignore_ascii_case(name) {
+            continue;
+        }
+        let after_name = name_start + name.len();
+        if !input[after_name..]
+            .chars()
+            .next()
+            .is_some_and(|ch| ch == '>' || ch.is_ascii_whitespace())
+        {
+            continue;
+        }
+        let close_end = input[after_name..].find('>')?;
+        return Some(after_name + close_end + 1);
+    }
+    None
 }
 
 struct Tag {
@@ -308,6 +327,7 @@ fn decode_entity(entity: &str) -> Option<char> {
 #[cfg(test)]
 mod tests {
     use super::project_html;
+    use crate::model::ProjectionDiagnostic;
 
     #[test]
     fn visible_text_boundaries_entities_and_urls() {
@@ -321,5 +341,33 @@ mod tests {
     #[test]
     fn malformed_markup_is_best_effort() {
         assert_eq!(project_html("hello <broken").text, "hello <broken");
+    }
+
+    #[test]
+    fn script_markup_like_strings_do_not_hide_following_content() {
+        let projected = project_html(r#"<script>const x = "<style>";</script><p>Visible</p>"#);
+
+        assert_eq!(projected.text, "Visible");
+        assert!(projected.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn style_raw_text_ends_at_first_matching_close_tag() {
+        let projected = project_html(
+            r#"<style>.x::after { content: "</style>"; color: red }</style><p>Visible</p>"#,
+        );
+
+        assert_eq!(projected.text, "\"; color: red }\nVisible");
+        assert!(projected.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn unterminated_script_hides_remaining_text_with_diagnostic() {
+        let projected = project_html("Before<script>const x = '<p>hidden</p>';");
+
+        assert_eq!(projected.text, "Before");
+        assert!(projected
+            .diagnostics
+            .contains(&ProjectionDiagnostic::MalformedMarkup));
     }
 }
