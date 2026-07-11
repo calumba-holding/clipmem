@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use rusqlite::Connection;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use crate::model::{build_item, build_representation, FlattenedTextProjection};
 
@@ -32,7 +32,14 @@ pub(in crate::db) fn rebuild_snapshot_search_document(
             .context("load legacy canonical text fallback")?;
     }
     let has_native_text = !native_text.trim().is_empty();
-    let projected_urls = projection.urls().join("\n");
+    let legacy_urls: String = conn
+        .query_row(
+            "SELECT COALESCE((SELECT urls FROM snapshot_projection_cache WHERE snapshot_id = ?1), '')",
+            [snapshot_id],
+            |row| row.get(0),
+        )
+        .context("load legacy URL projection")?;
+    let merged_urls = merge_url_text(&legacy_urls, projection.urls());
     conn.execute(
         r"
         INSERT INTO snapshot_search_documents (
@@ -47,13 +54,13 @@ pub(in crate::db) fn rebuild_snapshot_search_document(
             ?3,
             COALESCE(s.preview_text, ''),
             COALESCE(soc.ocr_text, ''),
-            CASE WHEN COALESCE(sp.urls, '') != '' THEN sp.urls ELSE ?5 END,
+            ?5,
             COALESCE(sp.file_urls, ''),
             COALESCE(se.app_names_lower, ''),
             COALESCE(se.bundle_ids_lower, ''),
             ?4,
             COALESCE(soc.ocr_text, '') != '',
-            (COALESCE(sp.urls, '') != '' OR ?5 != ''),
+            ?5 != '',
             COALESCE(sp.file_urls, '') != '',
             EXISTS (SELECT 1 FROM item_representations ir WHERE ir.snapshot_id = s.id AND ir.kind = 'image'),
             EXISTS (SELECT 1 FROM item_representations ir WHERE ir.snapshot_id = s.id AND ir.kind = 'pdf'),
@@ -88,7 +95,7 @@ pub(in crate::db) fn rebuild_snapshot_search_document(
             SNAPSHOT_DOCUMENT_BUILDER_VERSION,
             native_text,
             has_native_text,
-            projected_urls,
+            merged_urls,
         ),
     )
     .context("build snapshot search document")?;
@@ -131,6 +138,24 @@ pub(in crate::db) fn rebuild_snapshot_search_document(
     )
     .context("insert snapshot literal FTS row")?;
     Ok(())
+}
+
+fn merge_url_text(native_urls: &str, projected_urls: &[String]) -> String {
+    let mut seen = native_urls
+        .split('\u{1f}')
+        .filter(|url| !url.is_empty())
+        .collect::<HashSet<_>>();
+    let additions = projected_urls
+        .iter()
+        .map(String::as_str)
+        .filter(|url| seen.insert(url))
+        .collect::<Vec<_>>();
+
+    match (native_urls.is_empty(), additions.is_empty()) {
+        (_, true) => native_urls.to_string(),
+        (true, false) => additions.join("\n"),
+        (false, false) => format!("{native_urls}\n{}", additions.join("\n")),
+    }
 }
 
 fn load_text_projection(conn: &Connection, snapshot_id: i64) -> Result<FlattenedTextProjection> {
