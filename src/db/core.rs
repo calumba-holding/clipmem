@@ -191,16 +191,25 @@ fn open_current_read_only_connection(
     let absolute = path
         .canonicalize()
         .map_err(super::types::DatabaseOpenError::Io)?;
-    let uri = format!("file:{}?immutable=1", encode_sqlite_uri_path(&absolute));
+    // URI encoding requires a UTF-8 path; Unix paths need not be UTF-8, so
+    // fall back to the plain read-only open (which accepts raw path bytes)
+    // rather than opening a lossy re-encoding of a different file name.
+    let Some(encoded) = encode_sqlite_uri_path(&absolute) else {
+        return Connection::open_with_flags(path, flags)
+            .map_err(super::types::DatabaseOpenError::Sqlite);
+    };
+    let uri = format!("file:{encoded}?immutable=1");
     Connection::open_with_flags(uri, flags).map_err(super::types::DatabaseOpenError::Sqlite)
 }
 
-fn encode_sqlite_uri_path(path: &Path) -> String {
-    path.to_string_lossy()
-        .replace('%', "%25")
-        .replace('?', "%3F")
-        .replace('#', "%23")
-        .replace(' ', "%20")
+fn encode_sqlite_uri_path(path: &Path) -> Option<String> {
+    Some(
+        path.to_str()?
+            .replace('%', "%25")
+            .replace('?', "%3F")
+            .replace('#', "%23")
+            .replace(' ', "%20"),
+    )
 }
 
 const CLIPMEM_APPLICATION_ID: i64 = 1_129_137_485;

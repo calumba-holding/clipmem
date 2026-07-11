@@ -120,11 +120,13 @@ envelope:
 - `best_candidate` — the top-ranked row
 - `alternatives` — lower-ranked candidate rows
 - `why_selected` — short explanation of why this candidate was picked
-- `best_match_confidence` — `"high"`, `"medium"`, `"low"`, or
-  `"query_match"`. Complex explicit FTS queries use `"query_match"`
-  because term coverage isn't meaningful for that syntax.
-- `best_match_score` — evidence-derived float in `[0.0, 1.0]`, or
-  `null` for complex explicit FTS syntax.
+- `best_match_confidence` — `"high"`, `"medium"`, or `"low"`.
+- `best_match_score` — evidence-derived float in `[0.0, 1.0]`. Complex
+  explicit FTS queries, where term coverage isn't meaningful, report
+  the neutral evidence tier `0.5`.
+- `match_kind` — `"scored"` when the score comes from per-hit match
+  quality, `"query_match"` when a complex explicit FTS query matched
+  and the neutral fallback score applies.
 - `score_semantics` — currently `"evidence_v1"`.
 - `quoted_text` — present only when `--quote` is set and usable text
   exists
