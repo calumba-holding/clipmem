@@ -22,6 +22,35 @@ fn jpeg_with_exif_orientation(width: u32, height: u32, orientation: u16) -> Resu
     Ok(oriented)
 }
 
+fn image_with_distinguishing_text_snapshot(
+    change_count: i64,
+    text: &str,
+    image: &[u8],
+) -> ClipboardSnapshot {
+    build_snapshot(
+        CaptureContext::new(change_count),
+        vec![build_item(
+            0,
+            vec![
+                build_representation(
+                    "public.utf8-plain-text".to_string(),
+                    None,
+                    text.as_bytes().to_vec(),
+                ),
+                build_representation("public.tiff".to_string(), None, image.to_vec()),
+            ],
+        )],
+    )
+}
+
+fn derivative_count(db: &Database) -> Result<i64> {
+    Ok(db.conn.query_row(
+        "SELECT COUNT(*) FROM representation_derivatives",
+        [],
+        |row| row.get(0),
+    )?)
+}
+
 #[test]
 fn new_image_captures_start_uncompressed() -> Result<()> {
     let mut db = Database::open_in_memory()?;
@@ -53,6 +82,59 @@ fn preview_applies_exif_orientation_before_resizing() -> Result<()> {
     assert_eq!((preview.width(), preview.height()), (2, 3));
     let decoded = image::load_from_memory(preview.bytes())?;
     assert_eq!((decoded.width(), decoded.height()), (2, 3));
+    Ok(())
+}
+
+#[test]
+fn forget_removes_derivative_after_last_source_reference() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let stored = db.store_capture(&image_snapshot(
+        1,
+        vec![("public.tiff", lossless_test_tiff()?)],
+    ))?;
+    db.optimize_images(false, None, false)?;
+    assert_eq!(derivative_count(&db)?, 1);
+
+    db.forget_snapshot(stored.snapshot_id())?;
+    assert_eq!(derivative_count(&db)?, 0);
+    Ok(())
+}
+
+#[test]
+fn forget_preserves_shared_derivative_until_last_source_reference() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let image = lossless_test_tiff()?;
+    let first = db.store_capture(&image_with_distinguishing_text_snapshot(1, "first", &image))?;
+    let second = db.store_capture(&image_with_distinguishing_text_snapshot(
+        2, "second", &image,
+    ))?;
+    db.optimize_images(false, None, false)?;
+    assert_eq!(derivative_count(&db)?, 1);
+
+    db.forget_snapshot(first.snapshot_id())?;
+    assert_eq!(derivative_count(&db)?, 1);
+    db.forget_snapshot(second.snapshot_id())?;
+    assert_eq!(derivative_count(&db)?, 0);
+    Ok(())
+}
+
+#[test]
+fn purge_preserves_shared_derivative_and_removes_it_after_last_reference() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let image = lossless_test_tiff()?;
+    let old = db.store_capture(&image_with_distinguishing_text_snapshot(1, "old", &image))?;
+    let fresh = db.store_capture(&image_with_distinguishing_text_snapshot(2, "fresh", &image))?;
+    db.optimize_images(false, None, false)?;
+    set_event_observed_at(&db, old.event_id(), "2000-01-01 00:00:00")?;
+
+    let first_purge = db.purge_snapshots_older_than(60, false)?;
+    assert_eq!(first_purge.snapshot_count(), 1);
+    assert_eq!(derivative_count(&db)?, 1);
+
+    set_event_observed_at(&db, fresh.event_id(), "2000-01-01 00:00:00")?;
+    let second_purge = db.purge_snapshots_older_than(60, false)?;
+    assert_eq!(second_purge.snapshot_count(), 1);
+    assert_eq!(derivative_count(&db)?, 0);
     Ok(())
 }
 
