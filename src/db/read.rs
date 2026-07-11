@@ -1,6 +1,7 @@
 mod browse;
 #[cfg(test)]
 mod contract_tests;
+mod derivative;
 mod filter_sql;
 mod invariants;
 mod queries;
