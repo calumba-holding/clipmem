@@ -101,7 +101,8 @@ migrate copies so source fixtures are never modified.
 The plans bundle is covered by `plans/MANIFEST.sha256`. After changing or
 adding a bundled plan or evidence file, regenerate it with
 `python3 scripts/check_plans_manifest.py --write`; CI checks the canonical
-path order and every file hash.
+path order and every Git-tracked regular file hash while ignoring untracked
+workspace noise such as `.DS_Store`.
 
 The retrieval benchmark stays ignored during normal `cargo test`. Run it and
 write the same reviewable JSON artifact as CI with:

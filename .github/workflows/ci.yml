@@ -51,7 +51,9 @@ jobs:
         run: python3 scripts/check_migration_matrix.py
 
       - name: Check bundled plans manifest
-        run: python3 scripts/check_plans_manifest.py
+        run: |
+          python3 scripts/check_plans_manifest.py --self-test
+          python3 scripts/check_plans_manifest.py
 
       - name: Run tests
         run: cargo test
