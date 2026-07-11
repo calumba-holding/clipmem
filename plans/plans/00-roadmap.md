@@ -1,3 +1,10 @@
+---
+status: accepted
+created: 2026-07-10
+last-verified: 2026-07-11
+owners: []
+---
+
 # Implementation roadmap
 
 ## Delivery rules

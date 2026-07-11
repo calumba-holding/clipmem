@@ -1,3 +1,11 @@
+---
+status: implemented
+created: 2026-07-10
+last-verified: 2026-07-11
+implemented-in: schema v22 merged implementation
+owners: []
+---
+
 # Plan 5 — Durable background jobs
 
 **Priority:** P1  

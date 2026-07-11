@@ -1,3 +1,11 @@
+---
+status: abandoned
+created: 2026-07-10
+last-verified: 2026-07-11
+implemented-in: measurement gate rejected; direct CLI retained
+owners: []
+---
+
 # Plan 7 — Long-lived local service boundary
 
 **Priority:** P1/P2 architecture gate, not automatic  

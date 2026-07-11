@@ -1,8 +1,12 @@
 ---
 title: "feat: Reach full agent-native architecture coverage"
 type: feat
-status: active
-date: 2026-04-29
+status: superseded
+created: 2026-04-29
+last-verified: 2026-07-11
+implemented-in: current repository state
+superseded-by: docs/plans/2026-04-29-002-feat-close-agent-native-audit-gaps-plan.md
+owners: []
 ---
 
 # feat: Reach full agent-native architecture coverage

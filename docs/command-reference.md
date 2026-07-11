@@ -22,7 +22,7 @@ subcommand. For conceptual explanations and usage guidance, see
 | `purge` | `text` | — | Delete old snapshots by age |
 | `storage compact` | `text` | — | Reclaim SQLite and WAL disk space |
 | `storage image-candidates` | `text` | — | List image rows eligible for optimization |
-| `storage optimize-images` | `text` | — | Convert eligible images to lossless WebP; stream progress with `--progress jsonl` |
+| `storage optimize-images` | `text` | — | Build lossless WebP preview derivatives; stream progress with `--progress jsonl` |
 | `settings show` | `text` | no | Show capture policy |
 | `settings pause` | `text` | — | Pause or resume capture |
 | `settings api-key-filter` | `text` | — | Enable or disable API key filtering |
@@ -342,11 +342,9 @@ clipmem storage image-candidates --limit 50 --format json
 
 ### `clipmem storage optimize-images`
 
-Convert eligible stored image representations to lossless WebP. The
-optimizer replaces the original encoded image bytes only when WebP
-saves at least 10% and at least 64 KiB. It preserves exact decoded
-pixels, including alpha, but not original PNG/TIFF/JPEG container
-metadata.
+Build bounded lossless WebP previews for eligible image representations. The
+captured UTI, bytes, raw hash, and snapshot fingerprint remain unchanged;
+restore and export always use those source bytes.
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
@@ -367,13 +365,11 @@ clipmem storage optimize-images --limit 50 --format json
 clipmem storage optimize-images --progress jsonl
 ```
 
-Rows already marked `compressed` or `skipped` are not retried by
-normal runs. Without `--limit`, a run scans all image rows that are
-currently eligible; use `--limit` only when you want an intentionally
-bounded batch. JSON output reports scanned rows, compressed rows,
-skipped rows, conflicts, original bytes, optimized bytes, logical bytes
-saved, whether compaction ran, filesystem bytes reclaimed, and whether
-database compaction is still recommended.
+Already-built or skipped derivative candidates are not retried by normal runs.
+Without `--limit`, a run scans all currently eligible sources; use `--limit`
+for an intentionally bounded batch. JSON field names remain compatible with
+older clients, including the historical `compressed`/`optimized` counters, but
+logical source bytes saved is zero because sources are preserved.
 
 `--progress jsonl` streams newline-delimited JSON records to stdout and
 cannot be combined with `--format`, `--json`, or `--human`. Progress

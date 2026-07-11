@@ -75,6 +75,7 @@ cargo fmt --all --check
 cargo clippy --all-targets --all-features -- -D warnings
 python3 scripts/check_file_lengths.py
 python3 scripts/check_version_sync.py
+python3 scripts/check_migration_matrix.py
 cargo test
 ```
 
@@ -89,6 +90,22 @@ cycles short.
 
 The CLI integration tests in `tests/cli_commands/` exercise every command,
 flag combination, filter, and output format.
+
+Migration boundaries are frozen in `scripts/migration-matrix.json`. Before a
+schema bump, add the former current version to the manifest and its permanent
+upgrade case; the check fails if `CURRENT_SCHEMA_VERSION`, the manifest, and
+the supported-version test diverge. Generate fixture databases in tests and
+migrate copies so source fixtures are never modified.
+
+The retrieval benchmark stays ignored during normal `cargo test`. Run it and
+write the same reviewable JSON artifact as CI with:
+
+```bash
+scripts/run_search_benchmark.sh artifacts/search-benchmark/report.json
+```
+
+CI archives that report on Linux and macOS. Quality ordering is correctness;
+latency is review evidence until repeated runner baselines justify thresholds.
 
 ## Build and test the menu bar app
 

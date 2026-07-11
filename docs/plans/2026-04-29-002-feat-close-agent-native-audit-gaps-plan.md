@@ -1,8 +1,11 @@
 ---
 title: "feat: Close remaining agent-native audit gaps"
 type: feat
-status: completed
-date: 2026-04-29
+status: implemented
+created: 2026-04-29
+last-verified: 2026-07-11
+implemented-in: current repository state
+owners: []
 origin: docs/plans/2026-04-29-001-feat-agent-native-completeness-plan.md
 ---
 

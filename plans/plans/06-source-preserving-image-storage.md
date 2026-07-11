@@ -1,3 +1,11 @@
+---
+status: implemented
+created: 2026-07-10
+last-verified: 2026-07-11
+implemented-in: schema v21 merged implementation
+owners: []
+---
+
 # Plan 6 — Source-preserving image storage and previews
 
 **Priority:** P1  

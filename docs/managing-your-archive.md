@@ -103,13 +103,12 @@ Use the dry run first if you want to inspect current DB/WAL/SHM file
 sizes, page count, freelist count, and checkpoint state. A real compact
 may need temporary disk space while SQLite rebuilds the database.
 
-## Optimize stored images
+## Build image previews
 
-`storage optimize-images` rewrites eligible stored image
-representations as lossless WebP when doing so saves meaningful space,
-then compacts SQLite storage by default so freed pages are returned to
-the filesystem. Exact decoded pixels are preserved, including alpha,
-but original encoded container metadata is not preserved.
+`storage optimize-images` is the compatibility name for building bounded
+lossless WebP preview derivatives. It never replaces the captured image UTI,
+bytes, hash, or snapshot fingerprint. Preview derivatives are disposable cache
+state; restore and export continue to use the exact captured source bytes.
 
 ```bash
 clipmem storage optimize-images --dry-run --format json
@@ -118,14 +117,11 @@ clipmem storage optimize-images --no-compact --limit 50 --format json
 clipmem storage optimize-images --progress jsonl
 ```
 
-Only image rows marked `uncompressed` are considered. Rows converted
-to WebP are marked `compressed`, and rows that are unsupported,
-corrupt, animated, not smaller, or conflict with existing archive rows
-are marked `skipped`. Normal optimization runs never retry rows that
-have already been compressed or skipped. Omit `--limit` to scan all
-current candidates, or add `--limit` when you intentionally want a
-bounded batch. Use `--no-compact` only when you want to batch several
-limited optimization runs and compact once at the end.
+Eligible sources receive at most one current preview for a given encoder
+version and options. Unsupported, corrupt, animated, or already-processed
+sources are skipped. Omit `--limit` to scan all current candidates, or add it
+for a bounded batch. The existing report field names remain stable for JSON
+consumers even though source bytes are now immutable.
 
 ## Capture policy
 
@@ -175,7 +171,8 @@ clipmem settings retention forever
 ```
 
 Retention ages snapshots by `last_observed_at`, not the original
-insertion time.
+insertion time. Deleting the last source reference also removes its disposable
+preview derivative, OCR result, and durable OCR/preview job.
 
 ### Ignore list
 

@@ -10,6 +10,10 @@ clipmem doctor
 clipmem service status
 ```
 
+Use `clipmem doctor --verify-invariants --json` for the deeper read-only
+relational and canonical-projection checks. Verification reports findings and
+does not modify or repair the archive.
+
 ## Empty or weak recall results
 
 Work through these in order, stopping when the result improves:

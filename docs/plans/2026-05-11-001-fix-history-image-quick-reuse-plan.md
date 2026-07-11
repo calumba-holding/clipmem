@@ -1,8 +1,12 @@
 ---
 title: "fix: Make History images quick to preview and copy"
 type: fix
-status: completed
-date: 2026-05-11
+status: superseded
+created: 2026-05-11
+last-verified: 2026-07-11
+implemented-in: current repository state
+superseded-by: "plans 3, 6, and 8 in plans/plans"
+owners: []
 ---
 
 # fix: Make History images quick to preview and copy
