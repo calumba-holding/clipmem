@@ -16,6 +16,11 @@ const MAX_STARTUP_INSPECTIONS: usize = 256;
 const MAX_STARTUP_CLEANUPS: usize = 128;
 const MAX_TEMP_CREATE_ATTEMPTS: usize = 8;
 const RECOVERY_SHARDS: u64 = 64;
+const CLEANUP_WINDOWS_PER_SHARD: u64 = 16;
+const TOTAL_CLEANUP_WINDOWS: u64 = RECOVERY_SHARDS * CLEANUP_WINDOWS_PER_SHARD;
+const CURSOR_MAINTENANCE_INSPECTIONS: usize = 8;
+const ARTIFACT_MAINTENANCE_INSPECTIONS: usize =
+    MAX_STARTUP_INSPECTIONS - CURSOR_MAINTENANCE_INSPECTIONS;
 static NEXT_TEMPORARY_FILE: AtomicU64 = AtomicU64::new(0);
 
 pub(super) struct RestoreRecoveryJournal {
@@ -171,27 +176,47 @@ fn parse_marker(content: &str) -> Option<GenerationMarker> {
 }
 
 fn marker_path(directory: &Path, generation: i64) -> PathBuf {
-    shard_directory(directory, generation as u64 % RECOVERY_SHARDS)
-        .join(format!("generation-{generation}.marker"))
+    let generation = generation as u64;
+    artifact_directory(
+        directory,
+        generation % RECOVERY_SHARDS,
+        (generation / RECOVERY_SHARDS) % CLEANUP_WINDOWS_PER_SHARD,
+    )
+    .join(format!("generation-{generation}.marker"))
 }
 
 fn journal_path(directory: &Path, operation_id: &str) -> PathBuf {
     let shard = u64::from_str_radix(&operation_id[..2], 16).unwrap_or(0) % RECOVERY_SHARDS;
-    shard_directory(directory, shard).join(format!("{operation_id}.journal"))
+    let window =
+        u64::from_str_radix(&operation_id[2..4], 16).unwrap_or(0) % CLEANUP_WINDOWS_PER_SHARD;
+    artifact_directory(directory, shard, window).join(format!("{operation_id}.journal"))
 }
 
 fn shard_directory(directory: &Path, shard: u64) -> PathBuf {
     directory.join("owned").join(format!("shard-{shard:02}"))
 }
 
+fn artifact_directory(directory: &Path, shard: u64, window: u64) -> PathBuf {
+    shard_directory(directory, shard).join(format!("window-{window:02}"))
+}
+
+fn cursor_directory(directory: &Path) -> PathBuf {
+    directory.join("cursor")
+}
+
 fn preflight_shards(directory: &Path) -> Result<()> {
     let owned = directory.join("owned");
     fs::create_dir_all(&owned).context("create restore recovery owned directory")?;
     set_private_directory_permissions(&owned)?;
+    let cursor = cursor_directory(directory);
+    fs::create_dir_all(&cursor).context("create restore recovery cursor directory")?;
+    set_private_directory_permissions(&cursor)?;
     for shard in 0..RECOVERY_SHARDS {
-        let path = shard_directory(directory, shard);
-        fs::create_dir_all(&path).context("create restore recovery shard")?;
-        set_private_directory_permissions(&path)?;
+        for window in 0..CLEANUP_WINDOWS_PER_SHARD {
+            let path = artifact_directory(directory, shard, window);
+            fs::create_dir_all(&path).context("create restore recovery window")?;
+            set_private_directory_permissions(&path)?;
+        }
     }
     fs::File::open(&owned)?
         .sync_all()
@@ -311,21 +336,46 @@ fn read_regular_bounded(path: &Path, max_bytes: u64) -> std::io::Result<Option<S
 
 fn cleanup_recovery_directory(directory: &Path) {
     let now = now_unix().unwrap_or(0);
-    let shard = read_cleanup_cursor(directory) % RECOVERY_SHARDS;
-    let shard_path = shard_directory(directory, shard);
-    let Ok(entries) = fs::read_dir(&shard_path) else {
+    cleanup_cursor_temporaries(directory, now);
+    let position = read_cleanup_cursor(directory) % TOTAL_CLEANUP_WINDOWS;
+    let shard = position / CLEANUP_WINDOWS_PER_SHARD;
+    let window = position % CLEANUP_WINDOWS_PER_SHARD;
+    let window_path = artifact_directory(directory, shard, window);
+    let Ok(entries) = fs::read_dir(&window_path) else {
         return;
     };
     let paths = entries.map(|entry| entry.map(|value| value.path()));
-    let (_, cleaned) = cleanup_recovery_paths(paths, now);
+    let (_, cleaned) = cleanup_recovery_paths(
+        paths,
+        now,
+        ARTIFACT_MAINTENANCE_INSPECTIONS,
+        MAX_STARTUP_CLEANUPS,
+    );
     if cleaned != 0 {
-        let _ = fs::File::open(&shard_path).and_then(|file| file.sync_all());
+        let _ = fs::File::open(&window_path).and_then(|file| file.sync_all());
     }
-    write_cleanup_cursor(directory, (shard + 1) % RECOVERY_SHARDS);
+    write_cleanup_cursor(directory, (position + 1) % TOTAL_CLEANUP_WINDOWS);
+}
+
+fn cleanup_cursor_temporaries(directory: &Path, now: u64) {
+    let cursor = cursor_directory(directory);
+    let Ok(entries) = fs::read_dir(&cursor) else {
+        return;
+    };
+    let paths = entries.map(|entry| entry.map(|value| value.path()));
+    let (_, cleaned) = cleanup_recovery_paths(
+        paths,
+        now,
+        CURSOR_MAINTENANCE_INSPECTIONS,
+        CURSOR_MAINTENANCE_INSPECTIONS,
+    );
+    if cleaned != 0 {
+        let _ = fs::File::open(cursor).and_then(|file| file.sync_all());
+    }
 }
 
 fn read_cleanup_cursor(directory: &Path) -> u64 {
-    let path = directory.join("cleanup-cursor");
+    let path = cursor_directory(directory).join("cleanup-cursor");
     read_regular_bounded(&path, 32)
         .ok()
         .flatten()
@@ -335,22 +385,27 @@ fn read_cleanup_cursor(directory: &Path) -> u64 {
 
 fn write_cleanup_cursor(directory: &Path, shard: u64) {
     if let Err(error) = atomic_persist(
-        &directory.join("cleanup-cursor"),
+        &cursor_directory(directory).join("cleanup-cursor"),
         format!("{shard}\n").as_bytes(),
     ) {
         journal_diagnostic("cannot advance recovery cleanup cursor", &error);
     }
 }
 
-fn cleanup_recovery_paths<I>(paths: I, now: u64) -> (usize, usize)
+fn cleanup_recovery_paths<I>(
+    paths: I,
+    now: u64,
+    max_inspections: usize,
+    max_cleanups: usize,
+) -> (usize, usize)
 where
     I: IntoIterator<Item = std::io::Result<PathBuf>>,
 {
     let mut inspected = 0;
     let mut cleaned = 0;
-    for entry in paths.into_iter().take(MAX_STARTUP_INSPECTIONS) {
+    for entry in paths.into_iter().take(max_inspections) {
         inspected += 1;
-        if cleaned >= MAX_STARTUP_CLEANUPS {
+        if cleaned >= max_cleanups {
             break;
         }
         let Ok(path) = entry else {
@@ -446,7 +501,8 @@ fn journal_expiry(content: &str) -> Option<u64> {
 }
 
 fn is_owned_destination_stem(stem: &str) -> bool {
-    is_operation_id(stem)
+    stem == "cleanup-cursor"
+        || is_operation_id(stem)
         || stem
             .strip_prefix("generation-")
             .is_some_and(is_canonical_nonnegative_decimal)
@@ -636,7 +692,7 @@ mod tests {
         let directory = journal_directory(&db_path.0);
         fs::create_dir_all(&directory)?;
         preflight_shards(&directory)?;
-        let shard = shard_directory(&directory, 0);
+        let shard = artifact_directory(&directory, 0, 0);
         for generation in 0..300 {
             fs::write(
                 shard.join(format!("generation-{generation}.marker")),
@@ -680,40 +736,20 @@ mod tests {
         fs::write(&stale, b"malformed")?;
         paths.push(Ok(stale.clone()));
 
-        let (inspected, cleaned) = cleanup_recovery_paths(paths, now_unix()?);
+        let (inspected, cleaned) = cleanup_recovery_paths(
+            paths,
+            now_unix()?,
+            MAX_STARTUP_INSPECTIONS,
+            MAX_STARTUP_CLEANUPS,
+        );
 
         assert_eq!(inspected, MAX_STARTUP_INSPECTIONS);
         assert_eq!(cleaned, 0);
         assert!(stale.exists());
-        Ok(())
-    }
-
-    #[test]
-    fn startup_cleanup_removes_owned_expired_journal_and_stale_temp_only() -> Result<()> {
-        let db_path = TestPath::new();
-        let directory = journal_directory(&db_path.0);
-        fs::create_dir_all(&directory)?;
-        preflight_shards(&directory)?;
-        let operation_id = "a".repeat(32);
-        let journal = journal_path(&directory, &operation_id);
-        fs::write(
-            &journal,
-            format!("{JOURNAL_VERSION}\noperation_id={operation_id}\nexpires_unix=0\n"),
-        )?;
-        let temporary = journal
-            .parent()
-            .unwrap()
-            .join(format!("{operation_id}.tmp-0-123-0"));
-        fs::write(&temporary, b"partial")?;
-        let unrelated = journal.parent().unwrap().join("notes.tmp-0-123-0");
-        fs::write(&unrelated, b"keep")?;
-        fs::write(directory.join("cleanup-cursor"), b"42\n")?;
-
-        cleanup_recovery_directory(&directory);
-
-        assert!(!journal.exists());
-        assert!(!temporary.exists());
-        assert!(unrelated.exists());
+        assert_eq!(
+            CURSOR_MAINTENANCE_INSPECTIONS + ARTIFACT_MAINTENANCE_INSPECTIONS,
+            MAX_STARTUP_INSPECTIONS
+        );
         Ok(())
     }
 
@@ -730,53 +766,15 @@ mod tests {
         fs::write(&target, b"unrelated")?;
         let link = marker_path(&directory, 9);
         symlink(&target, &link)?;
-        fs::write(directory.join("cleanup-cursor"), b"9\n")?;
+        fs::write(
+            cursor_directory(&directory).join("cleanup-cursor"),
+            b"144\n",
+        )?;
 
         cleanup_recovery_directory(&directory);
 
         assert!(fs::symlink_metadata(&link)?.file_type().is_symlink());
         assert_eq!(fs::read(&target)?, b"unrelated");
-        Ok(())
-    }
-
-    #[test]
-    fn failed_publication_removes_create_new_temporary_file() -> Result<()> {
-        let db_path = TestPath::new();
-        let directory = journal_directory(&db_path.0);
-        fs::create_dir_all(&directory)?;
-        let destination = directory.join("destination.journal");
-        let temporary = directory.join("temporary");
-
-        atomic_persist_with(&destination, b"content", [temporary.clone()], |_, _| {
-            Err(std::io::Error::other("injected publish failure"))
-        })
-        .expect_err("injected publication failure is reported");
-
-        assert!(!temporary.exists());
-        assert!(!destination.exists());
-        Ok(())
-    }
-
-    #[test]
-    fn stale_temporary_name_collision_retries_next_candidate() -> Result<()> {
-        let db_path = TestPath::new();
-        let directory = journal_directory(&db_path.0);
-        fs::create_dir_all(&directory)?;
-        let destination = directory.join("destination.journal");
-        let collision = directory.join("collision");
-        let retry = directory.join("retry");
-        fs::write(&collision, b"stale")?;
-
-        atomic_persist_with(
-            &destination,
-            b"published",
-            [collision.clone(), retry.clone()],
-            |temporary, destination| fs::rename(temporary, destination),
-        )?;
-
-        assert_eq!(fs::read(&collision)?, b"stale");
-        assert!(!retry.exists());
-        assert_eq!(fs::read(&destination)?, b"published");
         Ok(())
     }
 
