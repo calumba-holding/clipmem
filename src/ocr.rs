@@ -248,7 +248,7 @@ mod tests {
         db.enqueue_ocr_for_snapshot(stored.snapshot_id())?;
 
         let first = db.next_ocr_candidates(1, None, false)?;
-        assert!(first.is_empty());
+        assert_eq!(first.len(), 1);
         let orphan_state: String = db.conn.query_row(
             "SELECT state FROM jobs WHERE kind = 'ocr' AND dedupe_key = 'orphan-hash'",
             [],
@@ -256,8 +256,29 @@ mod tests {
         )?;
         assert_eq!(orphan_state, "skipped");
 
-        let second = db.next_ocr_candidates(1, None, false)?;
-        assert_eq!(second.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn multiple_vanished_sources_are_skipped_before_returning_valid_work() -> anyhow::Result<()> {
+        let mut db = Database::open_in_memory()?;
+        for hash in ["orphan-a", "orphan-b", "orphan-c"] {
+            db.conn.execute(
+                "INSERT INTO jobs (kind, dedupe_key, algorithm_version, source_ref_json) VALUES ('ocr', ?1, 'vision-v1', '{}')",
+                [hash],
+            )?;
+        }
+        let stored = db.store_capture(&image_snapshot(1, b"valid-after-orphans".to_vec()))?;
+        db.enqueue_ocr_for_snapshot(stored.snapshot_id())?;
+
+        let candidates = db.next_ocr_candidates(1, None, false)?;
+        assert_eq!(candidates.len(), 1);
+        let skipped: i64 = db.conn.query_row(
+            "SELECT COUNT(*) FROM jobs WHERE kind = 'ocr' AND dedupe_key GLOB 'orphan-*' AND state = 'skipped'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(skipped, 3);
         Ok(())
     }
 
