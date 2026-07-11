@@ -36,10 +36,32 @@ pub fn project_rtf(input: &str) -> TextProjectionResult {
     // Emitted characters are counted incrementally; recounting the whole
     // output every iteration would make near-limit inputs quadratic.
     let mut emitted = 0usize;
+    let mut overflow_depth = 0usize;
     while i < bytes.len() && emitted < MAX_OUTPUT_CHARS {
         if fallback > 0 {
             i = skip_fallback(bytes, i);
             fallback -= 1;
+            continue;
+        }
+        if overflow_depth > 0 {
+            match bytes[i] {
+                b'{' => {
+                    overflow_depth = overflow_depth.saturating_add(1);
+                    i += 1;
+                }
+                b'}' => {
+                    overflow_depth -= 1;
+                    i += 1;
+                }
+                b'\\' => i = parse_control(bytes, i + 1).0,
+                _ => {
+                    i += input[i..]
+                        .chars()
+                        .next()
+                        .expect("RTF input is valid UTF-8")
+                        .len_utf8();
+                }
+            }
             continue;
         }
         let appended_from = out.len();
@@ -49,6 +71,7 @@ pub fn project_rtf(input: &str) -> TextProjectionResult {
                 if stack.len() < MAX_GROUP_DEPTH {
                     stack.push(*stack.last().unwrap());
                 } else {
+                    overflow_depth = 1;
                     diagnostics.push(ProjectionDiagnostic::InputTruncated);
                 }
                 i += 1;
@@ -309,7 +332,7 @@ fn normalize(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::project_rtf;
+    use super::{project_rtf, MAX_GROUP_DEPTH};
     use crate::model::ProjectionDiagnostic;
 
     #[test]
@@ -366,5 +389,33 @@ mod tests {
 
         assert_eq!(projected.text, "café 中文 — emoji 😀 é");
         assert!(projected.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn depth_overflow_inside_skipped_destination_does_not_leak() {
+        let nested = "{".repeat(MAX_GROUP_DEPTH + 8);
+        let closes = "}".repeat(MAX_GROUP_DEPTH + 8);
+        let rtf = format!(r"{{\rtf1{{\pict {nested}hidden{closes}LEAK}}visible}}");
+
+        let projected = project_rtf(&rtf);
+
+        assert_eq!(projected.text, "visible");
+        assert!(projected
+            .diagnostics
+            .contains(&ProjectionDiagnostic::InputTruncated));
+    }
+
+    #[test]
+    fn balanced_depth_overflow_does_not_corrupt_sibling_state() {
+        let nested = "{".repeat(MAX_GROUP_DEPTH + 8);
+        let closes = "}".repeat(MAX_GROUP_DEPTH + 8);
+        let rtf = format!(r"{{\rtf1 {nested}\uc0 ignored{closes}\u65?}}");
+
+        let projected = project_rtf(&rtf);
+
+        assert_eq!(projected.text, "A");
+        assert!(projected
+            .diagnostics
+            .contains(&ProjectionDiagnostic::InputTruncated));
     }
 }
