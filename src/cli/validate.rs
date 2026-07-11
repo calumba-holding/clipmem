@@ -137,6 +137,13 @@ pub(super) fn validate_cli(cli: &Cli) -> std::result::Result<(), clap::Error> {
                 validate_optimize_images_progress(args)?;
                 validate_value(args.output.resolved())?;
             }
+            StorageCommand::BuildPreviews(args) => {
+                validate_optimize_images_progress(args)?;
+                validate_value(args.output.resolved())?;
+            }
+            StorageCommand::PreviewStatus(output) => {
+                validate_value(output.resolved())?;
+            }
         },
         Command::Settings(args) => match &args.command {
             SettingsCommand::Show(args) => {

@@ -10,9 +10,13 @@ use crate::cli::schema::DoctorArgs;
 use super::runtime::open_read_only_db;
 
 pub(in crate::cli) fn doctor(db_path: &Path, args: &DoctorArgs) -> Result<()> {
-    let _verify_invariants = args.verify_invariants;
     let db = open_read_only_db(db_path)?;
-    let report = db.doctor().context("doctor diagnostics failed")?;
+    let report = if args.verify_invariants {
+        db.doctor_verifying_invariants()
+    } else {
+        db.doctor()
+    }
+    .context("doctor diagnostics failed")?;
     if args.human {
         print!("{}", render_doctor_human(&report));
     } else {

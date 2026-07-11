@@ -53,6 +53,36 @@ CREATE TABLE IF NOT EXISTS item_representations (
         REFERENCES snapshot_items(snapshot_id, item_index) ON DELETE CASCADE
 );
 
+-- Preview bytes are derived cache state. Logical consumers continue to read
+-- item_representations; deleting every row here cannot change restore/export.
+CREATE TABLE IF NOT EXISTS representation_derivatives (
+    id INTEGER PRIMARY KEY,
+    source_snapshot_id INTEGER NOT NULL,
+    source_item_index INTEGER NOT NULL CHECK (source_item_index >= 0),
+    source_uti TEXT NOT NULL,
+    source_raw_sha256 TEXT NOT NULL,
+    derivative_kind TEXT NOT NULL CHECK (derivative_kind IN ('preview', 'thumbnail')),
+    encoder_version INTEGER NOT NULL CHECK (encoder_version > 0),
+    encoder_options_hash TEXT NOT NULL,
+    output_uti TEXT,
+    codec TEXT,
+    blob_value BLOB,
+    byte_len INTEGER CHECK (byte_len IS NULL OR byte_len >= 0),
+    width INTEGER CHECK (width IS NULL OR width > 0),
+    height INTEGER CHECK (height IS NULL OR height > 0),
+    decoder_metadata TEXT,
+    status TEXT NOT NULL CHECK (status IN ('ready', 'skipped', 'failed')),
+    reason TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    verified_at TEXT,
+    UNIQUE (source_raw_sha256, derivative_kind, encoder_version, encoder_options_hash),
+    CHECK ((status = 'ready' AND blob_value IS NOT NULL AND output_uti IS NOT NULL AND byte_len IS NOT NULL AND verified_at IS NOT NULL)
+        OR (status != 'ready' AND blob_value IS NULL))
+);
+
+CREATE INDEX IF NOT EXISTS idx_representation_derivatives_source
+ON representation_derivatives(source_raw_sha256, derivative_kind, encoder_version);
+
 CREATE TABLE IF NOT EXISTS capture_events (
     id                     INTEGER PRIMARY KEY,
     snapshot_id            INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,

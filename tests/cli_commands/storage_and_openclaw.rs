@@ -523,7 +523,7 @@ fn storage_optimize_images_no_compact_reports_recommendation() -> Result<()> {
     assert_eq!(payload["compressed_rows"].as_u64(), Some(1));
     assert_eq!(payload["compact_run"].as_bool(), Some(false));
     assert!(payload["compact"].is_null());
-    assert_eq!(payload["compact_recommended"].as_bool(), Some(true));
+    assert_eq!(payload["compact_recommended"].as_bool(), Some(false));
 
     cleanup_db(&path);
     Ok(())
@@ -559,7 +559,7 @@ fn storage_optimize_images_limit_processes_uncompressed_rows() -> Result<()> {
 
     let conn = Connection::open(&path)?;
     let skipped_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM item_representations WHERE image_compression_status = 'skipped'",
+        "SELECT COUNT(*) FROM representation_derivatives WHERE status = 'skipped'",
         [],
         |row| row.get(0),
     )?;
@@ -569,7 +569,7 @@ fn storage_optimize_images_limit_processes_uncompressed_rows() -> Result<()> {
         |row| row.get(0),
     )?;
     assert_eq!(skipped_count, 1);
-    assert_eq!(uncompressed_count, 1);
+    assert_eq!(uncompressed_count, 2);
 
     cleanup_db(&path);
     Ok(())

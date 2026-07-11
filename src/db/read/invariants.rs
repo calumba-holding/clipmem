@@ -17,13 +17,15 @@ pub(super) fn verify(conn: &Connection) -> Result<DoctorIntegrityReport> {
         "count foreign key violations",
     )?;
     let projection_mismatches = count(
-        r"SELECT COUNT(*) FROM snapshot_search_documents d
-          JOIN snapshots s ON s.id=d.snapshot_id
-          JOIN snapshot_stats ss ON ss.snapshot_id=d.snapshot_id
+        r"SELECT COUNT(*) FROM snapshots s
+          LEFT JOIN snapshot_search_documents d ON d.snapshot_id=s.id
+          LEFT JOIN snapshot_stats ss ON ss.snapshot_id=s.id
           LEFT JOIN snapshot_projection_cache p ON p.snapshot_id=d.snapshot_id
           LEFT JOIN snapshot_event_filter_cache e ON e.snapshot_id=d.snapshot_id
           LEFT JOIN snapshot_ocr_cache o ON o.snapshot_id=d.snapshot_id
-          WHERE d.native_text != COALESCE(s.search_text,'')
+          WHERE d.snapshot_id IS NULL
+             OR ss.snapshot_id IS NULL
+             OR d.native_text != COALESCE(s.search_text,'')
              OR d.preview_text != COALESCE(s.preview_text,'')
              OR d.ocr_text != COALESCE(o.ocr_text,'')
              OR d.url_text != COALESCE(p.urls,'')

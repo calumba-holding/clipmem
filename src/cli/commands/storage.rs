@@ -22,6 +22,18 @@ pub(in crate::cli) fn storage(db_path: &Path, args: &StorageArgs) -> Result<()> 
         StorageCommand::Compact(args) => storage_compact(db_path, args),
         StorageCommand::ImageCandidates(args) => storage_image_candidates(db_path, args),
         StorageCommand::OptimizeImages(args) => storage_optimize_images(db_path, args),
+        StorageCommand::BuildPreviews(args) => storage_optimize_images(db_path, args),
+        StorageCommand::PreviewStatus(output) => {
+            let format = require_text_or_json(output.resolved()?, "storage preview-status")?;
+            let db = open_read_only_db(db_path)?;
+            let value = db.image_preview_status()?;
+            emit_json_or_text(matches!(format, OutputFormat::Json), &value, |status| {
+                format!(
+                    "ready={} skipped={} bytes={}\n",
+                    status.ready, status.skipped, status.bytes
+                )
+            })
+        }
     }
 }
 
@@ -59,7 +71,7 @@ fn storage_optimize_images(db_path: &Path, args: &StorageOptimizeImagesArgs) -> 
 }
 
 fn should_notify_after_image_optimization(report: &ImageOptimizationReport) -> bool {
-    !report.dry_run && (report.compressed_rows > 0 || report.compact_run)
+    !report.dry_run && report.compressed_rows > 0
 }
 
 fn storage_image_candidates(db_path: &Path, args: &StorageImageCandidatesArgs) -> Result<()> {
@@ -121,8 +133,8 @@ mod tests {
     }
 
     #[test]
-    fn image_optimization_notify_predicate_includes_compaction_only_mutation() {
-        assert!(should_notify_after_image_optimization(&report(
+    fn image_optimization_notify_predicate_requires_a_new_preview() {
+        assert!(!should_notify_after_image_optimization(&report(
             false, 0, true
         )));
         assert!(should_notify_after_image_optimization(&report(

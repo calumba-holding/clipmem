@@ -3,6 +3,27 @@ use crate::capture_service::CaptureApplicationService;
 use crate::db::{CaptureMode, CaptureOutcome};
 
 #[test]
+fn doctor_invariants_count_missing_canonical_document() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let stored = db.store_capture(&fake_snapshot(1, "missing document"))?;
+    db.conn.execute(
+        "DELETE FROM snapshot_search_documents WHERE snapshot_id=?1",
+        [stored.snapshot_id()],
+    )?;
+
+    assert!(db.doctor()?.integrity().is_none());
+    let verified = db.doctor_verifying_invariants()?;
+    assert_eq!(
+        verified
+            .integrity()
+            .context("integrity should be verified")?
+            .projection_mismatch_count(),
+        1
+    );
+    Ok(())
+}
+
+#[test]
 fn duplicate_snapshots_share_content_row() -> Result<()> {
     let mut db = Database::open_in_memory()?;
 

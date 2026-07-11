@@ -11,9 +11,10 @@ use super::config::ImageOptimizationCandidate;
 static TOKEN_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 pub(in crate::db) const OCR_JOB_KIND: &str = "ocr";
-pub(in crate::db) const IMAGE_OPTIMIZATION_JOB_KIND: &str = "legacy_image_optimization";
+pub(in crate::db) const IMAGE_OPTIMIZATION_JOB_KIND: &str = "image_preview_derivative";
 pub(in crate::db) const OCR_ALGORITHM_VERSION: &str = "vision-v1";
-pub(in crate::db) const IMAGE_OPTIMIZATION_ALGORITHM_VERSION: &str = "lossless-webp-v1";
+pub(in crate::db) const IMAGE_OPTIMIZATION_ALGORITHM_VERSION: &str =
+    "webp-lossless-long-edge-2048-v1";
 const DEFAULT_LEASE_SECONDS: i64 = 120;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -99,6 +100,15 @@ impl Database {
             )
             .context("renew durable job lease")?;
         Ok(changed == 1)
+    }
+
+    pub(in crate::db) fn skip_claimed_job(&mut self, lease: &JobLease, reason: &str) -> Result<()> {
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .context("begin durable job skip transaction")?;
+        complete_job_tx(&tx, lease, "skipped", Some(reason))?;
+        tx.commit().context("commit durable job skip transaction")
     }
 }
 
@@ -352,11 +362,18 @@ pub(in crate::db) fn enqueue_image_optimization_jobs(
     let rows = {
         let mut stmt = tx.prepare(
             r"
-                SELECT snapshot_id, item_index, uti, raw_sha256
-                FROM item_representations
-                WHERE kind = 'image' AND image_compression_status = 'uncompressed'
-                  AND length(blob_value) > 0
-                ORDER BY byte_len DESC, snapshot_id, item_index, uti LIMIT ?1
+                SELECT MIN(snapshot_id), MIN(item_index), MIN(uti), raw_sha256
+                FROM item_representations ir
+                WHERE kind = 'image' AND length(blob_value) > 0
+                  AND NOT EXISTS (
+                    SELECT 1 FROM representation_derivatives rd
+                    WHERE rd.source_raw_sha256 = ir.raw_sha256
+                      AND rd.derivative_kind = 'preview'
+                      AND rd.encoder_version = 1
+                      AND rd.encoder_options_hash = 'webp-lossless-long-edge-2048-v1'
+                  )
+                GROUP BY raw_sha256
+                ORDER BY MAX(byte_len) DESC, raw_sha256 LIMIT ?1
             ",
         )?;
         let collected = stmt
@@ -372,13 +389,15 @@ pub(in crate::db) fn enqueue_image_optimization_jobs(
         collected
     };
     for (snapshot_id, item_index, uti, hash) in rows {
-        let key = format!("{snapshot_id}|{item_index}|{hash}|{uti}");
+        let key = hash.clone();
         enqueue_job_tx(
             &tx,
             IMAGE_OPTIMIZATION_JOB_KIND,
             &key,
             IMAGE_OPTIMIZATION_ALGORITHM_VERSION,
-            "{}",
+            &format!(
+                r#"{{"source_raw_sha256":"{hash}","snapshot_id":{snapshot_id},"item_index":{item_index},"uti":"{uti}"}}"#
+            ),
             3,
         )?;
     }
@@ -390,23 +409,20 @@ pub(in crate::db) fn load_claimed_image_candidate(
     conn: &rusqlite::Connection,
     lease: &JobLease,
 ) -> Result<Option<ImageOptimizationCandidate>> {
-    let mut parts = lease.dedupe_key().splitn(4, '|');
-    let snapshot_id = parts
-        .next()
-        .context("image job missing snapshot id")?
-        .parse::<i64>()?;
-    let item_index = parts
-        .next()
-        .context("image job missing item index")?
-        .parse::<i64>()?;
-    let raw_sha256 = parts.next().context("image job missing source hash")?;
-    let uti = parts.next().context("image job missing UTI")?;
+    let raw_sha256 = lease.dedupe_key();
     conn.query_row(
         r"SELECT snapshot_id, item_index, uti, byte_len, raw_sha256, blob_value
-           FROM item_representations
-           WHERE snapshot_id = ?1 AND item_index = ?2 AND uti = ?3
-             AND raw_sha256 = ?4 AND image_compression_status = 'uncompressed'",
-        params![snapshot_id, item_index, uti, raw_sha256],
+           FROM item_representations ir
+           WHERE raw_sha256 = ?1 AND kind = 'image' AND length(blob_value) > 0
+             AND NOT EXISTS (
+               SELECT 1 FROM representation_derivatives rd
+               WHERE rd.source_raw_sha256 = ir.raw_sha256
+                 AND rd.derivative_kind = 'preview'
+                 AND rd.encoder_version = 1
+                 AND rd.encoder_options_hash = 'webp-lossless-long-edge-2048-v1'
+             )
+           ORDER BY byte_len DESC, snapshot_id, item_index, uti LIMIT 1",
+        [raw_sha256],
         |row| {
             Ok(ImageOptimizationCandidate {
                 snapshot_id: row.get(0)?,

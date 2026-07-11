@@ -35,7 +35,14 @@ pub(super) fn enforce_representation_item_integrity(conn: &Connection) -> Result
             PRIMARY KEY (snapshot_id, item_index, uti),
             FOREIGN KEY (snapshot_id, item_index) REFERENCES snapshot_items(snapshot_id, item_index) ON DELETE CASCADE
         );
-        INSERT INTO item_representations_v20 SELECT * FROM item_representations;
+        INSERT INTO item_representations_v20 (
+            snapshot_id, item_index, uti, kind, byte_len, raw_sha256, text_value, blob_value,
+            image_compression_status, image_compression_format, image_compressed_at,
+            image_original_byte_len, image_original_raw_sha256, image_compression_reason
+        ) SELECT snapshot_id, item_index, uti, kind, byte_len, raw_sha256, text_value, blob_value,
+            image_compression_status, image_compression_format, image_compressed_at,
+            image_original_byte_len, image_original_raw_sha256, image_compression_reason
+          FROM item_representations;
         DROP TABLE item_representations;
         ALTER TABLE item_representations_v20 RENAME TO item_representations;
         CREATE INDEX idx_item_representations_image_candidates ON item_representations(kind, raw_sha256) WHERE length(blob_value) > 0;

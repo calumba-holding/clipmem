@@ -1,3 +1,5 @@
+#![allow(dead_code)] // Legacy source-rewrite helpers retained only for migration-era tests.
+
 use anyhow::{Context, Result};
 use rusqlite::params;
 
