@@ -45,14 +45,16 @@ impl std::fmt::Display for RestoreWriteFailure {
 
 impl std::error::Error for RestoreWriteFailure {}
 
-pub(crate) fn execute_restore_protocol<T, Prepare, Rollback, Write>(
+pub(crate) fn execute_restore_protocol<T, Prepare, Rollback, CanRollback, Write>(
     prepare: Prepare,
     capture_rollback: Rollback,
+    can_rollback: CanRollback,
     mut write: Write,
 ) -> anyhow::Result<(i64, bool)>
 where
     Prepare: FnOnce() -> anyhow::Result<T>,
     Rollback: FnOnce() -> anyhow::Result<Option<T>>,
+    CanRollback: Fn() -> bool,
     Write: FnMut(&T) -> anyhow::Result<i64>,
 {
     let prepared = prepare()?;
@@ -60,8 +62,9 @@ where
     match write(&prepared) {
         Ok(change_count) => Ok((change_count, rollback.is_some())),
         Err(write_error) => {
-            let rollback_attempted = rollback.is_some();
-            let rollback_succeeded = rollback.as_ref().is_some_and(|plan| write(plan).is_ok());
+            let rollback_attempted = rollback.is_some() && can_rollback();
+            let rollback_succeeded =
+                rollback_attempted && rollback.as_ref().is_some_and(|plan| write(plan).is_ok());
             Err(RestoreWriteFailure {
                 write_error,
                 rollback_attempted,
@@ -234,9 +237,10 @@ mod tests {
     #[test]
     fn restore_preparation_failure_does_not_touch_destination() {
         let writes = std::cell::Cell::new(0);
-        let error = execute_restore_protocol::<Vec<u8>, _, _, _>(
+        let error = execute_restore_protocol::<Vec<u8>, _, _, _, _>(
             || anyhow::bail!("bad representation"),
             || Ok(Some(vec![1])),
+            || true,
             |_| {
                 writes.set(writes.get() + 1);
                 Ok(1)
@@ -253,6 +257,7 @@ mod tests {
         let error = execute_restore_protocol(
             || Ok(vec![2]),
             || Ok(Some(vec![1])),
+            || true,
             |plan: &Vec<u8>| {
                 writes.set(writes.get() + 1);
                 if plan == &vec![2] {
@@ -266,6 +271,25 @@ mod tests {
         assert!(failure.rollback_attempted);
         assert!(failure.rollback_succeeded);
         assert_eq!(writes.get(), 2);
+    }
+
+    #[test]
+    fn restore_does_not_rollback_over_an_interleaved_external_generation() {
+        let writes = std::cell::Cell::new(0);
+        let error = execute_restore_protocol(
+            || Ok(vec![2]),
+            || Ok(Some(vec![1])),
+            || false,
+            |_plan: &Vec<u8>| {
+                writes.set(writes.get() + 1);
+                anyhow::bail!("generation ownership lost")
+            },
+        )
+        .unwrap_err();
+        let failure = error.downcast_ref::<RestoreWriteFailure>().unwrap();
+        assert!(!failure.rollback_attempted);
+        assert!(!failure.rollback_succeeded);
+        assert_eq!(writes.get(), 1);
     }
 
     #[test]

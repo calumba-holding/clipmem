@@ -98,6 +98,12 @@ mod tests {
         db.reassign_restore_operation_generation(&operation, 9)?;
         db.mark_restore_failed(&operation, "write failed")?;
 
+        // A watcher that captured the first restore-created generation before
+        // rollback but reached SQLite later is still suppressed.
+        let outcome = CaptureApplicationService::new(&mut db)
+            .capture(&snapshot(7, "com.example.app"), CaptureMode::Watch)?;
+        assert!(matches!(outcome, CaptureOutcome::SuppressedRestore { .. }));
+
         // The rollback content observed at its generation is not archived.
         let outcome = CaptureApplicationService::new(&mut db)
             .capture(&snapshot(9, "com.example.app"), CaptureMode::Watch)?;

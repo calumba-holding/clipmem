@@ -5,6 +5,7 @@ mod ocr;
 mod optimize;
 mod purge;
 mod rebuild;
+mod restore;
 pub(in crate::db) mod revision;
 pub(in crate::db) mod search_document;
 mod settings;
