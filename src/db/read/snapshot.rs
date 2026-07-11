@@ -26,10 +26,12 @@ impl Database {
         };
         let events = self.load_recent_events(snapshot_id, clamp_result_limit(event_limit))?;
         let items = self.load_snapshot_manifests(snapshot_id)?;
-        let projection = projection_from_manifests(&items).with_ocr(
-            summary.ocr_text().map(ToOwned::to_owned),
-            summary.ocr_status().map(ToOwned::to_owned),
-        );
+        let projection = projection_from_manifests(&items)
+            .with_native_text_fallback(self.load_canonical_native_text(snapshot_id)?)
+            .with_ocr(
+                summary.ocr_text().map(ToOwned::to_owned),
+                summary.ocr_status().map(ToOwned::to_owned),
+            );
         Ok(Some(SnapshotMetadata::from_summary(
             &summary,
             &projection,
@@ -52,15 +54,17 @@ impl Database {
             .collect::<Vec<_>>();
         let mut items_by_snapshot: HashMap<i64, Vec<SnapshotItemManifest>> = HashMap::new();
         let mut ocr_by_snapshot: HashMap<i64, (Option<String>, Option<String>)> = HashMap::new();
+        let mut native_text_by_snapshot: HashMap<i64, Option<String>> = HashMap::new();
 
         for ids in unique_ids.chunks(IDS_PER_QUERY) {
             let placeholders = std::iter::repeat_n("?", ids.len())
                 .collect::<Vec<_>>()
                 .join(",");
             let item_sql = format!(
-                "SELECT si.snapshot_id, si.item_index, si.primary_kind, si.primary_uti, si.preview_text, si.search_text, si.total_bytes, soc.ocr_text, soc.status
+                "SELECT si.snapshot_id, si.item_index, si.primary_kind, si.primary_uti, si.preview_text, si.search_text, si.total_bytes, soc.ocr_text, soc.status, ssd.native_text
                  FROM snapshot_items si
                  LEFT JOIN snapshot_ocr_cache soc ON soc.snapshot_id = si.snapshot_id
+                 LEFT JOIN snapshot_search_documents ssd ON ssd.snapshot_id = si.snapshot_id
                  WHERE si.snapshot_id IN ({placeholders})
                  ORDER BY si.snapshot_id, si.item_index"
             );
@@ -82,12 +86,16 @@ impl Database {
                             representations: Vec::new(),
                         },
                         (row.get(7)?, row.get(8)?),
+                        row.get::<_, Option<String>>(9)?,
                     ))
                 })
                 .context("execute bulk snapshot document items")?;
-            for (snapshot_id, item, ocr) in collect_rows(rows)? {
+            for (snapshot_id, item, ocr, native_text) in collect_rows(rows)? {
                 items_by_snapshot.entry(snapshot_id).or_default().push(item);
                 ocr_by_snapshot.entry(snapshot_id).or_insert(ocr);
+                native_text_by_snapshot
+                    .entry(snapshot_id)
+                    .or_insert(native_text);
             }
 
             let rep_sql = format!(
@@ -134,10 +142,25 @@ impl Database {
                     ocr_by_snapshot.remove(&snapshot_id).unwrap_or((None, None));
                 (
                     snapshot_id,
-                    projection_from_manifests(&items).with_ocr(ocr_text, ocr_status),
+                    projection_from_manifests(&items)
+                        .with_native_text_fallback(
+                            native_text_by_snapshot.remove(&snapshot_id).flatten(),
+                        )
+                        .with_ocr(ocr_text, ocr_status),
                 )
             })
             .collect())
+    }
+
+    fn load_canonical_native_text(&self, snapshot_id: i64) -> Result<Option<String>> {
+        self.conn
+            .query_row(
+                "SELECT native_text FROM snapshot_search_documents WHERE snapshot_id = ?1",
+                [snapshot_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .context("load canonical snapshot native text")
     }
 
     pub fn find_representation_manifest(
@@ -636,162 +659,5 @@ fn projection_from_manifests(items: &[SnapshotItemManifest]) -> FlattenedTextPro
 }
 
 #[cfg(test)]
-mod profile_tests {
-    use std::time::{Duration, Instant};
-
-    use anyhow::{Context, Result};
-    use rusqlite::params;
-
-    use crate::db::sqlite_helpers::{collect_rows, row_enum, row_usize, usize_to_i64};
-    use crate::db::types::Database;
-    use crate::model::{
-        build_item, build_representation, build_snapshot, CaptureContext, ClipboardItem,
-        ClipboardRepresentation, ClipboardSnapshot,
-    };
-
-    #[test]
-    #[ignore = "profiling harness for snapshot detail item hydration"]
-    fn profile_snapshot_item_hydration() -> Result<()> {
-        let mut db = Database::open_in_memory()?;
-        let stored = db.store_capture(&many_item_snapshot(1_000, 2))?;
-
-        let before = median_duration(7, 2_000, || {
-            let items = load_snapshot_items_n_plus_one_for_profile(&db, stored.snapshot_id())?;
-            Ok(representation_count(&items))
-        })?;
-        let after = median_duration(7, 2_000, || {
-            let items = db.load_snapshot_items(stored.snapshot_id())?;
-            Ok(representation_count(&items))
-        })?;
-
-        eprintln!(
-            "snapshot_items_n_plus_one_before={before:?} snapshot_items_grouped_after={after:?}"
-        );
-        Ok(())
-    }
-
-    fn median_duration(
-        runs: usize,
-        expected_count: usize,
-        mut f: impl FnMut() -> Result<usize>,
-    ) -> Result<Duration> {
-        let mut samples = Vec::with_capacity(runs);
-        for _ in 0..runs {
-            let started = Instant::now();
-            let count = f()?;
-            assert_eq!(count, expected_count);
-            samples.push(started.elapsed());
-        }
-        samples.sort();
-        Ok(samples[samples.len() / 2])
-    }
-
-    fn many_item_snapshot(item_count: usize, representations_per_item: usize) -> ClipboardSnapshot {
-        let items = (0..item_count)
-            .map(|item_index| {
-                let representations = (0..representations_per_item)
-                    .map(|representation_index| {
-                        let text = format!(
-                            "snapshot item {item_index} representation {representation_index}"
-                        );
-                        build_representation(
-                            format!("public.utf8-plain-text.{representation_index}"),
-                            Some(text.clone()),
-                            text.into_bytes(),
-                        )
-                    })
-                    .collect();
-                build_item(item_index, representations)
-            })
-            .collect();
-
-        build_snapshot(
-            CaptureContext::new(1)
-                .with_frontmost_app_name("Hydration Bench")
-                .with_frontmost_app_bundle_id("com.example.HydrationBench"),
-            items,
-        )
-    }
-
-    fn representation_count(items: &[ClipboardItem]) -> usize {
-        items.iter().map(|item| item.representations().len()).sum()
-    }
-
-    fn load_snapshot_items_n_plus_one_for_profile(
-        db: &Database,
-        snapshot_id: i64,
-    ) -> Result<Vec<ClipboardItem>> {
-        let mut item_stmt = db
-            .conn
-            .prepare(
-                r"
-                SELECT item_index, primary_kind, primary_uti, preview_text, search_text, total_bytes
-                FROM snapshot_items
-                WHERE snapshot_id = ?1
-                ORDER BY item_index ASC
-            ",
-            )
-            .context("prepare snapshot items profile query")?;
-
-        let item_rows = item_stmt
-            .query_map([snapshot_id], |row| {
-                Ok(ClipboardItem::new(
-                    row_usize(row, 0)?,
-                    row_enum(row, 1)?,
-                    row.get(2)?,
-                    row.get(3)?,
-                    row.get(4)?,
-                    Vec::new(),
-                ))
-            })
-            .context("execute snapshot items profile query")?;
-        let mut items = collect_rows(item_rows).context("collect snapshot profile items")?;
-
-        let mut rep_stmt = db
-            .conn
-            .prepare(
-                r"
-                SELECT
-                    uti,
-                    kind,
-                    raw_sha256,
-                    text_value,
-                    blob_value
-                FROM item_representations
-                WHERE snapshot_id = ?1 AND item_index = ?2
-                ORDER BY uti ASC
-            ",
-            )
-            .context("prepare representation profile query")?;
-
-        for item in &mut items {
-            let rep_rows = rep_stmt
-                .query_map(
-                    params![snapshot_id, usize_to_i64(item.item_index())?],
-                    |row| {
-                        Ok(ClipboardRepresentation::new(
-                            row.get(0)?,
-                            row_enum(row, 1)?,
-                            row.get(2)?,
-                            row.get(3)?,
-                            row.get(4)?,
-                        ))
-                    },
-                )
-                .with_context(|| {
-                    format!(
-                        "execute representation profile query for item {}",
-                        item.item_index()
-                    )
-                })?;
-            item.set_representations(collect_rows(rep_rows).with_context(|| {
-                format!(
-                    "collect profile representations for item {}",
-                    item.item_index()
-                )
-            })?);
-        }
-
-        Ok(items)
-    }
-}
+#[path = "snapshot/profile_tests.rs"]
+mod profile_tests;
