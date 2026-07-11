@@ -8,6 +8,8 @@ use anyhow::{Context, Result};
 
 const JOURNAL_VERSION: &str = "clipmem-restore-journal-v1";
 const RECOVERY_LIFETIME: Duration = Duration::from_secs(30);
+const MAX_JOURNAL_ENTRIES: usize = 1_024;
+const MAX_JOURNAL_BYTES: u64 = 64 * 1_024;
 
 pub(super) struct RestoreRecoveryJournal {
     path: PathBuf,
@@ -34,11 +36,11 @@ impl RestoreRecoveryJournal {
     }
 
     pub(super) fn register_generation(&mut self, change_count: i64) -> Result<()> {
+        self.expires_unix = now_unix()?.saturating_add(RECOVERY_LIFETIME.as_secs());
         if !self.generations.contains(&change_count) {
             self.generations.push(change_count);
-            self.persist()?;
         }
-        Ok(())
+        self.persist()
     }
 
     pub(super) fn remove(self) -> Result<()> {
@@ -75,49 +77,140 @@ impl RestoreRecoveryJournal {
     }
 }
 
-pub(super) fn operation_for_generation(
+pub(super) fn operation_for_generation(db_path: &Path, change_count: i64) -> Option<String> {
+    operation_for_generation_with_cleanup(db_path, change_count, remove_journal_file)
+}
+
+fn operation_for_generation_with_cleanup<Cleanup>(
     db_path: &Path,
     change_count: i64,
-) -> Result<Option<String>> {
+    cleanup: Cleanup,
+) -> Option<String>
+where
+    Cleanup: Fn(&Path) -> std::io::Result<()>,
+{
     let directory = journal_directory(db_path);
     let entries = match fs::read_dir(&directory) {
         Ok(entries) => entries,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error).context("read restore recovery journals"),
+        Err(error) if error.kind() == ErrorKind::NotFound => return None,
+        Err(error) => {
+            journal_diagnostic("cannot enumerate recovery directory", &error);
+            return None;
+        }
     };
-    let now = now_unix()?;
-    for entry in entries {
-        let entry = entry.context("read restore recovery journal entry")?;
+    let now = match now_unix() {
+        Ok(now) => now,
+        Err(error) => {
+            journal_diagnostic("cannot read system time", &error);
+            return None;
+        }
+    };
+    for entry in entries.take(MAX_JOURNAL_ENTRIES) {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                journal_diagnostic("cannot enumerate recovery entry", &error);
+                continue;
+            }
+        };
         if entry.path().extension().and_then(|value| value.to_str()) != Some("journal") {
             continue;
         }
-        let content = fs::read_to_string(entry.path()).context("read restore recovery journal")?;
-        if let Some(operation_id) = matching_operation(&content, change_count, now) {
-            return Ok(Some(operation_id));
+        match entry.file_type() {
+            Ok(file_type) if file_type.is_file() => {}
+            Ok(_) => {
+                eprintln!("clipmem: ignoring non-file restore recovery journal entry");
+                continue;
+            }
+            Err(error) => {
+                journal_diagnostic("cannot inspect recovery entry", &error);
+                continue;
+            }
+        }
+        match entry.metadata() {
+            Ok(metadata) if metadata.len() <= MAX_JOURNAL_BYTES => {}
+            Ok(_) => {
+                eprintln!("clipmem: ignoring oversized restore recovery journal");
+                continue;
+            }
+            Err(error) => {
+                journal_diagnostic("cannot inspect recovery journal", &error);
+                continue;
+            }
+        }
+        let content = match fs::read_to_string(entry.path()) {
+            Ok(content) => content,
+            Err(error) => {
+                journal_diagnostic("cannot read recovery journal", &error);
+                continue;
+            }
+        };
+        match inspect_journal(&content, change_count, now) {
+            JournalInspection::Match(operation_id) => return Some(operation_id),
+            JournalInspection::Expired => {
+                if let Err(error) = cleanup(&entry.path()) {
+                    journal_diagnostic("cannot remove expired recovery journal", &error);
+                }
+            }
+            JournalInspection::NoMatch => {}
+            JournalInspection::Malformed => {
+                eprintln!("clipmem: ignoring malformed restore recovery journal");
+            }
         }
     }
-    Ok(None)
+    None
 }
 
-fn matching_operation(content: &str, change_count: i64, now: u64) -> Option<String> {
+enum JournalInspection {
+    Match(String),
+    Expired,
+    NoMatch,
+    Malformed,
+}
+
+fn inspect_journal(content: &str, change_count: i64, now: u64) -> JournalInspection {
     let mut lines = content.lines();
-    if lines.next()? != JOURNAL_VERSION {
-        return None;
+    if lines.next() != Some(JOURNAL_VERSION) {
+        return JournalInspection::Malformed;
     }
-    let operation_id = lines.next()?.strip_prefix("operation_id=")?.to_string();
-    let expires = lines
-        .next()?
-        .strip_prefix("expires_unix=")?
-        .parse::<u64>()
-        .ok()?;
+    let Some(operation_id) = lines
+        .next()
+        .and_then(|line| line.strip_prefix("operation_id="))
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+    else {
+        return JournalInspection::Malformed;
+    };
+    let Some(expires) = lines
+        .next()
+        .and_then(|line| line.strip_prefix("expires_unix="))
+        .and_then(|value| value.parse::<u64>().ok())
+    else {
+        return JournalInspection::Malformed;
+    };
     if expires < now {
-        return None;
+        return JournalInspection::Expired;
     }
-    lines
+    if lines
         .filter_map(|line| line.strip_prefix("generation="))
         .filter_map(|value| value.parse::<i64>().ok())
         .any(|generation| generation == change_count)
-        .then_some(operation_id)
+    {
+        JournalInspection::Match(operation_id)
+    } else {
+        JournalInspection::NoMatch
+    }
+}
+
+fn remove_journal_file(path: &Path) -> std::io::Result<()> {
+    fs::remove_file(path)?;
+    path.parent()
+        .ok_or_else(|| std::io::Error::other("recovery journal has no parent"))
+        .and_then(|parent| fs::File::open(parent)?.sync_all())
+}
+
+fn journal_diagnostic(context: &str, error: &dyn std::fmt::Display) {
+    eprintln!("clipmem: {context}: {error}");
 }
 
 fn journal_directory(db_path: &Path) -> PathBuf {
@@ -147,4 +240,121 @@ fn set_private_directory_permissions(path: &Path) -> Result<()> {
 #[cfg(not(unix))]
 fn set_private_directory_permissions(_path: &Path) -> Result<()> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use super::*;
+
+    static NEXT_TEST_PATH: AtomicU64 = AtomicU64::new(0);
+
+    struct TestPath(PathBuf);
+
+    impl TestPath {
+        fn new() -> Self {
+            let suffix = NEXT_TEST_PATH.fetch_add(1, Ordering::Relaxed);
+            Self(std::env::temp_dir().join(format!(
+                "clipmem-restore-journal-{}-{suffix}.db",
+                std::process::id()
+            )))
+        }
+    }
+
+    impl Drop for TestPath {
+        fn drop(&mut self) {
+            let _ = fs::remove_file(&self.0);
+            let _ = fs::remove_dir_all(journal_directory(&self.0));
+        }
+    }
+
+    #[test]
+    fn malformed_entry_does_not_hide_readable_exact_match() -> Result<()> {
+        let db_path = TestPath::new();
+        let mut journal = RestoreRecoveryJournal::create(&db_path.0, "matching-op".into())?;
+        journal.register_generation(41)?;
+        fs::write(
+            journal_directory(&db_path.0).join("malformed.journal"),
+            "not a restore journal\n",
+        )?;
+
+        assert_eq!(
+            operation_for_generation(&db_path.0, 41).as_deref(),
+            Some("matching-op")
+        );
+        assert_eq!(operation_for_generation(&db_path.0, 42), None);
+        Ok(())
+    }
+
+    #[test]
+    fn non_file_entry_does_not_block_external_generation() -> Result<()> {
+        let db_path = TestPath::new();
+        fs::create_dir_all(journal_directory(&db_path.0).join("unreadable.journal"))?;
+
+        assert_eq!(operation_for_generation(&db_path.0, 77), None);
+        Ok(())
+    }
+
+    #[test]
+    fn recovery_directory_io_failure_does_not_block_external_generation() -> Result<()> {
+        let db_path = TestPath::new();
+        fs::write(journal_directory(&db_path.0), b"not a directory")?;
+
+        assert_eq!(operation_for_generation(&db_path.0, 99), None);
+        Ok(())
+    }
+
+    #[test]
+    fn registration_refreshes_expiry_before_persisting() -> Result<()> {
+        let db_path = TestPath::new();
+        let mut journal = RestoreRecoveryJournal::create(&db_path.0, "refresh-op".into())?;
+        journal.generations.push(7);
+        journal.expires_unix = 0;
+        let before = now_unix()?;
+
+        journal.register_generation(7)?;
+
+        assert!(journal.expires_unix >= before + RECOVERY_LIFETIME.as_secs());
+        let content = fs::read_to_string(&journal.path)?;
+        assert!(matches!(
+            inspect_journal(&content, 7, before),
+            JournalInspection::Match(operation_id) if operation_id == "refresh-op"
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn expired_valid_journal_is_removed_without_blocking_capture() -> Result<()> {
+        let db_path = TestPath::new();
+        let mut journal = RestoreRecoveryJournal::create(&db_path.0, "expired-op".into())?;
+        journal.generations.push(5);
+        journal.expires_unix = 0;
+        journal.persist()?;
+        let journal_path = journal.path.clone();
+
+        assert_eq!(operation_for_generation(&db_path.0, 5), None);
+        assert!(!journal_path.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn expired_journal_cleanup_failure_is_non_fatal() -> Result<()> {
+        let db_path = TestPath::new();
+        let mut journal = RestoreRecoveryJournal::create(&db_path.0, "expired-op".into())?;
+        journal.generations.push(5);
+        journal.expires_unix = 0;
+        journal.persist()?;
+
+        let result = operation_for_generation_with_cleanup(&db_path.0, 5, |_| {
+            Err(std::io::Error::new(
+                ErrorKind::PermissionDenied,
+                "injected cleanup failure",
+            ))
+        });
+
+        assert_eq!(result, None);
+        assert!(journal.path.exists());
+        Ok(())
+    }
 }
