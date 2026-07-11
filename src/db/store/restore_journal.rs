@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 
 const JOURNAL_VERSION: &str = "clipmem-restore-journal-v1";
 const RECOVERY_LIFETIME: Duration = Duration::from_secs(30);
-const MAX_JOURNAL_ENTRIES: usize = 1_024;
+const MAX_CLEANUPS_PER_LOOKUP: usize = 1_024;
 const MAX_JOURNAL_BYTES: u64 = 64 * 1_024;
 
 pub(super) struct RestoreRecoveryJournal {
@@ -105,7 +105,9 @@ where
             return None;
         }
     };
-    for entry in entries.take(MAX_JOURNAL_ENTRIES) {
+    let mut candidates = Vec::new();
+    let mut cleanup_count = 0;
+    for entry in entries {
         let entry = match entry {
             Ok(entry) => entry,
             Err(error) => {
@@ -127,18 +129,24 @@ where
                 continue;
             }
         }
-        match entry.metadata() {
-            Ok(metadata) if metadata.len() <= MAX_JOURNAL_BYTES => {}
+        let metadata = match entry.metadata() {
+            Ok(metadata) if metadata.len() <= MAX_JOURNAL_BYTES => metadata,
             Ok(_) => {
                 eprintln!("clipmem: ignoring oversized restore recovery journal");
+                cleanup_if_budgeted(&entry.path(), &cleanup, &mut cleanup_count);
                 continue;
             }
             Err(error) => {
                 journal_diagnostic("cannot inspect recovery journal", &error);
                 continue;
             }
-        }
-        let content = match fs::read_to_string(entry.path()) {
+        };
+        candidates.push((metadata.modified().unwrap_or(UNIX_EPOCH), entry.path()));
+    }
+    candidates.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| right.1.cmp(&left.1)));
+
+    for (_, path) in candidates {
+        let content = match fs::read_to_string(&path) {
             Ok(content) => content,
             Err(error) => {
                 journal_diagnostic("cannot read recovery journal", &error);
@@ -148,17 +156,29 @@ where
         match inspect_journal(&content, change_count, now) {
             JournalInspection::Match(operation_id) => return Some(operation_id),
             JournalInspection::Expired => {
-                if let Err(error) = cleanup(&entry.path()) {
-                    journal_diagnostic("cannot remove expired recovery journal", &error);
-                }
+                cleanup_if_budgeted(&path, &cleanup, &mut cleanup_count);
             }
             JournalInspection::NoMatch => {}
             JournalInspection::Malformed => {
                 eprintln!("clipmem: ignoring malformed restore recovery journal");
+                cleanup_if_budgeted(&path, &cleanup, &mut cleanup_count);
             }
         }
     }
     None
+}
+
+fn cleanup_if_budgeted<Cleanup>(path: &Path, cleanup: &Cleanup, cleanup_count: &mut usize)
+where
+    Cleanup: Fn(&Path) -> std::io::Result<()>,
+{
+    if *cleanup_count >= MAX_CLEANUPS_PER_LOOKUP {
+        return;
+    }
+    *cleanup_count += 1;
+    if let Err(error) = cleanup(path) {
+        journal_diagnostic("cannot remove invalid recovery journal", &error);
+    }
 }
 
 enum JournalInspection {
@@ -244,6 +264,7 @@ fn set_private_directory_permissions(_path: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use super::*;
@@ -355,6 +376,37 @@ mod tests {
 
         assert_eq!(result, None);
         assert!(journal.path.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn junk_beyond_cleanup_bound_cannot_starve_oldest_exact_match() -> Result<()> {
+        let db_path = TestPath::new();
+        let mut journal = RestoreRecoveryJournal::create(&db_path.0, "000-match".into())?;
+        journal.register_generation(4242)?;
+        let directory = journal_directory(&db_path.0);
+        for index in 0..=MAX_CLEANUPS_PER_LOOKUP {
+            fs::write(
+                directory.join(format!("zzz-junk-{index:04}.journal")),
+                b"malformed\n",
+            )?;
+        }
+
+        let match_cleanups = Cell::new(0);
+        let found = operation_for_generation_with_cleanup(&db_path.0, 4242, |_| {
+            match_cleanups.set(match_cleanups.get() + 1);
+            Ok(())
+        });
+        assert_eq!(found.as_deref(), Some("000-match"));
+        assert_eq!(match_cleanups.get(), MAX_CLEANUPS_PER_LOOKUP);
+
+        let external_cleanups = Cell::new(0);
+        let external = operation_for_generation_with_cleanup(&db_path.0, 4243, |_| {
+            external_cleanups.set(external_cleanups.get() + 1);
+            Ok(())
+        });
+        assert_eq!(external, None);
+        assert_eq!(external_cleanups.get(), MAX_CLEANUPS_PER_LOOKUP);
         Ok(())
     }
 }
