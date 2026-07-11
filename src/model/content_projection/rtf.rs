@@ -32,6 +32,7 @@ pub fn project_rtf(input: &str) -> TextProjectionResult {
     let mut out = String::new();
     let mut i = 0usize;
     let mut fallback = 0usize;
+    let mut pending_high_surrogate = None;
     while i < bytes.len() && out.chars().count() < MAX_OUTPUT_CHARS {
         if fallback > 0 {
             i = skip_fallback(bytes, i);
@@ -40,6 +41,7 @@ pub fn project_rtf(input: &str) -> TextProjectionResult {
         }
         match bytes[i] {
             b'{' => {
+                flush_pending_surrogate(&mut out, &mut diagnostics, &mut pending_high_surrogate);
                 if stack.len() < MAX_GROUP_DEPTH {
                     stack.push(*stack.last().unwrap());
                 } else {
@@ -48,6 +50,7 @@ pub fn project_rtf(input: &str) -> TextProjectionResult {
                 i += 1;
             }
             b'}' => {
+                flush_pending_surrogate(&mut out, &mut diagnostics, &mut pending_high_surrogate);
                 if stack.len() > 1 {
                     stack.pop();
                 } else {
@@ -61,10 +64,29 @@ pub fn project_rtf(input: &str) -> TextProjectionResult {
                 let state = stack.last_mut().unwrap();
                 match control {
                     Control::Symbol(b'\\' | b'{' | b'}') if !state.skip => {
+                        flush_pending_surrogate(
+                            &mut out,
+                            &mut diagnostics,
+                            &mut pending_high_surrogate,
+                        );
                         out.push(control.symbol().unwrap() as char)
                     }
-                    Control::Symbol(b'*') => state.ignorable = true,
-                    Control::Hex(value) if !state.skip => out.push(char::from(value)),
+                    Control::Symbol(b'*') => {
+                        flush_pending_surrogate(
+                            &mut out,
+                            &mut diagnostics,
+                            &mut pending_high_surrogate,
+                        );
+                        state.ignorable = true;
+                    }
+                    Control::Hex(value) if !state.skip => {
+                        flush_pending_surrogate(
+                            &mut out,
+                            &mut diagnostics,
+                            &mut pending_high_surrogate,
+                        );
+                        out.push(char::from(value));
+                    }
                     Control::Word(word, parameter) => {
                         if is_destination(word) || (state.ignorable && !is_known_control(word)) {
                             state.skip = true;
@@ -76,15 +98,20 @@ pub fn project_rtf(input: &str) -> TextProjectionResult {
                         }
                         if word == "u" && !state.skip {
                             if let Some(n) = parameter {
-                                let scalar = (n as i16) as u16;
-                                out.push(
-                                    char::decode_utf16([scalar])
-                                        .next()
-                                        .and_then(Result::ok)
-                                        .unwrap_or('\u{fffd}'),
+                                push_unicode_unit(
+                                    &mut out,
+                                    &mut diagnostics,
+                                    &mut pending_high_surrogate,
+                                    (n as i16) as u16,
                                 );
                                 fallback = state.uc;
                             }
+                        } else {
+                            flush_pending_surrogate(
+                                &mut out,
+                                &mut diagnostics,
+                                &mut pending_high_surrogate,
+                            );
                         }
                         if !state.skip {
                             match word {
@@ -102,12 +129,18 @@ pub fn project_rtf(input: &str) -> TextProjectionResult {
             }
             byte => {
                 if !stack.last().unwrap().skip && byte >= 0x20 {
+                    flush_pending_surrogate(
+                        &mut out,
+                        &mut diagnostics,
+                        &mut pending_high_surrogate,
+                    );
                     out.push(byte as char);
                 }
                 i += 1;
             }
         }
     }
+    flush_pending_surrogate(&mut out, &mut diagnostics, &mut pending_high_surrogate);
     if stack.len() != 1 {
         diagnostics.push(ProjectionDiagnostic::MalformedMarkup);
     }
@@ -118,6 +151,45 @@ pub fn project_rtf(input: &str) -> TextProjectionResult {
         text: normalize(&out),
         urls: Vec::new(),
         diagnostics,
+    }
+}
+
+fn push_unicode_unit(
+    out: &mut String,
+    diagnostics: &mut Vec<ProjectionDiagnostic>,
+    pending_high: &mut Option<u16>,
+    unit: u16,
+) {
+    if (0xd800..=0xdbff).contains(&unit) {
+        flush_pending_surrogate(out, diagnostics, pending_high);
+        *pending_high = Some(unit);
+        return;
+    }
+
+    if (0xdc00..=0xdfff).contains(&unit) {
+        if let Some(high) = pending_high.take() {
+            if let Some(decoded) = char::decode_utf16([high, unit]).next().and_then(Result::ok) {
+                out.push(decoded);
+                return;
+            }
+        }
+        out.push('\u{fffd}');
+        diagnostics.push(ProjectionDiagnostic::MalformedMarkup);
+        return;
+    }
+
+    flush_pending_surrogate(out, diagnostics, pending_high);
+    out.push(char::from_u32(u32::from(unit)).unwrap_or('\u{fffd}'));
+}
+
+fn flush_pending_surrogate(
+    out: &mut String,
+    diagnostics: &mut Vec<ProjectionDiagnostic>,
+    pending_high: &mut Option<u16>,
+) {
+    if pending_high.take().is_some() {
+        out.push('\u{fffd}');
+        diagnostics.push(ProjectionDiagnostic::MalformedMarkup);
     }
 }
 
@@ -229,6 +301,7 @@ fn normalize(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::project_rtf;
+    use crate::model::ProjectionDiagnostic;
 
     #[test]
     fn unicode_fallback_destinations_and_escapes() {
@@ -244,5 +317,29 @@ mod tests {
             project_rtf(r"{\rtf1 before {\*\unknown hidden} after}").text,
             "before after"
         );
+    }
+
+    #[test]
+    fn unicode_surrogate_pair_round_trips_non_bmp_text() {
+        let projected = project_rtf(r"{\rtf1\ansi Smile: \u-10179?\u-8704?}");
+
+        assert_eq!(projected.text, "Smile: 😀");
+        assert!(projected.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn malformed_unicode_surrogates_degrade_with_diagnostics() {
+        let lone_high = project_rtf(r"{\rtf1\ansi \u-10179? text}");
+        let lone_low = project_rtf(r"{\rtf1\ansi \u-8704?}");
+        let mismatched = project_rtf(r"{\rtf1\ansi \u-10179?\u65?}");
+
+        assert_eq!(lone_high.text, "� text");
+        assert_eq!(lone_low.text, "�");
+        assert_eq!(mismatched.text, "�A");
+        for projected in [lone_high, lone_low, mismatched] {
+            assert!(projected
+                .diagnostics
+                .contains(&ProjectionDiagnostic::MalformedMarkup));
+        }
     }
 }
