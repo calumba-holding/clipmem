@@ -97,7 +97,7 @@ fn search_propagates_non_syntax_fts_failures() -> Result<()> {
 
 #[test]
 fn migration_backfills_unified_search_documents_from_supported_versions() -> Result<()> {
-    for source_version in [0_i64, 11, 13, 18, 20, 21, 22] {
+    for source_version in [0_i64, 11, 13, 18, 20, 21, 22, 23] {
         let path = temp_db_path(&format!("unified-search-v{source_version}"));
         {
             let mut db = Database::open_or_init(&path)?;

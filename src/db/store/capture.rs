@@ -83,20 +83,16 @@ impl Database {
 
         let suppressed_operation: Option<String> = tx
             .query_row(
-                "SELECT operation_id
-                 FROM restore_operations
-                 WHERE datetime(expires_at) >= datetime('now')
-                   AND (
-                       -- A preparing or failed operation owns its registered
-                       -- generation outright: only the restore's own clear,
-                       -- write, or rollback can be observed at that change
-                       -- count, including the cleared empty intermediate state.
-                       (state IN ('preparing', 'failed') AND expected_change_count = ?2)
-                       OR (state = 'written' AND snapshot_sha256 = ?1 AND result_change_count = ?2)
-                   )
-                 ORDER BY created_at DESC, operation_id DESC
+                "SELECT ro.operation_id
+                 FROM restore_operations ro
+                 JOIN restore_operation_generations rog
+                   ON rog.operation_id = ro.operation_id
+                 WHERE datetime(ro.expires_at) >= datetime('now')
+                   AND ro.state IN ('preparing', 'written', 'failed')
+                   AND rog.change_count = ?1
+                 ORDER BY ro.created_at DESC, ro.operation_id DESC
                  LIMIT 1",
-                params![snapshot.fingerprint(), snapshot.change_count()],
+                [snapshot.change_count()],
                 |row| row.get(0),
             )
             .optional()
@@ -128,6 +124,7 @@ impl Database {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn begin_restore_operation(
         &self,
         snapshot_id: i64,
@@ -135,7 +132,7 @@ impl Database {
         expected_change_count: i64,
     ) -> Result<String> {
         self.conn.execute(
-            "UPDATE restore_operations SET state = 'expired' WHERE state IN ('preparing', 'written') AND datetime(expires_at) < datetime('now')",
+            "UPDATE restore_operations SET state = 'expired' WHERE state IN ('preparing', 'written', 'failed') AND datetime(expires_at) < datetime('now')",
             [],
         ).context("expire restore operations")?;
         let operation_id: String = self
@@ -148,9 +145,17 @@ impl Database {
                 |row| row.get(0),
             )
             .context("begin restore operation")?;
+        self.conn
+            .execute(
+                "INSERT OR IGNORE INTO restore_operation_generations (operation_id, change_count)
+                 VALUES (?1, ?2)",
+                params![operation_id, expected_change_count],
+            )
+            .context("register restore operation generation")?;
         Ok(operation_id)
     }
 
+    #[cfg(test)]
     pub(crate) fn reassign_restore_operation_generation(
         &self,
         operation_id: &str,
@@ -158,15 +163,30 @@ impl Database {
     ) -> Result<()> {
         self.conn
             .execute(
+                "INSERT OR IGNORE INTO restore_operation_generations (operation_id, change_count)
+             VALUES (?1, ?2)",
+                params![operation_id, expected_change_count],
+            )
+            .context("append restore operation generation")?;
+        self.conn
+            .execute(
                 "UPDATE restore_operations SET expected_change_count = ?2,
-                 expires_at = datetime('now', '+5 seconds') WHERE operation_id = ?1",
+             expires_at = datetime('now', '+5 seconds') WHERE operation_id = ?1",
                 params![operation_id, expected_change_count],
             )
             .context("reassign restore operation generation")?;
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn mark_restore_written(&self, operation_id: &str, change_count: i64) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT OR IGNORE INTO restore_operation_generations (operation_id, change_count)
+             VALUES (?1, ?2)",
+                params![operation_id, change_count],
+            )
+            .context("register written restore generation")?;
         self.conn
             .execute(
                 "UPDATE restore_operations SET state = 'written', result_change_count = ?2,
@@ -177,6 +197,7 @@ impl Database {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn mark_restore_failed(&self, operation_id: &str, failure: &str) -> Result<()> {
         self.conn.execute(
             "UPDATE restore_operations SET state = 'failed', failure = ?2 WHERE operation_id = ?1",
@@ -267,10 +288,10 @@ fn store_capture_tx(
     ))
 }
 
-fn expire_restore_operations(conn: &rusqlite::Connection) -> Result<()> {
+pub(super) fn expire_restore_operations(conn: &rusqlite::Connection) -> Result<()> {
     conn.execute(
         "UPDATE restore_operations SET state = 'expired'
-         WHERE state IN ('preparing', 'written') AND datetime(expires_at) < datetime('now')",
+         WHERE state IN ('preparing', 'written', 'failed') AND datetime(expires_at) < datetime('now')",
         [],
     )
     .context("expire restore operations")?;

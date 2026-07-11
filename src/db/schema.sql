@@ -166,6 +166,13 @@ CREATE TABLE IF NOT EXISTS restore_operations (
     failure             TEXT
 );
 
+CREATE TABLE IF NOT EXISTS restore_operation_generations (
+    operation_id TEXT NOT NULL REFERENCES restore_operations(operation_id) ON DELETE CASCADE,
+    change_count INTEGER NOT NULL CHECK (change_count >= 0),
+    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (operation_id, change_count)
+);
+
 CREATE TABLE IF NOT EXISTS ocr_results (
     raw_sha256        TEXT PRIMARY KEY,
     status            TEXT NOT NULL CHECK (status IN ('pending', 'ready', 'failed', 'skipped')),
@@ -288,6 +295,9 @@ CREATE INDEX IF NOT EXISTS idx_pending_restores_created_at
 
 CREATE INDEX IF NOT EXISTS idx_restore_operations_suppression
     ON restore_operations(snapshot_sha256, state, result_change_count, expires_at);
+
+CREATE INDEX IF NOT EXISTS idx_restore_operation_generations_change_count
+    ON restore_operation_generations(change_count, operation_id);
 
 CREATE INDEX IF NOT EXISTS idx_snapshot_items_snapshot_id
     ON snapshot_items(snapshot_id, item_index);

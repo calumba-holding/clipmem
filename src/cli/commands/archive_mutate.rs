@@ -150,40 +150,29 @@ fn render_preview_text(output: &PreviewOutput) -> String {
 
 pub(in crate::cli) fn restore_snapshot(db_path: &Path, args: &RestoreArgs) -> Result<()> {
     let format = require_text_or_json(args.output.resolved()?, "restore")?;
-    let db = open_read_write_db(db_path)?;
+    let mut db = open_read_write_db(db_path)?;
     let payload = anyhow::Context::with_context(db.load_restore_payload(args.snapshot_id), || {
         format!("restore failed for snapshot {}", args.snapshot_id)
     })?
     .ok_or_else(|| not_found_error(format!("snapshot {} was not found", args.snapshot_id)))?;
-    let mut operation_id = None;
-    let report = match restore_items_registered(payload.items(), |expected_change_count| {
-        match operation_id.as_deref() {
-            None => {
-                operation_id = Some(db.begin_restore_operation(
-                    args.snapshot_id,
-                    payload.snapshot_sha256(),
-                    expected_change_count,
-                )?);
-            }
-            // A rollback write owns a fresh generation; move suppression to it.
-            Some(operation) => {
-                db.reassign_restore_operation_generation(operation, expected_change_count)?;
-            }
-        }
-        Ok(())
+    // Hold SQLite's write ownership across every pasteboard mutation. Watchers
+    // may capture concurrently, but their policy transaction cannot observe a
+    // restore-created generation until its exact suppression rows are committed.
+    let suppression = db.begin_restore_suppression(args.snapshot_id, payload.snapshot_sha256())?;
+    let operation_id = suppression.operation_id().to_string();
+    let report = match restore_items_registered(payload.items(), |change_count| {
+        suppression.register_generation(change_count)
     }) {
         Ok(report) => report,
         Err(err) => {
-            if let Some(operation_id) = operation_id.as_deref() {
-                if let Err(mark_err) = db.mark_restore_failed(operation_id, &format!("{err:#}")) {
-                    eprintln!("restore operation failure recording failed: {mark_err:#}");
-                }
+            if let Err(mark_err) = suppression.finish_failed(&format!("{err:#}")) {
+                eprintln!("restore operation failure recording failed: {mark_err:#}");
             }
             return Err(err).context("restore failed");
         }
     };
-    let operation_id = operation_id.expect("restore registration runs before pasteboard write");
-    db.mark_restore_written(&operation_id, report.change_count())
+    suppression
+        .finish_written(report.change_count())
         .context("clipboard restored but suppression registration is incomplete")?;
     let output = RestoreOutput {
         snapshot_id: args.snapshot_id,

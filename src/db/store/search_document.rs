@@ -7,7 +7,7 @@ use crate::model::{build_item, build_representation, FlattenedTextProjection};
 pub(in crate::db) const SNAPSHOT_DOCUMENT_BUILDER_VERSION: i64 = 3;
 
 pub(in crate::db) fn needs_builder_v3_migration(version: i64) -> bool {
-    version <= 22
+    version <= 23
 }
 
 pub(in crate::db) fn rebuild_snapshot_search_document(

@@ -3,6 +3,7 @@ use objc2::rc::{autoreleasepool, Retained};
 use objc2::runtime::ProtocolObject;
 use objc2_app_kit::{NSPasteboard, NSPasteboardItem, NSWorkspace};
 use objc2_foundation::{NSArray, NSData, NSString};
+use std::cell::Cell;
 
 use crate::model::{
     build_item, build_representation, build_snapshot, CaptureContext, ClipboardItem,
@@ -78,6 +79,7 @@ where
 
     autoreleasepool(|_| {
         let pasteboard = NSPasteboard::generalPasteboard();
+        let owned_generation = Cell::new(None);
         let (change_count, rollback_available) = execute_restore_protocol(
             || prepare_pasteboard_items(&plan),
             || {
@@ -85,6 +87,11 @@ where
                 Ok(Some(prepare_pasteboard_items(&build_restore_plan(
                     current.items(),
                 ))?))
+            },
+            || {
+                owned_generation
+                    .get()
+                    .is_some_and(|generation| pasteboard.changeCount() as i64 == generation)
             },
             |pasteboard_items| {
                 // clearContents opens a new generation (restore or rollback)
@@ -94,7 +101,8 @@ where
                 // moves to a newer generation and fails open to capture.
                 let generation = pasteboard.clearContents() as i64;
                 register(generation)?;
-                write_pasteboard_items(&pasteboard, pasteboard_items)
+                owned_generation.set(Some(generation));
+                write_pasteboard_items(&pasteboard, pasteboard_items, generation)
             },
         )?;
 
@@ -118,7 +126,11 @@ fn prepare_pasteboard_items(plan: &[RestorePlanItem]) -> Result<Vec<Retained<NSP
 fn write_pasteboard_items(
     pasteboard: &NSPasteboard,
     pasteboard_items: &[Retained<NSPasteboardItem>],
+    owned_generation: i64,
 ) -> Result<i64> {
+    if pasteboard.changeCount() as i64 != owned_generation {
+        anyhow::bail!("pasteboard advanced during restore; external generation left unsuppressed");
+    }
     let writers = pasteboard_items
         .iter()
         .cloned()
@@ -128,7 +140,11 @@ fn write_pasteboard_items(
     if !pasteboard.writeObjects(&array) {
         anyhow::bail!("failed to write restored pasteboard items");
     }
-    Ok(pasteboard.changeCount() as i64)
+    let result_generation = pasteboard.changeCount() as i64;
+    if result_generation != owned_generation {
+        anyhow::bail!("pasteboard advanced during restore; external generation left unsuppressed");
+    }
+    Ok(result_generation)
 }
 
 pub(crate) fn build_restore_plan(items: &[ClipboardItem]) -> Vec<RestorePlanItem> {
