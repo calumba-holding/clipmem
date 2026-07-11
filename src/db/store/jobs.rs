@@ -273,6 +273,7 @@ fn claim_jobs_tx(
     lease_seconds: i64,
     snapshot_id: Option<i64>,
 ) -> Result<Vec<JobLease>> {
+    terminalize_exhausted_expired_leases_tx(tx, kind)?;
     let mut stmt = tx
         .prepare(
             r"
@@ -342,6 +343,50 @@ fn claim_jobs_tx(
         }
     }
     Ok(leases)
+}
+
+fn terminalize_exhausted_expired_leases_tx(tx: &Transaction<'_>, kind: &str) -> Result<()> {
+    let exhausted_ids = {
+        let mut stmt = tx
+            .prepare(
+                r"
+                    SELECT id
+                    FROM jobs
+                    WHERE kind = ?1
+                      AND state = 'leased'
+                      AND lease_until <= CURRENT_TIMESTAMP
+                      AND attempts >= max_attempts
+                    ORDER BY id
+                ",
+            )
+            .context("prepare exhausted lease query")?;
+        let collected = stmt
+            .query_map([kind], |row| row.get::<_, i64>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        collected
+    };
+    for job_id in exhausted_ids {
+        tx.execute(
+            r"
+                UPDATE jobs
+                SET state = 'failed',
+                    last_error = 'lease expired after final attempt',
+                    lease_owner = NULL,
+                    lease_token = NULL,
+                    lease_until = NULL,
+                    finished_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?1
+                  AND state = 'leased'
+                  AND lease_until <= CURRENT_TIMESTAMP
+                  AND attempts >= max_attempts
+            ",
+            [job_id],
+        )
+        .context("terminalize exhausted expired lease")?;
+        refresh_attached_operations_tx(tx, job_id)?;
+    }
+    Ok(())
 }
 
 fn refresh_attached_operations_tx(tx: &Transaction<'_>, job_id: i64) -> Result<()> {
@@ -488,7 +533,8 @@ mod tests {
     use anyhow::Result;
 
     use super::{
-        complete_job_tx, enqueue_job_tx, image_source_ref_json, OCR_ALGORITHM_VERSION, OCR_JOB_KIND,
+        complete_job_tx, enqueue_job_tx, image_source_ref_json, reset_failed_job_tx,
+        OCR_ALGORITHM_VERSION, OCR_JOB_KIND,
     };
     use crate::db::Database;
 
@@ -552,6 +598,37 @@ mod tests {
         let encoded = image_source_ref_json("hash", 1, 2, "public.\"odd\\uti\n")?;
         let value: serde_json::Value = serde_json::from_str(&encoded)?;
         assert_eq!(value["uti"], "public.\"odd\\uti\n");
+        Ok(())
+    }
+
+    #[test]
+    fn expired_final_attempt_becomes_failed_and_can_be_explicitly_requeued() -> Result<()> {
+        let mut db = Database::open_in_memory()?;
+        let tx = db.conn.transaction()?;
+        enqueue_job_tx(&tx, OCR_JOB_KIND, "final", OCR_ALGORITHM_VERSION, "{}", 1)?;
+        tx.commit()?;
+        let lease = db.claim_jobs(OCR_JOB_KIND, "worker-a", 1)?.remove(0);
+        db.conn.execute(
+            "UPDATE jobs SET lease_until = datetime('now', '-1 second') WHERE id = ?1",
+            [lease.id()],
+        )?;
+
+        assert!(db.claim_jobs(OCR_JOB_KIND, "worker-b", 1)?.is_empty());
+        let (state, error): (String, Option<String>) = db.conn.query_row(
+            "SELECT state, last_error FROM jobs WHERE id = ?1",
+            [lease.id()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        assert_eq!(state, "failed");
+        assert_eq!(error.as_deref(), Some("lease expired after final attempt"));
+
+        let tx = db.conn.transaction()?;
+        reset_failed_job_tx(&tx, OCR_JOB_KIND, "final", OCR_ALGORITHM_VERSION)?;
+        tx.commit()?;
+        assert_eq!(
+            db.claim_jobs(OCR_JOB_KIND, "worker-c", 1)?[0].dedupe_key(),
+            "final"
+        );
         Ok(())
     }
 }
