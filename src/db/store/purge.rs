@@ -24,6 +24,7 @@ impl Database {
         tx.execute("DELETE FROM snapshots WHERE id = ?1", [snapshot_id])
             .context("delete snapshot")?;
         delete_unreferenced_ocr_results(&tx)?;
+        delete_unreferenced_background_jobs(&tx)?;
         bump_revision_tx(&tx, &[ArchiveChangeKind::ArchiveContent])?;
         tx.commit().context("commit forget transaction")?;
         Ok(report)
@@ -56,6 +57,7 @@ impl Database {
             )
             .context("delete expired snapshots")?;
             delete_unreferenced_ocr_results(&tx)?;
+            delete_unreferenced_background_jobs(&tx)?;
             bump_revision_tx(&tx, &[ArchiveChangeKind::ArchiveContent])?;
         }
 
@@ -92,6 +94,22 @@ fn delete_unreferenced_ocr_results(tx: &rusqlite::Transaction<'_>) -> Result<()>
         [],
     )
     .context("delete unreferenced OCR results")?;
+    Ok(())
+}
+
+fn delete_unreferenced_background_jobs(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+    tx.execute(
+        r"
+            DELETE FROM jobs
+            WHERE kind IN ('ocr', 'image_preview_derivative')
+              AND NOT EXISTS (
+                  SELECT 1 FROM item_representations ir
+                  WHERE ir.raw_sha256 = jobs.dedupe_key
+              )
+        ",
+        [],
+    )
+    .context("delete unreferenced background jobs")?;
     Ok(())
 }
 

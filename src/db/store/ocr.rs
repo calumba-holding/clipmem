@@ -152,16 +152,15 @@ impl Database {
         let owner = format!("ocr-{}", std::process::id());
         let leases =
             self.claim_ocr_jobs_for_snapshot(&owner, clamp_result_limit(limit), snapshot_id)?;
-        leases
-            .into_iter()
-            .filter_map(
-                |lease| match load_ocr_candidate(&self.conn, lease, snapshot_id) {
-                    Ok(Some(candidate)) => Some(Ok(candidate)),
-                    Ok(None) => None,
-                    Err(error) => Some(Err(error)),
-                },
-            )
-            .collect()
+        let mut candidates = Vec::with_capacity(leases.len());
+        for lease in leases {
+            if let Some(candidate) = load_ocr_candidate(&self.conn, lease.clone(), snapshot_id)? {
+                candidates.push(candidate);
+            } else {
+                self.skip_claimed_job(&lease, "source_missing")?;
+            }
+        }
+        Ok(candidates)
     }
 
     #[allow(dead_code)]
