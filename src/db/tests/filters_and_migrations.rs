@@ -2,6 +2,7 @@ use super::*;
 use rusqlite::params;
 
 mod archive_revision_migration;
+mod canonical_fts_migration;
 mod integrity_migration;
 mod purge_and_escaping;
 mod text_projection_migration;
@@ -131,6 +132,7 @@ fn schema_keeps_fts_index_and_triggers() {
     assert!(SCHEMA.contains("CREATE TRIGGER IF NOT EXISTS snapshots_ai"));
     assert!(SCHEMA.contains("CREATE TRIGGER IF NOT EXISTS snapshots_ad"));
     assert!(SCHEMA.contains("CREATE TRIGGER IF NOT EXISTS snapshots_au"));
+    assert!(SCHEMA.contains("CREATE TRIGGER IF NOT EXISTS snapshot_search_documents_ad"));
     assert!(SCHEMA.contains("capture_events_restore_suppression_bi"));
     assert!(SCHEMA.contains("idx_capture_events_snapshot_observed_id"));
     assert!(SCHEMA.contains("idx_capture_events_observed_id"));

@@ -18,11 +18,27 @@ fn purge_uses_last_observed_at_and_dry_run_does_not_delete() -> Result<()> {
     assert_eq!(dry_run.capture_event_count(), 1);
     assert!(db.find_snapshot(old.snapshot_id(), 10)?.is_some());
     assert!(db.find_snapshot(fresh.snapshot_id(), 10)?.is_some());
+    assert_eq!(
+        canonical_search_fts_row_counts(&db, old.snapshot_id())?,
+        (1, 1)
+    );
+    assert_eq!(
+        canonical_search_fts_row_counts(&db, fresh.snapshot_id())?,
+        (1, 1)
+    );
     let deleted = db.purge_snapshots_older_than(30 * 24 * 60 * 60, false)?;
     assert!(!deleted.dry_run());
     assert_eq!(deleted.snapshot_count(), 1);
     assert!(db.find_snapshot(old.snapshot_id(), 10)?.is_none());
     assert!(db.find_snapshot(fresh.snapshot_id(), 10)?.is_some());
+    assert_eq!(
+        canonical_search_fts_row_counts(&db, old.snapshot_id())?,
+        (0, 0)
+    );
+    assert_eq!(
+        canonical_search_fts_row_counts(&db, fresh.snapshot_id())?,
+        (1, 1)
+    );
     assert!(db
         .search_auto("old clipboard", 10, &unfiltered())?
         .hits()

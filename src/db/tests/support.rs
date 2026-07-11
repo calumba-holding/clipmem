@@ -461,6 +461,23 @@ where
     median_profile_run_expected(runs, 25, f)
 }
 
+pub(in crate::db::tests) fn canonical_search_fts_row_counts(
+    db: &Database,
+    snapshot_id: i64,
+) -> Result<(i64, i64)> {
+    let ranked = db.conn.query_row(
+        "SELECT COUNT(*) FROM snapshot_search_documents_fts WHERE rowid=?1",
+        [snapshot_id],
+        |row| row.get(0),
+    )?;
+    let literal = db.conn.query_row(
+        "SELECT COUNT(*) FROM snapshot_search_documents_literal_fts WHERE rowid=?1",
+        [snapshot_id],
+        |row| row.get(0),
+    )?;
+    Ok((ranked, literal))
+}
+
 pub(in crate::db::tests) fn median_profile_run_expected<F>(
     runs: usize,
     expected_count: usize,
