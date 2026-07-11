@@ -27,6 +27,7 @@ pub(crate) struct RestoreReport {
 }
 
 #[derive(Debug)]
+#[cfg(any(target_os = "macos", test))]
 pub(crate) struct RestoreWriteFailure {
     write_error: anyhow::Error,
     rollback_attempted: bool,
@@ -34,11 +35,13 @@ pub(crate) struct RestoreWriteFailure {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(any(target_os = "macos", test))]
 pub(crate) enum RestoreWritePhase {
     Destination,
     Rollback,
 }
 
+#[cfg(any(target_os = "macos", test))]
 impl std::fmt::Display for RestoreWriteFailure {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -49,8 +52,10 @@ impl std::fmt::Display for RestoreWriteFailure {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 impl std::error::Error for RestoreWriteFailure {}
 
+#[cfg(any(target_os = "macos", test))]
 pub(crate) fn execute_restore_protocol<T, Prepare, Rollback, CanRollback, Write>(
     prepare: Prepare,
     capture_rollback: Rollback,
@@ -84,16 +89,20 @@ where
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(any(target_os = "macos", test))]
 pub(crate) struct TransientPasteboardChanged;
 
+#[cfg(any(target_os = "macos", test))]
 impl std::fmt::Display for TransientPasteboardChanged {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str("clipboard changed during capture; retry the capture")
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 impl std::error::Error for TransientPasteboardChanged {}
 
+#[cfg(any(target_os = "macos", test))]
 pub(crate) fn stable_capture_with<F>(
     mut attempt: F,
 ) -> anyhow::Result<crate::model::ClipboardSnapshot>
