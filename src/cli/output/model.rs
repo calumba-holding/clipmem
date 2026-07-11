@@ -57,6 +57,31 @@ pub(in crate::cli) struct ExportOutput {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub(in crate::cli) struct PreviewOutput {
+    pub(in crate::cli) snapshot_id: i64,
+    pub(in crate::cli) item_index: usize,
+    pub(in crate::cli) source_uti: String,
+    pub(in crate::cli) status: &'static str,
+    pub(in crate::cli) available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::cli) source_raw_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::cli) output_uti: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::cli) encoder_version: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::cli) encoder_options_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::cli) width: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::cli) height: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::cli) byte_count: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(in crate::cli) out: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub(in crate::cli) struct SettingsView {
     pub(in crate::cli) paused: bool,
     pub(in crate::cli) api_key_filter_enabled: bool,

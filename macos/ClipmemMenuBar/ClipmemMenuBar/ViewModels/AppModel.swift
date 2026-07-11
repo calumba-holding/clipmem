@@ -23,6 +23,7 @@ final class AppModel {
     var doctorReport: DoctorReport?
     var settingsReport: SettingsReport?
     var recentPreview: [ClipmemItem] = []
+    var recentPreviewRefreshError: UserError?
     var clipboardHistoryRevision = 0
     var lastError: UserError?
     var actionMessage: String?
@@ -39,7 +40,6 @@ final class AppModel {
     var updateStatus = UpdateStatus.load()
     var pendingHistoryOpenRequest: HistoryOpenRequest?
     var pendingSettingsOpenRequest: SettingsOpenRequest?
-
     @ObservationIgnored private let hotKeyManager = HotKeyManager()
     @ObservationIgnored private let updateChecker = UpdateChecker()
     @ObservationIgnored private let loadRecentPreview: @MainActor () async throws -> [ClipmemItem]
@@ -135,9 +135,10 @@ final class AppModel {
             let changed = loadedPreview != recentPreview
             recentPreview = loadedPreview
             recentPreviewRefreshedAt = Date()
+            recentPreviewRefreshError = nil
             return changed
         } catch {
-            recentPreview = []
+            recentPreviewRefreshError = UserError(error)
             return false
         }
     }
@@ -540,11 +541,8 @@ final class AppModel {
     }
 
     private func installSelfIgnoreIfNeeded() async {
-        let defaults = UserDefaults.standard
-        guard defaults.bool(forKey: PreferenceKey.didInstallSelfIgnore) == false else { return }
         do {
             try await client.runAction(.settingsIgnoreAdd("io.openclaw.clipmem.menubar"))
-            defaults.set(true, forKey: PreferenceKey.didInstallSelfIgnore)
         } catch {
             AppLoggers.service.info("Self ignore setup was skipped or failed")
         }
@@ -707,6 +705,8 @@ final class AppModel {
         if previousBinaryPath != nextBinaryPath || previousDatabasePath != nextDatabasePath {
             configurationGeneration += 1
             observedRevision = nil
+            recentRefreshCoordinator = nil
+            await installSelfIgnoreIfNeeded()
             await refreshAll()
         } else if previousHotkeyEnabled != nextHotkeyEnabled || previousLaunchAtLoginEnabled != launchAtLoginEnabled || previousUpdateStatus != updateStatus {
             clipboardHistoryRevision += 1

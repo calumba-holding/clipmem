@@ -7,25 +7,27 @@ use crate::db::{RetrievalFilters, RetrievalKind, SearchMode, TimelineSort};
 use super::formats::{OutputArgs, ProgressFormat, RecallOutputArgs, StatsOutputArgs, ToggleState};
 use super::help::{
     AGENTS_CONTEXT_AFTER_HELP, APP_AFTER_HELP, APP_SETTINGS_AFTER_HELP, CAPTURE_ONCE_AFTER_HELP,
-    DOCTOR_AFTER_HELP, EXPORT_AFTER_HELP, FORGET_AFTER_HELP, GET_AFTER_HELP,
-    HERMES_DOCTOR_AFTER_HELP, HERMES_INSTALL_AFTER_HELP, HERMES_PRINT_AFTER_HELP,
-    HERMES_UNINSTALL_AFTER_HELP, OCR_AFTER_HELP, OPENCLAW_DOCTOR_AFTER_HELP,
-    OPENCLAW_INSTALL_AFTER_HELP, OPENCLAW_PRINT_AFTER_HELP, OPENCLAW_UNINSTALL_AFTER_HELP,
-    PURGE_AFTER_HELP, RECALL_AFTER_HELP, RECENT_AFTER_HELP, RESTORE_AFTER_HELP, ROOT_AFTER_HELP,
-    SEARCH_AFTER_HELP, SERVICE_AFTER_HELP, SERVICE_REVISION_AFTER_HELP, SERVICE_STATUS_AFTER_HELP,
-    SETTINGS_AFTER_HELP, SETUP_AFTER_HELP, STATS_AFTER_HELP, STORAGE_AFTER_HELP,
-    TIMELINE_AFTER_HELP, WATCH_AFTER_HELP,
+    DOCTOR_AFTER_HELP, FORGET_AFTER_HELP, GET_AFTER_HELP, HERMES_DOCTOR_AFTER_HELP,
+    HERMES_INSTALL_AFTER_HELP, HERMES_PRINT_AFTER_HELP, HERMES_UNINSTALL_AFTER_HELP,
+    OCR_AFTER_HELP, OPENCLAW_DOCTOR_AFTER_HELP, OPENCLAW_INSTALL_AFTER_HELP,
+    OPENCLAW_PRINT_AFTER_HELP, OPENCLAW_UNINSTALL_AFTER_HELP, PURGE_AFTER_HELP, RECALL_AFTER_HELP,
+    RECENT_AFTER_HELP, RESTORE_AFTER_HELP, ROOT_AFTER_HELP, SEARCH_AFTER_HELP, SERVICE_AFTER_HELP,
+    SERVICE_REVISION_AFTER_HELP, SERVICE_STATUS_AFTER_HELP, SETTINGS_AFTER_HELP, SETUP_AFTER_HELP,
+    STATS_AFTER_HELP, STORAGE_AFTER_HELP, TIMELINE_AFTER_HELP, WATCH_AFTER_HELP,
 };
 use super::parsing::{
-    parse_bounded_limit, parse_bundle_id, parse_duration_value, parse_item_index,
-    parse_nonnegative_bytes, parse_normalized_score, parse_preferred_app, parse_representation_uti,
-    parse_retention_value, parse_retrieval_kind, parse_rfc3339_timestamp, parse_search_mode,
-    parse_sha256_hash, parse_timeline_sort, DurationValue, RetentionValue,
+    parse_bounded_limit, parse_bundle_id, parse_duration_value, parse_nonnegative_bytes,
+    parse_normalized_score, parse_preferred_app, parse_retention_value, parse_retrieval_kind,
+    parse_rfc3339_timestamp, parse_search_mode, parse_sha256_hash, parse_timeline_sort,
+    DurationValue, RetentionValue,
 };
 use super::value_validation::{
     normalize_nonempty_filter_value, validate_byte_window, validate_positive_hours,
     validate_time_window,
 };
+
+mod preview;
+pub(super) use preview::{ExportArgs, PreviewArgs};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum AppPreferenceKey {
@@ -104,6 +106,8 @@ pub(super) enum Command {
     Get(GetArgs),
     /// Export one stored representation as raw bytes.
     Export(ExportArgs),
+    /// Export one ready image preview derivative.
+    Preview(PreviewArgs),
     /// Restore a stored snapshot back onto the clipboard.
     Restore(RestoreArgs),
     /// Irreversibly delete one stored snapshot and its capture history.
@@ -587,35 +591,6 @@ pub(super) struct GetArgs {
     /// Number of recent events to include.
     #[arg(long, default_value_t = 10, value_parser = parse_bounded_limit)]
     pub(super) events: usize,
-
-    #[command(flatten)]
-    pub(super) filters: RetrievalFilterArgs,
-
-    #[command(flatten)]
-    pub(super) output: OutputArgs,
-}
-
-#[derive(Debug, Args)]
-#[command(after_help = EXPORT_AFTER_HELP)]
-pub(super) struct ExportArgs {
-    /// Snapshot identifier.
-    pub(super) snapshot_id: i64,
-
-    /// Item index inside the stored snapshot.
-    #[arg(long, value_parser = parse_item_index)]
-    pub(super) item: usize,
-
-    /// Representation UTI to export.
-    #[arg(long, value_parser = parse_representation_uti)]
-    pub(super) uti: String,
-
-    /// Destination path for the raw bytes.
-    #[arg(long)]
-    pub(super) out: PathBuf,
-
-    /// Replace an existing regular file at the destination path.
-    #[arg(long, default_value_t = false)]
-    pub(super) force: bool,
 
     #[command(flatten)]
     pub(super) filters: RetrievalFilterArgs,

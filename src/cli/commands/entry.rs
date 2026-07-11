@@ -22,7 +22,8 @@ use super::agents::{
 };
 use super::app::app;
 use super::archive_mutate::{
-    export_snapshot_bytes, forget_snapshot, purge_snapshots, restore_snapshot,
+    export_snapshot_bytes, forget_snapshot, preview_snapshot_bytes, purge_snapshots,
+    restore_snapshot,
 };
 use super::doctor::doctor;
 use super::mutation_support::require_text_or_json;
@@ -47,6 +48,7 @@ pub(in crate::cli) fn run_command(command: Command, db_path: &Path) -> Result<()
         Command::Recall(args) => recall(db_path, &args),
         Command::Get(args) => show_snapshot(db_path, &args),
         Command::Export(args) => export_snapshot_bytes(db_path, &args),
+        Command::Preview(args) => preview_snapshot_bytes(db_path, &args),
         Command::Restore(args) => restore_snapshot(db_path, &args),
         Command::Forget(args) => forget_snapshot(db_path, &args),
         Command::Purge(args) => purge_snapshots(db_path, &args),

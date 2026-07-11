@@ -3,6 +3,35 @@ import Testing
 @testable import ClipmemMenuBar
 
 struct HistoryModelTests {
+    @Test func previewDescriptorInvalidatesForContentAndProjectionVersions() {
+        let representation = ImagePreviewRepresentation(
+            itemIndex: 0,
+            uti: "public.tiff",
+            sourceRawSha256: "source-a",
+            fileExtension: "tiff"
+        )
+        let first = ImagePreviewDescriptor(
+            snapshotId: 7,
+            snapshotSha256: "snapshot-a",
+            textProjectionVersion: 3,
+            representation: representation
+        )
+        let contentChanged = ImagePreviewDescriptor(
+            snapshotId: 7,
+            snapshotSha256: "snapshot-b",
+            textProjectionVersion: 3,
+            representation: representation
+        )
+        let projectionChanged = ImagePreviewDescriptor(
+            snapshotId: 7,
+            snapshotSha256: "snapshot-a",
+            textProjectionVersion: 4,
+            representation: representation
+        )
+
+        #expect(first != contentChanged)
+        #expect(first != projectionChanged)
+    }
     @Test
     @MainActor
     func requestHistorySearchTrimsQueryAndCreatesSearchRequest() throws {

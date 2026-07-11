@@ -53,7 +53,7 @@ struct SnapshotDetailView: View {
                     .padding()
             }
         }
-        .task(id: detail?.snapshotId) {
+        .task(id: previewDescriptor) {
             await revealSections()
             await loadImagePreview()
         }
@@ -71,6 +71,16 @@ struct SnapshotDetailView: View {
         } message: {
             Text("This permanently removes the saved content and all records of when it was copied. This cannot be undone.")
         }
+    }
+
+    private var previewDescriptor: ImagePreviewDescriptor? {
+        guard let detail, let representation = detail.imagePreviewRepresentation else { return nil }
+        return ImagePreviewDescriptor(
+            snapshotId: detail.snapshotId,
+            snapshotSha256: detail.sha256,
+            textProjectionVersion: detail.textProjectionVersion,
+            representation: representation
+        )
     }
 
     private func revealSections() async {
@@ -170,40 +180,30 @@ struct SnapshotDetailView: View {
         return detail.itemCount > 0
     }
 
-    private func copyButtonTitle(for detail: SnapshotDetails) -> String {
-        if detail.copyableDetailText?.isEmpty == false {
-            return "Copy"
-        }
+    private func copyOriginalButtonTitle(for detail: SnapshotDetails) -> String {
         if detail.snapshotKind == .image {
             return "Copy Image"
         }
-        return "Copy Snapshot"
-    }
-
-    private func copyButtonHelp(for detail: SnapshotDetails) -> String {
-        if detail.copyableDetailText?.isEmpty == false {
-            return "Copy extracted text"
-        }
-        return "Copy this saved clipboard item with its original formats"
-    }
-
-    private func copy(_ detail: SnapshotDetails) {
-        if let text = detail.copyableDetailText {
-            appModel.copyPlainTextToPasteboard(text)
-            return
-        }
-        Task { await appModel.copySnapshotToPasteboard(snapshotID: detail.snapshotId) }
+        return "Copy Original"
     }
 
     private func actionBar(_ detail: SnapshotDetails) -> some View {
         HStack(spacing: Spacing.sm) {
-            if canCopy(detail) {
-                Button(copyButtonTitle(for: detail), systemImage: "doc.on.doc") {
-                    copy(detail)
+            if let text = detail.copyableDetailText, text.isEmpty == false {
+                Button("Copy Text", systemImage: "doc.on.doc") {
+                    appModel.copyPlainTextToPasteboard(text)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
-                .help(copyButtonHelp(for: detail))
+                .help("Copy flattened extracted text")
+            }
+            if detail.itemCount > 0 {
+                Button(copyOriginalButtonTitle(for: detail), systemImage: "doc.on.doc.fill") {
+                    Task { await appModel.copySnapshotToPasteboard(snapshotID: detail.snapshotId) }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Copy this saved clipboard item with its exact original formats")
             }
             Button("Restore", systemImage: "arrow.uturn.backward.square") {
                 Task { await appModel.restore(snapshotID: detail.snapshotId) }
@@ -220,13 +220,14 @@ struct SnapshotDetailView: View {
     }
 
     private func loadImagePreview() async {
-        guard let detail, let representation = detail.imagePreviewRepresentation else {
+        guard let descriptor = previewDescriptor else {
             removeLoadedPreview()
             imagePreviewState = .notAvailable
             return
         }
 
-        let snapshotID = detail.snapshotId
+        let snapshotID = descriptor.snapshotId
+        let representation = descriptor.representation
         removeLoadedPreview()
         imagePreviewState = .loading(snapshotID: snapshotID)
 
@@ -235,14 +236,23 @@ struct SnapshotDetailView: View {
             .appendingPathExtension(representation.fileExtension)
 
         do {
-            _ = try await appModel.client.export(
+            let preview = try await appModel.client.preview(
                 snapshotID: snapshotID,
                 itemIndex: representation.itemIndex,
                 uti: representation.uti,
                 destination: destination.path,
                 force: true
             )
-            guard self.detail?.snapshotId == snapshotID else {
+            if preview.available == false {
+                _ = try await appModel.client.export(
+                    snapshotID: snapshotID,
+                    itemIndex: representation.itemIndex,
+                    uti: representation.uti,
+                    destination: destination.path,
+                    force: true
+                )
+            }
+            guard self.previewDescriptor == descriptor else {
                 try? FileManager.default.removeItem(at: destination)
                 return
             }

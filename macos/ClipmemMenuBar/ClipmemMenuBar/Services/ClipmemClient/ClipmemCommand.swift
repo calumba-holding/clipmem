@@ -200,6 +200,15 @@ struct ClipmemCommand: Equatable, Sendable {
         return ClipmemCommand(arguments: arguments)
     }
 
+    static func preview(snapshotID: Int, itemIndex: Int, uti: String, destination: String, force: Bool) -> ClipmemCommand {
+        var arguments = [
+            "preview", String(snapshotID), String(itemIndex), uti,
+            "--out", destination, "--format", "json"
+        ]
+        if force { arguments.append("--force") }
+        return ClipmemCommand(arguments: arguments)
+    }
+
     private static func listCommand(
         _ prefix: [String],
         limit: Int,

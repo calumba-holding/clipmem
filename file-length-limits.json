@@ -12,7 +12,7 @@
   "overrides": {
     "macos/ClipmemMenuBar/ClipmemMenuBar/ViewModels/AppModel.swift": 912,
     "src/cli/commands/retrieval/recall.rs": 811,
-    "src/cli/schema.rs": 1045,
+    "src/cli/schema.rs": 1020,
     "src/cli/tests.rs": 1025,
     "src/db/impls.rs": 807,
     "tests/search_benchmark.rs": 1577,

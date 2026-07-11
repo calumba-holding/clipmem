@@ -4,6 +4,20 @@ import Testing
 
 @Suite(.serialized)
 struct CommandRunnerTests {
+    @Test func timeoutIsDistinctFromUserCancellation() async throws {
+        do {
+            _ = try await CommandRunner().run(
+                executable: "/bin/sh",
+                arguments: ["-c", "exec sleep 30"],
+                timeout: .milliseconds(50)
+            )
+            Issue.record("Expected the command to time out.")
+        } catch let error as CommandTimeoutError {
+            #expect(error.commandCategory == "sh")
+        } catch {
+            Issue.record("Expected CommandTimeoutError, got \(error).")
+        }
+    }
     @Test func drainsLargeStdoutAndStderrBeforeWaiting() async throws {
         let byteCount = 200_000
         let script = "print \"o\" x \(byteCount); print STDERR \"e\" x \(byteCount);"
@@ -152,6 +166,20 @@ struct CommandRunnerTests {
 
 @MainActor
 struct ReactiveRefreshTests {
+    @Test func failedRecentRefreshPreservesPreviousRows() async {
+        let shouldFail = IntBox(0)
+        let appModel = AppModel {
+            if shouldFail.value == 1 { throw ClipmemClientError.commandFailed(1, "temporary") }
+            return [Self.item(9)]
+        }
+
+        _ = await appModel.refreshRecentPreview()
+        shouldFail.value = 1
+        _ = await appModel.refreshRecentPreview()
+
+        #expect(appModel.recentPreview.map(\.snapshotId) == [9])
+        #expect(appModel.recentPreviewRefreshError?.message == "temporary")
+    }
     @Test func pasteboardMonitorEmitsOnlyWhenChangeCountChanges() {
         let changeCount = IntBox(1)
         let emittedChanges = IntBox(0)
