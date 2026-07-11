@@ -579,20 +579,16 @@ pub(in crate::db) fn store_image_preview_derivative(
     Ok(())
 }
 
+// Runs inside the caller's IMMEDIATE transaction, which owns the Storage
+// revision bump and any job completion for this skip.
 fn record_image_preview_failure(
-    conn: &mut rusqlite::Connection,
+    tx: &rusqlite::Transaction<'_>,
     candidate: &ImageOptimizationCandidate,
     reason: &str,
 ) -> Result<()> {
-    let tx = conn
-        .transaction_with_behavior(TransactionBehavior::Immediate)
-        .context("begin image preview skip transaction")?;
     tx.execute(
         "INSERT OR IGNORE INTO representation_derivatives (source_snapshot_id, source_item_index, source_uti, source_raw_sha256, derivative_kind, encoder_version, encoder_options_hash, status, reason) VALUES (?1, ?2, ?3, ?4, 'preview', ?5, ?6, 'skipped', ?7)",
         params![candidate.snapshot_id, candidate.item_index, &candidate.uti, &candidate.raw_sha256, IMAGE_PREVIEW_ENCODER_VERSION, IMAGE_PREVIEW_OPTIONS_HASH, reason],
     ).context("record image preview skip")?;
-    bump_revision_tx(&tx, &[ArchiveChangeKind::Storage])?;
-    tx.commit()
-        .context("commit image preview skip transaction")?;
     Ok(())
 }
