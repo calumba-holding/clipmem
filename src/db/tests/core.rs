@@ -139,11 +139,9 @@ fn current_open_modes_return_typed_schema_and_identity_errors() -> Result<()> {
 fn read_only_current_does_not_chmod_or_create_sqlite_sidecars() -> Result<()> {
     use std::os::unix::fs::PermissionsExt as _;
 
-    // Sidecar-free reads are guaranteed on read-only media, where the
-    // immutable fallback is genuinely sound; live writable archives keep
-    // SQLite's normal locking protocol instead.
-    // An isolated directory: this test makes the parent read-only, which
-    // must not affect concurrently running tests in the shared temp dir.
+    // Sidecar-free reads are guaranteed on read-only media (the immutable
+    // fallback); the parent goes read-only, so isolate it from the shared
+    // temp dir used by concurrently running tests.
     let shared = temp_db_path("read-only-no-filesystem-writes");
     let parent = shared.with_extension("dir");
     std::fs::create_dir_all(&parent)?;

@@ -9,6 +9,86 @@ versioning where practical.
 
 ## Unreleased
 
+## 0.6.0 - 2026-07-11
+
+Architecture release implementing the full ten-plan audit roadmap
+(`plans/`). The archive schema migrates from v18 to v23 automatically on
+first open via `clipmem setup` or the managed service; all existing CLI
+JSON fields remain parseable, with new fields additive.
+
+### Fixed
+
+- Recall confidence no longer reports every full-text hit as a perfect
+  match: scores use evidence-based tiers (`score_semantics:
+  "evidence_v1"`), and the weak-match, expansion, and recent-fallback
+  branches work as intended.
+- Search results paginate as one deduplicated stream with a stable
+  total order and cursor (v2); stale cursors are rejected with a clear
+  error instead of silently skipping rows.
+- Capture policy (pause, ignored apps, sensitive filter, restore
+  suppression, OCR enqueue) now applies identically to the watcher,
+  `capture-once`, and every other entry point through one capture
+  service, and ignored-app policy also covers the inferred content
+  origin of background clipboard writers.
+- Restore prepares all destination items before touching the pasteboard,
+  attempts rollback on write failure, and suppression matches the exact
+  pasteboard generation the restore owns — fixing duplicate captures
+  from concurrent watchers and lost-clipboard failure modes.
+- Forgetting or purging snapshots now also removes derived preview
+  BLOBs and orphaned background jobs, so deleted content is no longer
+  recoverable from the archive.
+- Image optimization no longer rewrites stored source bytes, hashes, or
+  snapshot identity; previews are generated as separate derivatives with
+  EXIF orientation applied.
+- HTML/RTF clipboard text projects through bounded parsers with correct
+  Unicode (surrogate pairs, UTF-8 literals, ANSI code pages) and no
+  hidden-content leaks; URL-only HTML keeps its links searchable.
+- Routine reads no longer open the archive with write intent or execute
+  schema setup, and list/status/detail paths never load payload BLOBs.
+- `clipmem setup` initializes and migrates the archive synchronously and
+  no longer captures the current clipboard as a seed.
+
+### Added
+
+- `clipmem preview <snapshot> <item> <uti> --out FILE` exports a ready
+  image preview derivative with additive JSON metadata; the menu bar app
+  uses previews before falling back to full exports.
+- `clipmem doctor --verify-invariants` runs opt-in integrity scans:
+  orphan representations, foreign-key violations, and canonical-vs-legacy
+  projection comparison, reported in an additive `integrity` section.
+- `storage build-previews` and `storage preview-status` manage the new
+  source-safe preview derivatives.
+- Durable background jobs with atomic claims, leases, bounded retries,
+  and crash resumability own OCR and image preview work; two workers can
+  run concurrently without duplicating or losing work.
+- Search documents index historical app names/bundle ids, merged native
+  and HTML-derived URLs, and factual has-text semantics shared by the
+  CLI and the menu bar app.
+- Typed database-open errors distinguish missing, foreign,
+  migration-required, and newer-schema archives, with actionable
+  guidance.
+- Additive CLI JSON: `match_kind` and `score_semantics` (recall),
+  `match_evidence` (search), `text_projection_version` and
+  `text_projection_diagnostics` (detail/list rows).
+
+### Changed
+
+- The menu bar app refresh is debounced and revision-gated, in-flight
+  CLI requests are cancelled on supersession, selection stays stable
+  across refreshes, and Copy Text versus Copy Original are explicit
+  actions.
+- The long-lived local service proposal was evaluated against measured
+  gates (median warm subprocess request 6.4ms vs the 25ms threshold) and
+  rejected; the app keeps the direct CLI transport
+  (`plans/evidence/plan-07-gate-measurements.md`).
+
+### Notes
+
+- New verification gates: migration fixture matrix
+  (`scripts/check_migration_matrix.py`), source-identity regression
+  tests, SQLite-authorizer proofs that metadata paths read no BLOBs, and
+  CI search-benchmark artifacts on Linux and macOS.
+
 ## 0.5.6 - 2026-06-03
 
 ### Fixed

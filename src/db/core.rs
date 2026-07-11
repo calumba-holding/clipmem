@@ -183,15 +183,12 @@ fn open_current_read_only_connection(
     // is only sound when the filesystem itself prevents modification. Probe
     // WAL access up front; it only fails where sidecars cannot be created
     // (read-only media), which is exactly the immutable=1 contract.
-    match Connection::open_with_flags(path, flags) {
-        Ok(conn) => {
-            let probe: std::result::Result<i64, _> =
-                conn.query_row("PRAGMA schema_version", [], |row| row.get(0));
-            if probe.is_ok() {
-                return Ok(conn);
-            }
+    if let Ok(conn) = Connection::open_with_flags(path, flags) {
+        let probe: std::result::Result<i64, _> =
+            conn.query_row("PRAGMA schema_version", [], |row| row.get(0));
+        if probe.is_ok() {
+            return Ok(conn);
         }
-        Err(_) => {}
     }
 
     let absolute = path
