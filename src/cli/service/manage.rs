@@ -22,8 +22,12 @@ pub(crate) fn setup(db_path: &Path) -> Result<SetupReport> {
     let status = status_report(db_path)?;
     let selection = select_provider(&context);
     ensure_no_conflict(&status)?;
-    // Setup is intentionally non-mutating: the watcher captures only the next
-    // clipboard generation after it starts.
+    // Setup owns archive creation/migration synchronously so reads issued
+    // immediately after a successful setup find a current-schema database
+    // even before the watcher process has started.
+    drop(Database::open_or_init_and_migrate(db_path).context("initialize archive during setup")?);
+    // Setup is intentionally non-mutating for clipboard content: the watcher
+    // captures only the next clipboard generation after it starts.
     let seed_capture = SeedCaptureOutcome::NotAttempted;
     let action = start_with_provider(&context, &selection)?;
     bump_service_revision(db_path);

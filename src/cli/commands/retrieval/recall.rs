@@ -75,11 +75,21 @@ fn build_recall_envelope(
         .cloned()
         .unwrap_or_default();
     let best_candidate = RecallOutputRow::from_hit(&recall.best.hit, args.full, &best_projection);
-    let best_match_score = recall.best.match_quality;
-    let confidence = best_match_score.map_or(
-        RecallMatchConfidence::QueryMatch,
-        RecallMatchConfidence::from_normalized_score,
-    );
+    const QUERY_MATCH_EVIDENCE_SCORE: f64 = 0.5;
+    // Complex explicit FTS queries have no per-hit quality; the legacy
+    // enum/score contract stays in its old domain and the additive
+    // match_kind field carries the honest semantics.
+    let match_kind = if recall.best.match_quality.is_some() {
+        "scored"
+    } else {
+        "query_match"
+    };
+    let effective_score = recall
+        .best
+        .match_quality
+        .unwrap_or(QUERY_MATCH_EVIDENCE_SCORE);
+    let best_match_score = Some(effective_score);
+    let confidence = RecallMatchConfidence::from_normalized_score(effective_score);
     let quoted_text = args
         .quote
         .then(|| best_candidate.best_text.clone())
@@ -103,6 +113,7 @@ fn build_recall_envelope(
             }),
         ),
         query: args.query.clone(),
+        match_kind,
         best_candidate,
         alternatives: recall
             .alternatives

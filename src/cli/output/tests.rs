@@ -525,6 +525,7 @@ pub(in crate::cli) fn recall_markdown_and_toon_render_best_match_and_alternative
             snippet: String::new(),
         }],
         best_match_confidence: RecallMatchConfidence::High,
+        match_kind: "scored",
         best_match_score: Some(0.91),
         why_selected: "Selected the strongest search match".to_string(),
         quoted_text: Some("git status".to_string()),

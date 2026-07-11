@@ -133,7 +133,6 @@ pub(in crate::cli) enum RecallMatchConfidence {
     High,
     Medium,
     Low,
-    QueryMatch,
 }
 
 impl RecallMatchConfidence {
@@ -154,7 +153,6 @@ impl RecallMatchConfidence {
             Self::High => "high",
             Self::Medium => "medium",
             Self::Low => "low",
-            Self::QueryMatch => "query_match",
         }
     }
 }
@@ -170,6 +168,7 @@ pub(in crate::cli) struct RecallEnvelope {
     pub(in crate::cli) alternatives: Vec<RecallOutputRow>,
     pub(in crate::cli) best_match_confidence: RecallMatchConfidence,
     pub(in crate::cli) best_match_score: Option<f64>,
+    pub(in crate::cli) match_kind: &'static str,
     pub(in crate::cli) why_selected: String,
     pub(in crate::cli) quoted_text: Option<String>,
     pub(in crate::cli) score_semantics: &'static str,
