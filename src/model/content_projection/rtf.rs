@@ -128,15 +128,16 @@ pub fn project_rtf(input: &str) -> TextProjectionResult {
                 }
             }
             byte => {
+                let literal = input[i..].chars().next().expect("RTF input is valid UTF-8");
                 if !stack.last().unwrap().skip && byte >= 0x20 {
                     flush_pending_surrogate(
                         &mut out,
                         &mut diagnostics,
                         &mut pending_high_surrogate,
                     );
-                    out.push(byte as char);
+                    out.push(literal);
                 }
-                i += 1;
+                i += literal.len_utf8();
             }
         }
     }
@@ -252,7 +253,10 @@ fn skip_fallback(bytes: &[u8], i: usize) -> usize {
     if bytes.get(i) == Some(&b'\\') {
         parse_control(bytes, i + 1).0
     } else {
-        i + 1
+        std::str::from_utf8(&bytes[i..])
+            .ok()
+            .and_then(|tail| tail.chars().next())
+            .map_or(i + 1, |ch| i + ch.len_utf8())
     }
 }
 
@@ -341,5 +345,21 @@ mod tests {
                 .diagnostics
                 .contains(&ProjectionDiagnostic::MalformedMarkup));
         }
+    }
+
+    #[test]
+    fn literal_utf8_text_round_trips() {
+        let projected = project_rtf(r"{\rtf1\ansi café 中文 😀}");
+
+        assert_eq!(projected.text, "café 中文 😀");
+        assert!(projected.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn literal_unicode_controls_and_hex_escapes_coexist() {
+        let projected = project_rtf(r"{\rtf1\ansi café 中文 \u8212? emoji \u-10179?\u-8704? \'e9}");
+
+        assert_eq!(projected.text, "café 中文 — emoji 😀 é");
+        assert!(projected.diagnostics.is_empty());
     }
 }
