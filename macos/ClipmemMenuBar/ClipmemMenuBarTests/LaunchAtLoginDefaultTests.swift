@@ -3,6 +3,42 @@ import Testing
 @testable import ClipmemMenuBar
 
 struct LaunchAtLoginDefaultTests {
+    @Test func activeHostedSuiteIsRecognizedAsTestHost() {
+        #expect(AppStartupMode.current == .testHost)
+    }
+
+    @Test func xctestHostEnvironmentDisablesApplicationSideEffects() {
+        let mode = AppStartupMode.resolve(
+            environment: ["XCTestConfigurationFilePath": "/tmp/ClipmemMenuBarTests.xctestconfiguration"],
+            xctestRuntimeLoaded: false
+        )
+
+        #expect(mode == .testHost)
+        #expect(mode.allowsApplicationSideEffects == false)
+    }
+
+    @Test func productionEnvironmentKeepsApplicationStartupEnabled() {
+        let mode = AppStartupMode.resolve(environment: [:], xctestRuntimeLoaded: false)
+
+        #expect(mode == .production)
+        #expect(mode.allowsApplicationSideEffects)
+    }
+
+    @Test @MainActor
+    func testHostAppModelStartDoesNotRunAnyArchiveLoad() async {
+        let model = AppModel(startupMode: .testHost) {
+            Issue.record("Test-host startup must not attempt an archive read.")
+            return []
+        }
+
+        let started = await model.start()
+
+        #expect(started == false)
+        #expect(model.serviceStatus == nil)
+        #expect(model.settingsReport == nil)
+        #expect(model.recentPreview.isEmpty)
+    }
+
     @Test func preservesExistingCliPreferenceWhenConfiguredMarkerIsMissing() throws {
         let defaults = try temporaryDefaults()
         defaults.set(false, forKey: PreferenceKey.launchAtLoginEnabled)

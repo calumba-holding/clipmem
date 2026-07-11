@@ -17,8 +17,9 @@ struct ClipmemMenuBarApp: App {
                 isUpdateAvailable: appModel.updateStatus.isUpdateAvailable
             )
                 .task {
-                    await appModel.start()
-                    configureHotkey()
+                    if await appModel.start() {
+                        configureHotkey()
+                    }
                 }
                 .onChange(of: hotkeyEnabled) {
                     configureHotkey()
