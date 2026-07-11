@@ -150,7 +150,8 @@ impl Database {
         }
         tx.commit().context("commit ocr candidate transaction")?;
         let owner = format!("ocr-{}", std::process::id());
-        let leases = self.claim_jobs(OCR_JOB_KIND, &owner, clamp_result_limit(limit))?;
+        let leases =
+            self.claim_ocr_jobs_for_snapshot(&owner, clamp_result_limit(limit), snapshot_id)?;
         leases
             .into_iter()
             .filter_map(
@@ -422,6 +423,11 @@ impl Database {
                 [raw_sha256],
             )
             .context("delete ocr result")?;
+        tx.execute(
+            "DELETE FROM jobs WHERE kind = ?1 AND dedupe_key = ?2 AND algorithm_version = ?3",
+            params![OCR_JOB_KIND, raw_sha256, OCR_ALGORITHM_VERSION],
+        )
+        .context("delete matching durable OCR job")?;
         rebuild_snapshot_ocr_cache_for_hash(&tx, raw_sha256)?;
         if changed != 0 {
             bump_revision_tx(&tx, &[ArchiveChangeKind::Ocr])?;
