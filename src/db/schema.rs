@@ -10,9 +10,10 @@ use crate::model::{
 use super::sqlite_helpers::{collect_rows, row_enum};
 
 mod integrity;
+mod source_provenance;
 
 pub(super) const SCHEMA: &str = include_str!("schema.sql");
-pub(super) const CURRENT_SCHEMA_VERSION: i64 = 21;
+pub(super) const CURRENT_SCHEMA_VERSION: i64 = 23;
 const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
 
 pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {
@@ -41,6 +42,7 @@ pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {
     ensure_image_compression_columns(&tx)?;
     ensure_image_optimization_queue_index(&tx)?;
     ensure_representation_cache_deferred_column(&tx)?;
+    source_provenance::ensure_source_provenance_column(&tx)?;
     ensure_capture_origin_columns(&tx)?;
     ensure_archive_revisions_table(&tx)?;
     tx.execute(
@@ -189,7 +191,6 @@ fn source_version_through_1(version: i64) -> bool {
 fn source_version_through_2(version: i64) -> bool {
     version <= 2
 }
-
 fn source_version_through_3(version: i64) -> bool {
     version <= 3
 }
@@ -197,7 +198,6 @@ fn source_version_through_3(version: i64) -> bool {
 fn source_version_through_5(version: i64) -> bool {
     version <= 5
 }
-
 fn source_version_through_19(version: i64) -> bool {
     version <= 19
 }

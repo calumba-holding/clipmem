@@ -28,7 +28,7 @@ impl DoctorReport {
         fts5_compile_option_present: bool,
         fts5_create_virtual_table_ok: bool,
         compile_options: Vec<String>,
-        integrity: DoctorIntegrityReport,
+        integrity: Option<DoctorIntegrityReport>,
     ) -> Self {
         Self {
             db_path,
@@ -72,17 +72,24 @@ impl DoctorReport {
     }
 
     #[must_use]
+    pub fn integrity(&self) -> Option<&DoctorIntegrityReport> {
+        self.integrity.as_ref()
+    }
+}
+
+impl DoctorIntegrityReport {
+    #[must_use]
     pub fn orphan_representation_count(&self) -> usize {
-        self.integrity.orphan_representation_count
+        self.orphan_representation_count
     }
 
     #[must_use]
     pub fn foreign_key_violation_count(&self) -> usize {
-        self.integrity.foreign_key_violation_count
+        self.foreign_key_violation_count
     }
 
     #[must_use]
     pub fn projection_mismatch_count(&self) -> usize {
-        self.integrity.projection_mismatch_count
+        self.projection_mismatch_count
     }
 }

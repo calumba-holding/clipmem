@@ -246,6 +246,19 @@ impl Database {
     ///
     /// Returns an error if any diagnostic query fails.
     pub fn doctor(&self) -> Result<DoctorReport> {
+        self.doctor_report(false)
+    }
+
+    /// Collect diagnostics and verify relational and projection invariants.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any diagnostic or invariant query fails.
+    pub fn doctor_verifying_invariants(&self) -> Result<DoctorReport> {
+        self.doctor_report(true)
+    }
+
+    fn doctor_report(&self, verify_invariants: bool) -> Result<DoctorReport> {
         let sqlite_version: String = self
             .conn
             .query_row("SELECT sqlite_version()", [], |row| row.get(0))
@@ -277,7 +290,9 @@ impl Database {
             .context("probe FTS5 temp virtual table creation")?;
         let fts5_create_virtual_table_ok = true;
 
-        let invariant_counts = super::invariants::verify(&self.conn)?;
+        let integrity = verify_invariants
+            .then(|| super::invariants::verify(&self.conn))
+            .transpose()?;
 
         Ok(DoctorReport::new(
             self.path.display().to_string(),
@@ -286,7 +301,7 @@ impl Database {
             fts5_compile_option_present,
             fts5_create_virtual_table_ok,
             compile_options,
-            invariant_counts,
+            integrity,
         ))
     }
 

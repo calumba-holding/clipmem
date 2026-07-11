@@ -11,6 +11,7 @@ pub use archive::{
 };
 pub(crate) use archive::{SearchHitParts, SearchOrderKey};
 pub use builders::{build_item, build_representation, build_snapshot};
+#[allow(unused_imports)]
 pub(crate) use builders::{
     decode_text_bytes_lossy, decode_text_bytes_strict, dedupe_text_fragments, hash_bytes,
     is_searchable_text_fragment, normalize_whitespace, truncate_chars,

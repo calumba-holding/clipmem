@@ -8,9 +8,69 @@ use crate::db::types::{
     OcrStatusReport,
 };
 
+use super::jobs::{
+    active_lease_for_key, complete_job_tx, enqueue_job_tx, fail_job_tx, reset_failed_job_tx,
+    JobLease, OCR_ALGORITHM_VERSION, OCR_JOB_KIND,
+};
 use super::revision::bump_revision_tx;
 
+impl OcrCandidate {
+    fn new(
+        raw_sha256: String,
+        blob_value: Vec<u8>,
+        snapshot_count: usize,
+        lease: JobLease,
+    ) -> Self {
+        Self {
+            raw_sha256,
+            blob_value,
+            snapshot_count,
+            lease,
+        }
+    }
+
+    pub(crate) fn raw_sha256(&self) -> &str {
+        &self.raw_sha256
+    }
+
+    pub(crate) fn blob_value(&self) -> &[u8] {
+        &self.blob_value
+    }
+}
+
 impl Database {
+    pub(crate) fn store_ocr_candidate_text(
+        &mut self,
+        candidate: &OcrCandidate,
+        engine: &str,
+        recognition_level: &str,
+        text: &str,
+    ) -> Result<()> {
+        self.store_claimed_ocr_text(
+            &candidate.lease,
+            candidate.raw_sha256(),
+            engine,
+            recognition_level,
+            text,
+        )
+    }
+
+    pub(crate) fn store_ocr_candidate_failure(
+        &mut self,
+        candidate: &OcrCandidate,
+        engine: &str,
+        recognition_level: &str,
+        error: &str,
+    ) -> Result<()> {
+        self.store_claimed_ocr_failure(
+            &candidate.lease,
+            candidate.raw_sha256(),
+            engine,
+            recognition_level,
+            error,
+        )
+    }
+
     #[allow(dead_code)]
     pub(crate) fn enqueue_ocr_for_snapshot(&mut self, snapshot_id: i64) -> Result<usize> {
         let tx = self
@@ -64,73 +124,62 @@ impl Database {
             0
         };
 
-        let limit = usize_to_i64(clamp_result_limit(limit))?;
-        let mut stmt = tx
-            .prepare(
+        enqueue_ocr_jobs_tx(&tx, snapshot_id)?;
+        if retry_failed {
+            let mut stmt = tx.prepare(
                 r"
-                    WITH candidate_hashes AS (
-                        SELECT o.raw_sha256
-                        FROM ocr_results o
-                        WHERE o.status = 'pending'
-                          AND EXISTS (
-                              SELECT 1
-                              FROM item_representations ir
-                              WHERE ir.raw_sha256 = o.raw_sha256
-                                AND ir.kind = 'image'
-                                AND length(ir.blob_value) > 0
-                          )
-                          AND (
-                              ?1 IS NULL
-                              OR EXISTS (
-                                  SELECT 1
-                                  FROM item_representations ir
-                                  WHERE ir.raw_sha256 = o.raw_sha256
-                                    AND ir.snapshot_id = ?1
-                              )
-                          )
-                        ORDER BY o.updated_at ASC, o.raw_sha256 ASC
-                        LIMIT ?2
-                    )
-                    SELECT
-                        c.raw_sha256,
-                        (
-                            SELECT ir.blob_value
-                            FROM item_representations ir
-                            WHERE ir.raw_sha256 = c.raw_sha256
-                              AND ir.kind = 'image'
-                              AND length(ir.blob_value) > 0
-                            ORDER BY ir.byte_len DESC
-                            LIMIT 1
-                        ) AS blob_value,
-                        (
-                            SELECT COUNT(DISTINCT ir.snapshot_id)
-                            FROM item_representations ir
-                            WHERE ir.raw_sha256 = c.raw_sha256
-                        ) AS snapshot_count
-                    FROM candidate_hashes c
+                    SELECT j.dedupe_key FROM jobs j
+                    WHERE j.kind = 'ocr'
+                      AND j.algorithm_version = 'vision-v1'
+                      AND j.state IN ('queued', 'failed')
+                      AND (?1 IS NULL OR EXISTS (
+                          SELECT 1 FROM item_representations ir
+                          WHERE ir.raw_sha256 = j.dedupe_key AND ir.snapshot_id = ?1
+                      ))
                 ",
-            )
-            .context("prepare ocr candidate query")?;
-        let rows = stmt
-            .query_map(params![snapshot_id, limit], |row| {
-                Ok(OcrCandidate::new(
-                    row.get(0)?,
-                    row.get(1)?,
-                    row_usize(row, 2)?,
-                ))
-            })
-            .context("execute ocr candidate query")?;
-        let candidates = collect_rows(rows).context("collect ocr candidates")?;
-        drop(stmt);
+            )?;
+            let hashes =
+                collect_rows(stmt.query_map([snapshot_id], |row| row.get::<_, String>(0))?)?;
+            drop(stmt);
+            for hash in hashes {
+                reset_failed_job_tx(&tx, OCR_JOB_KIND, &hash, OCR_ALGORITHM_VERSION)?;
+            }
+        }
         if pruned != 0 || enqueued != 0 || requeued != 0 {
             bump_revision_tx(&tx, &[ArchiveChangeKind::Ocr])?;
         }
         tx.commit().context("commit ocr candidate transaction")?;
-        Ok(candidates)
+        let owner = format!("ocr-{}", std::process::id());
+        let leases = self.claim_jobs(OCR_JOB_KIND, &owner, clamp_result_limit(limit))?;
+        leases
+            .into_iter()
+            .filter_map(
+                |lease| match load_ocr_candidate(&self.conn, lease, snapshot_id) {
+                    Ok(Some(candidate)) => Some(Ok(candidate)),
+                    Ok(None) => None,
+                    Err(error) => Some(Err(error)),
+                },
+            )
+            .collect()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn store_ocr_text(
         &mut self,
+        raw_sha256: &str,
+        engine: &str,
+        recognition_level: &str,
+        text: &str,
+    ) -> Result<()> {
+        let lease =
+            active_lease_for_key(&self.conn, OCR_JOB_KIND, raw_sha256, OCR_ALGORITHM_VERSION)?
+                .context("OCR result has no active durable job lease")?;
+        self.store_claimed_ocr_text(&lease, raw_sha256, engine, recognition_level, text)
+    }
+
+    fn store_claimed_ocr_text(
+        &mut self,
+        lease: &JobLease,
         raw_sha256: &str,
         engine: &str,
         recognition_level: &str,
@@ -162,6 +211,16 @@ impl Database {
             )
             .context("store ocr text result")?;
         rebuild_snapshot_ocr_cache_for_hash(&tx, raw_sha256)?;
+        complete_job_tx(
+            &tx,
+            lease,
+            if status == "ready" {
+                "succeeded"
+            } else {
+                "skipped"
+            },
+            Some(raw_sha256),
+        )?;
         if changed != 0 {
             bump_revision_tx(&tx, &[ArchiveChangeKind::Ocr])?;
         }
@@ -169,8 +228,23 @@ impl Database {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub(crate) fn store_ocr_failure(
         &mut self,
+        raw_sha256: &str,
+        engine: &str,
+        recognition_level: &str,
+        error: &str,
+    ) -> Result<()> {
+        let lease =
+            active_lease_for_key(&self.conn, OCR_JOB_KIND, raw_sha256, OCR_ALGORITHM_VERSION)?
+                .context("OCR failure has no active durable job lease")?;
+        self.store_claimed_ocr_failure(&lease, raw_sha256, engine, recognition_level, error)
+    }
+
+    fn store_claimed_ocr_failure(
+        &mut self,
+        lease: &JobLease,
         raw_sha256: &str,
         engine: &str,
         recognition_level: &str,
@@ -180,6 +254,7 @@ impl Database {
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .context("begin ocr failure transaction")?;
+        fail_job_tx(&tx, lease, error)?;
         let changed = tx
             .execute(
                 r"
@@ -360,8 +435,9 @@ pub(in crate::db) fn enqueue_ocr_candidates_tx(
     tx: &rusqlite::Transaction<'_>,
     snapshot_id: Option<i64>,
 ) -> Result<usize> {
-    tx.execute(
-        r"
+    let inserted = tx
+        .execute(
+            r"
             INSERT INTO ocr_results (raw_sha256, status)
             SELECT DISTINCT ir.raw_sha256, 'pending'
             FROM item_representations ir
@@ -370,9 +446,77 @@ pub(in crate::db) fn enqueue_ocr_candidates_tx(
               AND (?1 IS NULL OR ir.snapshot_id = ?1)
             ON CONFLICT(raw_sha256) DO NOTHING
         ",
-        [snapshot_id],
+            [snapshot_id],
+        )
+        .context("enqueue ocr candidates")?;
+    enqueue_ocr_jobs_tx(tx, snapshot_id)?;
+    Ok(inserted)
+}
+
+fn enqueue_ocr_jobs_tx(tx: &rusqlite::Transaction<'_>, snapshot_id: Option<i64>) -> Result<usize> {
+    let mut stmt = tx.prepare(
+        r"
+            SELECT DISTINCT o.raw_sha256
+            FROM ocr_results o
+            WHERE o.status = 'pending'
+              AND EXISTS (
+                  SELECT 1 FROM item_representations ir
+                  WHERE ir.raw_sha256 = o.raw_sha256
+                    AND ir.kind = 'image'
+                    AND length(ir.blob_value) > 0
+                    AND (?1 IS NULL OR ir.snapshot_id = ?1)
+              )
+            ORDER BY o.raw_sha256
+        ",
+    )?;
+    let hashes = collect_rows(stmt.query_map([snapshot_id], |row| row.get::<_, String>(0))?)?;
+    drop(stmt);
+    let mut inserted = 0;
+    for hash in hashes {
+        inserted += enqueue_job_tx(
+            tx,
+            OCR_JOB_KIND,
+            &hash,
+            OCR_ALGORITHM_VERSION,
+            &format!(r#"{{"raw_sha256":"{hash}"}}"#),
+            3,
+        )?;
+    }
+    Ok(inserted)
+}
+
+fn load_ocr_candidate(
+    conn: &rusqlite::Connection,
+    lease: JobLease,
+    snapshot_id: Option<i64>,
+) -> Result<Option<OcrCandidate>> {
+    conn.query_row(
+        r"
+            SELECT
+                ir.blob_value,
+                (SELECT COUNT(DISTINCT all_ir.snapshot_id)
+                 FROM item_representations all_ir
+                 WHERE all_ir.raw_sha256 = ?1)
+            FROM item_representations ir
+            WHERE ir.raw_sha256 = ?1
+              AND ir.kind = 'image'
+              AND length(ir.blob_value) > 0
+              AND (?2 IS NULL OR ir.snapshot_id = ?2)
+            ORDER BY ir.byte_len DESC
+            LIMIT 1
+        ",
+        params![lease.dedupe_key(), snapshot_id],
+        |row| {
+            Ok(OcrCandidate::new(
+                lease.dedupe_key().to_string(),
+                row.get(0)?,
+                row_usize(row, 1)?,
+                lease.clone(),
+            ))
+        },
     )
-    .context("enqueue ocr candidates")
+    .optional()
+    .context("load claimed OCR payload")
 }
 
 pub(in crate::db) fn prune_orphan_ocr_results_tx(tx: &rusqlite::Transaction<'_>) -> Result<usize> {

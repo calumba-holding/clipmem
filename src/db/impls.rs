@@ -2,10 +2,10 @@ use crate::model::SearchHit;
 
 use super::types::{
     ArchiveChangeKind, ArchiveRevision, CapturePolicy, CaptureSettings, CaptureSkipReason,
-    ImageOptimizationCandidateSummary, OcrCandidate, OcrCandidateSummary, OcrResultRecord,
-    OcrRunReport, OcrStatusReport, Page, PurgeReport, RecentCursorState, RecentResults,
-    RetrievalFilters, RetrievalKind, SearchCursorState, SearchMode, SearchResults,
-    SnapshotDeletionReport, TimelineResults, TimelineSort,
+    ImageOptimizationCandidateSummary, OcrCandidateSummary, OcrResultRecord, OcrRunReport,
+    OcrStatusReport, Page, PurgeReport, RecentCursorState, RecentResults, RetrievalFilters,
+    RetrievalKind, SearchCursorState, SearchMode, SearchResults, SnapshotDeletionReport,
+    TimelineResults, TimelineSort,
 };
 
 mod timeline_cursor;
@@ -601,27 +601,6 @@ impl PurgeReport {
     #[must_use]
     pub(crate) fn total_bytes(&self) -> usize {
         self.total_bytes
-    }
-}
-
-impl OcrCandidate {
-    #[must_use]
-    pub(crate) fn new(raw_sha256: String, blob_value: Vec<u8>, snapshot_count: usize) -> Self {
-        Self {
-            raw_sha256,
-            blob_value,
-            snapshot_count,
-        }
-    }
-
-    #[must_use]
-    pub(crate) fn raw_sha256(&self) -> &str {
-        &self.raw_sha256
-    }
-
-    #[must_use]
-    pub(crate) fn blob_value(&self) -> &[u8] {
-        &self.blob_value
     }
 }
 

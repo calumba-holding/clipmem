@@ -37,7 +37,7 @@ fn schema_v20_migration_aborts_with_exact_orphan_report() -> Result<()> {
             "CREATE TABLE orphan_copy AS SELECT * FROM item_representations WHERE 0;",
         )?;
         conn.execute(
-            "INSERT INTO orphan_copy (snapshot_id,item_index,uti,kind,byte_len,raw_sha256,blob_value,image_compression_status) VALUES (?1,99,'public.data','binary',1,'00',x'00','uncompressed')",
+            "INSERT INTO orphan_copy (snapshot_id,item_index,uti,kind,byte_len,raw_sha256,blob_value,image_compression_status,source_provenance) VALUES (?1,99,'public.data','binary',1,'00',x'00','uncompressed','captured_original')",
             [snapshot_id],
         )?;
         conn.execute(

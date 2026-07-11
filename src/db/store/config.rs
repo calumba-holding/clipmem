@@ -1,9 +1,9 @@
 pub(in crate::db) const WEBP_UTI: &str = "org.webmproject.webp";
 pub(in crate::db) const IMAGE_OPTIMIZATION_FORMAT: &str = "webp_lossless";
-pub(in crate::db) const IMAGE_OPTIMIZATION_MIN_ABSOLUTE_SAVINGS: usize = 64 * 1024;
-pub(in crate::db) const IMAGE_OPTIMIZATION_MIN_RELATIVE_SAVINGS_NUMERATOR: usize = 1;
-pub(in crate::db) const IMAGE_OPTIMIZATION_MIN_RELATIVE_SAVINGS_DENOMINATOR: usize = 10;
 pub(in crate::db) const IMAGE_OPTIMIZATION_MAX_DIMENSION: u32 = 16_384;
+pub(in crate::db) const IMAGE_PREVIEW_LONG_EDGE: u32 = 2_048;
+pub(in crate::db) const IMAGE_PREVIEW_ENCODER_VERSION: i64 = 1;
+pub(in crate::db) const IMAGE_PREVIEW_OPTIONS_HASH: &str = "webp-lossless-long-edge-2048-v1";
 
 #[derive(Debug, Clone)]
 pub(in crate::db) struct ImageOptimizationCandidate {

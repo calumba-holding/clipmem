@@ -1,7 +1,8 @@
 pub use crate::db::{
-    Database, DatabaseOpenError, RecentResults, RepresentationManifest, RepresentationPayload,
-    RestorePayloadPlan, RetrievalFilters, RetrievalKind, SearchMode, SearchResults,
-    SnapshotItemManifest, SnapshotMetadata, TimelineResults, TimelineSort,
+    Database, DatabaseOpenError, RecentResults, RepresentationDerivativePayload,
+    RepresentationManifest, RepresentationPayload, RestorePayloadPlan, RetrievalFilters,
+    RetrievalKind, SearchMode, SearchResults, SnapshotItemManifest, SnapshotMetadata,
+    TimelineResults, TimelineSort,
 };
 pub use crate::model::{
     CaptureEvent, CaptureStoreResult, DoctorReport, FlattenedTextProjection, SearchHit,
@@ -72,7 +73,7 @@ mod tests {
             true,
             true,
             vec!["ENABLE_FTS5".to_string()],
-            crate::model::DoctorIntegrityReport::new(0, 0, 0),
+            Some(crate::model::DoctorIntegrityReport::new(0, 0, 0)),
         );
 
         assert_eq!(snapshot.recent_events()[0].event_id(), 21);

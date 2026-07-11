@@ -379,21 +379,25 @@ pub(in crate::cli) fn render_doctor_human(report: &DoctorReport) -> String {
         "FTS5 works",
         render_bool_status(report.fts5_create_virtual_table_ok()),
     );
-    push_kpi(
-        &mut out,
-        "Orphan representations",
-        report.orphan_representation_count().to_string(),
-    );
-    push_kpi(
-        &mut out,
-        "Foreign key violations",
-        report.foreign_key_violation_count().to_string(),
-    );
-    push_kpi(
-        &mut out,
-        "Projection mismatches",
-        report.projection_mismatch_count().to_string(),
-    );
+    if let Some(integrity) = report.integrity() {
+        push_kpi(
+            &mut out,
+            "Orphan representations",
+            integrity.orphan_representation_count().to_string(),
+        );
+        push_kpi(
+            &mut out,
+            "Foreign key violations",
+            integrity.foreign_key_violation_count().to_string(),
+        );
+        push_kpi(
+            &mut out,
+            "Projection mismatches",
+            integrity.projection_mismatch_count().to_string(),
+        );
+    } else {
+        push_kpi(&mut out, "Integrity checks", "Skipped".to_string());
+    }
     if !report.compile_options().is_empty() {
         out.push('\n');
         let _ = writeln!(out, "{}", theme.section("Compile Options"));

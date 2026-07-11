@@ -53,6 +53,36 @@ CREATE TABLE IF NOT EXISTS item_representations (
         REFERENCES snapshot_items(snapshot_id, item_index) ON DELETE CASCADE
 );
 
+-- Preview bytes are derived cache state. Logical consumers continue to read
+-- item_representations; deleting every row here cannot change restore/export.
+CREATE TABLE IF NOT EXISTS representation_derivatives (
+    id INTEGER PRIMARY KEY,
+    source_snapshot_id INTEGER NOT NULL,
+    source_item_index INTEGER NOT NULL CHECK (source_item_index >= 0),
+    source_uti TEXT NOT NULL,
+    source_raw_sha256 TEXT NOT NULL,
+    derivative_kind TEXT NOT NULL CHECK (derivative_kind IN ('preview', 'thumbnail')),
+    encoder_version INTEGER NOT NULL CHECK (encoder_version > 0),
+    encoder_options_hash TEXT NOT NULL,
+    output_uti TEXT,
+    codec TEXT,
+    blob_value BLOB,
+    byte_len INTEGER CHECK (byte_len IS NULL OR byte_len >= 0),
+    width INTEGER CHECK (width IS NULL OR width > 0),
+    height INTEGER CHECK (height IS NULL OR height > 0),
+    decoder_metadata TEXT,
+    status TEXT NOT NULL CHECK (status IN ('ready', 'skipped', 'failed')),
+    reason TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    verified_at TEXT,
+    UNIQUE (source_raw_sha256, derivative_kind, encoder_version, encoder_options_hash),
+    CHECK ((status = 'ready' AND blob_value IS NOT NULL AND output_uti IS NOT NULL AND byte_len IS NOT NULL AND verified_at IS NOT NULL)
+        OR (status != 'ready' AND blob_value IS NULL))
+);
+
+CREATE INDEX IF NOT EXISTS idx_representation_derivatives_source
+ON representation_derivatives(source_raw_sha256, derivative_kind, encoder_version);
+
 CREATE TABLE IF NOT EXISTS capture_events (
     id                     INTEGER PRIMARY KEY,
     snapshot_id            INTEGER NOT NULL REFERENCES snapshots(id) ON DELETE CASCADE,
@@ -154,6 +184,55 @@ CREATE TABLE IF NOT EXISTS snapshot_ocr_cache (
     status      TEXT NOT NULL DEFAULT 'skipped' CHECK (status IN ('pending', 'ready', 'failed', 'skipped')),
     updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Durable ownership for expensive local work. Operations are retained so a
+-- caller can reconnect after a process restart and obtain a truthful summary.
+CREATE TABLE IF NOT EXISTS job_operations (
+    id              TEXT PRIMARY KEY,
+    kind            TEXT NOT NULL,
+    state           TEXT NOT NULL DEFAULT 'running' CHECK (state IN ('running', 'completed', 'completed_with_errors', 'cancel_requested', 'cancelled', 'failed')),
+    requested_by    TEXT,
+    options_json    TEXT NOT NULL DEFAULT '{}',
+    options_version INTEGER NOT NULL DEFAULT 1,
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    started_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at     TEXT
+);
+
+CREATE TABLE IF NOT EXISTS jobs (
+    id                INTEGER PRIMARY KEY,
+    kind              TEXT NOT NULL,
+    dedupe_key        TEXT NOT NULL,
+    algorithm_version TEXT NOT NULL,
+    state             TEXT NOT NULL DEFAULT 'queued' CHECK (state IN ('queued', 'leased', 'succeeded', 'failed', 'skipped', 'cancelled')),
+    priority          INTEGER NOT NULL DEFAULT 0,
+    not_before        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    lease_owner       TEXT,
+    lease_token       TEXT,
+    lease_until       TEXT,
+    attempts          INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    max_attempts      INTEGER NOT NULL DEFAULT 3 CHECK (max_attempts > 0),
+    last_error        TEXT,
+    source_ref_json   TEXT NOT NULL DEFAULT '{}',
+    result_ref_json   TEXT,
+    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at       TEXT,
+    UNIQUE(kind, dedupe_key, algorithm_version)
+);
+
+CREATE TABLE IF NOT EXISTS operation_jobs (
+    operation_id TEXT NOT NULL REFERENCES job_operations(id) ON DELETE CASCADE,
+    job_id       INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    PRIMARY KEY (operation_id, job_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_claim
+ON jobs(kind, state, not_before, lease_until, priority DESC, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_operation_jobs_job
+ON operation_jobs(job_id, operation_id);
+CREATE INDEX IF NOT EXISTS idx_job_operations_state
+ON job_operations(state, created_at);
 
 -- Builder-owned retrieval nucleus. Plan 4 may rename this table, but must keep the
 -- one-row-per-snapshot and builder-version contract rather than creating another projection.

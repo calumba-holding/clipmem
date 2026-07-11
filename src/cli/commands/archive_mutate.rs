@@ -361,11 +361,14 @@ fn render_purge_text(report: &PurgeReport) -> String {
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Arc, Barrier};
     use std::thread;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::atomic_write_export;
+
+    static TEMP_PATH_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
     #[test]
     fn create_export_destination_rejects_existing_file_without_force() {
@@ -466,7 +469,11 @@ mod tests {
 
         let dir = std::env::temp_dir()
             .join("clipmem-archive-mutate-tests")
-            .join(format!("{}-{timestamp}", std::process::id()));
+            .join(format!(
+                "{}-{timestamp}-{}",
+                std::process::id(),
+                TEMP_PATH_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            ));
         std::fs::create_dir_all(&dir).unwrap();
         dir.join(name)
     }
