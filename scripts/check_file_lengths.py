@@ -21,11 +21,18 @@ def load_config(path: Path) -> dict:
 
 
 def iter_tracked_files(root: Path, patterns: list[str]) -> list[Path]:
-    result = subprocess.run(
-        ["git", "-C", str(root), "ls-files", "-z", "--", *patterns],
-        check=True,
-        stdout=subprocess.PIPE,
-    )
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z", "--", *patterns],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as error:
+        raise SystemExit(
+            "file length lint requires a Git checkout because limits apply to "
+            "tracked files; release archives should run this check before packaging"
+        ) from error
     return sorted(
         root / item.decode("utf-8")
         for item in result.stdout.split(b"\0")

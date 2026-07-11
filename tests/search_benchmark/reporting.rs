@@ -1,4 +1,8 @@
+use std::path::Path;
 use std::time::Duration;
+
+use anyhow::{Context, Result};
+use serde_json::json;
 
 use super::{DbLatencyOutcome, EvalOutcome};
 
@@ -82,6 +86,65 @@ pub(super) fn print_db_latency_report(outcomes: &[DbLatencyOutcome]) {
             outcome.result_count
         );
     }
+}
+
+pub(super) fn write_json_report_if_requested(
+    filler_count: usize,
+    outcomes: &[EvalOutcome],
+    db_outcomes: &[DbLatencyOutcome],
+) -> Result<()> {
+    let Some(report_path) = std::env::var_os("CLIPMEM_SEARCH_BENCH_REPORT") else {
+        return Ok(());
+    };
+    let path = Path::new(&report_path);
+    let top1 = outcomes
+        .iter()
+        .filter(|outcome| outcome.rank == Some(1))
+        .count();
+    let top3 = outcomes
+        .iter()
+        .filter(|outcome| outcome.rank.is_some_and(|rank| rank <= 3))
+        .count();
+    let mrr = outcomes
+        .iter()
+        .map(|outcome| outcome.rank.map_or(0.0, |rank| 1.0 / rank as f64))
+        .sum::<f64>()
+        / outcomes.len() as f64;
+    let report = json!({
+        "schema_version": 1,
+        "archive_filler_snapshots": filler_count,
+        "quality": {
+            "total": outcomes.len(),
+            "top1": top1,
+            "top3": top3,
+            "mrr": mrr,
+            "cases": outcomes.iter().map(|outcome| json!({
+                "name": outcome.name,
+                "command": outcome.command.as_str(),
+                "expected_id": outcome.expected_id,
+                "rank": outcome.rank,
+                "top1_id": outcome.top1_id,
+                "mode_used": outcome.mode_used,
+                "expected_mode": outcome.expected_mode,
+                "median_cli_ms": ms(outcome.median_cli_latency),
+                "p95_cli_ms": ms(outcome.p95_cli_latency),
+            })).collect::<Vec<_>>(),
+        },
+        "database_latency": db_outcomes.iter().map(|outcome| json!({
+            "name": outcome.name,
+            "mode": outcome.mode.as_str(),
+            "median_ms": ms(outcome.median_latency),
+            "p95_ms": ms(outcome.p95_latency),
+            "result_count": outcome.result_count,
+        })).collect::<Vec<_>>(),
+    });
+    let parent = path
+        .parent()
+        .context("benchmark report path has no parent")?;
+    std::fs::create_dir_all(parent).context("create benchmark report directory")?;
+    std::fs::write(path, serde_json::to_vec_pretty(&report)?)
+        .with_context(|| format!("write benchmark report to {}", path.display()))?;
+    Ok(())
 }
 
 fn ms(duration: Duration) -> f64 {

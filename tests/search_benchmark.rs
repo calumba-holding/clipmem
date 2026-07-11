@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::hint::black_box;
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -19,7 +18,7 @@ use serde_json::Value;
 #[path = "search_benchmark/reporting.rs"]
 mod reporting;
 
-use reporting::{print_db_latency_report, print_quality_report};
+use reporting::{print_db_latency_report, print_quality_report, write_json_report_if_requested};
 
 const DEFAULT_FILLER_SNAPSHOTS: usize = 5_000;
 const CLI_LATENCY_REPETITIONS: usize = 5;
@@ -96,6 +95,7 @@ fn benchmark_search_quality_and_latency() -> Result<()> {
 
     print_quality_report(filler_count, &outcomes);
     print_db_latency_report(&db_latency);
+    write_json_report_if_requested(filler_count, &outcomes, &db_latency)?;
 
     cleanup_db(&path);
     Ok(())

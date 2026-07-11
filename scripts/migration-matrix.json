@@ -1,0 +1,5 @@
+{
+  "current_schema_version": 23,
+  "supported_boundary_versions": [0, 11, 13, 18, 20, 21, 22],
+  "policy": "Before increasing CURRENT_SCHEMA_VERSION, add the former current version to supported_boundary_versions and keep its upgrade coverage permanently."
+}
