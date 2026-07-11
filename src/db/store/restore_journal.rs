@@ -15,6 +15,7 @@ const MAX_JOURNAL_BYTES: u64 = 64 * 1_024;
 const MAX_STARTUP_INSPECTIONS: usize = 256;
 const MAX_STARTUP_CLEANUPS: usize = 128;
 const MAX_TEMP_CREATE_ATTEMPTS: usize = 8;
+const RECOVERY_SHARDS: u64 = 64;
 static NEXT_TEMPORARY_FILE: AtomicU64 = AtomicU64::new(0);
 
 pub(super) struct RestoreRecoveryJournal {
@@ -30,9 +31,10 @@ impl RestoreRecoveryJournal {
         let directory = journal_directory(db_path);
         fs::create_dir_all(&directory).context("create restore recovery journal directory")?;
         set_private_directory_permissions(&directory)?;
+        preflight_shards(&directory)?;
         cleanup_recovery_directory(&directory);
         let expires_unix = now_unix()?.saturating_add(RECOVERY_LIFETIME.as_secs());
-        let path = directory.join(format!("{operation_id}.journal"));
+        let path = journal_path(&directory, &operation_id);
         let journal = Self {
             path,
             directory,
@@ -153,11 +155,14 @@ fn parse_marker(content: &str) -> Option<GenerationMarker> {
         return None;
     }
     let operation_id = lines.next()?.strip_prefix("operation_id=")?.to_string();
-    if operation_id.is_empty() {
+    if !is_operation_id(&operation_id) {
         return None;
     }
     let expires_unix = lines.next()?.strip_prefix("expires_unix=")?.parse().ok()?;
     let generation = lines.next()?.strip_prefix("generation=")?.parse().ok()?;
+    if lines.next().is_some() {
+        return None;
+    }
     Some(GenerationMarker {
         operation_id,
         expires_unix,
@@ -166,7 +171,32 @@ fn parse_marker(content: &str) -> Option<GenerationMarker> {
 }
 
 fn marker_path(directory: &Path, generation: i64) -> PathBuf {
-    directory.join(format!("generation-{generation}.marker"))
+    shard_directory(directory, generation as u64 % RECOVERY_SHARDS)
+        .join(format!("generation-{generation}.marker"))
+}
+
+fn journal_path(directory: &Path, operation_id: &str) -> PathBuf {
+    let shard = u64::from_str_radix(&operation_id[..2], 16).unwrap_or(0) % RECOVERY_SHARDS;
+    shard_directory(directory, shard).join(format!("{operation_id}.journal"))
+}
+
+fn shard_directory(directory: &Path, shard: u64) -> PathBuf {
+    directory.join("owned").join(format!("shard-{shard:02}"))
+}
+
+fn preflight_shards(directory: &Path) -> Result<()> {
+    let owned = directory.join("owned");
+    fs::create_dir_all(&owned).context("create restore recovery owned directory")?;
+    set_private_directory_permissions(&owned)?;
+    for shard in 0..RECOVERY_SHARDS {
+        let path = shard_directory(directory, shard);
+        fs::create_dir_all(&path).context("create restore recovery shard")?;
+        set_private_directory_permissions(&path)?;
+    }
+    fs::File::open(&owned)?
+        .sync_all()
+        .context("sync restore recovery owned directory")?;
+    sync_parent(&owned)
 }
 
 fn atomic_persist(path: &Path, content: &[u8]) -> Result<()> {
@@ -281,13 +311,34 @@ fn read_regular_bounded(path: &Path, max_bytes: u64) -> std::io::Result<Option<S
 
 fn cleanup_recovery_directory(directory: &Path) {
     let now = now_unix().unwrap_or(0);
-    let Ok(entries) = fs::read_dir(directory) else {
+    let shard = read_cleanup_cursor(directory) % RECOVERY_SHARDS;
+    let shard_path = shard_directory(directory, shard);
+    let Ok(entries) = fs::read_dir(&shard_path) else {
         return;
     };
     let paths = entries.map(|entry| entry.map(|value| value.path()));
     let (_, cleaned) = cleanup_recovery_paths(paths, now);
     if cleaned != 0 {
-        let _ = fs::File::open(directory).and_then(|file| file.sync_all());
+        let _ = fs::File::open(&shard_path).and_then(|file| file.sync_all());
+    }
+    write_cleanup_cursor(directory, (shard + 1) % RECOVERY_SHARDS);
+}
+
+fn read_cleanup_cursor(directory: &Path) -> u64 {
+    let path = directory.join("cleanup-cursor");
+    read_regular_bounded(&path, 32)
+        .ok()
+        .flatten()
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(0)
+}
+
+fn write_cleanup_cursor(directory: &Path, shard: u64) {
+    if let Err(error) = atomic_persist(
+        &directory.join("cleanup-cursor"),
+        format!("{shard}\n").as_bytes(),
+    ) {
+        journal_diagnostic("cannot advance recovery cleanup cursor", &error);
     }
 }
 
@@ -461,6 +512,10 @@ fn set_private_directory_permissions(_path: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
+#[path = "restore_journal_fairness_tests.rs"]
+mod fairness_tests;
+
+#[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -490,17 +545,18 @@ mod tests {
     #[test]
     fn exact_markers_support_restore_rollback_and_external_generation() -> Result<()> {
         let db_path = TestPath::new();
-        let mut journal = RestoreRecoveryJournal::create(&db_path.0, "operation".into())?;
+        let mut journal =
+            RestoreRecoveryJournal::create(&db_path.0, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into())?;
         journal.register_generation(41)?;
         journal.register_generation(42)?;
 
         assert_eq!(
             operation_for_generation(&db_path.0, 41).as_deref(),
-            Some("operation")
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         );
         assert_eq!(
             operation_for_generation(&db_path.0, 42).as_deref(),
-            Some("operation")
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         );
         assert_eq!(operation_for_generation(&db_path.0, 43), None);
         Ok(())
@@ -509,7 +565,8 @@ mod tests {
     #[test]
     fn unrelated_junk_does_not_affect_constant_work_exact_lookup() -> Result<()> {
         let db_path = TestPath::new();
-        let mut journal = RestoreRecoveryJournal::create(&db_path.0, "operation".into())?;
+        let mut journal =
+            RestoreRecoveryJournal::create(&db_path.0, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into())?;
         journal.register_generation(7)?;
         let directory = journal_directory(&db_path.0);
         for index in 0..1_100 {
@@ -518,7 +575,7 @@ mod tests {
 
         assert_eq!(
             operation_for_generation(&db_path.0, 7).as_deref(),
-            Some("operation")
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         );
         assert_eq!(operation_for_generation(&db_path.0, 8), None);
         Ok(())
@@ -529,11 +586,15 @@ mod tests {
         let db_path = TestPath::new();
         let directory = journal_directory(&db_path.0);
         fs::create_dir_all(&directory)?;
+        preflight_shards(&directory)?;
         fs::write(marker_path(&directory, 1), b"malformed")?;
         fs::create_dir(marker_path(&directory, 2))?;
         fs::write(
             marker_path(&directory, 3),
-            format!("{MARKER_VERSION}\noperation_id=expired\nexpires_unix=0\ngeneration=3\n"),
+            format!(
+                "{MARKER_VERSION}\noperation_id={}\nexpires_unix=0\ngeneration=3\n",
+                "a".repeat(32)
+            ),
         )?;
         fs::write(marker_path(&directory, 4), [0xff, 0xfe, 0xfd])?;
 
@@ -546,16 +607,45 @@ mod tests {
     }
 
     #[test]
+    fn invalid_operation_id_and_trailing_marker_content_fail_open() -> Result<()> {
+        let db_path = TestPath::new();
+        let directory = journal_directory(&db_path.0);
+        fs::create_dir_all(&directory)?;
+        preflight_shards(&directory)?;
+        let expires = now_unix()?.saturating_add(30);
+        fs::write(
+            marker_path(&directory, 20),
+            format!("{MARKER_VERSION}\noperation_id=x\nexpires_unix={expires}\ngeneration=20\n"),
+        )?;
+        fs::write(
+            marker_path(&directory, 21),
+            format!(
+                "{MARKER_VERSION}\noperation_id={}\nexpires_unix={expires}\ngeneration=21\ntrailing=true\n",
+                "a".repeat(32)
+            ),
+        )?;
+
+        assert_eq!(operation_for_generation(&db_path.0, 20), None);
+        assert_eq!(operation_for_generation(&db_path.0, 21), None);
+        Ok(())
+    }
+
+    #[test]
     fn bulk_cleanup_is_bounded_and_stays_out_of_exact_lookup() -> Result<()> {
         let db_path = TestPath::new();
         let directory = journal_directory(&db_path.0);
         fs::create_dir_all(&directory)?;
+        preflight_shards(&directory)?;
+        let shard = shard_directory(&directory, 0);
         for generation in 0..300 {
-            fs::write(marker_path(&directory, generation), b"malformed")?;
+            fs::write(
+                shard.join(format!("generation-{generation}.marker")),
+                b"malformed",
+            )?;
         }
 
-        let _journal = RestoreRecoveryJournal::create(&db_path.0, "operation".into())?;
-        let markers_after_startup = fs::read_dir(&directory)?
+        cleanup_recovery_directory(&directory);
+        let markers_after_startup = fs::read_dir(&shard)?
             .filter_map(std::result::Result::ok)
             .filter(|entry| {
                 entry.path().extension().and_then(|value| value.to_str()) == Some("marker")
@@ -564,7 +654,7 @@ mod tests {
         assert_eq!(markers_after_startup, 300 - MAX_STARTUP_CLEANUPS);
 
         assert_eq!(operation_for_generation(&db_path.0, 999), None);
-        let markers_after_lookup = fs::read_dir(&directory)?
+        let markers_after_lookup = fs::read_dir(&shard)?
             .filter_map(std::result::Result::ok)
             .filter(|entry| {
                 entry.path().extension().and_then(|value| value.to_str()) == Some("marker")
@@ -579,6 +669,7 @@ mod tests {
         let db_path = TestPath::new();
         let directory = journal_directory(&db_path.0);
         fs::create_dir_all(&directory)?;
+        preflight_shards(&directory)?;
         let mut paths = Vec::new();
         for index in 0..MAX_STARTUP_INSPECTIONS {
             let path = directory.join(format!("unrelated-{index}.txt"));
@@ -602,16 +693,21 @@ mod tests {
         let db_path = TestPath::new();
         let directory = journal_directory(&db_path.0);
         fs::create_dir_all(&directory)?;
+        preflight_shards(&directory)?;
         let operation_id = "a".repeat(32);
-        let journal = directory.join(format!("{operation_id}.journal"));
+        let journal = journal_path(&directory, &operation_id);
         fs::write(
             &journal,
             format!("{JOURNAL_VERSION}\noperation_id={operation_id}\nexpires_unix=0\n"),
         )?;
-        let temporary = directory.join(format!("{operation_id}.tmp-0-123-0"));
+        let temporary = journal
+            .parent()
+            .unwrap()
+            .join(format!("{operation_id}.tmp-0-123-0"));
         fs::write(&temporary, b"partial")?;
-        let unrelated = directory.join("notes.tmp-0-123-0");
+        let unrelated = journal.parent().unwrap().join("notes.tmp-0-123-0");
         fs::write(&unrelated, b"keep")?;
+        fs::write(directory.join("cleanup-cursor"), b"42\n")?;
 
         cleanup_recovery_directory(&directory);
 
@@ -629,10 +725,12 @@ mod tests {
         let db_path = TestPath::new();
         let directory = journal_directory(&db_path.0);
         fs::create_dir_all(&directory)?;
+        preflight_shards(&directory)?;
         let target = directory.join("target");
         fs::write(&target, b"unrelated")?;
         let link = marker_path(&directory, 9);
         symlink(&target, &link)?;
+        fs::write(directory.join("cleanup-cursor"), b"9\n")?;
 
         cleanup_recovery_directory(&directory);
 
@@ -685,7 +783,8 @@ mod tests {
     #[test]
     fn successful_removal_deletes_every_owned_marker() -> Result<()> {
         let db_path = TestPath::new();
-        let mut journal = RestoreRecoveryJournal::create(&db_path.0, "operation".into())?;
+        let mut journal =
+            RestoreRecoveryJournal::create(&db_path.0, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into())?;
         journal.register_generation(10)?;
         journal.register_generation(11)?;
         journal.remove()?;
