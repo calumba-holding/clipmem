@@ -33,12 +33,16 @@ pub fn project_rtf(input: &str) -> TextProjectionResult {
     let mut i = 0usize;
     let mut fallback = 0usize;
     let mut pending_high_surrogate = None;
-    while i < bytes.len() && out.chars().count() < MAX_OUTPUT_CHARS {
+    // Emitted characters are counted incrementally; recounting the whole
+    // output every iteration would make near-limit inputs quadratic.
+    let mut emitted = 0usize;
+    while i < bytes.len() && emitted < MAX_OUTPUT_CHARS {
         if fallback > 0 {
             i = skip_fallback(bytes, i);
             fallback -= 1;
             continue;
         }
+        let appended_from = out.len();
         match bytes[i] {
             b'{' => {
                 flush_pending_surrogate(&mut out, &mut diagnostics, &mut pending_high_surrogate);
@@ -140,6 +144,7 @@ pub fn project_rtf(input: &str) -> TextProjectionResult {
                 i += literal.len_utf8();
             }
         }
+        emitted += out[appended_from..].chars().count();
     }
     flush_pending_surrogate(&mut out, &mut diagnostics, &mut pending_high_surrogate);
     if stack.len() != 1 {
