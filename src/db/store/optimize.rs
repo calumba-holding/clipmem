@@ -2,7 +2,7 @@ use std::io::Cursor;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use image::{ExtendedColorType, ImageEncoder, ImageReader, Limits};
+use image::{DynamicImage, ExtendedColorType, ImageDecoder, ImageEncoder, ImageReader, Limits};
 use rusqlite::{params, TransactionBehavior};
 
 use super::config::{
@@ -487,8 +487,20 @@ pub(in crate::db) fn encode_candidate_as_lossless_webp(
     limits.max_image_width = Some(IMAGE_OPTIMIZATION_MAX_DIMENSION);
     limits.max_image_height = Some(IMAGE_OPTIMIZATION_MAX_DIMENSION);
     reader.limits(limits);
-    let image = reader.decode().map_err(|_| "corrupt_or_unsupported")?;
-    let image = image.thumbnail(IMAGE_PREVIEW_LONG_EDGE, IMAGE_PREVIEW_LONG_EDGE);
+    let mut decoder = reader
+        .into_decoder()
+        .map_err(|_| "corrupt_or_unsupported")?;
+    let orientation = decoder
+        .orientation()
+        .map_err(|_| "corrupt_or_unsupported")?;
+    let mut image = DynamicImage::from_decoder(decoder).map_err(|_| "corrupt_or_unsupported")?;
+    image.apply_orientation(orientation);
+    let image =
+        if image.width() > IMAGE_PREVIEW_LONG_EDGE || image.height() > IMAGE_PREVIEW_LONG_EDGE {
+            image.thumbnail(IMAGE_PREVIEW_LONG_EDGE, IMAGE_PREVIEW_LONG_EDGE)
+        } else {
+            image
+        };
     let rgba = image.to_rgba8();
     let (width, height) = rgba.dimensions();
     let mut bytes = Vec::new();
@@ -568,13 +580,19 @@ pub(in crate::db) fn store_image_preview_derivative(
 }
 
 fn record_image_preview_failure(
-    conn: &rusqlite::Connection,
+    conn: &mut rusqlite::Connection,
     candidate: &ImageOptimizationCandidate,
     reason: &str,
 ) -> Result<()> {
-    conn.execute(
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .context("begin image preview skip transaction")?;
+    tx.execute(
         "INSERT OR IGNORE INTO representation_derivatives (source_snapshot_id, source_item_index, source_uti, source_raw_sha256, derivative_kind, encoder_version, encoder_options_hash, status, reason) VALUES (?1, ?2, ?3, ?4, 'preview', ?5, ?6, 'skipped', ?7)",
         params![candidate.snapshot_id, candidate.item_index, &candidate.uti, &candidate.raw_sha256, IMAGE_PREVIEW_ENCODER_VERSION, IMAGE_PREVIEW_OPTIONS_HASH, reason],
     ).context("record image preview skip")?;
+    bump_revision_tx(&tx, &[ArchiveChangeKind::Storage])?;
+    tx.commit()
+        .context("commit image preview skip transaction")?;
     Ok(())
 }

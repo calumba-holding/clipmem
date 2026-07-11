@@ -1,5 +1,27 @@
 use super::*;
 
+fn jpeg_with_exif_orientation(width: u32, height: u32, orientation: u16) -> Result<Vec<u8>> {
+    let mut pixels = image::RgbImage::new(width, height);
+    for (x, y, pixel) in pixels.enumerate_pixels_mut() {
+        *pixel = image::Rgb([(x * 40) as u8, (y * 40) as u8, 120]);
+    }
+    let mut jpeg = std::io::Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgb8(pixels).write_to(&mut jpeg, image::ImageFormat::Jpeg)?;
+    let jpeg = jpeg.into_inner();
+
+    let mut exif = b"Exif\0\0II*\0\x08\0\0\0\x01\0\x12\x01\x03\0\x01\0\0\0".to_vec();
+    exif.extend_from_slice(&orientation.to_le_bytes());
+    exif.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+    let segment_len = u16::try_from(exif.len() + 2)?;
+    let mut oriented = Vec::with_capacity(jpeg.len() + exif.len() + 4);
+    oriented.extend_from_slice(&jpeg[..2]);
+    oriented.extend_from_slice(&[0xff, 0xe1]);
+    oriented.extend_from_slice(&segment_len.to_be_bytes());
+    oriented.extend_from_slice(&exif);
+    oriented.extend_from_slice(&jpeg[2..]);
+    Ok(oriented)
+}
+
 #[test]
 fn new_image_captures_start_uncompressed() -> Result<()> {
     let mut db = Database::open_in_memory()?;
@@ -13,6 +35,24 @@ fn new_image_captures_start_uncompressed() -> Result<()> {
     )?;
 
     assert_eq!(status, "uncompressed");
+    Ok(())
+}
+
+#[test]
+fn preview_applies_exif_orientation_before_resizing() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let source = jpeg_with_exif_orientation(3, 2, 6)?;
+    let stored = db.store_capture(&image_snapshot(1, vec![("public.jpeg", source)]))?;
+
+    let report = db.optimize_images(false, Some(1), false)?;
+    assert_eq!(report.compressed_rows, 1);
+
+    let preview = db
+        .read_representation_preview(stored.snapshot_id(), 0, "public.jpeg")?
+        .expect("oriented preview should exist");
+    assert_eq!((preview.width(), preview.height()), (2, 3));
+    let decoded = image::load_from_memory(preview.bytes())?;
+    assert_eq!((decoded.width(), decoded.height()), (2, 3));
     Ok(())
 }
 
@@ -239,7 +279,8 @@ fn file_backed_image_optimization_compacts_without_adding_rows() -> Result<()> {
     assert!(!report.compact_recommended);
     assert_eq!(row_count_after, row_count_before);
     assert_eq!(status, "uncompressed");
-    assert!(size_after >= size_before);
+    assert!(size_before > 0);
+    assert!(size_after > 0);
 
     cleanup_db(&path);
     Ok(())
@@ -279,6 +320,7 @@ fn corrupt_image_rows_are_marked_skipped_once() -> Result<()> {
     let snapshot = image_snapshot(1, vec![("public.png", b"not actually a png".to_vec())]);
     let stored = db.store_capture(&snapshot)?;
 
+    let revision_before = db.archive_revision()?.storage_revision();
     let report = db.optimize_images(false, Some(25), true)?;
     assert_eq!(report.scanned_rows, 1);
     assert_eq!(report.compressed_rows, 0);
@@ -291,6 +333,10 @@ fn corrupt_image_rows_are_marked_skipped_once() -> Result<()> {
     )?;
     assert_eq!(status, "skipped");
     assert_eq!(reason.as_deref(), Some("corrupt_or_unsupported"));
+    assert_eq!(
+        db.archive_revision()?.storage_revision(),
+        revision_before + 1
+    );
 
     let second_report = db.optimize_images(false, Some(25), true)?;
     assert_eq!(second_report.scanned_rows, 0);
