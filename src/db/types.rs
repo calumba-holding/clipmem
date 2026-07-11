@@ -276,6 +276,8 @@ pub(crate) struct OcrCandidate {
     pub(in crate::db) raw_sha256: String,
     pub(in crate::db) blob_value: Vec<u8>,
     pub(in crate::db) snapshot_count: usize,
+    #[serde(skip)]
+    pub(in crate::db) lease: super::store::jobs::JobLease,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

@@ -9,6 +9,10 @@ use super::config::{
     ImageOptimizationCandidate, IMAGE_OPTIMIZATION_FORMAT, IMAGE_OPTIMIZATION_MAX_DIMENSION,
     IMAGE_PREVIEW_ENCODER_VERSION, IMAGE_PREVIEW_LONG_EDGE, IMAGE_PREVIEW_OPTIONS_HASH, WEBP_UTI,
 };
+use super::jobs::{
+    complete_job_tx, enqueue_image_optimization_jobs, load_claimed_image_candidate, JobLease,
+    IMAGE_OPTIMIZATION_JOB_KIND,
+};
 use super::revision::bump_revision_tx;
 use crate::db::core::{clamp_result_limit, pragma_usize, storage_file_sizes};
 use crate::db::sqlite_helpers::{collect_rows, row_usize, usize_to_i64};
@@ -118,13 +122,36 @@ impl Database {
         report: &mut ImageOptimizationReport,
         progress: &mut impl FnMut(ImageOptimizationProgressEvent) -> Result<()>,
     ) -> Result<()> {
+        if !dry_run {
+            enqueue_image_optimization_jobs(&mut self.conn, total_rows)?;
+        }
         let mut dry_run_offset = 0;
         while report.scanned_rows < total_rows {
             let batch_limit =
                 (total_rows - report.scanned_rows).min(IMAGE_OPTIMIZATION_BATCH_LIMIT);
             let batch_offset = if dry_run { dry_run_offset } else { 0 };
-            let candidates =
-                load_image_optimization_candidate_batch(&self.conn, batch_limit, batch_offset)?;
+            let claimed;
+            let candidates = if dry_run {
+                load_image_optimization_candidate_batch(&self.conn, batch_limit, batch_offset)?
+                    .into_iter()
+                    .map(|candidate| (candidate, None))
+                    .collect()
+            } else {
+                claimed = self.claim_jobs(
+                    IMAGE_OPTIMIZATION_JOB_KIND,
+                    &format!("image-optimize-{}", std::process::id()),
+                    batch_limit,
+                )?;
+                let mut loaded = Vec::with_capacity(claimed.len());
+                for lease in claimed {
+                    if let Some(candidate) = load_claimed_image_candidate(&self.conn, &lease)? {
+                        loaded.push((candidate, Some(lease)));
+                    } else {
+                        self.skip_claimed_job(&lease, "source_missing_or_derivative_exists")?;
+                    }
+                }
+                loaded
+            };
             if candidates.is_empty() {
                 break;
             }
@@ -133,8 +160,14 @@ impl Database {
                 dry_run_offset += candidates.len();
             }
 
-            for candidate in candidates {
-                process_image_optimization_candidate(&mut self.conn, dry_run, &candidate, report)?;
+            for (candidate, lease) in candidates {
+                process_image_optimization_candidate(
+                    &mut self.conn,
+                    dry_run,
+                    &candidate,
+                    lease.as_ref(),
+                    report,
+                )?;
                 Self::emit_image_optimization_scan_progress(progress, report, total_rows)?;
             }
         }
@@ -240,13 +273,14 @@ fn process_image_optimization_candidate(
     conn: &mut rusqlite::Connection,
     dry_run: bool,
     candidate: &ImageOptimizationCandidate,
+    lease: Option<&JobLease>,
     report: &mut ImageOptimizationReport,
 ) -> Result<()> {
     report.scanned_rows += 1;
     let optimized = match encode_candidate_as_lossless_webp(candidate) {
         Ok(optimized) => optimized,
         Err(reason) => {
-            record_image_optimization_skip(conn, dry_run, candidate, report, reason, false)?;
+            record_image_optimization_skip(conn, dry_run, candidate, lease, report, reason, false)?;
             return Ok(());
         }
     };
@@ -258,15 +292,16 @@ fn process_image_optimization_candidate(
     report.logical_saved_bytes += saved_bytes;
 
     if !dry_run {
-        store_image_preview_derivative(conn, candidate, optimized)?;
+        store_image_preview_derivative(conn, candidate, optimized, lease)?;
     }
     Ok(())
 }
 
 fn record_image_optimization_skip(
-    conn: &rusqlite::Connection,
+    conn: &mut rusqlite::Connection,
     dry_run: bool,
     candidate: &ImageOptimizationCandidate,
+    lease: Option<&JobLease>,
     report: &mut ImageOptimizationReport,
     reason: &str,
     is_conflict: bool,
@@ -276,7 +311,13 @@ fn record_image_optimization_skip(
         report.conflict_count += 1;
     }
     if !dry_run {
-        record_image_preview_failure(conn, candidate, reason)?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        record_image_preview_failure(&tx, candidate, reason)?;
+        if let Some(lease) = lease {
+            complete_job_tx(&tx, lease, "skipped", Some(reason))?;
+        }
+        bump_revision_tx(&tx, &[ArchiveChangeKind::Storage])?;
+        tx.commit()?;
     }
     Ok(())
 }
@@ -485,6 +526,7 @@ pub(in crate::db) fn store_image_preview_derivative(
     conn: &mut rusqlite::Connection,
     candidate: &ImageOptimizationCandidate,
     optimized: OptimizedImage,
+    lease: Option<&JobLease>,
 ) -> Result<()> {
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -515,6 +557,9 @@ pub(in crate::db) fn store_image_preview_derivative(
         ],
     )
     .context("store source-safe image preview derivative")?;
+    if let Some(lease) = lease {
+        complete_job_tx(&tx, lease, "succeeded", Some(&candidate.raw_sha256))?;
+    }
     bump_revision_tx(&tx, &[ArchiveChangeKind::Storage])?;
 
     tx.commit()

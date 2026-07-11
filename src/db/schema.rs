@@ -13,7 +13,7 @@ mod integrity;
 mod source_provenance;
 
 pub(super) const SCHEMA: &str = include_str!("schema.sql");
-pub(super) const CURRENT_SCHEMA_VERSION: i64 = 21;
+pub(super) const CURRENT_SCHEMA_VERSION: i64 = 22;
 const LEGACY_PRERELEASE_COLUMNS: &[&str] = &["classification", "is_text"];
 
 pub(in crate::db) fn prepare_schema(conn: &mut Connection) -> Result<()> {
