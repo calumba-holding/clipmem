@@ -236,4 +236,49 @@ mod tests {
         assert_eq!(second[0].raw_sha256(), hash);
         Ok(())
     }
+
+    #[test]
+    fn vanished_ocr_source_becomes_skipped_and_next_run_claims_valid_work() -> anyhow::Result<()> {
+        let mut db = Database::open_in_memory()?;
+        db.conn.execute(
+            "INSERT INTO jobs (kind, dedupe_key, algorithm_version, source_ref_json) VALUES ('ocr', 'orphan-hash', 'vision-v1', '{}')",
+            [],
+        )?;
+        let stored = db.store_capture(&image_snapshot(1, b"valid-after-orphan".to_vec()))?;
+        db.enqueue_ocr_for_snapshot(stored.snapshot_id())?;
+
+        let first = db.next_ocr_candidates(1, None, false)?;
+        assert!(first.is_empty());
+        let orphan_state: String = db.conn.query_row(
+            "SELECT state FROM jobs WHERE kind = 'ocr' AND dedupe_key = 'orphan-hash'",
+            [],
+            |row| row.get(0),
+        )?;
+        assert_eq!(orphan_state, "skipped");
+
+        let second = db.next_ocr_candidates(1, None, false)?;
+        assert_eq!(second.len(), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn purge_removing_last_ocr_source_deletes_its_durable_job() -> anyhow::Result<()> {
+        let mut db = Database::open_in_memory()?;
+        let stored = db.store_capture(&image_snapshot(1, b"purged-image".to_vec()))?;
+        db.enqueue_ocr_for_snapshot(stored.snapshot_id())?;
+        db.conn.execute(
+            "UPDATE snapshot_stats SET last_observed_at = datetime('now', '-1 day') WHERE snapshot_id = ?1",
+            [stored.snapshot_id()],
+        )?;
+
+        let report = db.purge_snapshots_older_than(60, false)?;
+        assert_eq!(report.snapshot_count(), 1);
+        let remaining: i64 =
+            db.conn
+                .query_row("SELECT COUNT(*) FROM jobs WHERE kind = 'ocr'", [], |row| {
+                    row.get(0)
+                })?;
+        assert_eq!(remaining, 0);
+        Ok(())
+    }
 }
