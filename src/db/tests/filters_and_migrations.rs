@@ -6,6 +6,34 @@ mod integrity_migration;
 mod purge_and_escaping;
 
 #[test]
+fn url_only_html_enters_builder_v3_search_document() -> Result<()> {
+    let mut db = Database::open_in_memory()?;
+    let html = r#"<img src="https://example.com/image.png">"#;
+    let snapshot = build_snapshot(
+        CaptureContext::new(1),
+        vec![build_item(
+            0,
+            vec![build_representation(
+                "public.html".to_string(),
+                Some(html.to_string()),
+                html.as_bytes().to_vec(),
+            )],
+        )],
+    );
+    let stored = db.store_capture(&snapshot)?;
+
+    let (builder_version, url_text): (i64, String) = db.conn.query_row(
+        "SELECT builder_version, url_text FROM snapshot_search_documents WHERE snapshot_id = ?1",
+        [stored.snapshot_id()],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+
+    assert_eq!(builder_version, 3);
+    assert_eq!(url_text, "https://example.com/image.png");
+    Ok(())
+}
+
+#[test]
 fn search_literal_matches_file_url_paths() -> Result<()> {
     let mut db = Database::open_in_memory()?;
 

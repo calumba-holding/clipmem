@@ -103,6 +103,11 @@ impl FlattenedTextProjection {
                 };
                 let projected = projected_fragment(representation.kind(), text_value);
                 diagnostics.extend(projected.diagnostics.iter().cloned());
+                if representation.kind() == ClipboardKind::Html {
+                    for url in &projected.urls {
+                        push_distinct(&mut urls, &mut url_keys, url.clone());
+                    }
+                }
                 let projected_text = projected.text;
                 let Some(fragment_text) = normalize_nonempty_display_text(&projected_text) else {
                     continue;
@@ -155,9 +160,6 @@ impl FlattenedTextProjection {
                                 &mut html_keys,
                                 normalized_plain,
                             );
-                        }
-                        for url in projected.urls {
-                            push_distinct(&mut urls, &mut url_keys, url);
                         }
                     }
                     ClipboardKind::Rtf => {
@@ -553,5 +555,41 @@ mod tests {
         assert_eq!(projection.best_text(), markdown);
         assert_eq!(projection.text_summary(), markdown);
         assert_eq!(projection.text_fragments()[0].text(), markdown);
+    }
+
+    #[test]
+    fn url_only_image_html_contributes_its_source_url() {
+        let html = r#"<img src="https://example.com/image.png">"#;
+        let item = build_item(
+            0,
+            vec![build_representation(
+                "public.html".to_string(),
+                Some(html.to_string()),
+                html.as_bytes().to_vec(),
+            )],
+        );
+
+        let projection = FlattenedTextProjection::from_items(&[item]);
+
+        assert!(projection.text_fragments().is_empty());
+        assert_eq!(projection.urls(), &["https://example.com/image.png"]);
+    }
+
+    #[test]
+    fn empty_anchor_html_contributes_its_target_url() {
+        let html = r#"<a href="https://example.com/target"></a>"#;
+        let item = build_item(
+            0,
+            vec![build_representation(
+                "public.html".to_string(),
+                Some(html.to_string()),
+                html.as_bytes().to_vec(),
+            )],
+        );
+
+        let projection = FlattenedTextProjection::from_items(&[item]);
+
+        assert!(projection.text_fragments().is_empty());
+        assert_eq!(projection.urls(), &["https://example.com/target"]);
     }
 }

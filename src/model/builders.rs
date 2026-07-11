@@ -112,6 +112,7 @@ pub(crate) fn classify_uti(uti: &str, text_value_present: bool) -> ClipboardKind
     {
         ClipboardKind::Image
     } else if lower.ends_with(".text")
+        || lower.ends_with("-text")
         || lower.ends_with(".string")
         || lower.ends_with(".plain-text")
         || text_value_present
@@ -631,6 +632,21 @@ mod tests {
             let representation = build_representation(uti.to_string(), None, vec![0, 1, 2, 3]);
 
             assert_eq!(representation.kind(), ClipboardKind::Image, "{uti}");
+        }
+    }
+
+    #[test]
+    fn producer_defined_text_utis_decode_raw_text_without_string_values() {
+        for uti in [
+            "public.comma-separated-values-text",
+            "public.tab-separated-values-text",
+            "com.vendor.rich-text",
+        ] {
+            let representation =
+                build_representation(uti.to_string(), None, b"alpha,beta".to_vec());
+
+            assert_eq!(representation.kind(), ClipboardKind::PlainText, "{uti}");
+            assert_eq!(representation.text_value(), Some("alpha,beta"), "{uti}");
         }
     }
 }
