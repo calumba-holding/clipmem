@@ -33,6 +33,12 @@ pub(crate) struct RestoreWriteFailure {
     rollback_succeeded: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RestoreWritePhase {
+    Destination,
+    Rollback,
+}
+
 impl std::fmt::Display for RestoreWriteFailure {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -55,16 +61,18 @@ where
     Prepare: FnOnce() -> anyhow::Result<T>,
     Rollback: FnOnce() -> anyhow::Result<Option<T>>,
     CanRollback: Fn() -> bool,
-    Write: FnMut(&T) -> anyhow::Result<i64>,
+    Write: FnMut(&T, RestoreWritePhase) -> anyhow::Result<i64>,
 {
     let prepared = prepare()?;
     let rollback = capture_rollback().unwrap_or(None);
-    match write(&prepared) {
+    match write(&prepared, RestoreWritePhase::Destination) {
         Ok(change_count) => Ok((change_count, rollback.is_some())),
         Err(write_error) => {
             let rollback_attempted = rollback.is_some() && can_rollback();
-            let rollback_succeeded =
-                rollback_attempted && rollback.as_ref().is_some_and(|plan| write(plan).is_ok());
+            let rollback_succeeded = rollback_attempted
+                && rollback
+                    .as_ref()
+                    .is_some_and(|plan| write(plan, RestoreWritePhase::Rollback).is_ok());
             Err(RestoreWriteFailure {
                 write_error,
                 rollback_attempted,
@@ -241,7 +249,7 @@ mod tests {
             || anyhow::bail!("bad representation"),
             || Ok(Some(vec![1])),
             || true,
-            |_| {
+            |_, _| {
                 writes.set(writes.get() + 1);
                 Ok(1)
             },
@@ -258,7 +266,7 @@ mod tests {
             || Ok(vec![2]),
             || Ok(Some(vec![1])),
             || true,
-            |plan: &Vec<u8>| {
+            |plan: &Vec<u8>, _| {
                 writes.set(writes.get() + 1);
                 if plan == &vec![2] {
                     anyhow::bail!("destination write failed");
@@ -280,7 +288,7 @@ mod tests {
             || Ok(vec![2]),
             || Ok(Some(vec![1])),
             || false,
-            |_plan: &Vec<u8>| {
+            |_plan: &Vec<u8>, _| {
                 writes.set(writes.get() + 1);
                 anyhow::bail!("generation ownership lost")
             },

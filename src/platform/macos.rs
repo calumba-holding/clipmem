@@ -11,7 +11,7 @@ use crate::model::{
 };
 use crate::platform::{
     execute_restore_protocol, stable_capture_with, RestorePlanItem, RestorePlanRepresentation,
-    RestoreReport,
+    RestoreReport, RestoreWritePhase,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,16 +93,21 @@ where
                     .get()
                     .is_some_and(|generation| pasteboard.changeCount() as i64 == generation)
             },
-            |pasteboard_items| {
+            |pasteboard_items, phase| {
                 // clearContents opens a new generation (restore or rollback)
                 // and returns its actual change count; item writes do not bump
-                // it again. Every generation this protocol creates is
-                // registered for suppression; an interleaved external writer
-                // moves to a newer generation and fails open to capture.
+                // it again. Registration is attempted for every generation;
+                // an interleaved external writer moves to a newer generation
+                // and is never overwritten by this protocol.
                 let generation = pasteboard.clearContents() as i64;
-                register(generation)?;
-                owned_generation.set(Some(generation));
-                write_pasteboard_items(&pasteboard, pasteboard_items, generation)
+                write_registered_generation(
+                    pasteboard_items,
+                    phase,
+                    generation,
+                    &owned_generation,
+                    &mut register,
+                    |items, owned| write_pasteboard_items(&pasteboard, items, owned),
+                )
             },
         )?;
 
@@ -117,6 +122,32 @@ where
             rollback_available,
         ))
     })
+}
+
+fn write_registered_generation<T, Register, Write>(
+    prepared: &T,
+    phase: RestoreWritePhase,
+    generation: i64,
+    owned_generation: &Cell<Option<i64>>,
+    register: &mut Register,
+    write: Write,
+) -> Result<i64>
+where
+    Register: FnMut(i64) -> Result<()>,
+    Write: FnOnce(&T, i64) -> Result<i64>,
+{
+    // clearContents has already exposed this generation, so ownership must be
+    // visible before either durable registration path can fail.
+    owned_generation.set(Some(generation));
+    if let Err(error) = register(generation) {
+        if phase == RestoreWritePhase::Destination {
+            return Err(error);
+        }
+        // A rollback generation is already ours and the prior clipboard is
+        // prepared. Restore it despite unavailable durable suppression; the
+        // write callback must still reject an interleaved external generation.
+    }
+    write(prepared, generation)
 }
 
 fn prepare_pasteboard_items(plan: &[RestorePlanItem]) -> Result<Vec<Retained<NSPasteboardItem>>> {
@@ -272,12 +303,93 @@ fn representation_bytes(raw_data: Option<Vec<u8>>, string_value: Option<&str>) -
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use crate::model::ClipboardKind;
 
     use super::{
-        build_representation, build_restore_plan, infer_origin_app_from_items, representation_bytes,
+        build_representation, build_restore_plan, infer_origin_app_from_items,
+        representation_bytes, write_registered_generation,
     };
     use crate::model::build_item;
+    use crate::platform::{execute_restore_protocol, RestoreWriteFailure, RestoreWritePhase};
+
+    #[test]
+    fn registration_failure_restores_prepared_previous_clipboard() {
+        let generation = Cell::new(0_i64);
+        let current_generation = Cell::new(0_i64);
+        let owned_generation = Cell::new(None);
+        let restored = Cell::new(None);
+
+        let error = execute_restore_protocol(
+            || Ok(2_u8),
+            || Ok(Some(1_u8)),
+            || owned_generation.get() == Some(current_generation.get()),
+            |prepared, phase| {
+                let next = generation.get() + 1;
+                generation.set(next);
+                current_generation.set(next);
+                write_registered_generation(
+                    prepared,
+                    phase,
+                    next,
+                    &owned_generation,
+                    &mut |_| anyhow::bail!("suppression persistence failed"),
+                    |value, owned| {
+                        anyhow::ensure!(current_generation.get() == owned, "ownership lost");
+                        restored.set(Some(*value));
+                        Ok(owned)
+                    },
+                )
+            },
+        )
+        .unwrap_err();
+
+        let failure = error.downcast_ref::<RestoreWriteFailure>().unwrap();
+        assert!(failure.rollback_attempted);
+        assert!(failure.rollback_succeeded);
+        assert_eq!(restored.get(), Some(1));
+        assert_eq!(owned_generation.get(), Some(2));
+    }
+
+    #[test]
+    fn registration_failure_never_overwrites_interleaved_external_generation() {
+        let current_generation = Cell::new(0_i64);
+        let owned_generation = Cell::new(None);
+        let restored = Cell::new(false);
+
+        let error = execute_restore_protocol(
+            || Ok(2_u8),
+            || Ok(Some(1_u8)),
+            || owned_generation.get() == Some(current_generation.get()),
+            |prepared, phase| {
+                let generation = current_generation.get() + 1;
+                current_generation.set(generation);
+                write_registered_generation(
+                    prepared,
+                    phase,
+                    generation,
+                    &owned_generation,
+                    &mut |_| anyhow::bail!("suppression persistence failed"),
+                    |_, owned| {
+                        if phase == RestoreWritePhase::Rollback {
+                            current_generation.set(owned + 1);
+                        }
+                        anyhow::ensure!(current_generation.get() == owned, "ownership lost");
+                        restored.set(true);
+                        Ok(owned)
+                    },
+                )
+            },
+        )
+        .unwrap_err();
+
+        let failure = error.downcast_ref::<RestoreWriteFailure>().unwrap();
+        assert!(failure.rollback_attempted);
+        assert!(!failure.rollback_succeeded);
+        assert!(!restored.get());
+        assert_eq!(current_generation.get(), 3);
+    }
 
     #[test]
     fn raw_string_bytes_fill_in_when_pasteboard_data_is_missing() {
