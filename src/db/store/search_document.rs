@@ -161,8 +161,8 @@ fn merge_url_text(native_urls: &str, projected_urls: &[String]) -> String {
 fn load_text_projection(conn: &Connection, snapshot_id: i64) -> Result<FlattenedTextProjection> {
     let mut stmt = conn
         .prepare(
-            "SELECT item_index, uti, text_value FROM item_representations \
-             WHERE snapshot_id = ?1 AND text_value IS NOT NULL ORDER BY item_index, uti",
+            "SELECT item_index, uti, text_value, blob_value FROM item_representations \
+             WHERE snapshot_id = ?1 ORDER BY item_index, uti",
         )
         .context("prepare canonical text projection representations")?;
     let rows = stmt
@@ -170,17 +170,19 @@ fn load_text_projection(conn: &Connection, snapshot_id: i64) -> Result<Flattened
             Ok((
                 row.get::<_, i64>(0)? as usize,
                 row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Vec<u8>>(3)?,
             ))
         })
         .context("query canonical text projection representations")?;
     let mut grouped = BTreeMap::<usize, Vec<_>>::new();
     for row in rows {
-        let (item_index, uti, text) = row.context("read canonical projection representation")?;
+        let (item_index, uti, text, bytes) =
+            row.context("read canonical projection representation")?;
         grouped
             .entry(item_index)
             .or_default()
-            .push(build_representation(uti, Some(text), Vec::new()));
+            .push(build_representation(uti, text, bytes));
     }
     let items = grouped
         .into_iter()
